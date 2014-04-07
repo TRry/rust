@@ -173,7 +173,7 @@ pub mod write {
                             lib::llvm::CodeModelDefault,
                             reloc_model,
                             opt_level,
-                            true,
+                            false,
                             use_softfp,
                             no_fp_elim
                         )
