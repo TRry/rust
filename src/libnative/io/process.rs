@@ -40,6 +40,9 @@ pub struct Process {
 
     /// None until finish() is called.
     exit_code: Option<p::ProcessExit>,
+
+    /// Manually delivered signal
+    exit_signal: Option<int>,
 }
 
 impl Process {
@@ -107,7 +110,12 @@ impl Process {
 
         match res {
             Ok(res) => {
-                Ok((Process { pid: res.pid, handle: res.handle, exit_code: None },
+                Ok((Process {
+                        pid: res.pid,
+                        handle: res.handle,
+                        exit_code: None,
+                        exit_signal: None,
+                    },
                     ret_io))
             }
             Err(e) => Err(e)
@@ -127,6 +135,14 @@ impl rtio::RtioProcess for Process {
             Some(code) => code,
             None => {
                 let code = waitpid(self.pid);
+                // On windows, waitpid will never return a signal. If a signal
+                // was successfully delivered to the process, however, we can
+                // consider it as having died via a signal.
+                let code = match self.exit_signal {
+                    None => code,
+                    Some(signal) if cfg!(windows) => p::ExitSignal(signal),
+                    Some(..) => code,
+                };
                 self.exit_code = Some(code);
                 code
             }
@@ -157,7 +173,14 @@ impl rtio::RtioProcess for Process {
             }),
             None => {}
         }
-        return unsafe { killpid(self.pid, signum) };
+
+        // A successfully delivered signal that isn't 0 (just a poll for being
+        // alive) is recorded for windows (see wait())
+        match unsafe { killpid(self.pid, signum) } {
+            Ok(()) if signum == 0 => Ok(()),
+            Ok(()) => { self.exit_signal = Some(signum); Ok(()) }
+            Err(e) => Err(e),
+        }
     }
 }
 
@@ -256,31 +279,37 @@ fn spawn_process_os(config: p::ProcessConfig,
 
         let cur_proc = GetCurrentProcess();
 
-        let orig_std_in = get_osfhandle(in_fd) as HANDLE;
-        if orig_std_in == INVALID_HANDLE_VALUE as HANDLE {
-            fail!("failure in get_osfhandle: {}", os::last_os_error());
-        }
-        if DuplicateHandle(cur_proc, orig_std_in, cur_proc, &mut si.hStdInput,
-                           0, TRUE, DUPLICATE_SAME_ACCESS) == FALSE {
-            fail!("failure in DuplicateHandle: {}", os::last_os_error());
-        }
-
-        let orig_std_out = get_osfhandle(out_fd) as HANDLE;
-        if orig_std_out == INVALID_HANDLE_VALUE as HANDLE {
-            fail!("failure in get_osfhandle: {}", os::last_os_error());
-        }
-        if DuplicateHandle(cur_proc, orig_std_out, cur_proc, &mut si.hStdOutput,
-                           0, TRUE, DUPLICATE_SAME_ACCESS) == FALSE {
-            fail!("failure in DuplicateHandle: {}", os::last_os_error());
+        if in_fd != -1 {
+            let orig_std_in = get_osfhandle(in_fd) as HANDLE;
+            if orig_std_in == INVALID_HANDLE_VALUE as HANDLE {
+                fail!("failure in get_osfhandle: {}", os::last_os_error());
+            }
+            if DuplicateHandle(cur_proc, orig_std_in, cur_proc, &mut si.hStdInput,
+                               0, TRUE, DUPLICATE_SAME_ACCESS) == FALSE {
+                fail!("failure in DuplicateHandle: {}", os::last_os_error());
+            }
         }
 
-        let orig_std_err = get_osfhandle(err_fd) as HANDLE;
-        if orig_std_err == INVALID_HANDLE_VALUE as HANDLE {
-            fail!("failure in get_osfhandle: {}", os::last_os_error());
+        if out_fd != -1 {
+            let orig_std_out = get_osfhandle(out_fd) as HANDLE;
+            if orig_std_out == INVALID_HANDLE_VALUE as HANDLE {
+                fail!("failure in get_osfhandle: {}", os::last_os_error());
+            }
+            if DuplicateHandle(cur_proc, orig_std_out, cur_proc, &mut si.hStdOutput,
+                               0, TRUE, DUPLICATE_SAME_ACCESS) == FALSE {
+                fail!("failure in DuplicateHandle: {}", os::last_os_error());
+            }
         }
-        if DuplicateHandle(cur_proc, orig_std_err, cur_proc, &mut si.hStdError,
-                           0, TRUE, DUPLICATE_SAME_ACCESS) == FALSE {
-            fail!("failure in DuplicateHandle: {}", os::last_os_error());
+
+        if err_fd != -1 {
+            let orig_std_err = get_osfhandle(err_fd) as HANDLE;
+            if orig_std_err == INVALID_HANDLE_VALUE as HANDLE {
+                fail!("failure in get_osfhandle: {}", os::last_os_error());
+            }
+            if DuplicateHandle(cur_proc, orig_std_err, cur_proc, &mut si.hStdError,
+                               0, TRUE, DUPLICATE_SAME_ACCESS) == FALSE {
+                fail!("failure in DuplicateHandle: {}", os::last_os_error());
+            }
         }
 
         let cmd = make_command_line(config.program, config.args);
@@ -307,9 +336,9 @@ fn spawn_process_os(config: p::ProcessConfig,
             })
         });
 
-        assert!(CloseHandle(si.hStdInput) != 0);
-        assert!(CloseHandle(si.hStdOutput) != 0);
-        assert!(CloseHandle(si.hStdError) != 0);
+        if in_fd != -1 { assert!(CloseHandle(si.hStdInput) != 0); }
+        if out_fd != -1 { assert!(CloseHandle(si.hStdOutput) != 0); }
+        if err_fd != -1 { assert!(CloseHandle(si.hStdError) != 0); }
 
         match create_err {
             Some(err) => return Err(err),
@@ -495,7 +524,37 @@ fn spawn_process_os(config: p::ProcessConfig,
                     Ok(..) => fail!("short read on the cloexec pipe"),
                 };
             }
-            drop(input);
+            // And at this point we've reached a special time in the life of the
+            // child. The child must now be considered hamstrung and unable to
+            // do anything other than syscalls really. Consider the following
+            // scenario:
+            //
+            //      1. Thread A of process 1 grabs the malloc() mutex
+            //      2. Thread B of process 1 forks(), creating thread C
+            //      3. Thread C of process 2 then attempts to malloc()
+            //      4. The memory of process 2 is the same as the memory of
+            //         process 1, so the mutex is locked.
+            //
+            // This situation looks a lot like deadlock, right? It turns out
+            // that this is what pthread_atfork() takes care of, which is
+            // presumably implemented across platforms. The first thing that
+            // threads to *before* forking is to do things like grab the malloc
+            // mutex, and then after the fork they unlock it.
+            //
+            // Despite this information, libnative's spawn has been witnessed to
+            // deadlock on both OSX and FreeBSD. I'm not entirely sure why, but
+            // all collected backtraces point at malloc/free traffic in the
+            // child spawned process.
+            //
+            // For this reason, the block of code below should contain 0
+            // invocations of either malloc of free (or their related friends).
+            //
+            // As an example of not having malloc/free traffic, we don't close
+            // this file descriptor by dropping the FileDesc (which contains an
+            // allocation). Instead we just close it manually. This will never
+            // have the drop glue anyway because this code never returns (the
+            // child will either exec() or invoke libc::exit)
+            let _ = libc::close(input.fd());
 
             fn fail(output: &mut file::FileDesc) -> ! {
                 let errno = os::errno();
@@ -580,7 +639,7 @@ fn spawn_process_os(config: p::ProcessConfig,
 }
 
 #[cfg(unix)]
-fn with_argv<T>(prog: &str, args: &[~str], cb: proc:(**libc::c_char) -> T) -> T {
+fn with_argv<T>(prog: &str, args: &[~str], cb: proc(**libc::c_char) -> T) -> T {
     use std::slice;
 
     // We can't directly convert `str`s into `*char`s, as someone needs to hold
@@ -606,7 +665,7 @@ fn with_argv<T>(prog: &str, args: &[~str], cb: proc:(**libc::c_char) -> T) -> T 
 }
 
 #[cfg(unix)]
-fn with_envp<T>(env: Option<~[(~str, ~str)]>, cb: proc:(*c_void) -> T) -> T {
+fn with_envp<T>(env: Option<~[(~str, ~str)]>, cb: proc(*c_void) -> T) -> T {
     use std::slice;
 
     // On posixy systems we can pass a char** for envp, which is a

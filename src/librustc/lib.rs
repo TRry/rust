@@ -274,7 +274,7 @@ pub fn run_compiler(args: &[~str]) {
         let ifile = matches.free.get(0).as_slice();
         if ifile == "-" {
             let contents = io::stdin().read_to_end().unwrap();
-            let src = str::from_utf8_owned(contents).unwrap();
+            let src = str::from_utf8(contents.as_slice()).unwrap().to_owned();
             (d::StrInput(src), None)
         } else {
             (d::FileInput(Path::new(ifile)), Some(Path::new(ifile)))
@@ -364,7 +364,7 @@ fn parse_crate_attrs(sess: &session::Session, input: &d::Input) ->
 ///
 /// The diagnostic emitter yielded to the procedure should be used for reporting
 /// errors of the compiler.
-pub fn monitor(f: proc:Send()) {
+pub fn monitor(f: proc():Send) {
     // FIXME: This is a hack for newsched since it doesn't support split stacks.
     // rustc needs a lot of stack! When optimizations are disabled, it needs
     // even *more* stack than usual as well.

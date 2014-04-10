@@ -241,8 +241,6 @@ pub fn phase_2_configure_and_expand(sess: &Session,
                                           cfg,
                                           krate)
     });
-    // dump the syntax-time crates
-    sess.cstore.reset();
 
     // strip again, in case expansion added anything with a #[cfg].
     krate = time(time_passes, "configuration 2", krate, |krate|
@@ -681,7 +679,7 @@ pub fn pretty_print_input(sess: Session,
     };
 
     let src_name = source_name(input);
-    let src = sess.codemap().get_filemap(src_name).src.as_bytes().to_owned();
+    let src = Vec::from_slice(sess.codemap().get_filemap(src_name).src.as_bytes());
     let mut rdr = MemReader::new(src);
 
     match ppm {
