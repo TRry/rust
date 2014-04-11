@@ -263,9 +263,8 @@ fn apply_adjustments<'a>(bcx: &'a Block<'a>,
 
         // this type may have a different region/mutability than the
         // real one, but it will have the same runtime representation
-        let slice_ty = ty::mk_vec(tcx,
-                                  ty::mt { ty: unit_ty, mutbl: ast::MutImmutable },
-                                  ty::vstore_slice(ty::ReStatic));
+        let slice_ty = ty::mk_vec(tcx, unit_ty,
+                                  ty::VstoreSlice(ty::ReStatic, ast::MutImmutable));
 
         let scratch = rvalue_scratch_datum(bcx, slice_ty, "__adjust");
         Store(bcx, base, GEPi(bcx, scratch.val, [0u, abi::slice_elt_base]));
@@ -513,7 +512,7 @@ fn trans_index<'a>(bcx: &'a Block<'a>,
     debug!("trans_index: len {}", bcx.val_to_str(len));
 
     let bounds_check = ICmp(bcx, lib::llvm::IntUGE, ix_val, len);
-    let expect = ccx.intrinsics.get_copy(&("llvm.expect.i1"));
+    let expect = ccx.get_intrinsic(&("llvm.expect.i1"));
     let expected = Call(bcx, expect, [bounds_check, C_i1(ccx, false)], []);
     let bcx = with_cond(bcx, expected, |bcx| {
             controlflow::trans_fail_bounds_check(bcx, index_expr.span, ix_val, len)

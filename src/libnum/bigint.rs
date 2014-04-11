@@ -25,7 +25,7 @@ use std::num::CheckedDiv;
 use std::num::{Bitwise, ToPrimitive, FromPrimitive};
 use std::num::{Zero, One, ToStrRadix, FromStrRadix};
 use rand::Rng;
-use std::str;
+use std::strbuf::StrBuf;
 use std::uint;
 use std::{i64, u64};
 
@@ -666,13 +666,13 @@ impl ToStrRadix for BigUint {
 
         fn fill_concat(v: &[BigDigit], radix: uint, l: uint) -> ~str {
             if v.is_empty() { return ~"0" }
-            let mut s = str::with_capacity(v.len() * l);
+            let mut s = StrBuf::with_capacity(v.len() * l);
             for n in v.rev_iter() {
                 let ss = (*n as uint).to_str_radix(radix);
                 s.push_str("0".repeat(l - ss.len()));
                 s.push_str(ss);
             }
-            s.trim_left_chars(&'0').to_owned()
+            s.as_slice().trim_left_chars(&'0').to_owned()
         }
     }
 }
@@ -2742,7 +2742,7 @@ mod bigint_tests {
 #[cfg(test)]
 mod bench {
     extern crate test;
-    use self::test::BenchHarness;
+    use self::test::Bencher;
     use super::BigUint;
     use std::iter;
     use std::mem::replace;
@@ -2767,35 +2767,35 @@ mod bench {
     }
 
     #[bench]
-    fn factorial_100(bh: &mut BenchHarness) {
-        bh.iter(|| {
+    fn factorial_100(b: &mut Bencher) {
+        b.iter(|| {
             factorial(100);
         });
     }
 
     #[bench]
-    fn fib_100(bh: &mut BenchHarness) {
-        bh.iter(|| {
+    fn fib_100(b: &mut Bencher) {
+        b.iter(|| {
             fib(100);
         });
     }
 
     #[bench]
-    fn to_str(bh: &mut BenchHarness) {
+    fn to_str(b: &mut Bencher) {
         let fac = factorial(100);
         let fib = fib(100);
-        bh.iter(|| {
+        b.iter(|| {
             fac.to_str();
         });
-        bh.iter(|| {
+        b.iter(|| {
             fib.to_str();
         });
     }
 
     #[bench]
-    fn shr(bh: &mut BenchHarness) {
+    fn shr(b: &mut Bencher) {
         let n = { let one : BigUint = One::one(); one << 1000 };
-        bh.iter(|| {
+        b.iter(|| {
             let mut m = n.clone();
             for _ in range(0, 10) {
                 m = m >> 1;

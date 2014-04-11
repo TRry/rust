@@ -81,7 +81,7 @@ mod table {
     /// You can kind of think of this module/data structure as a safe wrapper
     /// around just the "table" part of the hashtable. It enforces some
     /// invariants at the type level and employs some performance trickery,
-    /// but in general is just a tricked out `~[Option<u64, K, V>]`.
+    /// but in general is just a tricked out `Vec<Option<u64, K, V>>`.
     ///
     /// FIXME(cgaebel):
     ///
@@ -795,6 +795,97 @@ impl<K: TotalEq + Hash<S>, V, S, H: Hasher<S>> HashMap<K, V, H> {
     fn search(&self, k: &K) -> Option<table::FullIndex> {
         self.search_hashed(&self.make_hash(k), k)
     }
+
+    fn pop_internal(&mut self, starting_index: table::FullIndex) -> Option<V> {
+        let starting_probe = starting_index.raw_index();
+
+        let ending_probe = {
+            let mut probe = self.probe_next(starting_probe);
+            for _ in range(0u, self.table.size()) {
+                match self.table.peek(probe) {
+                    table::Empty(_) => {}, // empty bucket. this is the end of our shifting.
+                    table::Full(idx) => {
+                        // Bucket that isn't us, which has a non-zero probe distance.
+                        // This isn't the ending index, so keep searching.
+                        if self.bucket_distance(&idx) != 0 {
+                            probe = self.probe_next(probe);
+                            continue;
+                        }
+
+                        // if we do have a bucket_distance of zero, we're at the end
+                        // of what we need to shift.
+                    }
+                }
+                break;
+            }
+
+            probe
+        };
+
+        let (_, _, retval) = self.table.take(starting_index);
+
+        let mut      probe = starting_probe;
+        let mut next_probe = self.probe_next(probe);
+
+        // backwards-shift all the elements after our newly-deleted one.
+        while next_probe != ending_probe {
+            match self.table.peek(next_probe) {
+                table::Empty(_) => {
+                    // nothing to shift in. just empty it out.
+                    match self.table.peek(probe) {
+                        table::Empty(_) => {},
+                        table::Full(idx) => { self.table.take(idx); }
+                    }
+                },
+                table::Full(next_idx) => {
+                    // something to shift. move it over!
+                    let next_hash = next_idx.hash();
+                    let (_, next_key, next_val) = self.table.take(next_idx);
+                    match self.table.peek(probe) {
+                        table::Empty(idx) => {
+                            self.table.put(idx, next_hash, next_key, next_val);
+                        },
+                        table::Full(idx) => {
+                            let (emptyidx, _, _) = self.table.take(idx);
+                            self.table.put(emptyidx, next_hash, next_key, next_val);
+                        }
+                    }
+                }
+            }
+
+            probe = next_probe;
+            next_probe = self.probe_next(next_probe);
+        }
+
+        // Done the backwards shift, but there's still an element left!
+        // Empty it out.
+        match self.table.peek(probe) {
+            table::Empty(_) => {},
+            table::Full(idx) => { self.table.take(idx); }
+        }
+
+        // Now we're done all our shifting. Return the value we grabbed
+        // earlier.
+        return Some(retval);
+    }
+
+    /// Like `pop`, but can operate on any type that is equivalent to a key.
+    #[experimental]
+    pub fn pop_equiv<Q:Hash<S> + Equiv<K>>(&mut self, k: &Q) -> Option<V> {
+        if self.table.size() == 0 {
+            return None
+        }
+
+        let potential_new_size = self.table.size() - 1;
+        self.make_some_room(potential_new_size);
+
+        let starting_index = match self.search_equiv(k) {
+            Some(idx) => idx,
+            None      => return None,
+        };
+
+        self.pop_internal(starting_index)
+    }
 }
 
 impl<K: TotalEq + Hash<S>, V, S, H: Hasher<S>> Container for HashMap<K, V, H> {
@@ -894,77 +985,9 @@ impl<K: TotalEq + Hash<S>, V, S, H: Hasher<S>> MutableMap<K, V> for HashMap<K, V
             None      => return None,
         };
 
-        let starting_probe = starting_index.raw_index();
-
-        let ending_probe = {
-            let mut probe = self.probe_next(starting_probe);
-            for _ in range(0u, self.table.size()) {
-                match self.table.peek(probe) {
-                    table::Empty(_) => {}, // empty bucket. this is the end of our shifting.
-                    table::Full(idx) => {
-                        // Bucket that isn't us, which has a non-zero probe distance.
-                        // This isn't the ending index, so keep searching.
-                        if self.bucket_distance(&idx) != 0 {
-                            probe = self.probe_next(probe);
-                            continue;
-                        }
-
-                        // if we do have a bucket_distance of zero, we're at the end
-                        // of what we need to shift.
-                    }
-                }
-                break;
-            }
-
-            probe
-        };
-
-        let (_, _, retval) = self.table.take(starting_index);
-
-        let mut      probe = starting_probe;
-        let mut next_probe = self.probe_next(probe);
-
-        // backwards-shift all the elements after our newly-deleted one.
-        while next_probe != ending_probe {
-            match self.table.peek(next_probe) {
-                table::Empty(_) => {
-                    // nothing to shift in. just empty it out.
-                    match self.table.peek(probe) {
-                        table::Empty(_) => {},
-                        table::Full(idx) => { self.table.take(idx); }
-                    }
-                },
-                table::Full(next_idx) => {
-                    // something to shift. move it over!
-                    let next_hash = next_idx.hash();
-                    let (_, next_key, next_val) = self.table.take(next_idx);
-                    match self.table.peek(probe) {
-                        table::Empty(idx) => {
-                            self.table.put(idx, next_hash, next_key, next_val);
-                        },
-                        table::Full(idx) => {
-                            let (emptyidx, _, _) = self.table.take(idx);
-                            self.table.put(emptyidx, next_hash, next_key, next_val);
-                        }
-                    }
-                }
-            }
-
-            probe = next_probe;
-            next_probe = self.probe_next(next_probe);
-        }
-
-        // Done the backwards shift, but there's still an element left!
-        // Empty it out.
-        match self.table.peek(probe) {
-            table::Empty(_) => {},
-            table::Full(idx) => { self.table.take(idx); }
-        }
-
-        // Now we're done all our shifting. Return the value we grabbed
-        // earlier.
-        return Some(retval);
+        self.pop_internal(starting_index)
     }
+
 }
 
 impl<K: Hash + TotalEq, V> HashMap<K, V, sip::SipHasher> {
@@ -1571,9 +1594,26 @@ pub type SetAlgebraItems<'a, T, H> =
 #[cfg(test)]
 mod test_map {
     use super::HashMap;
+    use std::cmp::Equiv;
+    use std::hash::Hash;
     use std::iter::{Iterator,range_inclusive,range_step_inclusive};
     use std::local_data;
     use std::vec;
+
+    struct KindaIntLike(int);
+
+    impl Equiv<int> for KindaIntLike {
+        fn equiv(&self, other: &int) -> bool {
+            let KindaIntLike(this) = *self;
+            this == *other
+        }
+    }
+    impl<S: Writer> Hash<S> for KindaIntLike {
+        fn hash(&self, state: &mut S) {
+            let KindaIntLike(this) = *self;
+            this.hash(state)
+        }
+    }
 
     #[test]
     fn test_create_capacity_zero() {
@@ -1815,6 +1855,15 @@ mod test_map {
     }
 
     #[test]
+    #[allow(experimental)]
+    fn test_pop_equiv() {
+        let mut m = HashMap::new();
+        m.insert(1, 2);
+        assert_eq!(m.pop_equiv(&KindaIntLike(1)), Some(2));
+        assert_eq!(m.pop_equiv(&KindaIntLike(1)), None);
+    }
+
+    #[test]
     fn test_swap() {
         let mut m = HashMap::new();
         assert_eq!(m.swap(1, 2), None);
@@ -1833,8 +1882,8 @@ mod test_map {
             hm
         };
 
-        let v = hm.move_iter().collect::<~[(char, int)]>();
-        assert!([('a', 1), ('b', 2)] == v || [('b', 2), ('a', 1)] == v);
+        let v = hm.move_iter().collect::<Vec<(char, int)>>();
+        assert!([('a', 1), ('b', 2)] == v.as_slice() || [('b', 2), ('a', 1)] == v.as_slice());
     }
 
     #[test]
@@ -1856,9 +1905,9 @@ mod test_map {
 
     #[test]
     fn test_keys() {
-        let vec = ~[(1, 'a'), (2, 'b'), (3, 'c')];
+        let vec = vec![(1, 'a'), (2, 'b'), (3, 'c')];
         let map = vec.move_iter().collect::<HashMap<int, char>>();
-        let keys = map.keys().map(|&k| k).collect::<~[int]>();
+        let keys = map.keys().map(|&k| k).collect::<Vec<int>>();
         assert_eq!(keys.len(), 3);
         assert!(keys.contains(&1));
         assert!(keys.contains(&2));
@@ -1867,9 +1916,9 @@ mod test_map {
 
     #[test]
     fn test_values() {
-        let vec = ~[(1, 'a'), (2, 'b'), (3, 'c')];
+        let vec = vec![(1, 'a'), (2, 'b'), (3, 'c')];
         let map = vec.move_iter().collect::<HashMap<int, char>>();
-        let values = map.values().map(|&v| v).collect::<~[char]>();
+        let values = map.values().map(|&v| v).collect::<Vec<char>>();
         assert_eq!(values.len(), 3);
         assert!(values.contains(&'a'));
         assert!(values.contains(&'b'));
@@ -1942,7 +1991,7 @@ mod test_map {
 
     #[test]
     fn test_from_iter() {
-        let xs = ~[(1, 1), (2, 2), (3, 3), (4, 4), (5, 5), (6, 6)];
+        let xs = [(1, 1), (2, 2), (3, 3), (4, 4), (5, 5), (6, 6)];
 
         let map: HashMap<int, int> = xs.iter().map(|&x| x).collect();
 
@@ -2133,7 +2182,7 @@ mod test_set {
 
     #[test]
     fn test_from_iter() {
-        let xs = ~[1, 2, 3, 4, 5, 6, 7, 8, 9];
+        let xs = [1, 2, 3, 4, 5, 6, 7, 8, 9];
 
         let set: HashSet<int> = xs.iter().map(|&x| x).collect();
 
@@ -2153,8 +2202,8 @@ mod test_set {
             hs
         };
 
-        let v = hs.move_iter().collect::<~[char]>();
-        assert!(['a', 'b'] == v || ['b', 'a'] == v);
+        let v = hs.move_iter().collect::<Vec<char>>();
+        assert!(['a', 'b'] == v.as_slice() || ['b', 'a'] == v.as_slice());
     }
 
     #[test]
@@ -2197,11 +2246,11 @@ mod test_set {
 #[cfg(test)]
 mod bench {
     extern crate test;
-    use self::test::BenchHarness;
+    use self::test::Bencher;
     use std::iter::{range_inclusive};
 
     #[bench]
-    fn insert(b: &mut BenchHarness) {
+    fn insert(b: &mut Bencher) {
         use super::HashMap;
 
         let mut m = HashMap::new();
@@ -2219,7 +2268,7 @@ mod bench {
     }
 
     #[bench]
-    fn find_existing(b: &mut BenchHarness) {
+    fn find_existing(b: &mut Bencher) {
         use super::HashMap;
 
         let mut m = HashMap::new();
@@ -2234,7 +2283,7 @@ mod bench {
     }
 
     #[bench]
-    fn find_nonexisting(b: &mut BenchHarness) {
+    fn find_nonexisting(b: &mut Bencher) {
         use super::HashMap;
 
         let mut m = HashMap::new();
@@ -2249,7 +2298,7 @@ mod bench {
     }
 
     #[bench]
-    fn hashmap_as_queue(b: &mut BenchHarness) {
+    fn hashmap_as_queue(b: &mut Bencher) {
         use super::HashMap;
 
         let mut m = HashMap::new();
@@ -2268,7 +2317,7 @@ mod bench {
     }
 
     #[bench]
-    fn find_pop_insert(b: &mut BenchHarness) {
+    fn find_pop_insert(b: &mut Bencher) {
         use super::HashMap;
 
         let mut m = HashMap::new();

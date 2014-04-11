@@ -1,4 +1,4 @@
-// Copyright 2012 The Rust Project Developers. See the COPYRIGHT
+// Copyright 2013-2014 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
 //
@@ -8,17 +8,20 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+#![crate_type = "lib"]
+// compile-flags:-g
 
+pub use private::P;
 
-pub fn main() {
-    let mut s = ~"a";
-    s.push_char('b');
-    assert_eq!(s[0], 'a' as u8);
-    assert_eq!(s[1], 'b' as u8);
-    s.push_char('c');
-    s.push_char('d');
-    assert_eq!(s[0], 'a' as u8);
-    assert_eq!(s[1], 'b' as u8);
-    assert_eq!(s[2], 'c' as u8);
-    assert_eq!(s[3], 'd' as u8);
+pub struct S {
+    p: P,
 }
+
+mod private {
+    pub struct P {
+        p: i32,
+    }
+    pub static THREE: P = P { p: 3 };
+}
+
+pub static A: S = S { p: private::THREE };

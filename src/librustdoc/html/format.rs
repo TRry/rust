@@ -16,8 +16,9 @@
 //! them in the future to instead emit any format desired.
 
 use std::fmt;
-use std::local_data;
 use std::io;
+use std::local_data;
+use std::strbuf::StrBuf;
 
 use syntax::ast;
 use syntax::ast_util;
@@ -29,9 +30,9 @@ use html::render::{cache_key, current_location_key};
 /// Helper to render an optional visibility with a space after it (if the
 /// visibility is preset)
 pub struct VisSpace(pub Option<ast::Visibility>);
-/// Similarly to VisSpace, this structure is used to render a purity with a
+/// Similarly to VisSpace, this structure is used to render a function style with a
 /// space after it.
-pub struct PuritySpace(pub ast::Purity);
+pub struct FnStyleSpace(pub ast::FnStyle);
 /// Wrapper struct for properly emitting a method declaration.
 pub struct Method<'a>(pub &'a clean::SelfTy, pub &'a clean::FnDecl);
 
@@ -41,9 +42,9 @@ impl VisSpace {
     }
 }
 
-impl PuritySpace {
-    pub fn get(&self) -> ast::Purity {
-        let PuritySpace(v) = *self; v
+impl FnStyleSpace {
+    pub fn get(&self) -> ast::FnStyle {
+        let FnStyleSpace(v) = *self; v
     }
 }
 
@@ -185,7 +186,7 @@ fn path(w: &mut io::Writer, path: &clean::Path, print_all: bool,
     -> fmt::Result
 {
     // The generics will get written to both the title and link
-    let mut generics = ~"";
+    let mut generics = StrBuf::new();
     let last = path.segments.last().unwrap();
     if last.lifetimes.len() > 0 || last.types.len() > 0 {
         let mut counter = 0;
@@ -219,7 +220,7 @@ fn path(w: &mut io::Writer, path: &clean::Path, print_all: bool,
                 let amt = path.segments.len() - 1;
                 match rel_root {
                     Some(root) => {
-                        let mut root = root;
+                        let mut root = StrBuf::from_str(root);
                         for seg in path.segments.slice_to(amt).iter() {
                             if "super" == seg.name || "self" == seg.name {
                                 try!(write!(w, "{}::", seg.name));
@@ -228,7 +229,7 @@ fn path(w: &mut io::Writer, path: &clean::Path, print_all: bool,
                                 root.push_str("/");
                                 try!(write!(w, "<a class='mod'
                                                     href='{}index.html'>{}</a>::",
-                                              root,
+                                              root.as_slice(),
                                               seg.name));
                             }
                         }
@@ -244,7 +245,7 @@ fn path(w: &mut io::Writer, path: &clean::Path, print_all: bool,
             match info(&**cache) {
                 // This is a documented path, link to it!
                 Some((ref fqp, shortty)) if abs_root.is_some() => {
-                    let mut url = abs_root.unwrap();
+                    let mut url = StrBuf::from_str(abs_root.unwrap());
                     let to_link = fqp.slice_to(fqp.len() - 1);
                     for component in to_link.iter() {
                         url.push_str(*component);
@@ -271,7 +272,7 @@ fn path(w: &mut io::Writer, path: &clean::Path, print_all: bool,
                     try!(write!(w, "{}", last.name));
                 }
             }
-            try!(write!(w, "{}", generics));
+            try!(write!(w, "{}", generics.as_slice()));
             Ok(())
         })
     })
@@ -343,7 +344,7 @@ impl fmt::Show for clean::Type {
                 };
 
                 write!(f.buf, "{}{}{arrow, select, yes{ -&gt; {ret}} other{}}",
-                       PuritySpace(decl.purity),
+                       FnStyleSpace(decl.fn_style),
                        match decl.sigil {
                            ast::OwnedSigil => format!("proc({})", decl.decl.inputs),
                            ast::BorrowedSigil => format!("{}|{}|", region, decl.decl.inputs),
@@ -355,7 +356,7 @@ impl fmt::Show for clean::Type {
             }
             clean::BareFunction(ref decl) => {
                 write!(f.buf, "{}{}fn{}{}",
-                       PuritySpace(decl.purity),
+                       FnStyleSpace(decl.fn_style),
                        match decl.abi {
                            ref x if "" == *x => ~"",
                            ref x if "\"Rust\"" == *x => ~"",
@@ -430,7 +431,7 @@ impl fmt::Show for clean::FnDecl {
 impl<'a> fmt::Show for Method<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let Method(selfty, d) = *self;
-        let mut args = ~"";
+        let mut args = StrBuf::new();
         match *selfty {
             clean::SelfStatic => {},
             clean::SelfValue => args.push_str("self"),
@@ -455,7 +456,8 @@ impl<'a> fmt::Show for Method<'a> {
             }
             args.push_str(format!("{}", input.type_));
         }
-        write!(f.buf, "({args}){arrow, select, yes{ -&gt; {ret}} other{}}",
+        write!(f.buf,
+               "({args}){arrow, select, yes{ -&gt; {ret}} other{}}",
                args = args,
                arrow = match d.output { clean::Unit => "no", _ => "yes" },
                ret = d.output)
@@ -472,12 +474,12 @@ impl fmt::Show for VisSpace {
     }
 }
 
-impl fmt::Show for PuritySpace {
+impl fmt::Show for FnStyleSpace {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self.get() {
             ast::UnsafeFn => write!(f.buf, "unsafe "),
             ast::ExternFn => write!(f.buf, "extern "),
-            ast::ImpureFn => Ok(())
+            ast::NormalFn => Ok(())
         }
     }
 }

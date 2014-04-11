@@ -76,6 +76,7 @@ use middle::typeck::infer::region_inference::ProcessedErrors;
 use middle::typeck::infer::region_inference::SameRegions;
 use std::cell::{Cell, RefCell};
 use std::char::from_u32;
+use std::strbuf::StrBuf;
 use syntax::ast;
 use syntax::ast_map;
 use syntax::ast_util;
@@ -1102,10 +1103,10 @@ impl<'a> ErrorReportingHelpers for InferCtxt<'a> {
                                 output: ast::P<ast::Ty>,
                                 item: ast::P<ast::Item>,
                                 generics: ast::Generics) {
-        let (fn_decl, purity, ident) = match item.node {
+        let (fn_decl, fn_style, ident) = match item.node {
             // FIXME: handling method
-            ast::ItemFn(ref fn_decl, ref purity, _, _, _) => {
-                (fn_decl, purity, item.ident)
+            ast::ItemFn(ref fn_decl, ref fn_style, _, _, _) => {
+                (fn_decl, fn_style, item.ident)
             },
             _ => fail!("Expect function or method")
 
@@ -1117,7 +1118,7 @@ impl<'a> ErrorReportingHelpers for InferCtxt<'a> {
             variadic: fn_decl.variadic
         };
         let suggested_fn =
-            pprust::fun_to_str(&fd, *purity, ident, None, &generics);
+            pprust::fun_to_str(&fd, *fn_style, ident, None, &generics);
         let msg = format!("consider using an explicit lifetime \
                            parameter as shown: {}", suggested_fn);
         self.tcx.sess.span_note(item.span, msg);
@@ -1361,13 +1362,13 @@ impl LifeGiver {
 
         // 0 .. 25 generates a .. z, 26 .. 51 generates aa .. zz, and so on
         fn num_to_str(counter: uint) -> ~str {
-            let mut s = ~"";
+            let mut s = StrBuf::new();
             let (n, r) = (counter/26 + 1, counter % 26);
             let letter: char = from_u32((r+97) as u32).unwrap();
             for _ in range(0, n) {
                 s.push_char(letter);
             }
-            return s;
+            s.into_owned()
         }
     }
 

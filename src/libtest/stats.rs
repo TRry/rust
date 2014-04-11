@@ -170,14 +170,14 @@ impl<'a> Stats for &'a [f64] {
     // FIXME #11059 handle NaN, inf and overflow
     #[allow(deprecated_owned_vector)]
     fn sum(self) -> f64 {
-        let mut partials : ~[f64] = ~[];
+        let mut partials = vec![];
 
         for &mut x in self.iter() {
             let mut j = 0;
             // This inner loop applies `hi`/`lo` summation to each
             // partial so that the list of partial sums remains exact.
             for i in range(0, partials.len()) {
-                let mut y = partials[i];
+                let mut y = *partials.get(i);
                 if num::abs(x) < num::abs(y) {
                     mem::swap(&mut x, &mut y);
                 }
@@ -186,7 +186,7 @@ impl<'a> Stats for &'a [f64] {
                 let hi = x + y;
                 let lo = y - (hi - x);
                 if lo != 0f64 {
-                    partials[j] = lo;
+                    *partials.get_mut(j) = lo;
                     j += 1;
                 }
                 x = hi;
@@ -194,7 +194,7 @@ impl<'a> Stats for &'a [f64] {
             if j >= partials.len() {
                 partials.push(x);
             } else {
-                partials[j] = x;
+                *partials.get_mut(j) = x;
                 partials.truncate(j+1);
             }
         }
@@ -1036,21 +1036,21 @@ mod tests {
 
 #[cfg(test)]
 mod bench {
-    use BenchHarness;
+    use Bencher;
     use stats::Stats;
 
     #[bench]
-    pub fn sum_three_items(bh: &mut BenchHarness) {
-        bh.iter(|| {
+    pub fn sum_three_items(b: &mut Bencher) {
+        b.iter(|| {
             [1e20, 1.5, -1e20].sum();
         })
     }
     #[bench]
-    pub fn sum_many_f64(bh: &mut BenchHarness) {
+    pub fn sum_many_f64(b: &mut Bencher) {
         let nums = [-1e30, 1e60, 1e30, 1.0, -1e60];
         let v = Vec::from_fn(500, |i| nums[i%5]);
 
-        bh.iter(|| {
+        b.iter(|| {
             v.as_slice().sum();
         })
     }

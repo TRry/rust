@@ -11,7 +11,7 @@
 //! Support code for rustc's built in unit-test and micro-benchmarking
 //! framework.
 //!
-//! Almost all user code will only be interested in `BenchHarness` and
+//! Almost all user code will only be interested in `Bencher` and
 //! `black_box`. All other interactions (such as writing tests and
 //! benchmarks themselves) should be done via the `#[test]` and
 //! `#[bench]` attributes.
@@ -59,11 +59,12 @@ use std::io::{File, ChanReader, ChanWriter};
 use std::io;
 use std::os;
 use std::str;
+use std::strbuf::StrBuf;
 use std::task;
 
 // to be used by rustc to compile tests in libtest
 pub mod test {
-    pub use {BenchHarness, TestName, TestResult, TestDesc,
+    pub use {Bencher, TestName, TestResult, TestDesc,
              TestDescAndFn, TestOpts, TrFailed, TrIgnored, TrOk,
              Metric, MetricMap, MetricAdded, MetricRemoved,
              MetricChange, Improvement, Regression, LikelyNoise,
@@ -99,20 +100,26 @@ enum NamePadding { PadNone, PadOnLeft, PadOnRight }
 impl TestDesc {
     fn padded_name(&self, column_count: uint, align: NamePadding) -> ~str {
         use std::num::Saturating;
-        let name = self.name.to_str();
+        let mut name = StrBuf::from_str(self.name.to_str());
         let fill = column_count.saturating_sub(name.len());
-        let pad = " ".repeat(fill);
+        let mut pad = StrBuf::from_owned_str(" ".repeat(fill));
         match align {
-            PadNone => name,
-            PadOnLeft => pad.append(name),
-            PadOnRight => name.append(pad),
+            PadNone => name.into_owned(),
+            PadOnLeft => {
+                pad.push_str(name.as_slice());
+                pad.into_owned()
+            }
+            PadOnRight => {
+                name.push_str(pad.as_slice());
+                name.into_owned()
+            }
         }
     }
 }
 
 /// Represents a benchmark function.
 pub trait TDynBenchFn {
-    fn run(&self, harness: &mut BenchHarness);
+    fn run(&self, harness: &mut Bencher);
 }
 
 // A function that runs a test. If the function returns successfully,
@@ -121,7 +128,7 @@ pub trait TDynBenchFn {
 // to support isolation of tests into tasks.
 pub enum TestFn {
     StaticTestFn(fn()),
-    StaticBenchFn(fn(&mut BenchHarness)),
+    StaticBenchFn(fn(&mut Bencher)),
     StaticMetricFn(proc(&mut MetricMap)),
     DynTestFn(proc():Send),
     DynMetricFn(proc(&mut MetricMap)),
@@ -146,7 +153,7 @@ impl TestFn {
 /// This is feed into functions marked with `#[bench]` to allow for
 /// set-up & tear-down before running a piece of code repeatedly via a
 /// call to `iter`.
-pub struct BenchHarness {
+pub struct Bencher {
     iterations: u64,
     ns_start: u64,
     ns_end: u64,
@@ -293,7 +300,7 @@ Test Attributes:
     #[test]        - Indicates a function is a test to be run. This function
                      takes no arguments.
     #[bench]       - Indicates a function is a benchmark to be run. This
-                     function takes one argument (test::BenchHarness).
+                     function takes one argument (test::Bencher).
     #[should_fail] - This function (also labeled with #[test]) will only pass if
                      the code causes a failure (an assertion failure or fail!)
     #[ignore]      - When applied to a function which is already attributed as a
@@ -543,7 +550,7 @@ impl<T: Writer> ConsoleTestState<T> {
     pub fn write_failures(&mut self) -> io::IoResult<()> {
         try!(self.write_plain("\nfailures:\n"));
         let mut failures = Vec::new();
-        let mut fail_out  = ~"";
+        let mut fail_out = StrBuf::new();
         for &(ref f, ref stdout) in self.failures.iter() {
             failures.push(f.name.to_str());
             if stdout.len() > 0 {
@@ -556,7 +563,7 @@ impl<T: Writer> ConsoleTestState<T> {
         }
         if fail_out.len() > 0 {
             try!(self.write_plain("\n"));
-            try!(self.write_plain(fail_out));
+            try!(self.write_plain(fail_out.as_slice()));
         }
 
         try!(self.write_plain("\nfailures:\n"));
@@ -1171,7 +1178,7 @@ pub fn black_box<T>(dummy: T) {
 }
 
 
-impl BenchHarness {
+impl Bencher {
     /// Callback for benchmark functions to run in their body.
     pub fn iter<T>(&mut self, inner: || -> T) {
         self.ns_start = precise_time_ns();
@@ -1198,13 +1205,13 @@ impl BenchHarness {
         }
     }
 
-    pub fn bench_n(&mut self, n: u64, f: |&mut BenchHarness|) {
+    pub fn bench_n(&mut self, n: u64, f: |&mut Bencher|) {
         self.iterations = n;
         f(self);
     }
 
     // This is a more statistics-driven benchmark algorithm
-    pub fn auto_bench(&mut self, f: |&mut BenchHarness|) -> stats::Summary {
+    pub fn auto_bench(&mut self, f: |&mut Bencher|) -> stats::Summary {
 
         // Initial bench run to get ballpark figure.
         let mut n = 1_u64;
@@ -1269,10 +1276,10 @@ impl BenchHarness {
 
 pub mod bench {
     use std::cmp;
-    use super::{BenchHarness, BenchSamples};
+    use super::{Bencher, BenchSamples};
 
-    pub fn benchmark(f: |&mut BenchHarness|) -> BenchSamples {
-        let mut bs = BenchHarness {
+    pub fn benchmark(f: |&mut Bencher|) -> BenchSamples {
+        let mut bs = Bencher {
             iterations: 0,
             ns_start: 0,
             ns_end: 0,
