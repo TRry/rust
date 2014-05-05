@@ -273,10 +273,13 @@ pub use consts::os::extra::{MAP_STACK};
 pub use consts::os::bsd44::{TCP_KEEPIDLE};
 
 #[cfg(target_os = "macos")]
+#[cfg(target_os = "ios")]
 pub use consts::os::bsd44::{TCP_KEEPALIVE};
 #[cfg(target_os = "macos")]
+#[cfg(target_os = "ios")]
 pub use consts::os::extra::{F_FULLFSYNC};
 #[cfg(target_os = "macos")]
+#[cfg(target_os = "ios")]
 pub use types::os::arch::extra::{mach_timebase_info};
 
 
@@ -1277,6 +1280,7 @@ pub mod types {
     }
 
     #[cfg(target_os = "macos")]
+    #[cfg(target_os = "ios")]
     pub mod os {
         pub mod common {
             pub mod posix01 {
@@ -3050,6 +3054,7 @@ pub mod consts {
     }
 
     #[cfg(target_os = "macos")]
+    #[cfg(target_os = "ios")]
     pub mod os {
         pub mod c95 {
             use types::os::arch::c95::{c_int, c_uint};
@@ -3713,6 +3718,7 @@ pub mod funcs {
     #[cfg(target_os = "linux")]
     #[cfg(target_os = "android")]
     #[cfg(target_os = "macos")]
+    #[cfg(target_os = "ios")]
     #[cfg(target_os = "freebsd")]
     pub mod posix88 {
         pub mod stat_ {
@@ -3727,6 +3733,7 @@ pub mod funcs {
                 #[cfg(target_os = "linux")]
                 #[cfg(target_os = "freebsd")]
                 #[cfg(target_os = "android")]
+                #[cfg(target_os = "ios")]
                 pub fn fstat(fildes: c_int, buf: *mut stat) -> c_int;
 
                 #[cfg(target_os = "macos")]
@@ -3739,6 +3746,7 @@ pub mod funcs {
                 #[cfg(target_os = "linux")]
                 #[cfg(target_os = "freebsd")]
                 #[cfg(target_os = "android")]
+                #[cfg(target_os = "ios")]
                 pub fn stat(path: *c_char, buf: *mut stat) -> c_int;
 
                 #[cfg(target_os = "macos")]
@@ -3911,6 +3919,7 @@ pub mod funcs {
     #[cfg(target_os = "linux")]
     #[cfg(target_os = "android")]
     #[cfg(target_os = "macos")]
+    #[cfg(target_os = "ios")]
     #[cfg(target_os = "freebsd")]
     pub mod posix01 {
         pub mod stat_ {
@@ -3921,6 +3930,7 @@ pub mod funcs {
                 #[cfg(target_os = "linux")]
                 #[cfg(target_os = "freebsd")]
                 #[cfg(target_os = "android")]
+                #[cfg(target_os = "ios")]
                 pub fn lstat(path: *c_char, buf: *mut stat) -> c_int;
 
                 #[cfg(target_os = "macos")]
@@ -4020,6 +4030,7 @@ pub mod funcs {
     #[cfg(target_os = "linux")]
     #[cfg(target_os = "android")]
     #[cfg(target_os = "macos")]
+    #[cfg(target_os = "ios")]
     #[cfg(target_os = "freebsd")]
     pub mod posix08 {
         pub mod unistd {
@@ -4100,6 +4111,7 @@ pub mod funcs {
     }
 
     #[cfg(target_os = "macos")]
+    #[cfg(target_os = "ios")]
     #[cfg(target_os = "freebsd")]
     pub mod bsd44 {
         use types::common::c95::{c_void};
@@ -4160,6 +4172,10 @@ pub mod funcs {
             pub fn _NSGetExecutablePath(buf: *mut c_char, bufsize: *mut u32)
                                         -> c_int;
         }
+    }
+
+    #[cfg(target_os = "ios")]
+    pub mod extra {
     }
 
     #[cfg(target_os = "freebsd")]

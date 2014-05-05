@@ -20,12 +20,14 @@ pub use self::signal::{SA_NODEFER, SA_NOCLDWAIT, SA_SIGINFO, SIGCHLD};
 use libc;
 
 #[cfg(target_os = "macos")]
+#[cfg(target_os = "ios")]
 #[cfg(target_os = "freebsd")]
 pub static FIONBIO: libc::c_ulong = 0x8004667e;
 #[cfg(target_os = "linux")]
 #[cfg(target_os = "android")]
 pub static FIONBIO: libc::c_ulong = 0x5421;
 #[cfg(target_os = "macos")]
+#[cfg(target_os = "ios")]
 #[cfg(target_os = "freebsd")]
 pub static FIOCLEX: libc::c_ulong = 0x20006601;
 #[cfg(target_os = "linux")]
@@ -33,6 +35,7 @@ pub static FIOCLEX: libc::c_ulong = 0x20006601;
 pub static FIOCLEX: libc::c_ulong = 0x5451;
 
 #[cfg(target_os = "macos")]
+#[cfg(target_os = "ios")]
 #[cfg(target_os = "freebsd")]
 pub static MSG_DONTWAIT: libc::c_int = 0x80;
 #[cfg(target_os = "linux")]
@@ -70,6 +73,7 @@ extern {
 }
 
 #[cfg(target_os = "macos")]
+#[cfg(target_os = "ios")]
 mod select {
     pub static FD_SETSIZE: uint = 1024;
 
@@ -144,6 +148,7 @@ mod signal {
 }
 
 #[cfg(target_os = "macos")]
+#[cfg(target_os = "ios")]
 #[cfg(target_os = "freebsd")]
 mod signal {
     use libc;
@@ -158,6 +163,7 @@ mod signal {
     pub static SIGCHLD: libc::c_int = 20;
 
     #[cfg(target_os = "macos")]
+    #[cfg(target_os = "ios")]
     pub type sigset_t = u32;
     #[cfg(target_os = "freebsd")]
     pub struct sigset_t {
@@ -176,6 +182,7 @@ mod signal {
     }
 
     #[cfg(target_os = "macos")]
+    #[cfg(target_os = "ios")]
     pub struct sigaction {
         pub sa_handler: extern fn(libc::c_int),
         sa_tramp: *mut libc::c_void,

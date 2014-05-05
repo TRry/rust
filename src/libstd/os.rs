@@ -491,6 +491,12 @@ pub fn self_exe_name() -> Option<Path> {
         }
     }
 
+    #[cfg(target_os = "ios")]
+    fn load_self() -> Option<~[u8]> {
+        // FIXME: [iOS] recheck
+        None
+    }
+
     #[cfg(windows)]
     fn load_self() -> Option<Vec<u8>> {
         use str::OwnedStr;
@@ -646,6 +652,7 @@ pub fn change_dir(p: &Path) -> bool {
 /// Returns the platform-specific value of errno
 pub fn errno() -> int {
     #[cfg(target_os = "macos")]
+    #[cfg(target_os = "ios")]
     #[cfg(target_os = "freebsd")]
     fn errno_location() -> *c_int {
         extern {
@@ -694,6 +701,7 @@ pub fn error_string(errnum: uint) -> ~str {
     #[cfg(unix)]
     fn strerror(errnum: uint) -> ~str {
         #[cfg(target_os = "macos")]
+        #[cfg(target_os = "ios")]
         #[cfg(target_os = "android")]
         #[cfg(target_os = "freebsd")]
         fn strerror_r(errnum: c_int, buf: *mut c_char, buflen: libc::size_t)
@@ -850,7 +858,12 @@ fn real_args_as_bytes() -> Vec<~[u8]> {
     }
 }
 
-#[cfg(not(windows))]
+#[cfg(target_os = "ios")]
+fn real_args() -> Vec<~str> {
+    Vec::new() // There are no command line arguments on iOS :(
+}
+
+#[cfg(not(windows), not(target_os = "ios"))]
 fn real_args() -> Vec<~str> {
     real_args_as_bytes().move_iter().map(|v| str::from_utf8_lossy(v).into_owned()).collect()
 }
@@ -916,8 +929,14 @@ pub fn args() -> Vec<~str> {
 
 /// Returns the arguments which this program was started with (normally passed
 /// via the command line) as byte vectors.
+#[cfg(not(target_os = "ios"))]
 pub fn args_as_bytes() -> Vec<~[u8]> {
     real_args_as_bytes()
+}
+
+#[cfg(target_os = "ios")]
+pub fn args_as_bytes() -> Vec<~[u8]> {
+    Vec::new()
 }
 
 #[cfg(target_os = "macos")]
@@ -1351,6 +1370,37 @@ pub mod consts {
     /// A string describing the specific operating system in use: in this
     /// case, `macos`.
     pub static SYSNAME: &'static str = "macos";
+
+    /// Specifies the filename prefix used for shared libraries on this
+    /// platform: in this case, `lib`.
+    pub static DLL_PREFIX: &'static str = "lib";
+
+    /// Specifies the filename suffix used for shared libraries on this
+    /// platform: in this case, `.dylib`.
+    pub static DLL_SUFFIX: &'static str = ".dylib";
+
+    /// Specifies the file extension used for shared libraries on this
+    /// platform that goes after the dot: in this case, `dylib`.
+    pub static DLL_EXTENSION: &'static str = "dylib";
+
+    /// Specifies the filename suffix used for executable binaries on this
+    /// platform: in this case, the empty string.
+    pub static EXE_SUFFIX: &'static str = "";
+
+    /// Specifies the file extension, if any, used for executable binaries
+    /// on this platform: in this case, the empty string.
+    pub static EXE_EXTENSION: &'static str = "";
+}
+
+#[cfg(target_os = "ios")]
+pub mod consts {
+    pub use std::os::arch_consts::ARCH;
+
+    pub static FAMILY: &'static str = "unix";
+
+    /// A string describing the specific operating system in use: in this
+    /// case, `macos`.
+    pub static SYSNAME: &'static str = "ios";
 
     /// Specifies the filename prefix used for shared libraries on this
     /// platform: in this case, `lib`.

@@ -274,7 +274,6 @@ mod imp {
     }
 
     pub unsafe fn yield_now() { assert_eq!(sched_yield(), 0); }
-
     // glibc >= 2.15 has a __pthread_get_minstack() function that returns
     // PTHREAD_STACK_MIN plus however many bytes are needed for thread-local
     // storage.  We need that information to avoid blowing up when a small stack
@@ -344,4 +343,3 @@ mod tests {
         assert_eq!(42, Thread::start_stack(1, proc () 42).join());
     }
 }
-

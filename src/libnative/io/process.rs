@@ -741,6 +741,7 @@ fn translate_status(status: c_int) -> p::ProcessExit {
     }
 
     #[cfg(target_os = "macos")]
+    #[cfg(target_os = "ios")]
     #[cfg(target_os = "freebsd")]
     mod imp {
         pub fn WIFEXITED(status: i32) -> bool { (status & 0x7f) == 0 }

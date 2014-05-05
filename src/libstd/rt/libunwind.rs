@@ -16,6 +16,7 @@
 use libc;
 
 #[cfg(not(target_arch = "arm"))]
+#[cfg(target_os = "ios")]
 #[repr(C)]
 pub enum _Unwind_Action {
     _UA_SEARCH_PHASE = 1,
@@ -60,8 +61,11 @@ pub static unwinder_private_data_size: int = 5;
 #[cfg(target_arch = "x86_64")]
 pub static unwinder_private_data_size: int = 2;
 
-#[cfg(target_arch = "arm")]
+#[cfg(target_arch = "arm", not(target_os = "ios"))]
 pub static unwinder_private_data_size: int = 20;
+
+#[cfg(target_arch = "arm", target_os = "ios")]
+pub static unwinder_private_data_size: int = 8;
 
 #[cfg(target_arch = "mips")]
 pub static unwinder_private_data_size: int = 2;
@@ -93,9 +97,12 @@ extern {}
 extern {}
 
 extern "C" {
+    #[cfg(not(target_os = "ios"))]
     pub fn _Unwind_RaiseException(exception: *_Unwind_Exception)
                 -> _Unwind_Reason_Code;
     pub fn _Unwind_DeleteException(exception: *_Unwind_Exception);
+
+    #[cfg(not(target_os = "ios"))]
     pub fn _Unwind_Backtrace(trace: _Unwind_Trace_Fn,
                              trace_argument: *libc::c_void)
                 -> _Unwind_Reason_Code;
@@ -106,6 +113,26 @@ extern "C" {
     #[cfg(not(target_os = "android"),
           not(target_os = "linux", target_arch = "arm"))]
     pub fn _Unwind_FindEnclosingFunction(pc: *libc::c_void) -> *libc::c_void;
+}
+
+#[cfg(target_os = "ios")]
+pub unsafe fn _Unwind_RaiseException(exc: *_Unwind_Exception)
+                                     -> _Unwind_Reason_Code {
+    extern "C" {
+        fn _Unwind_SjLj_RaiseException(e: *_Unwind_Exception)
+                                       -> _Unwind_Reason_Code; }
+
+    _Unwind_SjLj_RaiseException(exc)
+}
+
+// On iOS there is no any backtrace function available in
+// native libunwind, perhaps it should be emulated manually
+#[cfg(target_os = "ios")]
+pub unsafe fn _Unwind_Backtrace(_: _Unwind_Trace_Fn,
+                         _: *libc::c_void)
+            -> _Unwind_Reason_Code
+{
+    _URC_FAILURE
 }
 
 // On android, the function _Unwind_GetIP is a macro, and this is the expansion

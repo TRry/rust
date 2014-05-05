@@ -248,4 +248,3 @@ pub fn expect<T:Clone>(sess: &Session, opt: Option<T>, msg: || -> StrBuf)
               -> T {
     diagnostic::expect(sess.diagnostic(), opt, msg)
 }
-
