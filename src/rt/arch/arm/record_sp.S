@@ -12,10 +12,27 @@
 .align
 #endif
 
-.globl record_sp_limit
-.globl get_sp_limit
+#if defined(__APPLE__)
+  #define RECORD_SP_LIMIT _record_sp_limit
+  #define GET_SP_LIMIT    _get_sp_limit
+#else
+  #define RECORD_SP_LIMIT record_sp_limit
+  #define GET_SP_LIMIT    get_sp_limit
+#endif
+        
+.globl 	RECORD_SP_LIMIT
+.globl	GET_SP_LIMIT
 
-record_sp_limit:
+// Apple implementation uses pthread_get_specific_direct
+// slot #149
+
+RECORD_SP_LIMIT:
+#if defined(__APPLE__)
+	mrc p15, #0, r3, c13, c0, #3
+    bic r3, r3, #3
+    str r0, [r3, #596]
+    mov pc, lr
+#else
 	// First, try to read TLS address from coprocessor
 	mrc p15, #0, r3, c13, c0, #3
 	cmp r3, #0
@@ -27,12 +44,19 @@ record_sp_limit:
 	add r3, r3, #252
 #elif __linux__
 	add r3, r3, #4
-#endif
+#endif // ANDROID
 
 	str r0, [r3]
+#endif // __APPLE__
 	mov pc, lr
 
-get_sp_limit:
+GET_SP_LIMIT:
+#if defined(__APPLE__)
+	mrc p15, #0, r3, c13, c0, #3
+    bic r3, r3, #3
+    ldr r0, [r3, #596]
+    mov pc, lr
+#else
 	// First, try to read TLS address from coprocessor
 	mrc p15, #0, r3, c13, c0, #3
 	cmp r3, #0
@@ -44,7 +68,8 @@ get_sp_limit:
 	add r3, r3, #252
 #elif __linux__
 	add r3, r3, #4
-#endif
+#endif  // __ANDROID__
 
 	ldr r0, [r3]
+#endif // __APPLE__
 	mov pc, lr
