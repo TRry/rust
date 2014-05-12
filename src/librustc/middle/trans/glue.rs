@@ -456,7 +456,7 @@ fn declare_generic_glue(ccx: &CrateContext, t: ty::t, llfnty: Type,
     let _icx = push_ctxt("declare_generic_glue");
     let fn_nm = mangle_internal_name_by_type_and_seq(ccx, t, "glue_".to_owned() + name);
     debug!("{} is for type {}", fn_nm, ppaux::ty_to_str(ccx.tcx(), t));
-    let llfn = decl_cdecl_fn(ccx.llmod,
+    let llfn = decl_cdecl_fn(ccx,
                              fn_nm.as_slice(),
                              llfnty,
                              ty::mk_nil());

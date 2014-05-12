@@ -17,6 +17,7 @@ use metadata::filesearch;
 use middle::lint;
 use util::nodemap::NodeMap;
 
+use syntax::abi;
 use syntax::ast::NodeId;
 use syntax::codemap::Span;
 use syntax::diagnostic;
@@ -213,6 +214,11 @@ pub fn build_session_(sopts: config::Options,
         Some(_) => None,
         None => Some(filesearch::get_or_default_sysroot())
     };
+
+    let mut sopts = sopts;
+    if target_cfg.os == abi::OsiOS && target_cfg.arch == abi::Arm {
+      sopts.cg.no_split_stack = true
+    }    
 
     // Make the path absolute, if necessary
     let local_crate_source_file = local_crate_source_file.map(|path|
