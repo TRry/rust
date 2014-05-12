@@ -166,7 +166,7 @@ CFG_RUN_TARG_i686-unknown-linux-gnu=$(call CFG_RUN_i686-unknown-linux-gnu,,$(2))
 CFG_SDK_NAME_arm-apple-ios = iphoneos
 CFG_SDK_ARCHS_arm-apple-ios = armv7
 CFG_IOS_SDK = $(shell xcrun --show-sdk-path -sdk iphoneos 2>/dev/null)
-CFG_IOS_FLAGS = -target armv7-apple-darwin -isysroot $(CFG_IOS_SDK) -I$(CFG_IOS_SDK)/usr/include -I$(CFG_IOS_SDK)/usr/include/c++/4.2.1
+CFG_IOS_FLAGS = -target armv7-apple-darwin -isysroot $(CFG_IOS_SDK) -mios-version-min=7.0
 CC_arm-apple-ios = $(shell xcrun -find -sdk iphoneos clang)
 CXX_arm-apple-ios = $(shell xcrun -find -sdk iphoneos clang++)
 CPP_arm-apple-ios = $(shell xcrun -find -sdk iphoneos clang++)
@@ -177,8 +177,8 @@ CFG_STATIC_LIB_NAME_arm-apple-ios=lib$(1).a
 CFG_LIB_DSYM_GLOB_arm-apple-ios = lib$(1)-*.a.dSYM
 CFG_CFLAGS_arm-apple-ios := -arch armv7 -mfpu=vfp3 $(CFG_IOS_FLAGS)
 CFG_GCCISH_CFLAGS_arm-apple-ios := -Wall -Werror -g -fPIC $(CFG_IOS_FLAGS) -mfpu=vfp3 -arch armv7
-CFG_GCCISH_CXXFLAGS_arm-apple-ios := -fno-rtti $(CFG_IOS_FLAGS)
-CFG_GCCISH_LINK_FLAGS_arm-apple-ios := -lpthread -L$(CFG_IOS_SDK)/usr/lib -Wl,-no_compact_unwind
+CFG_GCCISH_CXXFLAGS_arm-apple-ios := -fno-rtti $(CFG_IOS_FLAGS) -I$(CFG_IOS_SDK)/usr/include/c++/4.2.1 
+CFG_GCCISH_LINK_FLAGS_arm-apple-ios := -lpthread -syslibroot $(CFG_IOS_SDK) -Wl,-no_compact_unwind
 CFG_GCCISH_DEF_FLAG_arm-apple-ios := -Wl,-exported_symbols_list,
 CFG_GCCISH_PRE_LIB_FLAGS_arm-apple-ios :=
 CFG_GCCISH_POST_LIB_FLAGS_arm-apple-ios :=
@@ -200,7 +200,7 @@ RUSTC_CROSS_FLAGS_arm-apple-ios :=-C relocation_model=pic
 CFG_SDK_NAME_i386-apple-ios = iphonesimulator
 CFG_SDK_ARCHS_i386-apple-ios = i386
 CFG_IOSSIM_SDK = $(shell xcrun --show-sdk-path -sdk iphonesimulator 2>/dev/null)
-CFG_IOSSIM_FLAGS = -isysroot $(CFG_IOSSIM_SDK) -I$(CFG_IOSSIM_SDK)/usr/include -I$(CFG_IOSSIM_SDK)/usr/include/c++/4.2.1
+CFG_IOSSIM_FLAGS = -target i386-apple-ios -isysroot $(CFG_IOSSIM_SDK) -mios-simulator-version-min=7.0
 CC_i386-apple-ios = $(shell xcrun -find -sdk iphonesimulator clang)
 CXX_i386-apple-ios = $(shell xcrun -find -sdk iphonesimulator clang++)
 CPP_i386-apple-ios = $(shell xcrun -find -sdk iphonesimulator clang++)
@@ -209,24 +209,25 @@ CFG_LIB_NAME_i386-apple-ios = lib$(1).a
 CFG_LIB_GLOB_i386-apple-ios = lib$(1)-*.dylib
 CFG_STATIC_LIB_NAME_i386-apple-ios=lib$(1).a
 CFG_LIB_DSYM_GLOB_i386-apple-ios = lib$(1)-*.dylib.dSYM
-CFG_CFLAGS_i386-apple-ios := -m32 -arch i386 $(CFG_IOSSIM_FLAGS)
-CFG_GCCISH_CFLAGS_i386-apple-ios := -Wall -Werror -g -fPIC -m32 $(CFG_IOSSIM_FLAGS)  -arch i386
-CFG_GCCISH_CXXFLAGS_i386-apple-ios := -fno-rtti $(CFG_IOSSIM_FLAGS)
-CFG_GCCISH_LINK_FLAGS_i386-apple-ios := -lpthread -Wl,-no_compact_unwind -m32
-CFG_GCCISH_DEF_FLAG_i386-apple-ios := -Wl,-exported_symbols_list,
-CFG_GCCISH_PRE_LIB_FLAGS_i386-apple-ios :=
-CFG_GCCISH_POST_LIB_FLAGS_i386-apple-ios :=
-CFG_DEF_SUFFIX_i386-apple-ios := .darwin.def
-CFG_LLC_FLAGS_i386-apple-ios :=
+CFG_CFLAGS_i386-apple-ios = $(CFG_IOSSIM_FLAGS)
+CFG_GCCISH_CFLAGS_i386-apple-ios = -Wall -Werror -g -fPIC -m32 $(CFG_IOSSIM_FLAGS)
+CFG_GCCISH_CXXFLAGS_i386-apple-ios = -fno-rtti $(CFG_IOSSIM_FLAGS) -I$(CFG_IOSSIM_SDK)/usr/include/c++/4.2.1 
+CFG_GCCISH_LINK_FLAGS_i386-apple-ios = -lpthread -Wl,-no_compact_unwind -m32 -Wl,-syslibroot $(CFG_IOSSIM_SDK)
+CFG_GCCISH_DEF_FLAG_i386-apple-ios = -Wl,-exported_symbols_list,
+CFG_GCCISH_PRE_LIB_FLAGS_i386-apple-ios =
+CFG_GCCISH_POST_LIB_FLAGS_i386-apple-ios =
+CFG_DEF_SUFFIX_i386-apple-ios = .darwin.def
+CFG_LLC_FLAGS_i386-apple-ios =
 CFG_INSTALL_NAME_i386-apple-ios = -Wl,-install_name,@rpath/$(1)
 CFG_LIBUV_LINK_FLAGS_i386-apple-ios =
-CFG_EXE_SUFFIX_i386-apple-ios :=
-CFG_WINDOWSY_i386-apple-ios :=
-CFG_UNIXY_i386-apple-ios := 1
-CFG_PATH_MUNGE_i386-apple-ios := true
-CFG_LDPATH_i386-apple-ios :=
+CFG_EXE_SUFFIX_i386-apple-ios =
+CFG_WINDOWSY_i386-apple-ios =
+CFG_UNIXY_i386-apple-ios = 1
+CFG_PATH_MUNGE_i386-apple-ios = true
+CFG_LDPATH_i386-apple-ios =
 CFG_RUN_i386-apple-ios = $(2)
 CFG_RUN_TARG_i386-apple-ios = $(call CFG_RUN_i386-apple-ios,,$(2))
+CFG_JEMALLOC_CFLAGS_i386-apple-ios = -target i386-apple-ios -Wl,-syslibroot $(CFG_IOSSIM_SDK) -Wl,-no_compact_unwind
 
 # x86_64-apple-darwin configuration
 CC_x86_64-apple-darwin=$(CC)
