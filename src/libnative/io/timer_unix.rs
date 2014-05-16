@@ -93,7 +93,7 @@ pub fn now() -> u64 {
     }
 }
 
-fn helper(input: libc::c_int, messages: Receiver<Req>, _: ()) {
+fn helper(input: libc::c_int, messages: Receiver<Req>, _: int) {
     let mut set: c::fd_set = unsafe { mem::zeroed() };
 
     let mut fd = FileDesc::new(input, true);
@@ -202,7 +202,7 @@ fn helper(input: libc::c_int, messages: Receiver<Req>, _: ()) {
 
 impl Timer {
     pub fn new() -> IoResult<Timer> {
-        unsafe { HELPER.boot(|| {}, helper); }
+        unsafe { HELPER.boot(|| {0}, helper); }
 
         static mut ID: atomics::AtomicUint = atomics::INIT_ATOMIC_UINT;
         let id = unsafe { ID.fetch_add(1, atomics::Relaxed) };
