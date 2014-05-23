@@ -874,6 +874,7 @@ fn real_args() -> Vec<StrBuf> {
                         .map(|v| {
                             str::from_utf8_lossy(v.as_slice()).into_strbuf()
                         }).collect()
+}
 
 #[cfg(windows)]
 fn real_args() -> Vec<StrBuf> {

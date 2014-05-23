@@ -909,7 +909,7 @@ fn link_binary_output(sess: &Session,
         config::CrateTypeDylib => {
             if sess.targ_cfg.os == abi::OsiOS {
                 sess.note(format!("No dylib for iOS -> saving static library {} to {}",
-                                  obj_filename.display(), out_filename.display()));
+                                  obj_filename.display(), out_filename.display()).as_slice());
                 link_staticlib(sess, &obj_filename, &out_filename);
             }
             else {
