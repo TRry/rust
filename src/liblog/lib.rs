@@ -111,7 +111,7 @@ if logging is disabled, none of the components of the log will be executed.
 #![crate_type = "dylib"]
 #![doc(html_logo_url = "http://www.rust-lang.org/logos/rust-logo-128x128-blk-v2.png",
        html_favicon_url = "http://www.rust-lang.org/favicon.ico",
-       html_root_url = "http://static.rust-lang.org/doc/master")]
+       html_root_url = "http://doc.rust-lang.org/")]
 
 #![feature(macro_rules)]
 #![deny(missing_doc, deprecated_owned_vector)]
@@ -302,8 +302,10 @@ pub fn mod_enabled(level: u32, module: &str) -> bool {
     enabled(level, module, unsafe { (*DIRECTIVES).iter() })
 }
 
-fn enabled(level: u32, module: &str,
-           iter: slice::Items<directive::LogDirective>) -> bool {
+fn enabled(level: u32,
+           module: &str,
+           iter: slice::Items<directive::LogDirective>)
+           -> bool {
     // Search for the longest match, the vector is assumed to be pre-sorted.
     for directive in iter.rev() {
         match directive.name {
@@ -322,7 +324,7 @@ fn enabled(level: u32, module: &str,
 /// `Once` primitive (and this function is called from that primitive).
 fn init() {
     let mut directives = match os::getenv("RUST_LOG") {
-        Some(spec) => directive::parse_logging_spec(spec),
+        Some(spec) => directive::parse_logging_spec(spec.as_slice()),
         None => Vec::new(),
     };
 

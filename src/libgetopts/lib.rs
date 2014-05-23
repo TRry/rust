@@ -84,7 +84,7 @@
 #![license = "MIT/ASL2"]
 #![doc(html_logo_url = "http://www.rust-lang.org/logos/rust-logo-128x128-blk-v2.png",
        html_favicon_url = "http://www.rust-lang.org/favicon.ico",
-       html_root_url = "http://static.rust-lang.org/doc/master")]
+       html_root_url = "http://doc.rust-lang.org/")]
 #![feature(globs, phase)]
 #![deny(missing_doc)]
 #![deny(deprecated_owned_vector)]
@@ -190,7 +190,7 @@ pub enum Fail_ {
     UnrecognizedOption(StrBuf),
     /// A required option is not present.
     OptionMissing(StrBuf),
-    /// A single occurence option is being used multiple times.
+    /// A single occurrence option is being used multiple times.
     OptionDuplicated(StrBuf),
     /// There's an argument being passed to a non-argument option.
     UnexpectedArgument(StrBuf),
@@ -661,7 +661,7 @@ pub fn getopts(args: &[StrBuf], optgrps: &[OptGroup]) -> Result {
 /// Derive a usage message from a set of long options.
 pub fn usage(brief: &str, opts: &[OptGroup]) -> StrBuf {
 
-    let desc_sep = "\n" + " ".repeat(24);
+    let desc_sep = format!("\n{}", " ".repeat(24));
 
     let mut rows = opts.iter().map(|optref| {
         let OptGroup{short_name: short_name,
@@ -713,7 +713,7 @@ pub fn usage(brief: &str, opts: &[OptGroup]) -> StrBuf {
                 row.push_char(' ');
             }
         } else {
-            row.push_str(desc_sep)
+            row.push_str(desc_sep.as_slice())
         }
 
         // Normalize desc to contain words separated by one space character
@@ -734,7 +734,7 @@ pub fn usage(brief: &str, opts: &[OptGroup]) -> StrBuf {
 
         // FIXME: #5516 should be graphemes not codepoints
         // wrapped description
-        row.push_str(desc_rows.connect(desc_sep));
+        row.push_str(desc_rows.connect(desc_sep.as_slice()).as_slice());
 
         row
     });
@@ -784,7 +784,11 @@ fn format_option(opt: &OptGroup) -> StrBuf {
 /// Derive a short one-line usage summary from a set of long options.
 pub fn short_usage(program_name: &str, opts: &[OptGroup]) -> StrBuf {
     let mut line = format_strbuf!("Usage: {} ", program_name);
-    line.push_str(opts.iter().map(format_option).collect::<Vec<StrBuf>>().connect(" "));
+    line.push_str(opts.iter()
+                      .map(format_option)
+                      .collect::<Vec<StrBuf>>()
+                      .connect(" ")
+                      .as_slice());
     line
 }
 

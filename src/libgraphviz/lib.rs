@@ -272,7 +272,7 @@ pub fn main() {
 #![license = "MIT/ASL2"]
 #![doc(html_logo_url = "http://www.rust-lang.org/logos/rust-logo-128x128-blk-v2.png",
        html_favicon_url = "http://www.rust-lang.org/favicon.ico",
-       html_root_url = "http://static.rust-lang.org/doc/master")]
+       html_root_url = "http://doc.rust-lang.org/")]
 
 #![experimental]
 
@@ -395,7 +395,7 @@ pub trait Labeller<'a,N,E> {
     fn graph_id(&'a self) -> Id<'a>;
 
     /// Maps `n` to a unique identifier with respect to `self`. The
-    /// implementor is responsible for ensuring that the returned name
+    /// implementer is responsible for ensuring that the returned name
     /// is a valid DOT identifier.
     fn node_id(&'a self, n: &N) -> Id<'a>;
 
@@ -457,7 +457,7 @@ pub type Edges<'a,E> = MaybeOwnedVector<'a,E>;
 /// that is bound by the self lifetime `'a`.
 ///
 /// The `nodes` and `edges` method each return instantiations of
-/// `MaybeOwnedVector` to leave implementors the freedom to create
+/// `MaybeOwnedVector` to leave implementers the freedom to create
 /// entirely new vectors or to pass back slices into internally owned
 /// vectors.
 pub trait GraphWalk<'a, N, E> {

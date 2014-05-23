@@ -76,6 +76,8 @@ pub fn run(input: &str,
         maybe_typed: core::NotTyped(sess),
         src: input_path,
         external_paths: RefCell::new(Some(HashMap::new())),
+        external_traits: RefCell::new(None),
+        external_typarams: RefCell::new(None),
     };
     super::ctxtkey.replace(Some(ctx));
 
@@ -169,7 +171,7 @@ fn runtest(test: &str, cratename: &str, libs: HashSet<Path>, should_fail: bool,
 
         // Remove the previous dylib search path var
         let var = DynamicLibrary::envvar();
-        let mut env: Vec<(~str,~str)> = os::env().move_iter().collect();
+        let mut env: Vec<(StrBuf,StrBuf)> = os::env().move_iter().collect();
         match env.iter().position(|&(ref k, _)| k.as_slice() == var) {
             Some(i) => { env.remove(i); }
             None => {}
@@ -211,7 +213,8 @@ fn maketest(s: &str, cratename: &str, loose_feature_gating: bool) -> StrBuf {
 
     if !s.contains("extern crate") {
         if s.contains(cratename) {
-            prog.push_str(format!("extern crate {};\n", cratename));
+            prog.push_str(format!("extern crate {};\n",
+                                  cratename).as_slice());
         }
     }
     if s.contains("fn main") {
@@ -273,7 +276,7 @@ impl Collector {
             },
             testfn: testing::DynTestFn(proc() {
                 runtest(test.as_slice(),
-                        cratename,
+                        cratename.as_slice(),
                         libs,
                         should_fail,
                         no_run,

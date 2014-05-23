@@ -1,4 +1,4 @@
-// Copyright 2012 The Rust Project Developers. See the COPYRIGHT
+// Copyright 2014 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
 //
@@ -8,16 +8,13 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-fn foo(x: &str) -> u8 {
-    x[0]
+fn f() {
+    let x = [1].iter(); //~ ERROR borrowed value does not live long enough
+                        //~^^ NOTE reference must be valid for the block
+                        //~^^ NOTE consider using a `let` binding to increase its lifetime
 }
 
-pub fn main() {
-    let p = "hello".to_owned();
-    let r = foo(p);
-    assert_eq!(r, 'h' as u8);
-
-    let p = "hello".to_owned();
-    let r = foo(p);
-    assert_eq!(r, 'h' as u8);
+fn main() {
+    f();
 }
+

@@ -59,7 +59,7 @@ This `for` loop syntax can be applied to any iterator over any type.
 ## Iteration protocol and more
 
 More detailed information about iterators can be found in the [container
-guide](http://static.rust-lang.org/doc/master/guide-container.html) with
+guide](http://doc.rust-lang.org/guide-container.html) with
 the rest of the rust manuals.
 
 */
@@ -872,10 +872,12 @@ pub trait OrdIterator<A> {
     /// `min_max` finds the minimum and maximum elements in the iterator.
     ///
     /// The return type `MinMaxResult` is an enum of three variants:
+    ///
     /// - `NoElements` if the iterator is empty.
     /// - `OneElement(x)` if the iterator has exactly one element.
-    /// - `MinMax(x, y)` is returned otherwise, where `x <= y`. Two values are equal if and only if
-    /// there is more than one element in the iterator and all elements are equal.
+    /// - `MinMax(x, y)` is returned otherwise, where `x <= y`. Two
+    ///    values are equal if and only if there is more than one
+    ///    element in the iterator and all elements are equal.
     ///
     /// On an iterator of length `n`, `min_max` does `1.5 * n` comparisons,
     /// and so faster than calling `min` and `max separately which does `2 * n` comparisons.

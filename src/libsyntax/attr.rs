@@ -350,7 +350,7 @@ pub fn test_cfg<AM: AttrMetaMethods, It: Iterator<AM>>
     no_cfgs || some_cfg_matches
 }
 
-/// Represents the #[deprecated="foo"] (etc) attributes.
+/// Represents the #[deprecated="foo"] and friends attributes.
 pub struct Stability {
     pub level: StabilityLevel,
     pub text: Option<InternedString>
@@ -396,7 +396,8 @@ pub fn require_unique_names(diagnostic: &SpanHandler, metas: &[@MetaItem]) {
 
         if !set.insert(name.clone()) {
             diagnostic.span_fatal(meta.span,
-                                  format!("duplicate meta item `{}`", name));
+                                  format!("duplicate meta item `{}`",
+                                          name).as_slice());
         }
     }
 }

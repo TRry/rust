@@ -16,7 +16,7 @@
 #![license = "MIT/ASL2"]
 #![doc(html_logo_url = "http://www.rust-lang.org/logos/rust-logo-128x128-blk-v2.png",
        html_favicon_url = "http://www.rust-lang.org/favicon.ico",
-       html_root_url = "http://static.rust-lang.org/doc/master")]
+       html_root_url = "http://doc.rust-lang.org/")]
 #![feature(default_type_params)]
 
 extern crate collections;
@@ -164,10 +164,10 @@ fn encode_inner(s: &str, full_url: bool) -> StrBuf {
                     out.push_char(ch);
                   }
 
-                  _ => out.push_str(format!("%{:X}", ch as uint))
+                  _ => out.push_str(format!("%{:X}", ch as uint).as_slice())
                 }
             } else {
-                out.push_str(format!("%{:X}", ch as uint));
+                out.push_str(format!("%{:X}", ch as uint).as_slice());
             }
           }
         }
@@ -292,7 +292,7 @@ fn encode_plus(s: &str) -> StrBuf {
             out.push_char(ch);
           }
           ' ' => out.push_char('+'),
-          _ => out.push_str(format!("%{:X}", ch as uint))
+          _ => out.push_str(format!("%{:X}", ch as uint).as_slice())
         }
     }
 
@@ -319,7 +319,7 @@ pub fn encode_form_urlencoded(m: &HashMap<StrBuf, Vec<StrBuf>>) -> StrBuf {
 
             out.push_str(format!("{}={}",
                                  key,
-                                 encode_plus(value.as_slice())));
+                                 encode_plus(value.as_slice())).as_slice());
         }
     }
 

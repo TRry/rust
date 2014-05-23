@@ -8,7 +8,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-//! Sharable mutable containers.
+//! Shareable mutable containers.
 //!
 //! Values of the `Cell` and `RefCell` types may be mutated through
 //! shared references (i.e. the common `&T` type), whereas most Rust
@@ -41,7 +41,7 @@
 //! preventing crash bugs. Because of that, inherited mutability is
 //! preferred, and interior mutability is something of a last
 //! resort. Since cell types enable mutation where it would otherwise
-//! be disallowed though, there are occassions when interior
+//! be disallowed though, there are occasions when interior
 //! mutability might be appropriate, or even *must* be used, e.g.
 //!
 //! * Introducing inherited mutability roots to shared types.
@@ -404,12 +404,13 @@ mod test {
     #[test]
     fn cell_has_sensible_show() {
         use str::StrSlice;
+        use realstd::str::Str;
 
         let x = Cell::new("foo bar");
-        assert!(format!("{}", x).contains(x.get()));
+        assert!(format!("{}", x).as_slice().contains(x.get()));
 
         x.set("baz qux");
-        assert!(format!("{}", x).contains(x.get()));
+        assert!(format!("{}", x).as_slice().contains(x.get()));
     }
 
     #[test]

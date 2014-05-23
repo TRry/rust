@@ -17,7 +17,7 @@
 #![license = "MIT/ASL2"]
 #![doc(html_logo_url = "http://www.rust-lang.org/logos/rust-logo-128x128-blk-v2.png",
        html_favicon_url = "http://www.rust-lang.org/favicon.ico",
-       html_root_url = "http://static.rust-lang.org/doc/master")]
+       html_root_url = "http://doc.rust-lang.org/")]
 
 #![feature(macro_registrar, managed_boxes, quote)]
 
@@ -82,10 +82,10 @@ fn native(cx: &mut ExtCtxt, sp: codemap::Span, tts: &[ast::TokenTree])
         // error is logged in 'parse' with cx.span_err
         None => return DummyResult::any(sp),
     };
-    let re = match Regex::new(regex.to_owned()) {
+    let re = match Regex::new(regex.as_slice()) {
         Ok(re) => re,
         Err(err) => {
-            cx.span_err(sp, err.to_str());
+            cx.span_err(sp, err.to_str().as_slice());
             return DummyResult::any(sp)
         }
     };
@@ -612,7 +612,7 @@ fn parse(cx: &mut ExtCtxt, tts: &[ast::TokenTree]) -> Option<StrBuf> {
                 _ => {
                     cx.span_err(entry.span, format!(
                         "expected string literal but got `{}`",
-                        pprust::lit_to_str(lit)));
+                        pprust::lit_to_str(lit)).as_slice());
                     return None
                 }
             }
@@ -620,7 +620,7 @@ fn parse(cx: &mut ExtCtxt, tts: &[ast::TokenTree]) -> Option<StrBuf> {
         _ => {
             cx.span_err(entry.span, format!(
                 "expected string literal but got `{}`",
-                pprust::expr_to_str(entry)));
+                pprust::expr_to_str(entry)).as_slice());
             return None
         }
     };

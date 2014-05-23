@@ -62,7 +62,9 @@ pub fn llvm_err(sess: &Session, msg: StrBuf) -> ! {
         } else {
             let err = CString::new(cstr, true);
             let err = str::from_utf8_lossy(err.as_bytes());
-            sess.fatal((msg.as_slice() + ": " + err.as_slice()));
+            sess.fatal(format!("{}: {}",
+                               msg.as_slice(),
+                               err.as_slice()).as_slice());
         }
     }
 }
@@ -177,7 +179,9 @@ pub mod write {
                 "dynamic-no-pic" => lib::llvm::RelocDynamicNoPic,
                 _ => {
                     sess.err(format!("{} is not a valid relocation mode",
-                             sess.opts.cg.relocation_model));
+                                     sess.opts
+                                         .cg
+                                         .relocation_model).as_slice());
                     sess.abort_if_errors();
                     return;
                 }
@@ -229,7 +233,8 @@ pub mod write {
             for pass in sess.opts.cg.passes.iter() {
                 pass.as_slice().with_c_str(|s| {
                     if !llvm::LLVMRustAddPass(mpm, s) {
-                        sess.warn(format!("unknown pass {}, ignoring", *pass));
+                        sess.warn(format!("unknown pass {}, ignoring",
+                                          *pass).as_slice());
                     }
                 })
             }
@@ -370,16 +375,21 @@ pub mod write {
         match cmd.output() {
             Ok(prog) => {
                 if !prog.status.success() {
-                    sess.err(format!("linking with `{}` failed: {}", pname, prog.status));
-                    sess.note(format!("{}", &cmd));
+                    sess.err(format!("linking with `{}` failed: {}",
+                                     pname,
+                                     prog.status).as_slice());
+                    sess.note(format!("{}", &cmd).as_slice());
                     let mut note = prog.error.clone();
                     note.push_all(prog.output.as_slice());
-                    sess.note(str::from_utf8(note.as_slice()).unwrap().to_owned());
+                    sess.note(str::from_utf8(note.as_slice()).unwrap()
+                                                             .as_slice());
                     sess.abort_if_errors();
                 }
             },
             Err(e) => {
-                sess.err(format!("could not exec the linker `{}`: {}", pname, e));
+                sess.err(format!("could not exec the linker `{}`: {}",
+                                 pname,
+                                 e).as_slice());
                 sess.abort_if_errors();
             }
         }
@@ -541,8 +551,8 @@ pub fn find_crate_id(attrs: &[ast::Attribute], out_filestem: &str) -> CrateId {
     match attr::find_crateid(attrs) {
         None => from_str(out_filestem).unwrap_or_else(|| {
             let mut s = out_filestem.chars().filter(|c| c.is_XID_continue());
-            from_str(s.collect::<StrBuf>()
-                      .to_owned()).or(from_str("rust-out")).unwrap()
+            from_str(s.collect::<StrBuf>().as_slice())
+                .or(from_str("rust-out")).unwrap()
         }),
         Some(s) => s,
     }
@@ -649,7 +659,7 @@ pub fn sanitize(s: &str) -> StrBuf {
     if result.len() > 0u &&
         result.as_slice()[0] != '_' as u8 &&
         ! char::is_XID_start(result.as_slice()[0] as char) {
-        return ("_" + result.as_slice()).to_strbuf();
+        return format!("_{}", result.as_slice()).to_strbuf();
     }
 
     return result;
@@ -676,7 +686,7 @@ pub fn mangle<PI: Iterator<PathElem>>(mut path: PI,
 
     fn push(n: &mut StrBuf, s: &str) {
         let sani = sanitize(s);
-        n.push_str(format!("{}{}", sani.len(), sani));
+        n.push_str(format!("{}{}", sani.len(), sani).as_slice());
     }
 
     // First, connect each component with <len, name> pairs.
@@ -701,7 +711,7 @@ pub fn exported_name(path: PathElems, hash: &str, vers: &str) -> StrBuf {
     // The version will get mangled to have a leading '_', but it makes more
     // sense to lead with a 'v' b/c this is a version...
     let vers = if vers.len() > 0 && !char::is_XID_start(vers.char_at(0)) {
-        "v" + vers
+        format!("v{}", vers)
     } else {
         vers.to_owned()
     };
@@ -784,7 +794,9 @@ fn remove(sess: &Session, path: &Path) {
     match fs::unlink(path) {
         Ok(..) => {}
         Err(e) => {
-            sess.err(format!("failed to remove {}: {}", path.display(), e));
+            sess.err(format!("failed to remove {}: {}",
+                             path.display(),
+                             e).as_slice());
         }
     }
 }
@@ -825,12 +837,12 @@ pub fn filename_for_input(sess: &Session, crate_type: config::CrateType,
     let libname = output_lib_filename(id);
     match crate_type {
         config::CrateTypeRlib => {
-            out_filename.with_filename(format!("lib{}.rlib", libname))
+            out_filename.with_filename(format_strbuf!("lib{}.rlib", libname))
         }
         config::CrateTypeDylib => {
             // There is no support of DyLibs on iOS
             if sess.targ_cfg.os == abi::OsiOS {
-                out_filename.with_filename(format!("lib{}.a", libname))
+                out_filename.with_filename(format_strbuf!("lib{}.a", libname))
             } else {
                 let (prefix, suffix) = match sess.targ_cfg.os {
                     abi::OsWin32 => (loader::WIN32_DLL_PREFIX, loader::WIN32_DLL_SUFFIX),
@@ -840,11 +852,14 @@ pub fn filename_for_input(sess: &Session, crate_type: config::CrateType,
                     abi::OsFreebsd => (loader::FREEBSD_DLL_PREFIX, loader::FREEBSD_DLL_SUFFIX),
                     abi::OsiOS => unreachable!(),
                 };
-                out_filename.with_filename(format!("{}{}{}", prefix, libname, suffix))
+                out_filename.with_filename(format_strbuf!("{}{}{}",
+                                                   prefix,
+                                                   libname,
+                                                   suffix))
             }
         }
         config::CrateTypeStaticlib => {
-            out_filename.with_filename(format!("lib{}.a", libname))
+            out_filename.with_filename(format_strbuf!("lib{}.a", libname))
         }
         config::CrateTypeExecutable => out_filename.clone(),
     }
@@ -871,12 +886,14 @@ fn link_binary_output(sess: &Session,
     let obj_is_writeable = is_writeable(&obj_filename);
     let out_is_writeable = is_writeable(&out_filename);
     if !out_is_writeable {
-        sess.fatal(format!("output file {} is not writeable -- check its permissions.",
-                           out_filename.display()));
+        sess.fatal(format!("output file {} is not writeable -- check its \
+                            permissions.",
+                           out_filename.display()).as_slice());
     }
     else if !obj_is_writeable {
-        sess.fatal(format!("object file {} is not writeable -- check its permissions.",
-                           obj_filename.display()));
+        sess.fatal(format!("object file {} is not writeable -- check its \
+                            permissions.",
+                           obj_filename.display()).as_slice());
     }
 
     match crate_type {
@@ -959,7 +976,8 @@ fn link_rlib<'a>(sess: &'a Session,
                 Ok(..) => {}
                 Err(e) => {
                     sess.err(format!("failed to write {}: {}",
-                                     metadata.display(), e));
+                                     metadata.display(),
+                                     e).as_slice());
                     sess.abort_if_errors();
                 }
             }
@@ -979,7 +997,9 @@ fn link_rlib<'a>(sess: &'a Session,
             }) {
                 Ok(()) => {}
                 Err(e) => {
-                    sess.err(format!("failed to write compressed bytecode: {}", e));
+                    sess.err(format!("failed to write compressed bytecode: \
+                                      {}",
+                                     e).as_slice());
                     sess.abort_if_errors()
                 }
             }
@@ -1026,7 +1046,8 @@ fn link_staticlib(sess: &Session, obj_filename: &Path, out_filename: &Path) {
         let name = sess.cstore.get_crate_data(cnum).name.clone();
         let p = match *path {
             Some(ref p) => p.clone(), None => {
-                sess.err(format!("could not find rlib for: `{}`", name));
+                sess.err(format!("could not find rlib for: `{}`",
+                                 name).as_slice());
                 continue
             }
         };
@@ -1038,7 +1059,9 @@ fn link_staticlib(sess: &Session, obj_filename: &Path, out_filename: &Path) {
                 cstore::NativeUnknown => "library",
                 cstore::NativeFramework => "framework",
             };
-            sess.warn(format!("unlinked native {}: {}", name, *lib));
+            sess.warn(format!("unlinked native {}: {}",
+                              name,
+                              *lib).as_slice());
         }
     }
 }
@@ -1072,16 +1095,21 @@ fn link_natively(sess: &Session, trans: &CrateTranslation, dylib: bool,
     match prog {
         Ok(prog) => {
             if !prog.status.success() {
-                sess.err(format!("linking with `{}` failed: {}", pname, prog.status));
-                sess.note(format!("{}", &cmd));
+                sess.err(format!("linking with `{}` failed: {}",
+                                 pname,
+                                 prog.status).as_slice());
+                sess.note(format!("{}", &cmd).as_slice());
                 let mut output = prog.error.clone();
                 output.push_all(prog.output.as_slice());
-                sess.note(str::from_utf8(output.as_slice()).unwrap().to_owned());
+                sess.note(str::from_utf8(output.as_slice()).unwrap()
+                                                           .as_slice());
                 sess.abort_if_errors();
             }
         },
         Err(e) => {
-            sess.err(format!("could not exec the linker `{}`: {}", pname, e));
+            sess.err(format!("could not exec the linker `{}`: {}",
+                             pname,
+                             e).as_slice());
             sess.abort_if_errors();
         }
     }
@@ -1094,7 +1122,7 @@ fn link_natively(sess: &Session, trans: &CrateTranslation, dylib: bool,
             match Command::new("dsymutil").arg(out_filename).status() {
                 Ok(..) => {}
                 Err(e) => {
-                    sess.err(format!("failed to run dsymutil: {}", e));
+                    sess.err(format!("failed to run dsymutil: {}", e).as_slice());
                     sess.abort_if_errors();
                 }
             }
@@ -1433,7 +1461,8 @@ fn add_upstream_rust_crates(cmd: &mut Command, sess: &Session,
         // against the archive.
         if sess.lto() {
             let name = sess.cstore.get_crate_data(cnum).name.clone();
-            time(sess.time_passes(), format!("altering {}.rlib", name),
+            time(sess.time_passes(),
+                 format!("altering {}.rlib", name).as_slice(),
                  (), |()| {
                 let dst = tmpdir.join(cratepath.filename().unwrap());
                 match fs::copy(&cratepath, &dst) {
@@ -1442,12 +1471,12 @@ fn add_upstream_rust_crates(cmd: &mut Command, sess: &Session,
                         sess.err(format!("failed to copy {} to {}: {}",
                                          cratepath.display(),
                                          dst.display(),
-                                         e));
+                                         e).as_slice());
                         sess.abort_if_errors();
                     }
                 }
                 let mut archive = Archive::open(sess, dst.clone());
-                archive.remove_file(format!("{}.o", name));
+                archive.remove_file(format!("{}.o", name).as_slice());
                 let files = archive.files();
                 if files.iter().any(|s| s.as_slice().ends_with(".o")) {
                     cmd.arg(dst);

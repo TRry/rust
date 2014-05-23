@@ -9,7 +9,7 @@
 // except according to those terms.
 
 use ast;
-use codemap::{spanned, Spanned, mk_sp};
+use codemap::{spanned, Spanned, mk_sp, Span};
 use parse::common::*; //resolve bug?
 use parse::token;
 use parse::parser::Parser;
@@ -88,7 +88,7 @@ impl<'a> ParserAttr for Parser<'a> {
             _ => {
                 let token_str = self.this_token_to_str();
                 self.fatal(format!("expected `\\#` but found `{}`",
-                                   token_str));
+                                   token_str).as_slice());
             }
         };
 
@@ -129,10 +129,10 @@ impl<'a> ParserAttr for Parser<'a> {
                     self.parse_attribute(true)
                 }
                 token::DOC_COMMENT(s) => {
+                    // we need to get the position of this token before we bump.
+                    let Span { lo, hi, .. } = self.span;
                     self.bump();
-                    ::attr::mk_sugared_doc_attr(self.id_to_interned_str(s),
-                                                self.span.lo,
-                                                self.span.hi)
+                    ::attr::mk_sugared_doc_attr(self.id_to_interned_str(s), lo, hi)
                 }
                 _ => {
                     break;
