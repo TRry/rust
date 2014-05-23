@@ -28,7 +28,7 @@ Once you get a cross-compiler, you have to provide same targets to rustc binary,
 
     $ rustc --target=arm-apple-ios hello.rs
 
-You can check how it works on (ObjCrust sample project)[https://github.com/vhbit/ObjCrust].
+You can check how it works on [ObjCrust sample project](https://github.com/vhbit/ObjCrust).
 More documentation to come...
 
 # The Rust Programming Language
