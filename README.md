@@ -1,3 +1,36 @@
+# iOS related notes
+
+* Should work out of box both for device and simulator
+* Segmented stacks are currently disabled. It also means there is no
+  prevention from stack overflow
+* Unwinding works
+* Only 32-bit targets are supported now (i.e. armv7 and i386),
+  although porting to arm64 and x86_64 simulator shouldn't take that
+  much effort
+* I'm trying to keep it as close to nighly as possible, but it may lag
+  a bit
+* I hope to get some pull request approvals on supporting libraries
+  (like jemalloc, compiler-rt) so it could be upstreamed to Rust
+  repo. It will make keeping up to date much easier
+
+
+For building for iOS you should use a separate target:
+
+    $ ./configure --target=arm-apple-ios
+
+or
+
+    $ ./configure --target=i386-apple-ios
+
+(for device and simulator respectively)
+
+Once you get a cross-compiler, you have to provide same targets to rustc binary, i.e.
+
+    $ rustc --target=arm-apple-ios hello.rs
+
+You can check how it works on (ObjCrust sample project)[https://github.com/vhbit/ObjCrust].
+More documentation to come...
+
 # The Rust Programming Language
 
 This is a compiler for Rust, including standard libraries, tools and
