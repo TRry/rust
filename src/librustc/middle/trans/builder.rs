@@ -21,7 +21,7 @@ use middle::trans::machine::llalign_of_pref;
 use middle::trans::type_::Type;
 use collections::HashMap;
 use libc::{c_uint, c_ulonglong, c_char};
-use std::strbuf::StrBuf;
+use std::string::String;
 use syntax::codemap::Span;
 
 pub struct Builder<'a> {
@@ -69,7 +69,7 @@ impl<'a> Builder<'a> {
                 // Pass 2: concat strings for each elt, skipping
                 // forwards over any cycles by advancing to rightmost
                 // occurrence of each element in path.
-                let mut s = StrBuf::from_str(".");
+                let mut s = String::from_str(".");
                 i = 0u;
                 while i < len {
                     i = *mm.get(&v[i]);
@@ -156,7 +156,7 @@ impl<'a> Builder<'a> {
                   args: &[ValueRef],
                   then: BasicBlockRef,
                   catch: BasicBlockRef,
-                  attributes: &[(uint, lib::llvm::Attribute)])
+                  attributes: &[(uint, u64)])
                   -> ValueRef {
         self.count_insn("invoke");
         unsafe {
@@ -168,7 +168,7 @@ impl<'a> Builder<'a> {
                                           catch,
                                           noname());
             for &(idx, attr) in attributes.iter() {
-                llvm::LLVMAddInstrAttribute(v, idx as c_uint, attr as c_uint);
+                llvm::LLVMAddCallSiteAttribute(v, idx as c_uint, attr);
             }
             v
         }
@@ -799,28 +799,28 @@ impl<'a> Builder<'a> {
     }
 
     pub fn call(&self, llfn: ValueRef, args: &[ValueRef],
-                attributes: &[(uint, lib::llvm::Attribute)]) -> ValueRef {
+                attributes: &[(uint, u64)]) -> ValueRef {
         self.count_insn("call");
 
         debug!("Call {} with args ({})",
                self.ccx.tn.val_to_str(llfn),
                args.iter()
                    .map(|&v| self.ccx.tn.val_to_str(v))
-                   .collect::<Vec<StrBuf>>()
+                   .collect::<Vec<String>>()
                    .connect(", "));
 
         unsafe {
             let v = llvm::LLVMBuildCall(self.llbuilder, llfn, args.as_ptr(),
                                         args.len() as c_uint, noname());
             for &(idx, attr) in attributes.iter() {
-                llvm::LLVMAddInstrAttribute(v, idx as c_uint, attr as c_uint);
+                llvm::LLVMAddCallSiteAttribute(v, idx as c_uint, attr);
             }
             v
         }
     }
 
     pub fn call_with_conv(&self, llfn: ValueRef, args: &[ValueRef],
-                          conv: CallConv, attributes: &[(uint, lib::llvm::Attribute)]) -> ValueRef {
+                          conv: CallConv, attributes: &[(uint, u64)]) -> ValueRef {
         self.count_insn("callwithconv");
         let v = self.call(llfn, args, attributes);
         lib::llvm::SetInstructionCallConv(v, conv);

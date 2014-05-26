@@ -18,7 +18,7 @@ use option::{Option, Some, None};
 use slice::{ImmutableVector, MutableVector, Vector};
 use str::{OwnedStr, Str, StrAllocating, StrSlice};
 use str;
-use strbuf::StrBuf;
+use string::String;
 use to_str::{IntoStr};
 use vec::Vec;
 
@@ -39,15 +39,29 @@ impl Ascii {
         self.chr as char
     }
 
+    #[inline]
+    #[allow(missing_doc)]
+    #[deprecated="renamed to `to_lowercase`"]
+    pub fn to_lower(self) -> Ascii {
+        self.to_lowercase()
+    }
+
     /// Convert to lowercase.
     #[inline]
-    pub fn to_lower(self) -> Ascii {
+    pub fn to_lowercase(self) -> Ascii {
         Ascii{chr: ASCII_LOWER_MAP[self.chr as uint]}
+    }
+
+    #[inline]
+    #[allow(missing_doc)]
+    #[deprecated="renamed to `to_uppercase`"]
+    pub fn to_upper(self) -> Ascii {
+        self.to_uppercase()
     }
 
     /// Convert to uppercase.
     #[inline]
-    pub fn to_upper(self) -> Ascii {
+    pub fn to_uppercase(self) -> Ascii {
         Ascii{chr: ASCII_UPPER_MAP[self.chr as uint]}
     }
 
@@ -59,9 +73,16 @@ impl Ascii {
 
     // the following methods are like ctype, and the implementation is inspired by musl
 
+    #[inline]
+    #[allow(missing_doc)]
+    #[deprecated="renamed to `is_alphabetic`"]
+    pub fn is_alpha(&self) -> bool {
+        self.is_alphabetic()
+    }
+
     /// Check if the character is a letter (a-z, A-Z)
     #[inline]
-    pub fn is_alpha(&self) -> bool {
+    pub fn is_alphabetic(&self) -> bool {
         (self.chr >= 0x41 && self.chr <= 0x5A) || (self.chr >= 0x61 && self.chr <= 0x7A)
     }
 
@@ -71,9 +92,16 @@ impl Ascii {
         self.chr >= 0x30 && self.chr <= 0x39
     }
 
+    #[inline]
+    #[allow(missing_doc)]
+    #[deprecated="renamed to `is_alphanumeric`"]
+    pub fn is_alnum(&self) -> bool {
+        self.is_alphanumeric()
+    }
+
     /// Check if the character is a letter or number
     #[inline]
-    pub fn is_alnum(&self) -> bool {
+    pub fn is_alphanumeric(&self) -> bool {
         self.is_alpha() || self.is_digit()
     }
 
@@ -101,15 +129,29 @@ impl Ascii {
         (self.chr - 0x20) < 0x5F
     }
 
+    #[inline]
+    #[allow(missing_doc)]
+    #[deprecated="renamed to `is_lowercase`"]
+    pub fn is_lower(&self) -> bool {
+        self.is_lowercase()
+    }
+
     /// Checks if the character is lowercase
     #[inline]
-    pub fn is_lower(&self) -> bool {
+    pub fn is_lowercase(&self) -> bool {
         (self.chr - 'a' as u8) < 26
+    }
+
+    #[inline]
+    #[allow(missing_doc)]
+    #[deprecated="renamed to `is_uppercase`"]
+    pub fn is_upper(&self) -> bool {
+        self.is_uppercase()
     }
 
     /// Checks if the character is uppercase
     #[inline]
-    pub fn is_upper(&self) -> bool {
+    pub fn is_uppercase(&self) -> bool {
         (self.chr - 'A' as u8) < 26
     }
 
@@ -248,7 +290,7 @@ impl OwnedAsciiCast for ~[u8] {
     }
 }
 
-impl OwnedAsciiCast for StrBuf {
+impl OwnedAsciiCast for String {
     #[inline]
     fn is_ascii(&self) -> bool {
         self.as_slice().is_ascii()
@@ -313,7 +355,7 @@ impl<'a> AsciiStr for &'a [Ascii] {
 
 impl IntoStr for ~[Ascii] {
     #[inline]
-    fn into_str(self) -> StrBuf {
+    fn into_str(self) -> String {
         let vector: Vec<Ascii> = self.as_slice().iter().map(|x| *x).collect();
         vector.into_str()
     }
@@ -321,7 +363,7 @@ impl IntoStr for ~[Ascii] {
 
 impl IntoStr for Vec<Ascii> {
     #[inline]
-    fn into_str(self) -> StrBuf {
+    fn into_str(self) -> String {
         unsafe {
             let s: &str = mem::transmute(self.as_slice());
             s.to_strbuf()
@@ -346,12 +388,12 @@ pub trait OwnedStrAsciiExt {
     /// Convert the string to ASCII upper case:
     /// ASCII letters 'a' to 'z' are mapped to 'A' to 'Z',
     /// but non-ASCII letters are unchanged.
-    fn into_ascii_upper(self) -> StrBuf;
+    fn into_ascii_upper(self) -> String;
 
     /// Convert the string to ASCII lower case:
     /// ASCII letters 'A' to 'Z' are mapped to 'a' to 'z',
     /// but non-ASCII letters are unchanged.
-    fn into_ascii_lower(self) -> StrBuf;
+    fn into_ascii_lower(self) -> String;
 }
 
 /// Extension methods for ASCII-subset only operations on string slices
@@ -359,12 +401,12 @@ pub trait StrAsciiExt {
     /// Makes a copy of the string in ASCII upper case:
     /// ASCII letters 'a' to 'z' are mapped to 'A' to 'Z',
     /// but non-ASCII letters are unchanged.
-    fn to_ascii_upper(&self) -> StrBuf;
+    fn to_ascii_upper(&self) -> String;
 
     /// Makes a copy of the string in ASCII lower case:
     /// ASCII letters 'A' to 'Z' are mapped to 'a' to 'z',
     /// but non-ASCII letters are unchanged.
-    fn to_ascii_lower(&self) -> StrBuf;
+    fn to_ascii_lower(&self) -> String;
 
     /// Check that two strings are an ASCII case-insensitive match.
     /// Same as `to_ascii_lower(a) == to_ascii_lower(b)`,
@@ -374,12 +416,12 @@ pub trait StrAsciiExt {
 
 impl<'a> StrAsciiExt for &'a str {
     #[inline]
-    fn to_ascii_upper(&self) -> StrBuf {
+    fn to_ascii_upper(&self) -> String {
         unsafe { str_copy_map_bytes(*self, ASCII_UPPER_MAP) }
     }
 
     #[inline]
-    fn to_ascii_lower(&self) -> StrBuf {
+    fn to_ascii_lower(&self) -> String {
         unsafe { str_copy_map_bytes(*self, ASCII_LOWER_MAP) }
     }
 
@@ -394,20 +436,20 @@ impl<'a> StrAsciiExt for &'a str {
     }
 }
 
-impl OwnedStrAsciiExt for StrBuf {
+impl OwnedStrAsciiExt for String {
     #[inline]
-    fn into_ascii_upper(self) -> StrBuf {
+    fn into_ascii_upper(self) -> String {
         unsafe { str_map_bytes(self, ASCII_UPPER_MAP) }
     }
 
     #[inline]
-    fn into_ascii_lower(self) -> StrBuf {
+    fn into_ascii_lower(self) -> String {
         unsafe { str_map_bytes(self, ASCII_LOWER_MAP) }
     }
 }
 
 #[inline]
-unsafe fn str_map_bytes(string: StrBuf, map: &'static [u8]) -> StrBuf {
+unsafe fn str_map_bytes(string: String, map: &'static [u8]) -> String {
     let mut bytes = string.into_bytes();
 
     for b in bytes.mut_iter() {
@@ -418,7 +460,7 @@ unsafe fn str_map_bytes(string: StrBuf, map: &'static [u8]) -> StrBuf {
 }
 
 #[inline]
-unsafe fn str_copy_map_bytes(string: &str, map: &'static [u8]) -> StrBuf {
+unsafe fn str_copy_map_bytes(string: &str, map: &'static [u8]) -> String {
     let mut s = string.to_strbuf();
     for b in s.as_mut_bytes().mut_iter() {
         *b = map[*b as uint];
@@ -549,13 +591,10 @@ mod tests {
     fn test_ascii_vec() {
         let test = &[40u8, 32u8, 59u8];
         assert_eq!(test.to_ascii(), v2ascii!([40, 32, 59]));
-        assert_eq!("( ;".to_ascii(),                 v2ascii!([40, 32, 59]));
-        // FIXME: #5475 borrowchk error, owned vectors do not live long enough
-        // if chained-from directly
+        assert_eq!("( ;".to_ascii(), v2ascii!([40, 32, 59]));
         let v = box [40u8, 32u8, 59u8];
         assert_eq!(v.to_ascii(), v2ascii!([40, 32, 59]));
-        let v = "( ;".to_strbuf();
-        assert_eq!(v.as_slice().to_ascii(), v2ascii!([40, 32, 59]));
+        assert_eq!("( ;".to_strbuf().as_slice().to_ascii(), v2ascii!([40, 32, 59]));
 
         assert_eq!("abCDef&?#".to_ascii().to_lower().into_str(), "abcdef&?#".to_strbuf());
         assert_eq!("abCDef&?#".to_ascii().to_upper().into_str(), "ABCDEF&?#".to_strbuf());

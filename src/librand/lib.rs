@@ -86,7 +86,7 @@ println!("{:?}", tuple_ptr)
 use std::io::IoResult;
 use std::kinds::marker;
 use std::mem;
-use std::strbuf::StrBuf;
+use std::string::String;
 
 pub use isaac::{IsaacRng, Isaac64Rng};
 pub use os::OSRng;
@@ -260,11 +260,11 @@ pub trait Rng {
     ///
     /// println!("{}", task_rng().gen_ascii_str(10));
     /// ```
-    fn gen_ascii_str(&mut self, len: uint) -> StrBuf {
+    fn gen_ascii_str(&mut self, len: uint) -> String {
         static GEN_ASCII_STR_CHARSET: &'static [u8] = bytes!("ABCDEFGHIJKLMNOPQRSTUVWXYZ\
                                                              abcdefghijklmnopqrstuvwxyz\
                                                              0123456789");
-        let mut s = StrBuf::with_capacity(len);
+        let mut s = String::with_capacity(len);
         for _ in range(0, len) {
             s.push_char(*self.choose(GEN_ASCII_STR_CHARSET).unwrap() as char)
         }
@@ -323,12 +323,6 @@ pub trait Rng {
         }
     }
 
-    /// Shuffle a mutable slice in place.
-    #[deprecated="renamed to `.shuffle`"]
-    fn shuffle_mut<T>(&mut self, values: &mut [T]) {
-        self.shuffle(values)
-    }
-
     /// Randomly sample up to `n` elements from an iterator.
     ///
     /// # Example
@@ -385,23 +379,6 @@ pub trait SeedableRng<Seed>: Rng {
     /// println!("{}", rng.gen::<f64>());
     /// ```
     fn from_seed(seed: Seed) -> Self;
-}
-
-/// Create a random number generator with a default algorithm and seed.
-///
-/// It returns the strongest `Rng` algorithm currently implemented in
-/// pure Rust. If you require a specifically seeded `Rng` for
-/// consistency over time you should pick one algorithm and create the
-/// `Rng` yourself.
-///
-/// This is a very expensive operation as it has to read randomness
-/// from the operating system and use this in an expensive seeding
-/// operation. If one does not require high performance generation of
-/// random numbers, `task_rng` and/or `random` may be more
-/// appropriate.
-#[deprecated="use `task_rng` or `StdRng::new`"]
-pub fn rng() -> StdRng {
-    StdRng::new().unwrap()
 }
 
 /// The standard RNG. This is designed to be efficient on the current

@@ -11,7 +11,7 @@
 use collections::HashSet;
 use rustc::util::nodemap::NodeSet;
 use std::cmp;
-use std::strbuf::StrBuf;
+use std::string::String;
 use std::uint;
 use syntax::ast;
 use syntax::ast_util;
@@ -152,7 +152,8 @@ impl<'a> fold::DocFolder for Stripper<'a> {
             clean::ImplItem(clean::Impl{
                 for_: clean::ResolvedPath{ did, .. }, ..
             }) => {
-                if !self.exported_items.contains(&did.node) {
+                if ast_util::is_local(did) &&
+                   !self.exported_items.contains(&did.node) {
                     return None;
                 }
             }
@@ -251,7 +252,7 @@ pub fn collapse_docs(krate: clean::Crate) -> plugins::PluginResult {
     struct Collapser;
     impl fold::DocFolder for Collapser {
         fn fold_item(&mut self, i: Item) -> Option<Item> {
-            let mut docstr = StrBuf::new();
+            let mut docstr = String::new();
             let mut i = i;
             for attr in i.attrs.iter() {
                 match *attr {
@@ -279,7 +280,7 @@ pub fn collapse_docs(krate: clean::Crate) -> plugins::PluginResult {
     (krate, None)
 }
 
-pub fn unindent(s: &str) -> StrBuf {
+pub fn unindent(s: &str) -> String {
     let lines = s.lines_any().collect::<Vec<&str> >();
     let mut saw_first_line = false;
     let mut saw_second_line = false;

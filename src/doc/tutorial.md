@@ -1581,7 +1581,7 @@ allocated memory on the heap. A unique vector owns the elements it contains, so
 the elements are mutable if the vector is mutable.
 
 ~~~
-use std::strbuf::StrBuf;
+use std::string::String;
 
 // A dynamically sized vector (unique vector)
 let mut numbers = vec![1, 2, 3];
@@ -1593,7 +1593,7 @@ let more_numbers: Vec<int> = numbers.move_iter().map(|i| i+1).collect();
 
 // The original `numbers` value can no longer be used, due to move semantics.
 
-let mut string = StrBuf::from_str("fo");
+let mut string = String::from_str("fo");
 string.push_char('o');
 ~~~
 
@@ -2213,7 +2213,7 @@ don't provide any methods.
 Traits may be implemented for specific types with [impls]. An impl for
 a particular trait gives an implementation of the methods that
 trait provides.  For instance, the following impls of
-`Printable` for `int` and `StrBuf` give implementations of the `print`
+`Printable` for `int` and `String` give implementations of the `print`
 method.
 
 [impls]: #methods
@@ -2224,7 +2224,7 @@ impl Printable for int {
     fn print(&self) { println!("{:?}", *self) }
 }
 
-impl Printable for StrBuf {
+impl Printable for String {
     fn print(&self) { println!("{}", *self) }
 }
 
@@ -2270,7 +2270,7 @@ trait Printable {
 
 impl Printable for int {}
 
-impl Printable for StrBuf {
+impl Printable for String {
     fn print(&self) { println!("{}", *self) }
 }
 
@@ -2291,7 +2291,7 @@ provided in the trait definition.  Depending on the trait, default
 methods can save a great deal of boilerplate code from having to be
 written in impls.  Of course, individual impls can still override the
 default method for `print`, as is being done above in the impl for
-`StrBuf`.
+`String`.
 
 ## Type-parameterized traits
 
@@ -3166,6 +3166,7 @@ without conflict.
 Therefore, if you plan to compile your crate as a library, you should annotate it with that information:
 
 ~~~~
+# #![allow(unused_attribute)]
 // `lib.rs`
 
 # #![crate_type = "lib"]
@@ -3189,6 +3190,7 @@ Other crate settings and metadata include things like enabling/disabling certain
 or setting the crate type (library or executable) explicitly:
 
 ~~~~
+# #![allow(unused_attribute)]
 // `lib.rs`
 // ...
 
@@ -3208,6 +3210,7 @@ Now for something that you can actually compile yourself.
 We define two crates, and use one of them as a library in the other.
 
 ~~~~
+# #![allow(unused_attribute)]
 // `world.rs`
 #![crate_id = "world#0.42"]
 
@@ -3282,11 +3285,13 @@ fn main() {
 Both auto-insertions can be disabled with an attribute if necessary:
 
 ~~~
+# #![allow(unused_attribute)]
 // In the crate root:
 #![no_std]
 ~~~
 
 ~~~
+# #![allow(unused_attribute)]
 // In any module:
 #![no_implicit_prelude]
 ~~~

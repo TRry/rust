@@ -400,7 +400,7 @@ struct Match<'a, 'b> {
 }
 
 impl<'a, 'b> Repr for Match<'a, 'b> {
-    fn repr(&self, tcx: &ty::ctxt) -> StrBuf {
+    fn repr(&self, tcx: &ty::ctxt) -> String {
         if tcx.sess.verbose() {
             // for many programs, this just take too long to serialize
             self.pats.repr(tcx)
@@ -810,6 +810,9 @@ fn enter_tuple_struct<'a, 'b>(
             ast::PatEnum(_, Some(ref elts)) => {
                 Some(elts.iter().map(|x| (*x)).collect())
             }
+            ast::PatEnum(_, None) => {
+                Some(Vec::from_elem(n_elts, dummy))
+            }
             _ => {
                 assert_is_binding_or_wild(bcx, p);
                 Some(Vec::from_elem(n_elts, dummy))
@@ -1117,7 +1120,7 @@ fn any_tuple_struct_pat(bcx: &Block, m: &[Match], col: uint) -> bool {
     m.iter().any(|br| {
         let pat = *br.pats.get(col);
         match pat.node {
-            ast::PatEnum(_, Some(_)) => {
+            ast::PatEnum(_, _) => {
                 match bcx.tcx().def_map.borrow().find(&pat.id) {
                     Some(&ast::DefFn(..)) |
                     Some(&ast::DefStruct(..)) => true,

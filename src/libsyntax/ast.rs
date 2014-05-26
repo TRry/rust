@@ -689,6 +689,7 @@ pub struct TypeMethod {
     pub explicit_self: ExplicitSelf,
     pub id: NodeId,
     pub span: Span,
+    pub vis: Visibility,
 }
 
 // A trait method is either required (meaning it doesn't have an
@@ -1023,9 +1024,13 @@ pub enum AttrStyle {
     AttrInner,
 }
 
+#[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash)]
+pub struct AttrId(pub uint);
+
 // doc-comments are promoted to attributes that have is_sugared_doc = true
 #[deriving(Clone, Eq, TotalEq, Encodable, Decodable, Hash)]
 pub struct Attribute_ {
+    pub id: AttrId,
     pub style: AttrStyle,
     pub value: @MetaItem,
     pub is_sugared_doc: bool,

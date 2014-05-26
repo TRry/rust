@@ -7,9 +7,10 @@
 // <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
+#![allow(unused_attribute)]
 
 struct cat {
-  name: StrBuf,
+  name: String,
 }
 
 impl Drop for cat {
@@ -26,7 +27,7 @@ impl Drop for cat {
 /**
 Maybe it should technically be a kitten_maker.
 */
-fn cat(name: StrBuf) -> cat {
+fn cat(name: String) -> cat {
     cat {
         name: name
     }

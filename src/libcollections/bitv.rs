@@ -13,10 +13,10 @@
 
 use std::cmp;
 use std::iter::RandomAccessIterator;
-use std::iter::{Rev, Enumerate, Repeat, Map, Zip};
+use std::iter::{Enumerate, Repeat, Map, Zip};
 use std::ops;
 use std::slice;
-use std::strbuf::StrBuf;
+use std::string::String;
 use std::uint;
 
 #[deriving(Clone)]
@@ -466,12 +466,6 @@ impl Bitv {
         Bits {bitv: self, next_idx: 0, end_idx: self.nbits}
     }
 
-    #[inline]
-    #[deprecated = "replaced by .iter().rev()"]
-    pub fn rev_iter<'a>(&'a self) -> Rev<Bits<'a>> {
-        self.iter().rev()
-    }
-
     /// Returns `true` if all bits are 0
     pub fn none(&self) -> bool {
       match self.rep {
@@ -538,8 +532,8 @@ impl Bitv {
      * The resulting string has the same length as `self`, and each
      * character is either '0' or '1'.
      */
-     pub fn to_str(&self) -> StrBuf {
-        let mut rs = StrBuf::new();
+     pub fn to_str(&self) -> String {
+        let mut rs = String::new();
         for i in self.iter() {
             if i {
                 rs.push_char('1');

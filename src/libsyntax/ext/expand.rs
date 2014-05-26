@@ -265,6 +265,8 @@ pub fn expand_item(it: @ast::Item, fld: &mut MacroExpander)
 
         match fld.extsbox.find(&intern(mname.get())) {
             Some(&ItemDecorator(dec_fn)) => {
+                attr::mark_used(attr);
+
                 fld.cx.bt_push(ExpnInfo {
                     call_site: attr.span,
                     callee: NameAndSpan {
@@ -336,6 +338,7 @@ fn expand_item_modifiers(mut it: @ast::Item, fld: &mut MacroExpander)
 
         match fld.extsbox.find(&intern(mname.get())) {
             Some(&ItemModifier(dec_fn)) => {
+                attr::mark_used(attr);
                 fld.cx.bt_push(ExpnInfo {
                     call_site: attr.span,
                     callee: NameAndSpan {
@@ -474,7 +477,7 @@ pub fn expand_view_item(vi: &ast::ViewItem,
     match vi.node {
         ast::ViewItemExternCrate(..) => {
             let should_load = vi.attrs.iter().any(|attr| {
-                attr.name().get() == "phase" &&
+                attr.check_name("phase") &&
                     attr.meta_item_list().map_or(false, |phases| {
                         attr::contains_name(phases, "syntax")
                     })
@@ -972,6 +975,7 @@ mod test {
     use super::*;
     use ast;
     use ast::{Attribute_, AttrOuter, MetaWord};
+    use attr;
     use codemap;
     use codemap::Spanned;
     use ext::base::{CrateLoader, MacroCrate};
@@ -1103,6 +1107,7 @@ mod test {
         Spanned {
             span:codemap::DUMMY_SP,
             node: Attribute_ {
+                id: attr::mk_attr_id(),
                 style: AttrOuter,
                 value: @Spanned {
                     node: MetaWord(token::intern_and_get_ident(s)),
@@ -1113,7 +1118,7 @@ mod test {
         }
     }
 
-    fn expand_crate_str(crate_str: StrBuf) -> ast::Crate {
+    fn expand_crate_str(crate_str: String) -> ast::Crate {
         let ps = parse::new_parse_sess();
         let crate_ast = string_to_parser(&ps, crate_str).parse_crate_mod();
         // the cfg argument actually does matter, here...
@@ -1131,7 +1136,7 @@ mod test {
         // println!("expanded: {:?}\n",expanded_ast);
         //mtwt_resolve_crate(expanded_ast)
     //}
-    //fn expand_and_resolve_and_pretty_print (crate_str: @str) -> StrBuf {
+    //fn expand_and_resolve_and_pretty_print (crate_str: @str) -> String {
         //let resolved_ast = expand_and_resolve(crate_str);
         //pprust::to_str(&resolved_ast,fake_print_crate,get_ident_interner())
     //}

@@ -37,7 +37,7 @@ use std::cell::Cell;
 use std::{cmp, os, path};
 use std::io::fs;
 use std::path::is_sep;
-use std::strbuf::StrBuf;
+use std::string::String;
 
 /**
  * An iterator that yields Paths from the filesystem that match a particular
@@ -310,8 +310,8 @@ impl Pattern {
      * brackets. The resulting string will, when compiled into a `Pattern`,
      * match the input string and nothing else.
      */
-    pub fn escape(s: &str) -> StrBuf {
-        let mut escaped = StrBuf::new();
+    pub fn escape(s: &str) -> String {
+        let mut escaped = String::new();
         for c in s.chars() {
             match c {
                 // note that ! does not need escaping because it is only special inside brackets
@@ -464,8 +464,8 @@ impl Pattern {
 fn fill_todo(todo: &mut Vec<(Path, uint)>, patterns: &[Pattern], idx: uint, path: &Path,
              options: MatchOptions) {
     // convert a pattern that's just many Char(_) to a string
-    fn pattern_as_str(pattern: &Pattern) -> Option<StrBuf> {
-        let mut s = StrBuf::new();
+    fn pattern_as_str(pattern: &Pattern) -> Option<String> {
+        let mut s = String::new();
         for token in pattern.tokens.iter() {
             match *token {
                 Char(c) => s.push_char(c),
@@ -553,18 +553,18 @@ fn in_char_specifiers(specifiers: &[CharSpecifier], c: char, options: MatchOptio
                 // FIXME: work with non-ascii chars properly (issue #1347)
                 if !options.case_sensitive && c.is_ascii() && start.is_ascii() && end.is_ascii() {
 
-                    let start = start.to_ascii().to_lower();
-                    let end = end.to_ascii().to_lower();
+                    let start = start.to_ascii().to_lowercase();
+                    let end = end.to_ascii().to_lowercase();
 
-                    let start_up = start.to_upper();
-                    let end_up = end.to_upper();
+                    let start_up = start.to_uppercase();
+                    let end_up = end.to_uppercase();
 
                     // only allow case insensitive matching when
                     // both start and end are within a-z or A-Z
                     if start != start_up && end != end_up {
                         let start = start.to_char();
                         let end = end.to_char();
-                        let c = c.to_ascii().to_lower().to_char();
+                        let c = c.to_ascii().to_lowercase().to_char();
                         if c >= start && c <= end {
                             return true;
                         }

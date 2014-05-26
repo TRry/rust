@@ -21,7 +21,6 @@
 // Backlinks over DList::prev are raw pointers that form a full chain in
 // the reverse direction.
 
-use std::iter::Rev;
 use std::iter;
 use std::mem;
 use std::ptr;
@@ -221,16 +220,13 @@ impl<T> Deque<T> for DList<T> {
     /// Provide a reference to the back element, or None if the list is empty
     #[inline]
     fn back<'a>(&'a self) -> Option<&'a T> {
-        let tmp = self.list_tail.resolve_immut(); // FIXME: #3511: shouldn't need variable
-        tmp.as_ref().map(|tail| &tail.value)
+        self.list_tail.resolve_immut().as_ref().map(|tail| &tail.value)
     }
 
     /// Provide a mutable reference to the back element, or None if the list is empty
     #[inline]
     fn back_mut<'a>(&'a mut self) -> Option<&'a mut T> {
-        let tmp: Option<&'a mut Node<T>> =
-            self.list_tail.resolve(); // FIXME: #3511: shouldn't need variable
-        tmp.map(|tail| &mut tail.value)
+        self.list_tail.resolve().map(|tail| &mut tail.value)
     }
 
     /// Add an element first in the list
@@ -369,12 +365,6 @@ impl<T> DList<T> {
         Items{nelem: self.len(), head: &self.list_head, tail: self.list_tail}
     }
 
-    #[inline]
-    #[deprecated = "replaced by .iter().rev()"]
-    pub fn rev_iter<'a>(&'a self) -> Rev<Items<'a, T>> {
-        self.iter().rev()
-    }
-
     /// Provide a forward iterator with mutable references
     #[inline]
     pub fn mut_iter<'a>(&'a mut self) -> MutItems<'a, T> {
@@ -390,23 +380,11 @@ impl<T> DList<T> {
         }
     }
 
-    #[inline]
-    #[deprecated = "replaced by .mut_iter().rev()"]
-    pub fn mut_rev_iter<'a>(&'a mut self) -> Rev<MutItems<'a, T>> {
-        self.mut_iter().rev()
-    }
-
 
     /// Consume the list into an iterator yielding elements by value
     #[inline]
     pub fn move_iter(self) -> MoveItems<T> {
         MoveItems{list: self}
-    }
-
-    #[inline]
-    #[deprecated = "replaced by .move_iter().rev()"]
-    pub fn move_rev_iter(self) -> Rev<MoveItems<T>> {
-        self.move_iter().rev()
     }
 }
 
@@ -468,8 +446,7 @@ impl<'a, A> DoubleEndedIterator<&'a A> for Items<'a, A> {
         if self.nelem == 0 {
             return None;
         }
-        let tmp = self.tail.resolve_immut(); // FIXME: #3511: shouldn't need variable
-        tmp.as_ref().map(|prev| {
+        self.tail.resolve_immut().as_ref().map(|prev| {
             self.nelem -= 1;
             self.tail = prev.prev;
             &prev.value

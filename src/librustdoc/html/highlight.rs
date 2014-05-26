@@ -25,7 +25,7 @@ use html::escape::Escape;
 use t = syntax::parse::token;
 
 /// Highlights some source code, returning the HTML output.
-pub fn highlight(src: &str, class: Option<&str>) -> StrBuf {
+pub fn highlight(src: &str, class: Option<&str>) -> String {
     debug!("highlighting: ================\n{}\n==============", src);
     let sess = parse::new_parse_sess();
     let fm = parse::string_to_filemap(&sess,
@@ -102,7 +102,7 @@ fn doit(sess: &parse::ParseSess, mut lexer: lexer::StringReader, class: Option<&
 
             // miscellaneous, no highlighting
             t::DOT | t::DOTDOT | t::DOTDOTDOT | t::COMMA | t::SEMI |
-                t::COLON | t::MOD_SEP | t::LARROW | t::DARROW | t::LPAREN |
+                t::COLON | t::MOD_SEP | t::LARROW | t::LPAREN |
                 t::RPAREN | t::LBRACKET | t::LBRACE | t::RBRACE => "",
             t::DOLLAR => {
                 if t::is_ident(&lexer.peek().tok) {

@@ -8,8 +8,9 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#[auto_serialize]
-
-type t = (uint, uint);
-
-pub fn main() { }
+fn main() {
+    range(0, 4)
+    .map(|x| x * 2)
+    .collect::<Vec<'a, uint, 'b>>()
+    //~^ ERROR lifetime parameters must be declared prior to type parameters
+}

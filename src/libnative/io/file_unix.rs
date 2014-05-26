@@ -165,7 +165,7 @@ impl rtio::RtioFileStream for FileDesc {
     }
 
     fn fstat(&mut self) -> IoResult<io::FileStat> {
-        let mut stat: libc::stat = unsafe { mem::uninit() };
+        let mut stat: libc::stat = unsafe { mem::zeroed() };
         match retry(|| unsafe { libc::fstat(self.fd(), &mut stat) }) {
             0 => Ok(mkstat(&stat)),
             _ => Err(super::last_error()),
@@ -510,7 +510,7 @@ fn mkstat(stat: &libc::stat) -> io::FileStat {
 }
 
 pub fn stat(p: &CString) -> IoResult<io::FileStat> {
-    let mut stat: libc::stat = unsafe { mem::uninit() };
+    let mut stat: libc::stat = unsafe { mem::zeroed() };
     match retry(|| unsafe { libc::stat(p.with_ref(|p| p), &mut stat) }) {
         0 => Ok(mkstat(&stat)),
         _ => Err(super::last_error()),
@@ -518,7 +518,7 @@ pub fn stat(p: &CString) -> IoResult<io::FileStat> {
 }
 
 pub fn lstat(p: &CString) -> IoResult<io::FileStat> {
-    let mut stat: libc::stat = unsafe { mem::uninit() };
+    let mut stat: libc::stat = unsafe { mem::zeroed() };
     match retry(|| unsafe { libc::lstat(p.with_ref(|p| p), &mut stat) }) {
         0 => Ok(mkstat(&stat)),
         _ => Err(super::last_error()),

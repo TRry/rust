@@ -82,7 +82,7 @@ use slice::{ImmutableVector, MutableVector};
 use slice;
 use str::StrSlice;
 use str;
-use strbuf::StrBuf;
+use string::String;
 
 /// The representation of a C String.
 ///
@@ -296,7 +296,7 @@ pub trait ToCStr {
 // FIXME (#12938): Until DST lands, we cannot decompose &str into &
 // and str, so we cannot usefully take ToCStr arguments by reference
 // (without forcing an additional & around &str). So we are instead
-// temporarily adding an instance for ~str and StrBuf, so that we can
+// temporarily adding an instance for ~str and String, so that we can
 // take ToCStr as owned. When DST lands, the string instances should
 // be revisted, and arguments bound by ToCStr should be passed by
 // reference.
@@ -323,7 +323,7 @@ impl<'a> ToCStr for &'a str {
     }
 }
 
-impl ToCStr for StrBuf {
+impl ToCStr for String {
     #[inline]
     fn to_c_str(&self) -> CString {
         self.as_bytes().to_c_str()
@@ -377,7 +377,7 @@ impl<'a> ToCStr for &'a [u8] {
 // Unsafe function that handles possibly copying the &[u8] into a stack array.
 unsafe fn with_c_str<T>(v: &[u8], checked: bool, f: |*libc::c_char| -> T) -> T {
     if v.len() < BUF_LEN {
-        let mut buf: [u8, .. BUF_LEN] = mem::uninit();
+        let mut buf: [u8, .. BUF_LEN] = mem::uninitialized();
         slice::bytes::copy_memory(buf, v);
         buf[v.len()] = 0;
 

@@ -45,7 +45,7 @@ pub type PublicItems = NodeSet;
 /// Result of a checking operation - None => no errors were found. Some => an
 /// error and contains the span and message for reporting that error and
 /// optionally the same for a note about the error.
-type CheckResult = Option<(Span, StrBuf, Option<(Span, StrBuf)>)>;
+type CheckResult = Option<(Span, String, Option<(Span, String)>)>;
 
 ////////////////////////////////////////////////////////////////////////////////
 /// The parent visitor, used to determine what's the parent of what (node-wise)
@@ -356,7 +356,7 @@ enum FieldName {
 
 impl<'a> PrivacyVisitor<'a> {
     // used when debugging
-    fn nodestr(&self, id: ast::NodeId) -> StrBuf {
+    fn nodestr(&self, id: ast::NodeId) -> String {
         self.tcx.map.node_to_str(id).to_strbuf()
     }
 
@@ -1099,7 +1099,10 @@ impl<'a> SanePrivacyVisitor<'a> {
                             check_inherited(m.span, m.vis,
                                             "unnecessary visibility");
                         }
-                        ast::Required(..) => {}
+                        ast::Required(ref m) => {
+                            check_inherited(m.span, m.vis,
+                                            "unnecessary visibility");
+                        }
                     }
                 }
             }

@@ -33,7 +33,7 @@ pub struct StaticMethodInfo {
     pub vis: ast::Visibility,
 }
 
-pub fn get_symbol(cstore: &cstore::CStore, def: ast::DefId) -> StrBuf {
+pub fn get_symbol(cstore: &cstore::CStore, def: ast::DefId) -> String {
     let cdata = cstore.get_crate_data(def.krate);
     decoder::get_symbol(cdata.data(), def.node)
 }
@@ -176,7 +176,7 @@ pub fn get_static_methods_if_impl(cstore: &cstore::CStore,
 
 pub fn get_item_attrs(cstore: &cstore::CStore,
                       def_id: ast::DefId,
-                      f: |Vec<@ast::MetaItem> |) {
+                      f: |Vec<ast::Attribute> |) {
     let cdata = cstore.get_crate_data(def_id.krate);
     decoder::get_item_attrs(&*cdata, def_id.node, f)
 }
@@ -247,7 +247,7 @@ pub fn get_impl_vtables(tcx: &ty::ctxt,
 
 pub fn get_native_libraries(cstore: &cstore::CStore,
                             crate_num: ast::CrateNum)
-                                -> Vec<(cstore::NativeLibaryKind, StrBuf)> {
+                                -> Vec<(cstore::NativeLibaryKind, String)> {
     let cdata = cstore.get_crate_data(crate_num);
     decoder::get_native_libraries(&*cdata)
 }
@@ -305,4 +305,11 @@ pub fn get_missing_lang_items(cstore: &cstore::CStore, cnum: ast::CrateNum)
 {
     let cdata = cstore.get_crate_data(cnum);
     decoder::get_missing_lang_items(&*cdata)
+}
+
+pub fn get_method_arg_names(cstore: &cstore::CStore, did: ast::DefId)
+    -> Vec<String>
+{
+    let cdata = cstore.get_crate_data(did.krate);
+    decoder::get_method_arg_names(&*cdata, did.node)
 }

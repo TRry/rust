@@ -16,12 +16,11 @@
 //!
 //! ## Intrinsic types and operations
 //!
-//! The [`ptr`](../core/ptr/index.html) and [`mem`](../core/mem/index.html)
+//! The [`ptr`](ptr/index.html) and [`mem`](mem/index.html)
 //! modules deal with unsafe pointers and memory manipulation.
-//! [`kinds`](../core/kinds/index.html) defines the special built-in traits,
-//! and [`raw`](../core/raw/index.html) the runtime representation of Rust types.
-//! These are some of the lowest-level building blocks of Rust
-//! abstractions.
+//! [`kinds`](kinds/index.html) defines the special built-in traits,
+//! and [`raw`](raw/index.html) the runtime representation of Rust types.
+//! These are some of the lowest-level building blocks in Rust.
 //!
 //! ## Math on primitive types and math traits
 //!
@@ -32,11 +31,11 @@
 //!
 //! ## Pervasive types
 //!
-//! The [`option`](option/index.html) and [`result`](../core/result/index.html)
+//! The [`option`](option/index.html) and [`result`](result/index.html)
 //! modules define optional and error-handling types, `Option` and `Result`.
-//! [`iter`](../core/iter/index.html) defines Rust's iterator protocol
+//! [`iter`](iter/index.html) defines Rust's iterator protocol
 //! along with a wide variety of iterators.
-//! [`Cell` and `RefCell`](../core/cell/index.html) are for creating types that
+//! [`Cell` and `RefCell`](cell/index.html) are for creating types that
 //! manage their own mutability.
 //!
 //! ## Vectors, slices and strings
@@ -50,7 +49,7 @@
 //! `&str`, a UTF-8 string, is a built-in type, and the standard library
 //! defines methods for it on a variety of traits in the
 //! [`str`](str/index.html) module. Rust strings are immutable;
-//! use the `StrBuf` type defined in [`strbuf`](strbuf/index.html)
+//! use the `String` type defined in [`strbuf`](strbuf/index.html)
 //! for a mutable string builder.
 //!
 //! For converting to strings use the [`format!`](fmt/index.html)
@@ -104,7 +103,7 @@
        html_favicon_url = "http://www.rust-lang.org/favicon.ico",
        html_root_url = "http://doc.rust-lang.org/")]
 #![feature(macro_rules, globs, asm, managed_boxes, thread_local, link_args,
-           simd, linkage, default_type_params, phase, concat_idents, quad_precision_float)]
+           linkage, default_type_params, phase, concat_idents, quad_precision_float)]
 
 // Don't link to std. We are std.
 #![no_std]
@@ -145,6 +144,7 @@ pub use core::clone;
 #[cfg(not(test))] pub use core::cmp;
 pub use core::container;
 pub use core::default;
+pub use core::finally;
 pub use core::intrinsics;
 pub use core::iter;
 #[cfg(not(test))] pub use core::kinds;
@@ -152,6 +152,7 @@ pub use core::mem;
 #[cfg(not(test))] pub use core::ops;
 pub use core::ptr;
 pub use core::raw;
+pub use core::simd;
 pub use core::tuple;
 #[cfg(not(test))] pub use core::ty;
 pub use core::result;
@@ -205,7 +206,7 @@ pub mod prelude;
 pub mod slice;
 pub mod vec;
 pub mod str;
-pub mod strbuf;
+pub mod string;
 
 pub mod ascii;
 
@@ -265,24 +266,21 @@ pub mod rt;
 // can be resolved within libstd.
 #[doc(hidden)]
 mod std {
+    // mods used for deriving
     pub use clone;
     pub use cmp;
-    pub use comm;
-    pub use fmt;
     pub use hash;
-    pub use io;
-    pub use kinds;
-    pub use local_data;
-    pub use option;
-    pub use os;
-    pub use rt;
-    pub use str;
-    pub use to_str;
-    pub use ty;
-    pub use unstable;
-    pub use vec;
 
+    pub use comm; // used for select!()
+    pub use fmt; // used for any formatting strings
+    pub use io; // used for println!()
+    pub use local_data; // used for local_data_key!()
+    pub use option; // used for bitflags!()
+    pub use rt; // used for fail!()
+    pub use vec; // used for vec![]
+
+    // The test runner calls ::std::os::args() but really wants realstd
+    #[cfg(test)] pub use os = realstd::os;
     // The test runner requires std::slice::Vector, so re-export std::slice just for it.
     #[cfg(test)] pub use slice;
-    #[cfg(test)] pub use strbuf;
 }

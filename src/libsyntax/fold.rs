@@ -360,6 +360,7 @@ fn fold_attribute_<T: Folder>(at: Attribute, fld: &mut T) -> Attribute {
     Spanned {
         span: fld.new_span(at.span),
         node: ast::Attribute_ {
+            id: at.node.id,
             style: at.node.style,
             value: fold_meta_item_(at.node.value, fld),
             is_sugared_doc: at.node.is_sugared_doc
@@ -648,6 +649,7 @@ pub fn noop_fold_type_method<T: Folder>(m: &TypeMethod, fld: &mut T) -> TypeMeth
         generics: fold_generics(&m.generics, fld),
         explicit_self: fld.fold_explicit_self(&m.explicit_self),
         span: fld.new_span(m.span),
+        vis: m.vis,
     }
 }
 

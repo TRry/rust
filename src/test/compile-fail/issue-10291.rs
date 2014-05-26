@@ -1,4 +1,4 @@
-// Copyright 2013 The Rust Project Developers. See the COPYRIGHT
+// Copyright 2014 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
 //
@@ -8,9 +8,12 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-fn main() {
-    // note that this is a literal "\n" byte
-    '
-';
-    //~^^ ERROR: character constant must be escaped
+fn test<'x>(x: &'x int) { //~ NOTE the lifetime 'x as defined
+    drop::< <'z>|&'z int| -> &'z int>(|z| {
+        //~^ ERROR mismatched types
+        //~^^ ERROR cannot infer an appropriate lifetime
+        x
+    });
 }
+
+fn main() {}

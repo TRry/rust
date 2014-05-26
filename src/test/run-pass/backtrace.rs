@@ -9,13 +9,11 @@
 // except according to those terms.
 
 // ignore-win32 FIXME #13259
-#![no_uv]
-
 extern crate native;
 
 use std::os;
 use std::io::process::Command;
-use std::unstable::finally::Finally;
+use std::finally::Finally;
 use std::str;
 
 #[start]
@@ -39,7 +37,7 @@ fn runtest(me: &str) {
     let mut env = os::env().move_iter()
                            .map(|(ref k, ref v)| {
                                (k.to_strbuf(), v.to_strbuf())
-                           }).collect::<Vec<(StrBuf,StrBuf)>>();
+                           }).collect::<Vec<(String,String)>>();
     match env.iter()
              .position(|&(ref s, _)| "RUST_BACKTRACE" == s.as_slice()) {
         Some(i) => { env.remove(i); }
