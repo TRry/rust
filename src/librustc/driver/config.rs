@@ -313,8 +313,8 @@ cgoptions!(
         "use an external assembler rather than LLVM's integrated one"),
     relocation_model: String = ("pic".to_string(), parse_string,
          "choose the relocation model to use (llc -relocation-model for details)"),
-    no_split_stack: bool = (false, parse_bool, 
-        "disable segmented stack support"),    
+    no_split_stack: bool = (false, parse_bool,
+        "disable segmented stack support"),
 )
 
 pub fn build_codegen_options(matches: &getopts::Matches) -> CodegenOptions
@@ -376,7 +376,7 @@ pub fn default_configuration(sess: &Session) -> ast::CrateConfig {
         abi::OsLinux =>   InternedString::new("linux"),
         abi::OsAndroid => InternedString::new("android"),
         abi::OsFreebsd => InternedString::new("freebsd"),
-        abi::OsiOS =>     InternedString::new("ios"),  
+        abi::OsiOS =>     InternedString::new("ios"),
     };
 
     // ARM is bi-endian, however using NDK seems to default
