@@ -179,7 +179,8 @@ LIBUV_DIR_$(1) := $$(RT_OUTPUT_DIR_$(1))/libuv
 LIBUV_LIB_$(1) := $$(RT_OUTPUT_DIR_$(1))/$$(LIBUV_NAME_$(1))
 
 LIBUV_MAKEFILE_$(1) := $$(CFG_BUILD_DIR)$$(RT_OUTPUT_DIR_$(1))/libuv/Makefile
-LIBUV_XCODEPROJ_$(1) := $$(S)src/libuv/uv-$(1).xcodeproj
+LIBUV_BUILD_DIR_$(1) := $$(CFG_BUILD_DIR)$$(RT_OUTPUT_DIR_$(1))/libuv
+LIBUV_XCODEPROJ_$(1) := $$(LIBUV_BUILD_DIR_$(1))/uv.xcodeproj
 
 LIBUV_STAMP_$(1) = $$(LIBUV_DIR_$(1))/libuv-auto-clean-stamp
 
@@ -216,19 +217,20 @@ else ifeq ($(OSTYPE_$(1)), apple-ios) # iOS
 JEMALLOC_ARGS_$(1) := --disable-tls
 
 $$(LIBUV_XCODEPROJ_$(1)): $$(LIBUV_DEPS) $$(MKFILE_DEPS) $$(LIBUV_STAMP_$(1))
-	(cd $(S)src/libuv/ && \
+	cp -rf $(S)src/libuv/ $$(LIBUV_BUILD_DIR_$(1))
+	(cd $$(LIBUV_BUILD_DIR_$(1)) && \
 	 $$(CFG_PYTHON) ./gyp_uv.py -f xcode \
 	   -D ninja \
 	   -R libuv)
 	touch $$@
 
-LIBUV_XCODE_OUT_LIB_$(1) := $$(S)src/libuv/build/Release-$$(CFG_SDK_NAME_$(1))/libuv.a
+LIBUV_XCODE_OUT_LIB_$(1) := $$(LIBUV_BUILD_DIR_$(1))/build/Release-$$(CFG_SDK_NAME_$(1))/libuv.a
 
 $$(LIBUV_LIB_$(1)): $$(LIBUV_XCODE_OUT_LIB_$(1)) $$(MKFILE_DEPS)
 	$$(Q)cp $$< $$@
 $$(LIBUV_XCODE_OUT_LIB_$(1)): $$(LIBUV_DEPS) $$(LIBUV_XCODEPROJ_$(1)) \
 				    $$(MKFILE_DEPS)				    
-	$$(Q)xcodebuild -project $$(S)src/libuv/uv.xcodeproj \
+	$$(Q)xcodebuild -project $$(LIBUV_BUILD_DIR_$(1))/uv.xcodeproj \
 		CFLAGS="$$(LIBUV_CFLAGS_$(1)) $$(SNAP_DEFINES)" \
 		LDFLAGS="$$(CFG_GCCISH_LINK_FLAGS_$(1))" \
 		$$(LIBUV_ARGS_$(1)) \
