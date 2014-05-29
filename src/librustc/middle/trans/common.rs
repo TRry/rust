@@ -443,11 +443,11 @@ impl<'a> Block<'a> {
     pub fn sess(&self) -> &'a Session { self.fcx.ccx.sess() }
 
     pub fn ident(&self, ident: Ident) -> String {
-        token::get_ident(ident).get().to_strbuf()
+        token::get_ident(ident).get().to_string()
     }
 
     pub fn node_id_to_str(&self, id: ast::NodeId) -> String {
-        self.tcx().map.node_to_str(id).to_strbuf()
+        self.tcx().map.node_to_str(id).to_string()
     }
 
     pub fn expr_to_str(&self, e: &ast::Expr) -> String {
@@ -596,7 +596,8 @@ pub fn C_cstr(cx: &CrateContext, s: InternedString, null_terminated: bool) -> Va
 pub fn C_str_slice(cx: &CrateContext, s: InternedString) -> ValueRef {
     unsafe {
         let len = s.get().len();
-        let cs = llvm::LLVMConstPointerCast(C_cstr(cx, s, false), Type::i8p(cx).to_ref());
+        let cs = llvm::LLVMConstPointerCast(C_cstr(cx, s, false),
+                                            Type::i8p(cx).to_ref());
         C_struct(cx, [cs, C_uint(cx, len)], false)
     }
 }
@@ -841,19 +842,6 @@ pub fn find_vtable(tcx: &ty::ctxt,
         }
     };
     param_bounds.get(n_bound).clone()
-}
-
-pub fn filename_and_line_num_from_span(bcx: &Block, span: Span)
-                                       -> (ValueRef, ValueRef) {
-    let loc = bcx.sess().codemap().lookup_char_pos(span.lo);
-    let filename_cstr = C_cstr(bcx.ccx(),
-                               token::intern_and_get_ident(loc.file
-                                                              .name
-                                                              .as_slice()),
-                               true);
-    let filename = build::PointerCast(bcx, filename_cstr, Type::i8p(bcx.ccx()));
-    let line = C_int(bcx.ccx(), loc.line as int);
-    (filename, line)
 }
 
 // Casts a Rust bool value to an i1.

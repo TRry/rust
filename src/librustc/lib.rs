@@ -31,16 +31,17 @@ This API is completely unstable and subject to change.
 #![feature(macro_rules, globs, struct_variant, managed_boxes, quote,
            default_type_params, phase)]
 
-extern crate flate;
 extern crate arena;
+extern crate collections;
+extern crate debug;
+extern crate flate;
+extern crate getopts;
 extern crate graphviz;
-extern crate syntax;
+extern crate libc;
 extern crate serialize;
 extern crate sync;
-extern crate getopts;
-extern crate collections;
+extern crate syntax;
 extern crate time;
-extern crate libc;
 
 #[phase(syntax, link)]
 extern crate log;
@@ -123,7 +124,7 @@ pub mod lib {
 
 pub fn main() {
     let args = std::os::args().iter()
-                              .map(|x| x.to_strbuf())
+                              .map(|x| x.to_string())
                               .collect::<Vec<_>>();
     std::os::set_exit_status(driver::main_args(args.as_slice()));
 }

@@ -297,6 +297,23 @@ impl<'a> Visitor<()> for EmbargoVisitor<'a> {
                 }
             }
 
+            ast::ItemTy(ref ty, _) if public_first => {
+                match ty.node {
+                    ast::TyPath(_, _, id) => {
+                        match self.tcx.def_map.borrow().get_copy(&id) {
+                            ast::DefPrimTy(..) => {},
+                            def => {
+                                let did = def_id_of_def(def);
+                                if is_local(did) {
+                                    self.exported_items.insert(did.node);
+                                }
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+
             _ => {}
         }
 
@@ -357,7 +374,7 @@ enum FieldName {
 impl<'a> PrivacyVisitor<'a> {
     // used when debugging
     fn nodestr(&self, id: ast::NodeId) -> String {
-        self.tcx.map.node_to_str(id).to_strbuf()
+        self.tcx.map.node_to_str(id).to_string()
     }
 
     // Determines whether the given definition is public from the point of view
@@ -1383,7 +1400,7 @@ impl<'a> Visitor<()> for VisiblePrivateTypesVisitor<'a> {
                         lint::VisiblePrivateTypes,
                         path_id, p.span,
                         "private type in exported type \
-                         signature".to_strbuf());
+                         signature".to_string());
                 }
             }
             _ => {}

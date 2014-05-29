@@ -34,7 +34,7 @@ use ast::{Ident, NormalFn, Inherited, Item, Item_, ItemStatic};
 use ast::{ItemEnum, ItemFn, ItemForeignMod, ItemImpl};
 use ast::{ItemMac, ItemMod, ItemStruct, ItemTrait, ItemTy, Lit, Lit_};
 use ast::{LitBool, LitFloat, LitFloatUnsuffixed, LitInt, LitChar};
-use ast::{LitIntUnsuffixed, LitNil, LitStr, LitUint, Local};
+use ast::{LitIntUnsuffixed, LitNil, LitStr, LitUint, Local, LocalLet};
 use ast::{MutImmutable, MutMutable, Mac_, MacInvocTT, Matcher, MatchNonterminal};
 use ast::{MatchSeq, MatchTok, Method, MutTy, BiMul, Mutability};
 use ast::{NamedField, UnNeg, NoReturn, UnNot, P, Pat, PatEnum};
@@ -407,7 +407,7 @@ impl<'a> Parser<'a> {
             let mut i = tokens.iter();
             // This might be a sign we need a connect method on Iterator.
             let b = i.next()
-                     .map_or("".to_strbuf(), |t| Parser::token_to_str(t));
+                     .map_or("".to_string(), |t| Parser::token_to_str(t));
             i.fold(b, |b,a| {
                 let mut b = b;
                 b.push_str("`, `");
@@ -2911,15 +2911,28 @@ impl<'a> Parser<'a> {
                 pat = PatRange(start, end);
             } else if is_plain_ident(&self.token) && !can_be_enum_or_struct {
                 let name = self.parse_path(NoTypesAllowed).path;
-                let sub;
-                if self.eat(&token::AT) {
-                    // parse foo @ pat
-                    sub = Some(self.parse_pat());
+                if self.eat(&token::NOT) {
+                    // macro invocation
+                    let ket = token::close_delimiter_for(&self.token)
+                                    .unwrap_or_else(|| self.fatal("expected open delimiter"));
+                    self.bump();
+
+                    let tts = self.parse_seq_to_end(&ket,
+                                                    seq_sep_none(),
+                                                    |p| p.parse_token_tree());
+
+                    let mac = MacInvocTT(name, tts, EMPTY_CTXT);
+                    pat = ast::PatMac(codemap::Spanned {node: mac, span: self.span});
                 } else {
-                    // or just foo
-                    sub = None;
+                    let sub = if self.eat(&token::AT) {
+                        // parse foo @ pat
+                        Some(self.parse_pat())
+                    } else {
+                        // or just foo
+                        None
+                    };
+                    pat = PatIdent(BindByValue(MutImmutable), name, sub);
                 }
-                pat = PatIdent(BindByValue(MutImmutable), name, sub);
             } else {
                 // parse an enum pat
                 let enum_path = self.parse_path(LifetimeAndTypesWithColons)
@@ -3034,6 +3047,7 @@ impl<'a> Parser<'a> {
             init: init,
             id: ast::DUMMY_NODE_ID,
             span: mk_sp(lo, self.last_span.hi),
+            source: LocalLet,
         }
     }
 
@@ -4159,7 +4173,7 @@ impl<'a> Parser<'a> {
                 outer_attrs, "path") {
             Some(d) => (dir_path.join(d), true),
             None => {
-                let mod_name = mod_string.get().to_owned();
+                let mod_name = mod_string.get().to_string();
                 let default_path_str = format!("{}.rs", mod_name);
                 let secondary_path_str = format!("{}/mod.rs", mod_name);
                 let default_path = dir_path.join(default_path_str.as_slice());
@@ -4171,7 +4185,7 @@ impl<'a> Parser<'a> {
                     self.span_err(id_sp,
                                   "cannot declare a new module at this location");
                     let this_module = match self.mod_path_stack.last() {
-                        Some(name) => name.get().to_strbuf(),
+                        Some(name) => name.get().to_string(),
                         None => self.root_module_name.get_ref().clone(),
                     };
                     self.span_note(id_sp,
@@ -4212,7 +4226,7 @@ impl<'a> Parser<'a> {
         };
 
         self.eval_src_mod_from_path(file_path, owns_directory,
-                                    mod_string.get().to_strbuf(), id_sp)
+                                    mod_string.get().to_string(), id_sp)
     }
 
     fn eval_src_mod_from_path(&mut self,

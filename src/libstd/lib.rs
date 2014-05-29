@@ -49,7 +49,7 @@
 //! `&str`, a UTF-8 string, is a built-in type, and the standard library
 //! defines methods for it on a variety of traits in the
 //! [`str`](str/index.html) module. Rust strings are immutable;
-//! use the `String` type defined in [`strbuf`](strbuf/index.html)
+//! use the `String` type defined in [`string`](string/index.html)
 //! for a mutable string builder.
 //!
 //! For converting to strings use the [`format!`](fmt/index.html)
@@ -117,6 +117,7 @@
 #[cfg(test)] extern crate rustuv;
 #[cfg(test)] extern crate native;
 #[cfg(test)] extern crate green;
+#[cfg(test)] extern crate debug;
 #[cfg(test)] #[phase(syntax, link)] extern crate log;
 
 // Make and rand accessible for benchmarking/testcases

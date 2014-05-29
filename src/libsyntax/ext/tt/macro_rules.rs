@@ -63,6 +63,11 @@ impl<'a> MacResult for ParserAnyMacro<'a> {
         self.ensure_complete_parse(true);
         Some(ret)
     }
+    fn make_pat(&self) -> Option<@ast::Pat> {
+        let ret = self.parser.borrow_mut().parse_pat();
+        self.ensure_complete_parse(false);
+        Some(ret)
+    }
     fn make_items(&self) -> Option<SmallVector<@ast::Item>> {
         let mut ret = SmallVector::zero();
         loop {
@@ -132,7 +137,7 @@ fn generic_extension(cx: &ExtCtxt,
 
     // Which arm's failure should we report? (the one furthest along)
     let mut best_fail_spot = DUMMY_SP;
-    let mut best_fail_msg = "internal error: ran no matchers".to_strbuf();
+    let mut best_fail_msg = "internal error: ran no matchers".to_string();
 
     for (i, lhs) in lhses.iter().enumerate() { // try each arm's matchers
         match **lhs {
@@ -247,7 +252,7 @@ pub fn add_new_extension(cx: &mut ExtCtxt,
 
     box MacroRulesDefiner {
         def: RefCell::new(Some(MacroDef {
-            name: token::get_ident(name).to_str().to_strbuf(),
+            name: token::get_ident(name).to_str().to_string(),
             ext: NormalTT(exp, Some(sp))
         }))
     } as Box<MacResult>

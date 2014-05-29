@@ -11,6 +11,8 @@
 // Test overloading of the `[]` operator.  In particular test that it
 // takes its argument *by reference*.
 
+extern crate debug;
+
 use std::ops::Index;
 
 struct AssociationList<K,V> {
@@ -40,8 +42,8 @@ impl<K:Eq,V:Clone> Index<K,V> for AssociationList<K,V> {
 }
 
 pub fn main() {
-    let foo = "foo".to_owned();
-    let bar = "bar".to_owned();
+    let foo = "foo".to_string();
+    let bar = "bar".to_string();
 
     let mut list = AssociationList {pairs: Vec::new()};
     list.push(foo.clone(), 22);

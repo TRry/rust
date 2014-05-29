@@ -280,7 +280,7 @@ fn fib(n: u64) -> u64 {
 
 let mut delayed_fib = sync::Future::spawn(proc() fib(50));
 make_a_sandwich();
-println!("fib(50) = {:?}", delayed_fib.get())
+println!("fib(50) = {}", delayed_fib.get())
 # }
 ~~~
 
@@ -467,7 +467,7 @@ fn stringifier(channel: &sync::DuplexStream<String, uint>) {
     let mut value: uint;
     loop {
         value = channel.recv();
-        channel.send(value.to_str().to_strbuf());
+        channel.send(value.to_str().to_string());
         if value == 0 { break; }
     }
 }
@@ -492,7 +492,7 @@ extern crate sync;
 #     let mut value: uint;
 #     loop {
 #         value = channel.recv();
-#         channel.send(value.to_str().to_strbuf());
+#         channel.send(value.to_str().to_string());
 #         if value == 0u { break; }
 #     }
 # }

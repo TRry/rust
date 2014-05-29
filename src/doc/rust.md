@@ -1264,8 +1264,8 @@ enum Animal {
     Cat { name: String, weight: f64 }
 }
 
-let mut a: Animal = Dog("Cocoa".to_strbuf(), 37.2);
-a = Cat { name: "Spotty".to_strbuf(), weight: 2.7 };
+let mut a: Animal = Dog("Cocoa".to_string(), 37.2);
+a = Cat { name: "Spotty".to_string(), weight: 2.7 };
 ~~~~
 
 In this example, `Cat` is a _struct-like enum variant_,
@@ -1435,7 +1435,7 @@ trait Circle : Shape { fn radius() -> f64; }
 ~~~~
 
 the syntax `Circle : Shape` means that types that implement `Circle` must also have an implementation for `Shape`.
-Multiple supertraits are separated by spaces, `trait Circle : Shape Eq { }`.
+Multiple supertraits are separated by `+`, `trait Circle : Shape + Eq { }`.
 In an implementation of `Circle` for a given type `T`, methods can refer to `Shape` methods,
 since the typechecker checks that any type with an implementation of `Circle` also has an implementation of `Shape`.
 
@@ -3538,7 +3538,7 @@ allocated on the heap (unlike closures). An example of creating and calling a
 procedure:
 
 ```rust
-let string = "Hello".to_owned();
+let string = "Hello".to_string();
 
 // Creates a new procedure, passing it to the `spawn` function.
 spawn(proc() {
@@ -3578,7 +3578,7 @@ trait Printable {
 }
 
 impl Printable for int {
-  fn to_string(&self) -> String { self.to_str().to_strbuf() }
+  fn to_string(&self) -> String { self.to_str().to_string() }
 }
 
 fn print(a: Box<Printable>) {

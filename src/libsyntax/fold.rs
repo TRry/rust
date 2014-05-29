@@ -288,6 +288,7 @@ pub trait Folder {
             pat: self.fold_pat(l.pat),
             init: l.init.map(|e| self.fold_expr(e)),
             span: self.new_span(l.span),
+            source: l.source,
         }
     }
 
@@ -769,6 +770,7 @@ pub fn noop_fold_pat<T: Folder>(p: @Pat, folder: &mut T) -> @Pat {
                     slice.map(|x| folder.fold_pat(x)),
                     after.iter().map(|x| folder.fold_pat(*x)).collect())
         }
+        PatMac(ref mac) => PatMac(folder.fold_mac(mac)),
     };
 
     @Pat {
@@ -963,13 +965,13 @@ mod test {
     #[test] fn ident_transformation () {
         let mut zz_fold = ToZzIdentFolder;
         let ast = string_to_crate(
-            "#[a] mod b {fn c (d : e, f : g) {h!(i,j,k);l;m}}".to_strbuf());
+            "#[a] mod b {fn c (d : e, f : g) {h!(i,j,k);l;m}}".to_string());
         let folded_crate = zz_fold.fold_crate(ast);
         assert_pred!(
             matches_codepattern,
             "matches_codepattern",
             pprust::to_str(|s| fake_print_crate(s, &folded_crate)),
-            "#[a]mod zz{fn zz(zz:zz,zz:zz){zz!(zz,zz,zz);zz;zz}}".to_strbuf());
+            "#[a]mod zz{fn zz(zz:zz,zz:zz){zz!(zz,zz,zz);zz;zz}}".to_string());
     }
 
     // even inside macro defs....
@@ -977,12 +979,12 @@ mod test {
         let mut zz_fold = ToZzIdentFolder;
         let ast = string_to_crate(
             "macro_rules! a {(b $c:expr $(d $e:token)f+ => \
-             (g $(d $d $e)+))} ".to_strbuf());
+             (g $(d $d $e)+))} ".to_string());
         let folded_crate = zz_fold.fold_crate(ast);
         assert_pred!(
             matches_codepattern,
             "matches_codepattern",
             pprust::to_str(|s| fake_print_crate(s, &folded_crate)),
-            "zz!zz((zz$zz:zz$(zz $zz:zz)zz+=>(zz$(zz$zz$zz)+)))".to_strbuf());
+            "zz!zz((zz$zz:zz$(zz $zz:zz)zz+=>(zz$(zz$zz$zz)+)))".to_string());
     }
 }
