@@ -511,7 +511,7 @@ fn get_metadata_section(os: Os, filename: &Path) -> Result<MetadataBlob, String>
 
 fn get_metadata_section_imp(os: Os, filename: &Path) -> Result<MetadataBlob, String> {
     if !filename.exists() {
-        return Err(format_strbuf!("no such file: '{}'", filename.display()));
+        return Err(format!("no such file: '{}'", filename.display()));
     }
     if filename.filename_str().unwrap().ends_with(".rlib") {
         // Use ArchiveRO for speed here, it's backed by LLVM and uses mmap
@@ -521,16 +521,14 @@ fn get_metadata_section_imp(os: Os, filename: &Path) -> Result<MetadataBlob, Str
             Some(ar) => ar,
             None => {
                 debug!("llvm didn't like `{}`", filename.display());
-                return Err(format_strbuf!("failed to read rlib metadata: \
-                                           '{}'",
-                                          filename.display()));
+                return Err(format!("failed to read rlib metadata: '{}'",
+                                   filename.display()));
             }
         };
         return match ArchiveMetadata::new(archive).map(|ar| MetadataArchive(ar)) {
             None => {
-                return Err((format_strbuf!("failed to read rlib metadata: \
-                                            '{}'",
-                                           filename.display())))
+                return Err((format!("failed to read rlib metadata: '{}'",
+                                    filename.display())))
             }
             Some(blob) => return Ok(blob)
         }
@@ -540,15 +538,14 @@ fn get_metadata_section_imp(os: Os, filename: &Path) -> Result<MetadataBlob, Str
             llvm::LLVMRustCreateMemoryBufferWithContentsOfFile(buf)
         });
         if mb as int == 0 {
-            return Err(format_strbuf!("error reading library: '{}'",
-                                      filename.display()))
+            return Err(format!("error reading library: '{}'",
+                               filename.display()))
         }
         let of = match ObjectFile::new(mb) {
             Some(of) => of,
             _ => {
-                return Err((format_strbuf!("provided path not an object \
-                                            file: '{}'",
-                                           filename.display())))
+                return Err((format!("provided path not an object file: '{}'",
+                                    filename.display())))
             }
         };
         let si = mk_section_iter(of.llof);
@@ -561,8 +558,7 @@ fn get_metadata_section_imp(os: Os, filename: &Path) -> Result<MetadataBlob, Str
                 let cbuf = llvm::LLVMGetSectionContents(si.llsi);
                 let csz = llvm::LLVMGetSectionSize(si.llsi) as uint;
                 let mut found =
-                    Err(format_strbuf!("metadata not found: '{}'",
-                                       filename.display()));
+                    Err(format!("metadata not found: '{}'", filename.display()));
                 let cvbuf: *u8 = mem::transmute(cbuf);
                 let vlen = encoder::metadata_encoding_version.len();
                 debug!("checking {} bytes of metadata-version stamp",
@@ -571,8 +567,7 @@ fn get_metadata_section_imp(os: Os, filename: &Path) -> Result<MetadataBlob, Str
                 let version_ok = slice::raw::buf_as_slice(cvbuf, minsz,
                     |buf0| buf0 == encoder::metadata_encoding_version);
                 if !version_ok {
-                    return Err((format_strbuf!("incompatible metadata \
-                                                version found: '{}'",
+                    return Err((format!("incompatible metadata version found: '{}'",
                                         filename.display())));
                 }
 
@@ -584,9 +579,9 @@ fn get_metadata_section_imp(os: Os, filename: &Path) -> Result<MetadataBlob, Str
                         Some(inflated) => found = Ok(MetadataVec(inflated)),
                         None => {
                             found =
-                                Err(format_strbuf!("failed to decompress \
-                                                    metadata for: '{}'",
-                                                   filename.display()))
+                                Err(format!("failed to decompress \
+                                             metadata for: '{}'",
+                                            filename.display()))
                         }
                     }
                 });
@@ -596,8 +591,7 @@ fn get_metadata_section_imp(os: Os, filename: &Path) -> Result<MetadataBlob, Str
             }
             llvm::LLVMMoveToNextSection(si.llsi);
         }
-        return Err(format_strbuf!("metadata not found: '{}'",
-                                  filename.display()));
+        return Err(format!("metadata not found: '{}'", filename.display()));
     }
 }
 

@@ -761,10 +761,7 @@ pub fn mangle_internal_name_by_path_and_seq(path: PathElems, flav: &str) -> Stri
 }
 
 pub fn output_lib_filename(id: &CrateId) -> String {
-    format_strbuf!("{}-{}-{}",
-                   id.name,
-                   crate_id_hash(id),
-                   id.version_or_default())
+    format!("{}-{}-{}", id.name, crate_id_hash(id), id.version_or_default())
 }
 
 pub fn get_cc_prog(sess: &Session) -> String {
@@ -837,12 +834,12 @@ pub fn filename_for_input(sess: &Session, crate_type: config::CrateType,
     let libname = output_lib_filename(id);
     match crate_type {
         config::CrateTypeRlib => {
-            out_filename.with_filename(format_strbuf!("lib{}.rlib", libname))
+            out_filename.with_filename(format!("lib{}.rlib", libname))
         }
         config::CrateTypeDylib => {
             // There is no support of DyLibs on iOS
             if sess.targ_cfg.os == abi::OsiOS {
-                out_filename.with_filename(format_strbuf!("lib{}.a", libname))
+                out_filename.with_filename(format!("lib{}.a", libname))
             } else {
                 let (prefix, suffix) = match sess.targ_cfg.os {
                     abi::OsWin32 => (loader::WIN32_DLL_PREFIX, loader::WIN32_DLL_SUFFIX),
@@ -852,14 +849,14 @@ pub fn filename_for_input(sess: &Session, crate_type: config::CrateType,
                     abi::OsFreebsd => (loader::FREEBSD_DLL_PREFIX, loader::FREEBSD_DLL_SUFFIX),
                     abi::OsiOS => unreachable!(),
                 };
-                out_filename.with_filename(format_strbuf!("{}{}{}",
+                out_filename.with_filename(format!("{}{}{}",
                                                    prefix,
                                                    libname,
                                                    suffix))
             }
         }
         config::CrateTypeStaticlib => {
-            out_filename.with_filename(format_strbuf!("lib{}.a", libname))
+            out_filename.with_filename(format!("lib{}.a", libname))
         }
         config::CrateTypeExecutable => out_filename.clone(),
     }
@@ -1042,6 +1039,8 @@ fn link_staticlib(sess: &Session, obj_filename: &Path, out_filename: &Path) {
     a.add_native_library("compiler-rt").unwrap();
 
     let crates = sess.cstore.get_used_crates(cstore::RequireStatic);
+    let mut all_native_libs = vec![];
+
     for &(cnum, ref path) in crates.iter() {
         let name = sess.cstore.get_crate_data(cnum).name.clone();
         let p = match *path {
@@ -1052,17 +1051,25 @@ fn link_staticlib(sess: &Session, obj_filename: &Path, out_filename: &Path) {
             }
         };
         a.add_rlib(&p, name.as_slice(), sess.lto()).unwrap();
+
         let native_libs = csearch::get_native_libraries(&sess.cstore, cnum);
-        for &(kind, ref lib) in native_libs.iter() {
-            let name = match kind {
-                cstore::NativeStatic => "static library",
-                cstore::NativeUnknown => "library",
-                cstore::NativeFramework => "framework",
-            };
-            sess.warn(format!("unlinked native {}: {}",
-                              name,
-                              *lib).as_slice());
-        }
+        all_native_libs.extend(native_libs.move_iter());
+    }
+
+    if !all_native_libs.is_empty() {
+        sess.warn("link against the following native artifacts when linking against \
+                  this static library");
+        sess.note("the order and any duplication can be significant on some platforms, \
+                  and so may need to be preserved");
+    }
+
+    for &(kind, ref lib) in all_native_libs.iter() {
+        let name = match kind {
+            cstore::NativeStatic => "static library",
+            cstore::NativeUnknown => "library",
+            cstore::NativeFramework => "framework",
+        };
+        sess.note(format!("{}: {}", name, *lib).as_slice());
     }
 }
 
@@ -1374,7 +1381,7 @@ fn add_local_native_libraries(cmd: &mut Command, sess: &Session) {
                         cmd.arg("-Wl,-Bdynamic");
                     }
                 }
-                cmd.arg(format_strbuf!("-l{}", *l));
+                cmd.arg(format!("-l{}", *l));
             }
             cstore::NativeFramework => {
                 cmd.arg("-framework");
@@ -1538,7 +1545,7 @@ fn add_upstream_native_libraries(cmd: &mut Command, sess: &Session) {
         for &(kind, ref lib) in libs.iter() {
             match kind {
                 cstore::NativeUnknown => {
-                    cmd.arg(format_strbuf!("-l{}", *lib));
+                    cmd.arg(format!("-l{}", *lib));
                 }
                 cstore::NativeFramework => {
                     cmd.arg("-framework");

@@ -425,7 +425,7 @@ impl Regex {
     /// # use regex::Captures; fn main() {
     /// let re = regex!(r"([^,\s]+),\s+(\S+)");
     /// let result = re.replace("Springsteen, Bruce", |caps: &Captures| {
-    ///     format_strbuf!("{} {}", caps.at(2), caps.at(1))
+    ///     format!("{} {}", caps.at(2), caps.at(1))
     /// });
     /// assert_eq!(result.as_slice(), "Bruce Springsteen");
     /// # }
@@ -573,13 +573,13 @@ impl<'t> Replacer for NoExpand<'t> {
 
 impl<'t> Replacer for &'t str {
     fn reg_replace<'a>(&'a mut self, caps: &Captures) -> MaybeOwned<'a> {
-        Owned(caps.expand(*self).into_owned())
+        Owned(caps.expand(*self))
     }
 }
 
 impl<'a> Replacer for |&Captures|: 'a -> String {
     fn reg_replace<'r>(&'r mut self, caps: &Captures) -> MaybeOwned<'r> {
-        Owned((*self)(caps).into_owned())
+        Owned((*self)(caps))
     }
 }
 
@@ -761,9 +761,8 @@ impl<'t> Captures<'t> {
         let re = Regex::new(r"(^|[^$]|\b)\$(\w+)").unwrap();
         let text = re.replace_all(text, |refs: &Captures| -> String {
             let (pre, name) = (refs.at(1), refs.at(2));
-            format_strbuf!("{}{}",
-                           pre,
-                           match from_str::<uint>(name.as_slice()) {
+            format!("{}{}", pre,
+                    match from_str::<uint>(name.as_slice()) {
                 None => self.name(name).to_string(),
                 Some(i) => self.at(i).to_string(),
             })
