@@ -8,26 +8,12 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// This file was auto-generated using 'src/etc/generate-keyword-span-tests.py'
-
-#![feature(struct_variant)]
-extern crate rand;
-
-#[deriving(Eq)]
-struct Error;
-
-#[deriving(Eq, Ord)]
-enum Enum {
-   A {
-     x: Error //~ ERROR
-//~^ ERROR
-//~^^ ERROR
-//~^^^ ERROR
-//~^^^^ ERROR
-//~^^^^^ ERROR
-//~^^^^^^ ERROR
-//~^^^^^^^ ERROR
-   }
+fn main() {
+    match Some(10) {
+    //~^ ERROR match arms have incompatible types: expected `bool` but found `()`
+        Some(5) => false,
+        Some(2) => true,
+        None    => (), //~ NOTE match arm with an incompatible type
+        _       => true
+    }
 }
-
-fn main() {}

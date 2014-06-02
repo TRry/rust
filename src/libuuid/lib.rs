@@ -1,4 +1,4 @@
-// Copyright 2013 The Rust Project Developers. See the COPYRIGHT
+// Copyright 2013-2014 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
 //
@@ -87,7 +87,7 @@ use serialize::{Encoder, Encodable, Decoder, Decodable};
 pub type UuidBytes = [u8, ..16];
 
 /// The version of the UUID, denoting the generating algorithm
-#[deriving(Eq)]
+#[deriving(PartialEq)]
 pub enum UuidVersion {
     /// Version 1: MAC address
     Version1Mac    = 1,
@@ -102,7 +102,7 @@ pub enum UuidVersion {
 }
 
 /// The reserved variants of UUIDs
-#[deriving(Eq)]
+#[deriving(PartialEq)]
 pub enum UuidVariant {
     /// Reserved by the NCS for backward compatibility
     VariantNCS,
@@ -481,13 +481,13 @@ impl fmt::Show for Uuid {
 /// Test two UUIDs for equality
 ///
 /// UUIDs are equal only when they are byte-for-byte identical
-impl Eq for Uuid {
+impl PartialEq for Uuid {
     fn eq(&self, other: &Uuid) -> bool {
         self.bytes == other.bytes
     }
 }
 
-impl TotalEq for Uuid {}
+impl Eq for Uuid {}
 
 // FIXME #9845: Test these more thoroughly
 impl<T: Encoder<E>, E> Encodable<T, E> for Uuid {
@@ -795,14 +795,16 @@ mod test {
 
     #[test]
     fn test_serialize_round_trip() {
-        use serialize::ebml;
+        use serialize::ebml::Doc;
+        use serialize::ebml::writer::Encoder;
+        use serialize::ebml::reader::Decoder;
         use serialize::{Encodable, Decodable};
 
         let u = Uuid::new_v4();
         let mut wr = MemWriter::new();
-        let _ = u.encode(&mut ebml::writer::Encoder(&mut wr));
-        let doc = ebml::reader::Doc(wr.get_ref());
-        let u2 = Decodable::decode(&mut ebml::reader::Decoder(doc)).unwrap();
+        let _ = u.encode(&mut Encoder::new(&mut wr));
+        let doc = Doc::new(wr.get_ref());
+        let u2 = Decodable::decode(&mut Decoder::new(doc)).unwrap();
         assert_eq!(u, u2);
     }
 

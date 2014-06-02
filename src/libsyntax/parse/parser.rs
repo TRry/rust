@@ -82,7 +82,7 @@ use std::rc::Rc;
 use std::string::String;
 
 #[allow(non_camel_case_types)]
-#[deriving(Eq)]
+#[deriving(PartialEq)]
 pub enum restriction {
     UNRESTRICTED,
     RESTRICT_STMT_EXPR,
@@ -94,7 +94,7 @@ type ItemInfo = (Ident, Item_, Option<Vec<Attribute> >);
 
 /// How to parse a path. There are four different kinds of paths, all of which
 /// are parsed somewhat differently.
-#[deriving(Eq)]
+#[deriving(PartialEq)]
 pub enum PathParsingMode {
     /// A path with no type parameters; e.g. `foo::bar::Baz`
     NoTypesAllowed,
@@ -278,49 +278,10 @@ struct ParsedItemsAndViewItems {
     attrs_remaining: Vec<Attribute> ,
     view_items: Vec<ViewItem> ,
     items: Vec<@Item> ,
-    foreign_items: Vec<@ForeignItem> }
+    foreign_items: Vec<@ForeignItem>
+}
 
 /* ident is handled by common.rs */
-
-pub fn Parser<'a>(
-              sess: &'a ParseSess,
-              cfg: ast::CrateConfig,
-              mut rdr: Box<Reader:>)
-              -> Parser<'a> {
-    let tok0 = rdr.next_token();
-    let span = tok0.sp;
-    let placeholder = TokenAndSpan {
-        tok: token::UNDERSCORE,
-        sp: span,
-    };
-
-    Parser {
-        reader: rdr,
-        interner: token::get_ident_interner(),
-        sess: sess,
-        cfg: cfg,
-        token: tok0.tok,
-        span: span,
-        last_span: span,
-        last_token: None,
-        buffer: [
-            placeholder.clone(),
-            placeholder.clone(),
-            placeholder.clone(),
-            placeholder.clone(),
-        ],
-        buffer_start: 0,
-        buffer_end: 0,
-        tokens_consumed: 0,
-        restriction: UNRESTRICTED,
-        quote_depth: 0,
-        obsolete_set: HashSet::new(),
-        mod_path_stack: Vec::new(),
-        open_braces: Vec::new(),
-        owns_directory: true,
-        root_module_name: None,
-    }
-}
 
 pub struct Parser<'a> {
     pub sess: &'a ParseSess,
@@ -362,6 +323,41 @@ fn is_plain_ident_or_underscore(t: &token::Token) -> bool {
 }
 
 impl<'a> Parser<'a> {
+    pub fn new(sess: &'a ParseSess, cfg: ast::CrateConfig, mut rdr: Box<Reader:>) -> Parser<'a> {
+        let tok0 = rdr.next_token();
+        let span = tok0.sp;
+        let placeholder = TokenAndSpan {
+            tok: token::UNDERSCORE,
+            sp: span,
+        };
+
+        Parser {
+            reader: rdr,
+            interner: token::get_ident_interner(),
+            sess: sess,
+            cfg: cfg,
+            token: tok0.tok,
+            span: span,
+            last_span: span,
+            last_token: None,
+            buffer: [
+                placeholder.clone(),
+                placeholder.clone(),
+                placeholder.clone(),
+                placeholder.clone(),
+            ],
+            buffer_start: 0,
+            buffer_end: 0,
+            tokens_consumed: 0,
+            restriction: UNRESTRICTED,
+            quote_depth: 0,
+            obsolete_set: HashSet::new(),
+            mod_path_stack: Vec::new(),
+            open_braces: Vec::new(),
+            owns_directory: true,
+            root_module_name: None,
+        }
+    }
     // convert a token to a string using self's reader
     pub fn token_to_str(token: &token::Token) -> String {
         token::to_str(token)
@@ -4537,7 +4533,7 @@ impl<'a> Parser<'a> {
                     Some(abi) => Some(abi),
                     None => {
                         self.span_err(
-                            self.span,
+                            self.last_span,
                             format!("illegal ABI: expected one of [{}], \
                                      found `{}`",
                                     abi::all_names().connect(", "),

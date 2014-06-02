@@ -72,7 +72,7 @@ use syntax::parse::token;
 use syntax::visit::Visitor;
 use syntax::{ast, ast_util, visit};
 
-#[deriving(Clone, Show, Eq, Ord, TotalEq, TotalOrd, Hash)]
+#[deriving(Clone, Show, PartialEq, PartialOrd, Eq, Ord, Hash)]
 pub enum Lint {
     CTypes,
     UnusedImports,
@@ -83,6 +83,7 @@ pub enum Lint {
     NonCamelCaseTypes,
     NonUppercaseStatics,
     NonUppercasePatternStatics,
+    NonSnakeCaseFunctions,
     UppercaseVariables,
     UnnecessaryParens,
     TypeLimits,
@@ -134,12 +135,12 @@ pub fn level_to_str(lv: Level) -> &'static str {
     }
 }
 
-#[deriving(Clone, Eq, Ord, TotalEq, TotalOrd)]
+#[deriving(Clone, PartialEq, PartialOrd, Eq, Ord)]
 pub enum Level {
     Allow, Warn, Deny, Forbid
 }
 
-#[deriving(Clone, Eq, Ord, TotalEq, TotalOrd)]
+#[deriving(Clone, PartialEq, PartialOrd, Eq, Ord)]
 pub struct LintSpec {
     pub default: Level,
     pub lint: Lint,
@@ -149,7 +150,7 @@ pub struct LintSpec {
 pub type LintDict = HashMap<&'static str, LintSpec>;
 
 // this is public for the lints that run in trans
-#[deriving(Eq)]
+#[deriving(PartialEq)]
 pub enum LintSource {
     Node(Span),
     Default,
@@ -217,6 +218,13 @@ static lint_table: &'static [(&'static str, LintSpec)] = &[
      LintSpec {
          lint: NonUppercasePatternStatics,
          desc: "static constants in match patterns should be all caps",
+         default: Warn
+     }),
+
+    ("non_snake_case_functions",
+     LintSpec {
+         lint: NonSnakeCaseFunctions,
+         desc: "methods and functions should have snake case names",
          default: Warn
      }),
 
@@ -828,7 +836,7 @@ fn check_type_limits(cx: &Context, e: &ast::Expr) {
         _ => ()
     };
 
-    fn is_valid<T:cmp::Ord>(binop: ast::BinOp, v: T,
+    fn is_valid<T:cmp::PartialOrd>(binop: ast::BinOp, v: T,
                             min: T, max: T) -> bool {
         match binop {
             ast::BiLt => v >  min && v <= max,
@@ -1342,6 +1350,30 @@ fn check_item_non_camel_case_types(cx: &Context, it: &ast::Item) {
     }
 }
 
+fn check_snake_case(cx: &Context, sort: &str, ident: ast::Ident, span: Span) {
+    fn is_snake_case(ident: ast::Ident) -> bool {
+        let ident = token::get_ident(ident);
+        assert!(!ident.get().is_empty());
+        let ident = ident.get().trim_chars('_');
+
+        let mut allow_underscore = true;
+        ident.chars().all(|c| {
+            allow_underscore = match c {
+                c if c.is_lowercase() || c.is_digit() => true,
+                '_' if allow_underscore => false,
+                _ => return false,
+            };
+            true
+        })
+    }
+
+    if !is_snake_case(ident) {
+        cx.span_lint(NonSnakeCaseFunctions, span,
+                    format!("{} `{}` should have a snake case identifier",
+                            sort, token::get_ident(ident)).as_slice());
+    }
+}
+
 fn check_item_non_uppercase_statics(cx: &Context, it: &ast::Item) {
     match it.node {
         // only check static constants
@@ -1618,7 +1650,27 @@ fn check_missing_doc_item(cx: &Context, it: &ast::Item) {
                             desc);
 }
 
+#[deriving(PartialEq)]
+enum MethodContext {
+    TraitDefaultImpl,
+    TraitImpl,
+    PlainImpl
+}
+
 fn check_missing_doc_method(cx: &Context, m: &ast::Method) {
+    // If the method is an impl for a trait, don't doc.
+    if method_context(cx, m) == TraitImpl { return; }
+
+    // Otherwise, doc according to privacy. This will also check
+    // doc for default methods defined on traits.
+    check_missing_doc_attrs(cx,
+                            Some(m.id),
+                            m.attrs.as_slice(),
+                            m.span,
+                            "a method");
+}
+
+fn method_context(cx: &Context, m: &ast::Method) -> MethodContext {
     let did = ast::DefId {
         krate: ast::LOCAL_CRATE,
         node: m.id
@@ -1628,25 +1680,16 @@ fn check_missing_doc_method(cx: &Context, m: &ast::Method) {
         None => cx.tcx.sess.span_bug(m.span, "missing method descriptor?!"),
         Some(md) => {
             match md.container {
-                // Always check default methods defined on traits.
-                ty::TraitContainer(..) => {}
-                // For methods defined on impls, it depends on whether
-                // it is an implementation for a trait or is a plain
-                // impl.
+                ty::TraitContainer(..) => TraitDefaultImpl,
                 ty::ImplContainer(cid) => {
                     match ty::impl_trait_ref(cx.tcx, cid) {
-                        Some(..) => return, // impl for trait: don't doc
-                        None => {} // plain impl: doc according to privacy
+                        Some(..) => TraitImpl,
+                        None => PlainImpl
                     }
                 }
             }
         }
     }
-    check_missing_doc_attrs(cx,
-                            Some(m.id),
-                            m.attrs.as_slice(),
-                            m.span,
-                            "a method");
 }
 
 fn check_missing_doc_ty_method(cx: &Context, tm: &ast::TypeMethod) {
@@ -1889,26 +1932,36 @@ impl<'a> Visitor<()> for Context<'a> {
         }
 
         match *fk {
-            visit::FkMethod(_, _, m) => {
+            visit::FkMethod(ident, _, m) => {
                 self.with_lint_attrs(m.attrs.as_slice(), |cx| {
                     check_missing_doc_method(cx, m);
                     check_attrs_usage(cx, m.attrs.as_slice());
+
+                    match method_context(cx, m) {
+                        PlainImpl => check_snake_case(cx, "method", ident, span),
+                        TraitDefaultImpl => check_snake_case(cx, "trait method", ident, span),
+                        _ => (),
+                    }
 
                     cx.visit_ids(|v| {
                         v.visit_fn(fk, decl, body, span, id, ());
                     });
                     recurse(cx);
                 })
+            },
+            visit::FkItemFn(ident, _, _, _) => {
+                check_snake_case(self, "function", ident, span);
+                recurse(self);
             }
             _ => recurse(self),
         }
     }
 
-
     fn visit_ty_method(&mut self, t: &ast::TypeMethod, _: ()) {
         self.with_lint_attrs(t.attrs.as_slice(), |cx| {
             check_missing_doc_ty_method(cx, t);
             check_attrs_usage(cx, t.attrs.as_slice());
+            check_snake_case(cx, "trait method", t.ident, t.span);
 
             visit::walk_ty_method(cx, t, ());
         })

@@ -1,4 +1,4 @@
-// Copyright 2012 The Rust Project Developers. See the COPYRIGHT
+// Copyright 2012-2014 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
 //
@@ -10,6 +10,7 @@
 
 #![allow(non_uppercase_pattern_statics)]
 #![allow(non_camel_case_types)]
+#![allow(non_snake_case_functions)]
 #![allow(dead_code)]
 
 use std::c_str::ToCStr;
@@ -28,7 +29,7 @@ pub static False: Bool = 0 as Bool;
 
 // Consts for the LLVM CallConv type, pre-cast to uint.
 
-#[deriving(Eq)]
+#[deriving(PartialEq)]
 pub enum CallConv {
     CCallConv = 0,
     FastCallConv = 8,
@@ -155,7 +156,7 @@ pub enum RealPredicate {
 
 // The LLVM TypeKind type - must stay in sync with the def of
 // LLVMTypeKind in llvm/include/llvm-c/Core.h
-#[deriving(Eq)]
+#[deriving(PartialEq)]
 #[repr(C)]
 pub enum TypeKind {
     Void      = 0,
@@ -225,7 +226,7 @@ pub enum AsmDialect {
     AD_Intel = 1
 }
 
-#[deriving(Eq)]
+#[deriving(PartialEq)]
 #[repr(C)]
 pub enum CodeGenOptLevel {
     CodeGenLevelNone = 0,

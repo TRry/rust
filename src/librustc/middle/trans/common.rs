@@ -8,7 +8,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#![allow(non_camel_case_types)]
+#![allow(non_camel_case_types, non_snake_case_functions)]
 
 //! Code that is useful in various trans modules.
 
@@ -21,7 +21,6 @@ use middle::lang_items::LangItem;
 use middle::trans::build;
 use middle::trans::cleanup;
 use middle::trans::datum;
-use middle::trans::datum::{Datum, Lvalue};
 use middle::trans::debuginfo;
 use middle::trans::type_::Type;
 use middle::ty;
@@ -723,7 +722,7 @@ pub fn expr_ty_adjusted(bcx: &Block, ex: &ast::Expr) -> ty::t {
 }
 
 // Key used to lookup values supplied for type parameters in an expr.
-#[deriving(Eq)]
+#[deriving(PartialEq)]
 pub enum ExprOrMethodCall {
     // Type parameters for a path like `None::<int>`
     ExprId(ast::NodeId),

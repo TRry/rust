@@ -1,4 +1,4 @@
-// Copyright 2012 The Rust Project Developers. See the COPYRIGHT
+// Copyright 2012-2014 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
 //
@@ -19,11 +19,11 @@ removed.
 
 use ast::{Expr, ExprLit, LitNil};
 use codemap::{Span, respan};
-use parse::parser::Parser;
+use parse::parser;
 use parse::token;
 
 /// The specific types of unsupported syntax
-#[deriving(Eq, TotalEq, Hash)]
+#[deriving(PartialEq, Eq, Hash)]
 pub enum ObsoleteSyntax {
     ObsoleteOwnedType,
     ObsoleteOwnedExpr,
@@ -45,7 +45,7 @@ pub trait ParserObsoleteMethods {
     fn eat_obsolete_ident(&mut self, ident: &str) -> bool;
 }
 
-impl<'a> ParserObsoleteMethods for Parser<'a> {
+impl<'a> ParserObsoleteMethods for parser::Parser<'a> {
     /// Reports an obsolete syntax non-fatal error.
     fn obsolete(&mut self, sp: Span, kind: ObsoleteSyntax) {
         let (kind_str, desc) = match kind {

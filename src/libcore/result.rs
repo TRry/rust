@@ -234,8 +234,8 @@
 //! similar and complementary: they are often employed to indicate a
 //! lack of a return value; and they are trivially converted between
 //! each other, so `Result`s are often handled by first converting to
-//! `Option` with the [`ok`](enum.Result.html#method.ok) and
-//! [`err`](enum.Result.html#method.ok) methods.
+//! `Option` with the [`ok`](type.Result.html#method.ok) and
+//! [`err`](type.Result.html#method.ok) methods.
 //!
 //! Whereas `Option` only indicates the lack of a value, `Result` is
 //! specifically for error reporting, and carries with it an error
@@ -275,7 +275,7 @@
 //! will not resume after failure, that failure is catastrophic.
 
 use clone::Clone;
-use cmp::Eq;
+use cmp::PartialEq;
 use std::fmt::Show;
 use iter::{Iterator, FromIterator};
 use option::{None, Option, Some};
@@ -283,7 +283,7 @@ use option::{None, Option, Some};
 /// `Result` is a type that represents either success (`Ok`) or failure (`Err`).
 ///
 /// See the [`std::result`](index.html) module documentation for details.
-#[deriving(Clone, Eq, Ord, TotalEq, TotalOrd, Show)]
+#[deriving(Clone, PartialEq, PartialOrd, Eq, Ord, Show)]
 #[must_use]
 pub enum Result<T, E> {
     /// Contains the success value
@@ -432,11 +432,13 @@ impl<T, E> Result<T, E> {
     ///     let line: IoResult<String> = reader.read_line();
     ///     // Convert the string line to a number using `map` and `from_str`
     ///     let val: IoResult<int> = line.map(|line| {
-    ///         from_str::<int>(line.as_slice()).unwrap_or(0)
+    ///         from_str::<int>(line.as_slice().trim_right()).unwrap_or(0)
     ///     });
     ///     // Add the value if there were no errors, otherwise add 0
     ///     sum += val.ok().unwrap_or(0);
     /// }
+    ///
+    /// assert!(sum == 10);
     /// ~~~
     #[inline]
     pub fn map<U>(self, op: |T| -> U) -> Result<U,E> {

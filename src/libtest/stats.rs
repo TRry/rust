@@ -126,7 +126,7 @@ pub trait Stats <T: FloatMath + FromPrimitive>{
 }
 
 /// Extracted collection of all the summary statistics of a sample set.
-#[deriving(Clone, Eq)]
+#[deriving(Clone, PartialEq)]
 #[allow(missing_doc)]
 pub struct Summary<T> {
     pub sum: T,
@@ -441,7 +441,7 @@ pub fn write_boxplot<T: Float + Show + FromPrimitive>(
 
 /// Returns a HashMap with the number of occurrences of every element in the
 /// sequence that the iterator exposes.
-pub fn freq_count<T: Iterator<U>, U: TotalEq+Hash>(mut iter: T) -> hashmap::HashMap<U, uint> {
+pub fn freq_count<T: Iterator<U>, U: Eq+Hash>(mut iter: T) -> hashmap::HashMap<U, uint> {
     let mut map: hashmap::HashMap<U,uint> = hashmap::HashMap::new();
     for elem in iter {
         map.insert_or_update_with(elem, 1, |_, count| *count += 1);

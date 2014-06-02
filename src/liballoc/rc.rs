@@ -26,7 +26,7 @@ pointers, and then storing the parent pointers as `Weak` pointers.
 use core::mem::transmute;
 use core::cell::Cell;
 use core::clone::Clone;
-use core::cmp::{Eq, Ord, TotalEq, TotalOrd, Ordering};
+use core::cmp::{PartialEq, PartialOrd, Eq, Ord, Ordering};
 use core::kinds::marker;
 use core::ops::{Deref, Drop};
 use core::option::{Option, Some, None};
@@ -86,6 +86,31 @@ impl<T> Rc<T> {
     }
 }
 
+impl<T: Clone> Rc<T> {
+    /// Acquires a mutable pointer to the inner contents by guaranteeing that
+    /// the reference count is one (no sharing is possible).
+    ///
+    /// This is also referred to as a copy-on-write operation because the inner
+    /// data is cloned if the reference count is greater than one.
+    #[inline]
+    #[experimental]
+    pub fn make_unique<'a>(&'a mut self) -> &'a mut T {
+        // Note that we hold a strong reference, which also counts as
+        // a weak reference, so we only clone if there is an
+        // additional reference of either kind.
+        if self.strong() != 1 || self.weak() != 1 {
+            *self = Rc::new(self.deref().clone())
+        }
+        // This unsafety is ok because we're guaranteed that the pointer
+        // returned is the *only* pointer that will ever be returned to T. Our
+        // reference count is guaranteed to be 1 at this point, and we required
+        // the Rc itself to be `mut`, so we're returning the only possible
+        // reference to the inner data.
+        let inner = unsafe { &mut *self._ptr };
+        &mut inner.value
+    }
+}
+
 impl<T> Deref<T> for Rc<T> {
     /// Borrow the value contained in the reference-counted box
     #[inline(always)]
@@ -125,16 +150,16 @@ impl<T> Clone for Rc<T> {
     }
 }
 
-impl<T: Eq> Eq for Rc<T> {
+impl<T: PartialEq> PartialEq for Rc<T> {
     #[inline(always)]
     fn eq(&self, other: &Rc<T>) -> bool { **self == **other }
     #[inline(always)]
     fn ne(&self, other: &Rc<T>) -> bool { **self != **other }
 }
 
-impl<T: TotalEq> TotalEq for Rc<T> {}
+impl<T: Eq> Eq for Rc<T> {}
 
-impl<T: Ord> Ord for Rc<T> {
+impl<T: PartialOrd> PartialOrd for Rc<T> {
     #[inline(always)]
     fn lt(&self, other: &Rc<T>) -> bool { **self < **other }
 
@@ -148,7 +173,7 @@ impl<T: Ord> Ord for Rc<T> {
     fn ge(&self, other: &Rc<T>) -> bool { **self >= **other }
 }
 
-impl<T: TotalOrd> TotalOrd for Rc<T> {
+impl<T: Ord> Ord for Rc<T> {
     #[inline]
     fn cmp(&self, other: &Rc<T>) -> Ordering { (**self).cmp(&**other) }
 }
@@ -234,6 +259,7 @@ impl<T> RcBoxPtr<T> for Weak<T> {
 }
 
 #[cfg(test)]
+#[allow(experimental)]
 mod tests {
     use super::{Rc, Weak};
     use std::cell::RefCell;
@@ -304,4 +330,66 @@ mod tests {
 
         // hopefully we don't double-free (or leak)...
     }
+
+    #[test]
+    fn test_cowrc_clone_make_unique() {
+        let mut cow0 = Rc::new(75u);
+        let mut cow1 = cow0.clone();
+        let mut cow2 = cow1.clone();
+
+        assert!(75 == *cow0.make_unique());
+        assert!(75 == *cow1.make_unique());
+        assert!(75 == *cow2.make_unique());
+
+        *cow0.make_unique() += 1;
+        *cow1.make_unique() += 2;
+        *cow2.make_unique() += 3;
+
+        assert!(76 == *cow0);
+        assert!(77 == *cow1);
+        assert!(78 == *cow2);
+
+        // none should point to the same backing memory
+        assert!(*cow0 != *cow1);
+        assert!(*cow0 != *cow2);
+        assert!(*cow1 != *cow2);
+    }
+
+    #[test]
+    fn test_cowrc_clone_unique2() {
+        let mut cow0 = Rc::new(75u);
+        let cow1 = cow0.clone();
+        let cow2 = cow1.clone();
+
+        assert!(75 == *cow0);
+        assert!(75 == *cow1);
+        assert!(75 == *cow2);
+
+        *cow0.make_unique() += 1;
+
+        assert!(76 == *cow0);
+        assert!(75 == *cow1);
+        assert!(75 == *cow2);
+
+        // cow1 and cow2 should share the same contents
+        // cow0 should have a unique reference
+        assert!(*cow0 != *cow1);
+        assert!(*cow0 != *cow2);
+        assert!(*cow1 == *cow2);
+    }
+
+    #[test]
+    fn test_cowrc_clone_weak() {
+        let mut cow0 = Rc::new(75u);
+        let cow1_weak = cow0.downgrade();
+
+        assert!(75 == *cow0);
+        assert!(75 == *cow1_weak.upgrade().unwrap());
+
+        *cow0.make_unique() += 1;
+
+        assert!(76 == *cow0);
+        assert!(cow1_weak.upgrade().is_none());
+    }
+
 }

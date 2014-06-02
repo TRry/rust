@@ -82,7 +82,7 @@ pub fn check_loans(bccx: &BorrowckCtxt,
     clcx.visit_block(body, ());
 }
 
-#[deriving(Eq)]
+#[deriving(PartialEq)]
 enum MoveError {
     MoveOk,
     MoveWhileBorrowed(/*loan*/Rc<LoanPath>, /*loan*/Span)
@@ -638,9 +638,11 @@ impl<'a> CheckLoanCtxt<'a> {
                 loan_path = match *loan_path {
                     // Peel back one layer if, for `loan_path` to be
                     // mutable, `lp_base` must be mutable. This occurs
-                    // with inherited mutability and with `&mut`
-                    // pointers.
+                    // with inherited mutability, owned pointers and
+                    // `&mut` pointers.
                     LpExtend(ref lp_base, mc::McInherited, _) |
+                    LpExtend(ref lp_base, _, LpDeref(mc::OwnedPtr)) |
+                    LpExtend(ref lp_base, _, LpDeref(mc::GcPtr)) |
                     LpExtend(ref lp_base, _, LpDeref(mc::BorrowedPtr(ty::MutBorrow, _))) => {
                         lp_base.clone()
                     }

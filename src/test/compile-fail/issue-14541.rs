@@ -8,20 +8,13 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// This file was auto-generated using 'src/etc/generate-keyword-span-tests.py'
+struct vec2 { y: f32 }
+struct vec3 { y: f32, z: f32 }
 
-#![feature(struct_variant)]
-extern crate rand;
-
-
-struct Error;
-
-#[deriving(Eq)]
-enum Enum {
-   A {
-     x: Error //~ ERROR
-//~^ ERROR
-   }
+fn make(v: vec2) {
+    let vec3 { y: _, z: _ } = v;
+    //~^ ERROR mismatched types: expected `vec2` but found `vec3`
+    //~^^ ERROR struct `vec2` does not have a field named `z`
 }
 
-fn main() {}
+fn main() { }

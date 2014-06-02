@@ -22,7 +22,7 @@
 extern crate collections;
 
 use collections::HashMap;
-use std::cmp::Eq;
+use std::cmp::PartialEq;
 use std::fmt;
 use std::from_str::FromStr;
 use std::hash::Hash;
@@ -48,7 +48,7 @@ use std::uint;
 ///                 fragment: Some("quz".to_string()) };
 /// // https://username@example.com:8080/foo/bar?baz=qux#quz
 /// ```
-#[deriving(Clone, Eq, TotalEq)]
+#[deriving(Clone, PartialEq, Eq)]
 pub struct Url {
     /// The scheme part of a URL, such as `https` in the above example.
     pub scheme: String,
@@ -68,7 +68,7 @@ pub struct Url {
     pub fragment: Option<String>
 }
 
-#[deriving(Clone, Eq)]
+#[deriving(Clone, PartialEq)]
 pub struct Path {
     /// The path component of a URL, for example `/foo/bar`.
     pub path: String,
@@ -81,7 +81,7 @@ pub struct Path {
 }
 
 /// An optional subcomponent of a URI authority component.
-#[deriving(Clone, Eq, TotalEq)]
+#[deriving(Clone, PartialEq, Eq)]
 pub struct UserInfo {
     /// The user name.
     pub user: String,
@@ -452,8 +452,8 @@ fn query_from_str(rawquery: &str) -> Query {
  *
  * ```rust
  * let query = vec!(("title".to_string(), "The Village".to_string()),
-                    ("north".to_string(), "52.91".to_string()),
-                    ("west".to_string(), "4.10".to_string()));
+ *                  ("north".to_string(), "52.91".to_string()),
+ *                  ("west".to_string(), "4.10".to_string()));
  * println!("{}", url::query_to_str(&query));  // title=The%20Village&north=52.91&west=4.10
  * ```
  */
@@ -515,7 +515,7 @@ pub fn get_scheme(rawurl: &str) -> Result<(String, String), String> {
     return Err("url: Scheme must be terminated with a colon.".to_string());
 }
 
-#[deriving(Clone, Eq)]
+#[deriving(Clone, PartialEq)]
 enum Input {
     Digit, // all digits
     Hex, // digits and letters a-f

@@ -22,7 +22,6 @@ pub use middle::typeck::infer::resolve::{resolve_nested_tvar};
 pub use middle::typeck::infer::resolve::{resolve_rvar};
 
 use collections::HashMap;
-use collections::SmallIntMap;
 use middle::ty::{TyVid, IntVid, FloatVid, RegionVid, Vid};
 use middle::ty;
 use middle::ty_fold;
@@ -117,8 +116,8 @@ pub enum TypeOrigin {
     // Relating trait refs when resolving vtables
     RelateSelfType(Span),
 
-    // Computing common supertype in a match expression
-    MatchExpression(Span),
+    // Computing common supertype in the arms of a match expression
+    MatchExpressionArm(Span, Span),
 
     // Computing common supertype in an if expression
     IfExpression(Span),
@@ -258,27 +257,20 @@ pub fn fixup_err_to_str(f: fixup_err) -> String {
     }
 }
 
-fn new_ValsAndBindings<V:Clone,T:Clone>() -> ValsAndBindings<V, T> {
-    ValsAndBindings {
-        vals: SmallIntMap::new(),
-        bindings: Vec::new()
-    }
-}
-
 pub fn new_infer_ctxt<'a>(tcx: &'a ty::ctxt) -> InferCtxt<'a> {
     InferCtxt {
         tcx: tcx,
 
-        ty_var_bindings: RefCell::new(new_ValsAndBindings()),
+        ty_var_bindings: RefCell::new(ValsAndBindings::new()),
         ty_var_counter: Cell::new(0),
 
-        int_var_bindings: RefCell::new(new_ValsAndBindings()),
+        int_var_bindings: RefCell::new(ValsAndBindings::new()),
         int_var_counter: Cell::new(0),
 
-        float_var_bindings: RefCell::new(new_ValsAndBindings()),
+        float_var_bindings: RefCell::new(ValsAndBindings::new()),
         float_var_counter: Cell::new(0),
 
-        region_vars: RegionVarBindings(tcx),
+        region_vars: RegionVarBindings::new(tcx),
     }
 }
 
@@ -464,7 +456,7 @@ trait CresCompare<T> {
     fn compare(&self, t: T, f: || -> ty::type_err) -> cres<T>;
 }
 
-impl<T:Clone + Eq> CresCompare<T> for cres<T> {
+impl<T:Clone + PartialEq> CresCompare<T> for cres<T> {
     fn compare(&self, t: T, f: || -> ty::type_err) -> cres<T> {
         (*self).clone().and_then(|s| {
             if s == t {
@@ -679,7 +671,7 @@ impl<'a> InferCtxt<'a> {
                                   trait_ref.def_id,
                                   trait_ref.substs.clone(),
                                   ty::UniqTraitStore,
-                                  ty::EmptyBuiltinBounds());
+                                  ty::empty_builtin_bounds());
         let dummy1 = self.resolve_type_vars_if_possible(dummy0);
         match ty::get(dummy1).sty {
             ty::ty_trait(box ty::TyTrait { ref def_id, ref substs, .. }) => {
@@ -839,7 +831,7 @@ impl TypeOrigin {
             Misc(span) => span,
             RelateTraitRefs(span) => span,
             RelateSelfType(span) => span,
-            MatchExpression(span) => span,
+            MatchExpressionArm(match_span, _) => match_span,
             IfExpression(span) => span,
         }
     }
@@ -861,8 +853,8 @@ impl Repr for TypeOrigin {
             RelateSelfType(a) => {
                 format!("RelateSelfType({})", a.repr(tcx))
             }
-            MatchExpression(a) => {
-                format!("MatchExpression({})", a.repr(tcx))
+            MatchExpressionArm(a, b) => {
+                format!("MatchExpressionArm({}, {})", a.repr(tcx), b.repr(tcx))
             }
             IfExpression(a) => {
                 format!("IfExpression({})", a.repr(tcx))

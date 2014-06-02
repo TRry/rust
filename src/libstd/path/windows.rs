@@ -13,7 +13,7 @@
 use ascii::AsciiCast;
 use c_str::{CString, ToCStr};
 use clone::Clone;
-use cmp::{Eq, TotalEq};
+use cmp::{PartialEq, Eq};
 use container::Container;
 use from_str::FromStr;
 use io::Writer;
@@ -79,14 +79,14 @@ pub struct Path {
     sepidx: Option<uint> // index of the final separator in the non-prefix portion of repr
 }
 
-impl Eq for Path {
+impl PartialEq for Path {
     #[inline]
     fn eq(&self, other: &Path) -> bool {
         self.repr == other.repr
     }
 }
 
-impl TotalEq for Path {}
+impl Eq for Path {}
 
 impl FromStr for Path {
     fn from_str(s: &str) -> Option<Path> {
@@ -956,7 +956,7 @@ pub fn is_sep_byte_verbatim(u: &u8) -> bool {
 }
 
 /// Prefix types for Path
-#[deriving(Eq, Clone)]
+#[deriving(PartialEq, Clone)]
 pub enum PathPrefix {
     /// Prefix `\\?\`, uint is the length of the following component
     VerbatimPrefix(uint),

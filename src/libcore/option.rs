@@ -141,14 +141,14 @@
 //! }
 //! ```
 
-use cmp::{Eq, TotalEq, TotalOrd};
+use cmp::{PartialEq, Eq, Ord};
 use default::Default;
 use iter::{Iterator, DoubleEndedIterator, FromIterator, ExactSize};
 use mem;
 use slice;
 
 /// The `Option`
-#[deriving(Clone, Eq, Ord, TotalEq, TotalOrd, Show)]
+#[deriving(Clone, PartialEq, PartialOrd, Eq, Ord, Show)]
 pub enum Option<T> {
     /// No value
     None,

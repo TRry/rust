@@ -548,6 +548,7 @@ mod imp {
         libc::CloseHandle(block);
     }
 
+    #[allow(non_snake_case_functions)]
     extern "system" {
         fn CreateEventA(lpSecurityAttributes: LPSECURITY_ATTRIBUTES,
                         bManualReset: BOOL,
