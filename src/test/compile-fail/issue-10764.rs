@@ -1,4 +1,4 @@
-// Copyright 2013 The Rust Project Developers. See the COPYRIGHT
+// Copyright 2014 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
 //
@@ -8,14 +8,8 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use std::io::println;
+fn f(_: extern "Rust" fn()) {}
+extern fn bar() {}
 
-pub fn main() {
-    let (tx, rx) = channel();
-
-    tx.send("hello, world");
-
-    spawn(proc() {
-        println(rx.recv());
-    });
-}
+fn main() { f(bar) }
+//~^ ERROR: expected `fn()` but found `extern "C" fn()`
