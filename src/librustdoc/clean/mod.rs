@@ -93,6 +93,7 @@ impl<'a> Clean<Crate> for visit_ast::RustdocVisitor<'a> {
         cx.sess().cstore.iter_crate_data(|n, meta| {
             externs.push((n, meta.clean()));
         });
+        externs.sort_by(|&(a, _), &(b, _)| a.cmp(&b));
 
         // Figure out the name of this crate
         let input = driver::FileInput(cx.src.clone());
@@ -132,24 +133,33 @@ impl<'a> Clean<Crate> for visit_ast::RustdocVisitor<'a> {
                 _ => unreachable!(),
             };
             let mut tmp = Vec::new();
-            for child in m.items.iter() {
-                match child.inner {
-                    ModuleItem(..) => {},
+            for child in m.items.mut_iter() {
+                let inner = match child.inner {
+                    ModuleItem(ref mut m) => m,
                     _ => continue,
-                }
+                };
                 let prim = match Primitive::find(child.attrs.as_slice()) {
                     Some(prim) => prim,
                     None => continue,
                 };
                 primitives.push(prim);
-                tmp.push(Item {
+                let mut i = Item {
                     source: Span::empty(),
                     name: Some(prim.to_url_str().to_string()),
-                    attrs: child.attrs.clone(),
-                    visibility: Some(ast::Public),
+                    attrs: Vec::new(),
+                    visibility: None,
                     def_id: ast_util::local_def(prim.to_node_id()),
                     inner: PrimitiveItem(prim),
-                });
+                };
+                // Push one copy to get indexed for the whole crate, and push a
+                // another copy in the proper location which will actually get
+                // documented. The first copy will also serve as a redirect to
+                // the other copy.
+                tmp.push(i.clone());
+                i.visibility = Some(ast::Public);
+                i.attrs = child.attrs.clone();
+                inner.items.push(i);
+
             }
             m.items.extend(tmp.move_iter());
         }
@@ -516,7 +526,7 @@ impl Clean<TyParamBound> for ty::BuiltinBound {
                  external_path("Share", &empty)),
         };
         let fqn = csearch::get_item_path(tcx, did);
-        let fqn = fqn.move_iter().map(|i| i.to_str().to_string()).collect();
+        let fqn = fqn.move_iter().map(|i| i.to_str()).collect();
         cx.external_paths.borrow_mut().get_mut_ref().insert(did,
                                                             (fqn, TypeTrait));
         TraitBound(ResolvedPath {
@@ -535,7 +545,7 @@ impl Clean<TyParamBound> for ty::TraitRef {
             core::NotTyped(_) => return RegionBound,
         };
         let fqn = csearch::get_item_path(tcx, self.def_id);
-        let fqn = fqn.move_iter().map(|i| i.to_str().to_string())
+        let fqn = fqn.move_iter().map(|i| i.to_str())
                      .collect::<Vec<String>>();
         let path = external_path(fqn.last().unwrap().as_slice(),
                                  &self.substs);
@@ -942,9 +952,8 @@ impl Clean<TraitMethod> for ast::TraitMethod {
     }
 }
 
-impl Clean<TraitMethod> for ty::Method {
-    fn clean(&self) -> TraitMethod {
-        let m = if self.provided_source.is_some() {Provided} else {Required};
+impl Clean<Item> for ty::Method {
+    fn clean(&self) -> Item {
         let cx = super::ctxtkey.get().unwrap();
         let tcx = match cx.maybe_typed {
             core::Typed(ref tcx) => tcx,
@@ -972,7 +981,7 @@ impl Clean<TraitMethod> for ty::Method {
             }
         };
 
-        m(Item {
+        Item {
             name: Some(self.ident.clean()),
             visibility: Some(ast::Inherited),
             def_id: self.def_id,
@@ -984,7 +993,7 @@ impl Clean<TraitMethod> for ty::Method {
                 self_: self_,
                 decl: (self.def_id, &sig).clean(),
             })
-        })
+        }
     }
 }
 
@@ -1230,7 +1239,7 @@ impl Clean<Type> for ty::t {
                 };
                 let fqn = csearch::get_item_path(tcx, did);
                 let fqn: Vec<String> = fqn.move_iter().map(|i| {
-                    i.to_str().to_string()
+                    i.to_str()
                 }).collect();
                 let kind = match ty::get(*self).sty {
                     ty::ty_struct(..) => TypeStruct,
@@ -1608,7 +1617,7 @@ impl Clean<BareFunctionDecl> for ast::BareFnTy {
                 type_params: Vec::new(),
             },
             decl: self.decl.clean(),
-            abi: self.abi.to_str().to_string(),
+            abi: self.abi.to_str(),
         }
     }
 }
@@ -1882,12 +1891,12 @@ fn lit_to_str(lit: &ast::Lit) -> String {
         ast::LitStr(ref st, _) => st.get().to_string(),
         ast::LitBinary(ref data) => format!("{:?}", data.as_slice()),
         ast::LitChar(c) => format!("'{}'", c),
-        ast::LitInt(i, _t) => i.to_str().to_string(),
-        ast::LitUint(u, _t) => u.to_str().to_string(),
-        ast::LitIntUnsuffixed(i) => i.to_str().to_string(),
+        ast::LitInt(i, _t) => i.to_str(),
+        ast::LitUint(u, _t) => u.to_str(),
+        ast::LitIntUnsuffixed(i) => i.to_str(),
         ast::LitFloat(ref f, _t) => f.get().to_string(),
         ast::LitFloatUnsuffixed(ref f) => f.get().to_string(),
-        ast::LitBool(b) => b.to_str().to_string(),
+        ast::LitBool(b) => b.to_str(),
         ast::LitNil => "".to_string(),
     }
 }
