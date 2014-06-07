@@ -66,7 +66,7 @@ pub static unwinder_private_data_size: int = 2;
 pub static unwinder_private_data_size: int = 20;
 
 #[cfg(target_arch = "arm", target_os = "ios")]
-pub static unwinder_private_data_size: int = 8;
+pub static unwinder_private_data_size: int = 5;
 
 #[cfg(target_arch = "mips")]
 pub static unwinder_private_data_size: int = 2;
