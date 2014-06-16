@@ -1,5 +1,10 @@
 # iOS related notes
 
+
+* Note: iOS support was merged into master as
+  https://github.com/mozilla/rust/commit/2ec323e4c30c265f35314c0a77f5df5a655cec2f,
+  that also means this fork might lag significantly, so you'd better
+  to track Rust master now on.
 * Should work out of box both for device and simulator
 * Segmented stacks are currently disabled. It also means there is no
   prevention from stack overflow
@@ -7,12 +12,6 @@
 * Only 32-bit targets are supported now (i.e. armv7 and i386),
   although porting to arm64 and x86_64 simulator shouldn't take that
   much effort
-* I'm trying to keep it as close to nighly as possible, but it may lag
-  a bit
-* I hope to get some pull request approvals on supporting libraries
-  (like jemalloc, compiler-rt) so it could be upstreamed to Rust
-  repo. It will make keeping up to date much easier
-
 
 For building for iOS you should use a separate target:
 
