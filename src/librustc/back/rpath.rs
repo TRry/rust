@@ -14,7 +14,7 @@ use metadata::cstore;
 use metadata::filesearch;
 use util::fs;
 
-use collections::HashSet;
+use std::collections::HashSet;
 use std::os;
 use syntax::abi;
 
@@ -22,7 +22,7 @@ fn not_win32(os: abi::Os) -> bool {
   os != abi::OsWin32
 }
 
-pub fn get_rpath_flags(sess: &Session, out_filename: &Path) -> Vec<~str> {
+pub fn get_rpath_flags(sess: &Session, out_filename: &Path) -> Vec<String> {
     let os = sess.targ_cfg.os;
 
     // No rpath on windows
@@ -33,30 +33,33 @@ pub fn get_rpath_flags(sess: &Session, out_filename: &Path) -> Vec<~str> {
     let mut flags = Vec::new();
 
     if sess.targ_cfg.os == abi::OsFreebsd {
-        flags.push_all([~"-Wl,-rpath,/usr/local/lib/gcc46",
-                        ~"-Wl,-rpath,/usr/local/lib/gcc44",
-                        ~"-Wl,-z,origin"]);
+        flags.push_all(["-Wl,-rpath,/usr/local/lib/gcc46".to_string(),
+                        "-Wl,-rpath,/usr/local/lib/gcc44".to_string(),
+                        "-Wl,-z,origin".to_string()]);
     }
 
     debug!("preparing the RPATH!");
 
-    let sysroot = sess.filesearch().sysroot;
+    let sysroot = sess.sysroot();
     let output = out_filename;
     let libs = sess.cstore.get_used_crates(cstore::RequireDynamic);
     let libs = libs.move_iter().filter_map(|(_, l)| {
         l.map(|p| p.clone())
-    }).collect::<~[_]>();
+    }).collect::<Vec<_>>();
 
-    let rpaths = get_rpaths(os, sysroot, output, libs,
-                            sess.opts.target_triple);
+    let rpaths = get_rpaths(os,
+                            sysroot,
+                            output,
+                            libs.as_slice(),
+                            sess.opts.target_triple.as_slice());
     flags.push_all(rpaths_to_flags(rpaths.as_slice()).as_slice());
     flags
 }
 
-pub fn rpaths_to_flags(rpaths: &[~str]) -> Vec<~str> {
+pub fn rpaths_to_flags(rpaths: &[String]) -> Vec<String> {
     let mut ret = Vec::new();
     for rpath in rpaths.iter() {
-        ret.push("-Wl,-rpath," + *rpath);
+        ret.push(format!("-Wl,-rpath,{}", (*rpath).as_slice()));
     }
     return ret;
 }
@@ -65,7 +68,7 @@ fn get_rpaths(os: abi::Os,
               sysroot: &Path,
               output: &Path,
               libs: &[Path],
-              target_triple: &str) -> Vec<~str> {
+              target_triple: &str) -> Vec<String> {
     debug!("sysroot: {}", sysroot.display());
     debug!("output: {}", output.display());
     debug!("libs:");
@@ -82,7 +85,7 @@ fn get_rpaths(os: abi::Os,
     // And a final backup rpath to the global library location.
     let fallback_rpaths = vec!(get_install_prefix_rpath(sysroot, target_triple));
 
-    fn log_rpaths(desc: &str, rpaths: &[~str]) {
+    fn log_rpaths(desc: &str, rpaths: &[String]) {
         debug!("{} rpaths:", desc);
         for rpath in rpaths.iter() {
             debug!("    {}", *rpath);
@@ -102,14 +105,14 @@ fn get_rpaths(os: abi::Os,
 
 fn get_rpaths_relative_to_output(os: abi::Os,
                                  output: &Path,
-                                 libs: &[Path]) -> Vec<~str> {
+                                 libs: &[Path]) -> Vec<String> {
     libs.iter().map(|a| get_rpath_relative_to_output(os, output, a)).collect()
 }
 
 pub fn get_rpath_relative_to_output(os: abi::Os,
                                     output: &Path,
                                     lib: &Path)
-                                 -> ~str {
+                                 -> String {
     use std::os;
 
     assert!(not_win32(os));
@@ -119,7 +122,7 @@ pub fn get_rpath_relative_to_output(os: abi::Os,
         abi::OsAndroid | abi::OsLinux | abi::OsFreebsd
                           => "$ORIGIN",
         abi::OsMacos => "@loader_path",
-        abi::OsWin32 => unreachable!()
+        abi::OsWin32 | abi::OsiOS => unreachable!()
     };
 
     let mut lib = fs::realpath(&os::make_absolute(lib)).unwrap();
@@ -129,21 +132,23 @@ pub fn get_rpath_relative_to_output(os: abi::Os,
     let relative = lib.path_relative_from(&output);
     let relative = relative.expect("could not create rpath relative to output");
     // FIXME (#9639): This needs to handle non-utf8 paths
-    prefix+"/"+relative.as_str().expect("non-utf8 component in path")
+    format!("{}/{}",
+            prefix,
+            relative.as_str().expect("non-utf8 component in path"))
 }
 
-pub fn get_install_prefix_rpath(sysroot: &Path, target_triple: &str) -> ~str {
-    let install_prefix = env!("CFG_PREFIX");
+pub fn get_install_prefix_rpath(sysroot: &Path, target_triple: &str) -> String {
+    let install_prefix = option_env!("CFG_PREFIX").expect("CFG_PREFIX");
 
     let tlib = filesearch::relative_target_lib_path(sysroot, target_triple);
     let mut path = Path::new(install_prefix);
     path.push(&tlib);
     let path = os::make_absolute(&path);
     // FIXME (#9639): This needs to handle non-utf8 paths
-    path.as_str().expect("non-utf8 component in rpath").to_owned()
+    path.as_str().expect("non-utf8 component in rpath").to_string()
 }
 
-pub fn minimize_rpaths(rpaths: &[~str]) -> Vec<~str> {
+pub fn minimize_rpaths(rpaths: &[String]) -> Vec<String> {
     let mut set = HashSet::new();
     let mut minimized = Vec::new();
     for rpath in rpaths.iter() {
@@ -156,8 +161,6 @@ pub fn minimize_rpaths(rpaths: &[~str]) -> Vec<~str> {
 
 #[cfg(unix, test)]
 mod test {
-    use std::os;
-
     use back::rpath::get_install_prefix_rpath;
     use back::rpath::{minimize_rpaths, rpaths_to_flags, get_rpath_relative_to_output};
     use syntax::abi;
@@ -165,15 +168,20 @@ mod test {
 
     #[test]
     fn test_rpaths_to_flags() {
-        let flags = rpaths_to_flags([~"path1", ~"path2"]);
-        assert_eq!(flags, vec!(~"-Wl,-rpath,path1", ~"-Wl,-rpath,path2"));
+        let flags = rpaths_to_flags([
+            "path1".to_string(),
+            "path2".to_string()
+        ]);
+        assert_eq!(flags,
+                   vec!("-Wl,-rpath,path1".to_string(),
+                        "-Wl,-rpath,path2".to_string()));
     }
 
     #[test]
     fn test_prefix_rpath() {
         let sysroot = filesearch::get_or_default_sysroot();
         let res = get_install_prefix_rpath(&sysroot, "triple");
-        let mut d = Path::new(env!("CFG_PREFIX"));
+        let mut d = Path::new((option_env!("CFG_PREFIX")).expect("CFG_PREFIX"));
         d.push("lib");
         d.push(filesearch::rustlibdir());
         d.push("triple/lib");
@@ -192,17 +200,37 @@ mod test {
 
     #[test]
     fn test_minimize1() {
-        let res = minimize_rpaths([~"rpath1", ~"rpath2", ~"rpath1"]);
-        assert!(res.as_slice() == [~"rpath1", ~"rpath2"]);
+        let res = minimize_rpaths([
+            "rpath1".to_string(),
+            "rpath2".to_string(),
+            "rpath1".to_string()
+        ]);
+        assert!(res.as_slice() == [
+            "rpath1".to_string(),
+            "rpath2".to_string()
+        ]);
     }
 
     #[test]
     fn test_minimize2() {
-        let res = minimize_rpaths([~"1a", ~"2",  ~"2",
-                                   ~"1a", ~"4a", ~"1a",
-                                   ~"2",  ~"3",  ~"4a",
-                                   ~"3"]);
-        assert!(res.as_slice() == [~"1a", ~"2", ~"4a", ~"3"]);
+        let res = minimize_rpaths([
+            "1a".to_string(),
+            "2".to_string(),
+            "2".to_string(),
+            "1a".to_string(),
+            "4a".to_string(),
+            "1a".to_string(),
+            "2".to_string(),
+            "3".to_string(),
+            "4a".to_string(),
+            "3".to_string()
+        ]);
+        assert!(res.as_slice() == [
+            "1a".to_string(),
+            "2".to_string(),
+            "4a".to_string(),
+            "3".to_string()
+        ]);
     }
 
     #[test]

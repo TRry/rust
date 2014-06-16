@@ -8,13 +8,16 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+// no-pretty-expanded unnecessary unsafe block generated
 
-#[feature(macro_rules)];
+#![feature(macro_rules, managed_boxes)]
 #![deny(warnings)]
-#[allow(unused_must_use)];
-#[allow(deprecated_owned_vector)];
+#![allow(unused_must_use)]
+
+extern crate debug;
 
 use std::fmt;
+use std::gc::GC;
 use std::io::MemWriter;
 use std::io;
 use std::str;
@@ -24,34 +27,34 @@ struct B;
 
 impl fmt::Signed for A {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.buf.write("aloha".as_bytes())
+        f.write("aloha".as_bytes())
     }
 }
 impl fmt::Signed for B {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.buf.write("adios".as_bytes())
+        f.write("adios".as_bytes())
     }
 }
 
-macro_rules! t(($a:expr, $b:expr) => { assert_eq!($a, $b.to_owned()) })
+macro_rules! t(($a:expr, $b:expr) => { assert_eq!($a.as_slice(), $b) })
 
 pub fn main() {
     // Make sure there's a poly formatter that takes anything
     t!(format!("{:?}", 1), "1");
     t!(format!("{:?}", A), "A");
     t!(format!("{:?}", ()), "()");
-    t!(format!("{:?}", @(~1, "foo")), "@(~1, \"foo\")");
+    t!(format!("{:?}", box(GC) (box 1, "foo")), "box(GC) (box 1, \"foo\")");
 
     // Various edge cases without formats
     t!(format!(""), "");
     t!(format!("hello"), "hello");
-    t!(format!("hello \\{"), "hello {");
+    t!(format!("hello {{"), "hello {");
 
     // default formatters should work
     t!(format!("{}", 1.0f32), "1");
     t!(format!("{}", 1.0f64), "1");
     t!(format!("{}", "a"), "a");
-    t!(format!("{}", ~"a"), "a");
+    t!(format!("{}", "a".to_string()), "a");
     t!(format!("{}", false), "false");
     t!(format!("{}", 'a'), "a");
 
@@ -65,7 +68,7 @@ pub fn main() {
     t!(format!("{:x}", 10u), "a");
     t!(format!("{:X}", 10u), "A");
     t!(format!("{:s}", "foo"), "foo");
-    t!(format!("{:s}", ~"foo"), "foo");
+    t!(format!("{:s}", "foo".to_string()), "foo");
     t!(format!("{:p}", 0x1234 as *int), "0x1234");
     t!(format!("{:p}", 0x1234 as *mut int), "0x1234");
     t!(format!("{:d}", A), "aloha");
@@ -76,18 +79,7 @@ pub fn main() {
     t!(format!("{foo} {1} {bar} {0}", 0, 1, foo=2, bar=3), "2 1 3 0");
     t!(format!("{} {0}", "a"), "a a");
     t!(format!("{foo_bar}", foo_bar=1), "1");
-
-    // Methods should probably work
-    t!(format!("{0, plural, =1{a#} =2{b#} zero{c#} other{d#}}", 0u), "c0");
-    t!(format!("{0, plural, =1{a#} =2{b#} zero{c#} other{d#}}", 1u), "a1");
-    t!(format!("{0, plural, =1{a#} =2{b#} zero{c#} other{d#}}", 2u), "b2");
-    t!(format!("{0, plural, =1{a#} =2{b#} zero{c#} other{d#}}", 3u), "d3");
-    t!(format!("{0, select, a{a#} b{b#} c{c#} other{d#}}", "a"), "aa");
-    t!(format!("{0, select, a{a#} b{b#} c{c#} other{d#}}", "b"), "bb");
-    t!(format!("{0, select, a{a#} b{b#} c{c#} other{d#}}", "c"), "cc");
-    t!(format!("{0, select, a{a#} b{b#} c{c#} other{d#}}", "d"), "dd");
-    t!(format!("{1, select, a{#{0:s}} other{#}}", "b", "a"), "ab");
-    t!(format!("{1, select, a{#{0}} other{#}}", "c", "b"), "b");
+    t!(format!("{:d}", 5 + 5), "10");
 
     // Formatting strings and their arguments
     t!(format!("{:s}", "a"), "a");
@@ -132,24 +124,22 @@ pub fn main() {
     t!(format!("{:+10.3e}", -1.2345e6f64), "  -1.234e6");
 
     // Escaping
-    t!(format!("\\{"), "{");
-    t!(format!("\\}"), "}");
-    t!(format!("\\#"), "#");
-    t!(format!("\\\\"), "\\");
+    t!(format!("{{"), "{");
+    t!(format!("}}"), "}");
 
     test_write();
     test_print();
     test_order();
 
     // make sure that format! doesn't move out of local variables
-    let a = ~3;
+    let a = box 3;
     format!("{:?}", a);
     format!("{:?}", a);
 
     // make sure that format! doesn't cause spurious unused-unsafe warnings when
     // it's inside of an outer unsafe block
     unsafe {
-        let a: int = ::std::cast::transmute(3u);
+        let a: int = ::std::mem::transmute(3u);
         format!("{}", a);
     }
 
@@ -173,7 +163,7 @@ fn test_write() {
         writeln!(w, "{foo}", foo="bar");
     }
 
-    let s = str::from_utf8(buf.unwrap().as_slice()).unwrap().to_owned();
+    let s = str::from_utf8(buf.unwrap().as_slice()).unwrap().to_string();
     t!(s, "34helloline\nbar\n");
 }
 
@@ -193,15 +183,19 @@ fn test_format_args() {
     let mut buf = MemWriter::new();
     {
         let w = &mut buf as &mut io::Writer;
-        format_args!(|args| { fmt::write(w, args); }, "{}", 1);
-        format_args!(|args| { fmt::write(w, args); }, "test");
-        format_args!(|args| { fmt::write(w, args); }, "{test}", test=3);
+        format_args!(|args| { write!(w, "{}", args); }, "{}", 1);
+        format_args!(|args| { write!(w, "{}", args); }, "test");
+        format_args!(|args| { write!(w, "{}", args); }, "{test}", test=3);
     }
-    let s = str::from_utf8(buf.unwrap().as_slice()).unwrap().to_owned();
+    let s = str::from_utf8(buf.unwrap().as_slice()).unwrap().to_string();
     t!(s, "1test3");
 
     let s = format_args!(fmt::format, "hello {}", "world");
     t!(s, "hello world");
+    let s = format_args!(|args| {
+        format!("{}: {}", "args were", args)
+    }, "hello {}", "world");
+    t!(s, "args were: hello world");
 }
 
 fn test_order() {
@@ -216,5 +210,5 @@ fn test_order() {
     }
     assert_eq!(format!("{} {} {a} {b} {} {c}",
                        foo(), foo(), foo(), a=foo(), b=foo(), c=foo()),
-               ~"1 2 4 5 3 6");
+               "1 2 4 5 3 6".to_string());
 }

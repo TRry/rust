@@ -11,13 +11,13 @@
 //! Buffering wrappers for I/O traits
 
 use cmp;
-use container::Container;
+use collections::Collection;
 use io::{Reader, Writer, Stream, Buffer, DEFAULT_BUF_SIZE, IoResult};
 use iter::ExactSize;
 use ops::Drop;
 use option::{Some, None, Option};
 use result::{Ok, Err};
-use slice::{OwnedVector, ImmutableVector, MutableVector};
+use slice::{ImmutableVector, MutableVector};
 use slice;
 use vec::Vec;
 
@@ -125,7 +125,7 @@ impl<R: Reader> Reader for BufferedReader<R> {
 /// # Example
 ///
 /// ```rust
-/// # #[allow(unused_must_use)];
+/// # #![allow(unused_must_use)]
 /// use std::io::{BufferedWriter, File};
 ///
 /// let file = File::open(&Path::new("message.txt"));
@@ -209,7 +209,7 @@ impl<W: Writer> Writer for BufferedWriter<W> {
 impl<W: Writer> Drop for BufferedWriter<W> {
     fn drop(&mut self) {
         if self.inner.is_some() {
-            // FIXME(#12628): should this error be ignored?
+            // dtors should not fail, so we ignore a failed flush
             let _ = self.flush_buf();
         }
     }
@@ -287,7 +287,7 @@ impl<W: Reader> Reader for InternalBufferedWriter<W> {
 /// # Example
 ///
 /// ```rust
-/// # #[allow(unused_must_use)];
+/// # #![allow(unused_must_use)]
 /// use std::io::{BufferedStream, File};
 ///
 /// let file = File::open(&Path::new("message.txt"));
@@ -370,13 +370,15 @@ mod test {
     use io;
     use prelude::*;
     use super::*;
+    use super::super::{IoResult, EndOfFile};
     use super::super::mem::{MemReader, MemWriter, BufReader};
     use self::test::Bencher;
+    use str::StrSlice;
 
     /// A type, free to create, primarily intended for benchmarking creation of
     /// wrappers that, just for construction, don't need a Reader/Writer that
     /// does anything useful. Is equivalent to `/dev/null` in semantics.
-    #[deriving(Clone,Eq,Ord)]
+    #[deriving(Clone,PartialEq,PartialOrd)]
     pub struct NullStream;
 
     impl Reader for NullStream {
@@ -391,7 +393,7 @@ mod test {
 
     /// A dummy reader intended at testing short-reads propagation.
     pub struct ShortReader {
-        lengths: ~[uint],
+        lengths: Vec<uint>,
     }
 
     impl Reader for ShortReader {
@@ -535,9 +537,9 @@ mod test {
     fn test_read_line() {
         let in_buf = MemReader::new(Vec::from_slice(bytes!("a\nb\nc")));
         let mut reader = BufferedReader::with_capacity(2, in_buf);
-        assert_eq!(reader.read_line(), Ok(~"a\n"));
-        assert_eq!(reader.read_line(), Ok(~"b\n"));
-        assert_eq!(reader.read_line(), Ok(~"c"));
+        assert_eq!(reader.read_line(), Ok("a\n".to_string()));
+        assert_eq!(reader.read_line(), Ok("b\n".to_string()));
+        assert_eq!(reader.read_line(), Ok("c".to_string()));
         assert!(reader.read_line().is_err());
     }
 
@@ -546,15 +548,15 @@ mod test {
         let in_buf = MemReader::new(Vec::from_slice(bytes!("a\nb\nc")));
         let mut reader = BufferedReader::with_capacity(2, in_buf);
         let mut it = reader.lines();
-        assert_eq!(it.next(), Some(Ok(~"a\n")));
-        assert_eq!(it.next(), Some(Ok(~"b\n")));
-        assert_eq!(it.next(), Some(Ok(~"c")));
+        assert_eq!(it.next(), Some(Ok("a\n".to_string())));
+        assert_eq!(it.next(), Some(Ok("b\n".to_string())));
+        assert_eq!(it.next(), Some(Ok("c".to_string())));
         assert_eq!(it.next(), None);
     }
 
     #[test]
     fn test_short_reads() {
-        let inner = ShortReader{lengths: ~[0, 1, 2, 0, 1, 0]};
+        let inner = ShortReader{lengths: vec![0, 1, 2, 0, 1, 0]};
         let mut reader = BufferedReader::new(inner);
         let mut buf = [0, 0];
         assert_eq!(reader.read(buf), Ok(0));
@@ -581,6 +583,24 @@ mod test {
         assert_eq!(it.next(), Some(Ok('ß')));
         assert_eq!(it.next(), Some(Ok('a')));
         assert_eq!(it.next(), None);
+    }
+
+    #[test]
+    #[should_fail]
+    fn dont_fail_in_drop_on_failed_flush() {
+        struct FailFlushWriter;
+
+        impl Writer for FailFlushWriter {
+            fn write(&mut self, _buf: &[u8]) -> IoResult<()> { Ok(()) }
+            fn flush(&mut self) -> IoResult<()> { Err(io::standard_error(EndOfFile)) }
+        }
+
+        let writer = FailFlushWriter;
+        let _writer = BufferedWriter::new(writer);
+
+        // Trigger failure. If writer fails *again* due to the flush
+        // error then the process will abort.
+        fail!();
     }
 
     #[bench]

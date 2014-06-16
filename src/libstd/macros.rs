@@ -19,17 +19,17 @@
 /// The entry point for failure of rust tasks.
 ///
 /// This macro is used to inject failure into a rust task, causing the task to
-/// unwind and fail entirely. Each task's failure can be reaped as the `~Any`
-/// type, and the single-argument form of the `fail!` macro will be the value
-/// which is transmitted.
+/// unwind and fail entirely. Each task's failure can be reaped as the
+/// `Box<Any>` type, and the single-argument form of the `fail!` macro will be
+/// the value which is transmitted.
 ///
 /// The multi-argument form of this macro fails with a string and has the
-/// `format!` sytnax for building a string.
+/// `format!` syntax for building a string.
 ///
 /// # Example
 ///
 /// ```should_fail
-/// # #[allow(unreachable_code)];
+/// # #![allow(unreachable_code)]
 /// fail!();
 /// fail!("this is a terrible mistake!");
 /// fail!(4); // fail with the value of 4 to be collected elsewhere
@@ -90,11 +90,6 @@ macro_rules! assert(
             fail!("assertion failed: {:s}", stringify!($cond))
         }
     );
-    ($cond:expr, $msg:expr) => (
-        if !$cond {
-            fail!($msg)
-        }
-    );
     ($cond:expr, $($arg:expr),+) => (
         if !$cond {
             fail!($($arg),+)
@@ -128,6 +123,58 @@ macro_rules! assert_eq(
             }
         }
     })
+)
+
+/// Ensure that a boolean expression is `true` at runtime.
+///
+/// This will invoke the `fail!` macro if the provided expression cannot be
+/// evaluated to `true` at runtime.
+///
+/// Unlike `assert!`, `debug_assert!` statements can be disabled by passing
+/// `--cfg ndebug` to the compiler. This makes `debug_assert!` useful for
+/// checks that are too expensive to be present in a release build but may be
+/// helpful during development.
+///
+/// # Example
+///
+/// ```
+/// // the failure message for these assertions is the stringified value of the
+/// // expression given.
+/// debug_assert!(true);
+/// # fn some_expensive_computation() -> bool { true }
+/// debug_assert!(some_expensive_computation());
+///
+/// // assert with a custom message
+/// # let x = true;
+/// debug_assert!(x, "x wasn't true!");
+/// # let a = 3; let b = 27;
+/// debug_assert!(a + b == 30, "a = {}, b = {}", a, b);
+/// ```
+#[macro_export]
+macro_rules! debug_assert(
+    ($($arg:tt)*) => (if cfg!(not(ndebug)) { assert!($($arg)*); })
+)
+
+/// Asserts that two expressions are equal to each other, testing equality in
+/// both directions.
+///
+/// On failure, this macro will print the values of the expressions.
+///
+/// Unlike `assert_eq!`, `debug_assert_eq!` statements can be disabled by
+/// passing `--cfg ndebug` to the compiler. This makes `debug_assert_eq!`
+/// useful for checks that are too expensive to be present in a release build
+/// but may be helpful during development.
+///
+/// # Example
+///
+/// ```
+/// let a = 3;
+/// let b = 1 + 2;
+/// debug_assert_eq!(a, b);
+/// ```
+#[macro_export]
+macro_rules! debug_assert_eq(
+    ($($arg:tt)*) => (if cfg!(not(ndebug)) { assert_eq!($($arg)*); })
 )
 
 /// A utility macro for indicating unreachable code. It will fail if
@@ -165,7 +212,7 @@ macro_rules! unimplemented(
     () => (fail!("not yet implemented"))
 )
 
-/// Use the syntax described in `std::fmt` to create a value of type `~str`.
+/// Use the syntax described in `std::fmt` to create a value of type `String`.
 /// See `std::fmt` for more information.
 ///
 /// # Example
@@ -188,7 +235,7 @@ macro_rules! format(
 /// # Example
 ///
 /// ```
-/// # #[allow(unused_must_use)];
+/// # #![allow(unused_must_use)]
 /// use std::io::MemWriter;
 ///
 /// let mut w = MemWriter::new();
@@ -198,8 +245,7 @@ macro_rules! format(
 #[macro_export]
 macro_rules! write(
     ($dst:expr, $($arg:tt)*) => ({
-        let dst: &mut ::std::io::Writer = $dst;
-        format_args!(|args| { ::std::fmt::write(dst, args) }, $($arg)*)
+        format_args_method!($dst, write_fmt, $($arg)*)
     })
 )
 
@@ -207,10 +253,9 @@ macro_rules! write(
 /// the message is written.
 #[macro_export]
 macro_rules! writeln(
-    ($dst:expr, $($arg:tt)*) => ({
-        let dst: &mut ::std::io::Writer = $dst;
-        format_args!(|args| { ::std::fmt::writeln(dst, args) }, $($arg)*)
-    })
+    ($dst:expr, $fmt:expr $($arg:tt)*) => (
+        write!($dst, concat!($fmt, "\n") $($arg)*)
+    )
 )
 
 /// Equivalent to the `println!` macro except that a newline is not printed at
@@ -242,12 +287,10 @@ macro_rules! println(
 /// # Example
 ///
 /// ```
-/// use std::local_data;
-///
 /// local_data_key!(my_integer: int)
 ///
-/// local_data::set(my_integer, 2);
-/// local_data::get(my_integer, |val| println!("{}", val.map(|i| *i)));
+/// my_integer.replace(Some(2));
+/// println!("{}", my_integer.get().map(|a| *a));
 /// ```
 #[macro_export]
 macro_rules! local_data_key(
@@ -280,11 +323,11 @@ macro_rules! vec(
 )
 
 
-/// A macro to select an event from a number of ports.
+/// A macro to select an event from a number of receivers.
 ///
 /// This macro is used to wait for the first event to occur on a number of
-/// ports. It places no restrictions on the types of ports given to this macro,
-/// this can be viewed as a heterogeneous select.
+/// receivers. It places no restrictions on the types of receivers given to
+/// this macro, this can be viewed as a heterogeneous select.
 ///
 /// # Example
 ///
@@ -382,8 +425,8 @@ pub mod builtin {
     /// # Example
     ///
     /// ```rust
-    /// let user: &'static str = env!("USER");
-    /// println!("the user who compiled this code is: {}", user);
+    /// let home: &'static str = env!("HOME");
+    /// println!("the home directory at the time of compiling was: {}", home);
     /// ```
     #[macro_export]
     macro_rules! env( ($name:expr) => ({ /* compiler built-in */ }) )
@@ -420,8 +463,9 @@ pub mod builtin {
     /// # Example
     ///
     /// ```
-    /// let rust = bytes!("r", 'u', "st");
+    /// let rust = bytes!("r", 'u', "st", 255);
     /// assert_eq!(rust[1], 'u' as u8);
+    /// assert_eq!(rust[4], 255);
     /// ```
     #[macro_export]
     macro_rules! bytes( ($($e:expr),*) => ({ /* compiler built-in */ }) )
@@ -438,10 +482,14 @@ pub mod builtin {
     /// # Example
     ///
     /// ```
+    /// #![feature(concat_idents)]
+    ///
+    /// # fn main() {
     /// fn foobar() -> int { 23 }
     ///
     /// let f = concat_idents!(foo, bar);
     /// println!("{}", f());
+    /// # }
     /// ```
     #[macro_export]
     macro_rules! concat_idents( ($($e:ident),*) => ({ /* compiler built-in */ }) )

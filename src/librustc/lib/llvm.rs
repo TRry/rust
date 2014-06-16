@@ -1,4 +1,4 @@
-// Copyright 2012 The Rust Project Developers. See the COPYRIGHT
+// Copyright 2012-2014 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
 //
@@ -10,12 +10,13 @@
 
 #![allow(non_uppercase_pattern_statics)]
 #![allow(non_camel_case_types)]
+#![allow(non_snake_case_functions)]
 #![allow(dead_code)]
 
 use std::c_str::ToCStr;
 use std::cell::RefCell;
-use collections::HashMap;
-use libc::{c_uint, c_ushort, c_void, free};
+use std::collections::HashMap;
+use libc::{c_uint, c_ushort, c_void, free, uint64_t};
 use std::str::raw::from_c_str;
 
 use middle::trans::type_::Type;
@@ -28,7 +29,7 @@ pub static False: Bool = 0 as Bool;
 
 // Consts for the LLVM CallConv type, pre-cast to uint.
 
-#[deriving(Eq)]
+#[deriving(PartialEq)]
 pub enum CallConv {
     CCallConv = 0,
     FastCallConv = 8,
@@ -92,6 +93,33 @@ pub enum Attribute {
     NonLazyBindAttribute = 1 << 31,
 }
 
+#[repr(u64)]
+pub enum OtherAttribute {
+    // The following are not really exposed in
+    // the LLVM c api so instead to add these
+    // we call a wrapper function in RustWrapper
+    // that uses the C++ api.
+    SanitizeAddressAttribute = 1 << 32,
+    MinSizeAttribute = 1 << 33,
+    NoDuplicateAttribute = 1 << 34,
+    StackProtectStrongAttribute = 1 << 35,
+    SanitizeThreadAttribute = 1 << 36,
+    SanitizeMemoryAttribute = 1 << 37,
+    NoBuiltinAttribute = 1 << 38,
+    ReturnedAttribute = 1 << 39,
+    ColdAttribute = 1 << 40,
+    BuiltinAttribute = 1 << 41,
+    OptimizeNoneAttribute = 1 << 42,
+    InAllocaAttribute = 1 << 43,
+    NonNullAttribute = 1 << 44,
+}
+
+#[repr(C)]
+pub enum AttributeSet {
+    ReturnIndex = 0,
+    FunctionIndex = !0
+}
+
 // enum for the LLVM IntPredicate type
 pub enum IntPredicate {
     IntEQ = 32,
@@ -128,7 +156,7 @@ pub enum RealPredicate {
 
 // The LLVM TypeKind type - must stay in sync with the def of
 // LLVMTypeKind in llvm/include/llvm-c/Core.h
-#[deriving(Eq)]
+#[deriving(PartialEq)]
 #[repr(C)]
 pub enum TypeKind {
     Void      = 0,
@@ -198,7 +226,7 @@ pub enum AsmDialect {
     AD_Intel = 1
 }
 
-#[deriving(Eq)]
+#[deriving(PartialEq)]
 #[repr(C)]
 pub enum CodeGenOptLevel {
     CodeGenLevelNone = 0,
@@ -308,7 +336,7 @@ pub mod llvm {
     use super::{CodeGenModel, RelocMode, CodeGenOptLevel};
     use super::debuginfo::*;
     use libc::{c_char, c_int, c_longlong, c_ushort, c_uint, c_ulonglong,
-                    size_t};
+               size_t, uint64_t};
 
     // Link to our native llvm bindings (things that we need to use the C++ api
     // for) and because llvm is written in C++ we need to link against libstdc++
@@ -398,8 +426,7 @@ pub mod llvm {
         pub fn LLVMIsPackedStruct(StructTy: TypeRef) -> Bool;
 
         /* Operations on array, pointer, and vector types (sequence types) */
-        pub fn LLVMArrayType(ElementType: TypeRef, ElementCount: c_uint)
-                             -> TypeRef;
+        pub fn LLVMRustArrayType(ElementType: TypeRef, ElementCount: u64) -> TypeRef;
         pub fn LLVMPointerType(ElementType: TypeRef, AddressSpace: c_uint)
                                -> TypeRef;
         pub fn LLVMVectorType(ElementType: TypeRef, ElementCount: c_uint)
@@ -707,18 +734,10 @@ pub mod llvm {
         pub fn LLVMSetFunctionCallConv(Fn: ValueRef, CC: c_uint);
         pub fn LLVMGetGC(Fn: ValueRef) -> *c_char;
         pub fn LLVMSetGC(Fn: ValueRef, Name: *c_char);
-        pub fn LLVMAddFunctionAttr(Fn: ValueRef, PA: c_uint);
-        pub fn LLVMAddFunctionAttrString(Fn: ValueRef, Name: *c_char);
+        pub fn LLVMAddFunctionAttribute(Fn: ValueRef, index: c_uint, PA: uint64_t);
+        pub fn LLVMAddFunctionAttrString(Fn: ValueRef, index: c_uint, Name: *c_char);
+        pub fn LLVMRemoveFunctionAttrString(Fn: ValueRef, index: c_uint, Name: *c_char);
         pub fn LLVMGetFunctionAttr(Fn: ValueRef) -> c_ulonglong;
-
-        pub fn LLVMAddReturnAttribute(Fn: ValueRef, PA: c_uint);
-        pub fn LLVMRemoveReturnAttribute(Fn: ValueRef, PA: c_uint);
-
-        pub fn LLVMAddColdAttribute(Fn: ValueRef);
-
-        pub fn LLVMRemoveFunctionAttr(Fn: ValueRef,
-                                      PA: c_ulonglong,
-                                      HighPA: c_ulonglong);
 
         /* Operations on parameters */
         pub fn LLVMCountParams(Fn: ValueRef) -> c_uint;
@@ -783,6 +802,9 @@ pub mod llvm {
         pub fn LLVMSetInstrParamAlignment(Instr: ValueRef,
                                           index: c_uint,
                                           align: c_uint);
+        pub fn LLVMAddCallSiteAttribute(Instr: ValueRef,
+                                        index: c_uint,
+                                        Val: uint64_t);
 
         /* Operations on call instructions (only) */
         pub fn LLVMIsTailCall(CallInst: ValueRef) -> Bool;
@@ -1261,7 +1283,8 @@ pub mod llvm {
                                       LHS: ValueRef,
                                       CMP: ValueRef,
                                       RHS: ValueRef,
-                                      Order: AtomicOrdering)
+                                      Order: AtomicOrdering,
+                                      FailureOrder: AtomicOrdering)
                                       -> ValueRef;
         pub fn LLVMBuildAtomicRMW(B: BuilderRef,
                                   Op: AtomicBinOp,
@@ -1586,7 +1609,8 @@ pub mod llvm {
                                                Scope: DIDescriptor,
                                                File: DIFile,
                                                Line: c_uint,
-                                               Col: c_uint)
+                                               Col: c_uint,
+                                               Discriminator: c_uint)
                                                -> DILexicalBlock;
 
         pub fn LLVMDIBuilderCreateStaticVariable(Builder: DIBuilderRef,
@@ -1745,14 +1769,18 @@ pub mod llvm {
                                            Level: CodeGenOptLevel,
                                            EnableSegstk: bool,
                                            UseSoftFP: bool,
-                                           NoFramePointerElim: bool) -> TargetMachineRef;
+                                           NoFramePointerElim: bool,
+                                           FunctionSections: bool,
+                                           DataSections: bool) -> TargetMachineRef;
         pub fn LLVMRustDisposeTargetMachine(T: TargetMachineRef);
         pub fn LLVMRustAddAnalysisPasses(T: TargetMachineRef,
                                          PM: PassManagerRef,
                                          M: ModuleRef);
         pub fn LLVMRustAddBuilderLibraryInfo(PMB: PassManagerBuilderRef,
-                                             M: ModuleRef);
-        pub fn LLVMRustAddLibraryInfo(PM: PassManagerRef, M: ModuleRef);
+                                             M: ModuleRef,
+                                             DisableSimplifyLibCalls: bool);
+        pub fn LLVMRustAddLibraryInfo(PM: PassManagerRef, M: ModuleRef,
+                                      DisableSimplifyLibCalls: bool);
         pub fn LLVMRustRunFunctionPassManager(PM: PassManagerRef, M: ModuleRef);
         pub fn LLVMRustWriteOutputFile(T: TargetMachineRef,
                                        PM: PassManagerRef,
@@ -1781,6 +1809,7 @@ pub mod llvm {
         pub fn LLVMRustDestroyArchive(AR: ArchiveRef);
 
         pub fn LLVMRustSetDLLExportStorageClass(V: ValueRef);
+        pub fn LLVMVersionMajor() -> c_int;
         pub fn LLVMVersionMinor() -> c_int;
 
         pub fn LLVMRustGetSectionName(SI: SectionIteratorRef,
@@ -1829,13 +1858,13 @@ pub fn ConstFCmp(pred: RealPredicate, v1: ValueRef, v2: ValueRef) -> ValueRef {
 
 pub fn SetFunctionAttribute(fn_: ValueRef, attr: Attribute) {
     unsafe {
-        llvm::LLVMAddFunctionAttr(fn_, attr as c_uint)
+        llvm::LLVMAddFunctionAttribute(fn_, FunctionIndex as c_uint, attr as uint64_t)
     }
 }
 /* Memory-managed object interface to type handles. */
 
 pub struct TypeNames {
-    named_types: RefCell<HashMap<~str, TypeRef>>,
+    named_types: RefCell<HashMap<String, TypeRef>>,
 }
 
 impl TypeNames {
@@ -1846,70 +1875,57 @@ impl TypeNames {
     }
 
     pub fn associate_type(&self, s: &str, t: &Type) {
-        assert!(self.named_types.borrow_mut().insert(s.to_owned(), t.to_ref()));
+        assert!(self.named_types.borrow_mut().insert(s.to_string(),
+                                                     t.to_ref()));
     }
 
     pub fn find_type(&self, s: &str) -> Option<Type> {
         self.named_types.borrow().find_equiv(&s).map(|x| Type::from_ref(*x))
     }
 
-    pub fn type_to_str(&self, ty: Type) -> ~str {
+    pub fn type_to_str(&self, ty: Type) -> String {
         unsafe {
             let s = llvm::LLVMTypeToString(ty.to_ref());
             let ret = from_c_str(s);
             free(s as *mut c_void);
-            ret
+            ret.to_string()
         }
     }
 
-    pub fn types_to_str(&self, tys: &[Type]) -> ~str {
-        let strs: Vec<~str> = tys.iter().map(|t| self.type_to_str(*t)).collect();
-        format!("[{}]", strs.connect(","))
+    pub fn types_to_str(&self, tys: &[Type]) -> String {
+        let strs: Vec<String> = tys.iter().map(|t| self.type_to_str(*t)).collect();
+        format!("[{}]", strs.connect(",").to_string())
     }
 
-    pub fn val_to_str(&self, val: ValueRef) -> ~str {
+    pub fn val_to_str(&self, val: ValueRef) -> String {
         unsafe {
             let s = llvm::LLVMValueToString(val);
             let ret = from_c_str(s);
             free(s as *mut c_void);
-            ret
+            ret.to_string()
         }
     }
 }
 
 /* Memory-managed interface to target data. */
 
-pub struct target_data_res {
-    pub td: TargetDataRef,
+pub struct TargetData {
+    pub lltd: TargetDataRef
 }
 
-impl Drop for target_data_res {
+impl Drop for TargetData {
     fn drop(&mut self) {
         unsafe {
-            llvm::LLVMDisposeTargetData(self.td);
+            llvm::LLVMDisposeTargetData(self.lltd);
         }
     }
 }
 
-pub fn target_data_res(td: TargetDataRef) -> target_data_res {
-    target_data_res {
-        td: td
-    }
-}
-
-pub struct TargetData {
-    pub lltd: TargetDataRef,
-    dtor: @target_data_res
-}
-
 pub fn mk_target_data(string_rep: &str) -> TargetData {
-    let lltd = string_rep.with_c_str(|buf| {
-        unsafe { llvm::LLVMCreateTargetData(buf) }
-    });
-
     TargetData {
-        lltd: lltd,
-        dtor: @target_data_res(lltd)
+        lltd: string_rep.with_c_str(|buf| {
+            unsafe { llvm::LLVMCreateTargetData(buf) }
+        })
     }
 }
 
@@ -1946,35 +1962,22 @@ impl Drop for ObjectFile {
 
 /* Memory-managed interface to section iterators. */
 
-pub struct section_iter_res {
-    pub si: SectionIteratorRef,
+pub struct SectionIter {
+    pub llsi: SectionIteratorRef
 }
 
-impl Drop for section_iter_res {
+impl Drop for SectionIter {
     fn drop(&mut self) {
         unsafe {
-            llvm::LLVMDisposeSectionIterator(self.si);
+            llvm::LLVMDisposeSectionIterator(self.llsi);
         }
     }
 }
 
-pub fn section_iter_res(si: SectionIteratorRef) -> section_iter_res {
-    section_iter_res {
-        si: si
-    }
-}
-
-pub struct SectionIter {
-    pub llsi: SectionIteratorRef,
-    dtor: @section_iter_res
-}
-
 pub fn mk_section_iter(llof: ObjectFileRef) -> SectionIter {
     unsafe {
-        let llsi = llvm::LLVMGetSections(llof);
         SectionIter {
-            llsi: llsi,
-            dtor: @section_iter_res(llsi)
+            llsi: llvm::LLVMGetSections(llof)
         }
     }
 }

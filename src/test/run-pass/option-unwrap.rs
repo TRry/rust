@@ -8,12 +8,13 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#[feature(managed_boxes)];
+#![feature(managed_boxes)]
 
 use std::cell::Cell;
+use std::gc::{GC, Gc};
 
 struct dtor {
-    x: @Cell<int>,
+    x: Gc<Cell<int>>,
 }
 
 #[unsafe_destructor]
@@ -32,7 +33,7 @@ fn unwrap<T>(o: Option<T>) -> T {
 }
 
 pub fn main() {
-    let x = @Cell::new(1);
+    let x = box(GC) Cell::new(1);
 
     {
         let b = Some(dtor { x:x });

@@ -1,4 +1,4 @@
-// Copyright 2012 The Rust Project Developers. See the COPYRIGHT
+// Copyright 2012-2014 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
 //
@@ -22,7 +22,8 @@ use parse::token::{Token, EOF, Nonterminal};
 use parse::token;
 
 use std::rc::Rc;
-use collections::HashMap;
+use std::gc::GC;
+use std::collections::HashMap;
 
 /* This is an Earley-like parser, without support for in-grammar nonterminals,
 only by calling out to the main rust parser for named nonterminals (which it
@@ -102,7 +103,7 @@ pub struct MatcherPos {
     elts: Vec<ast::Matcher> , // maybe should be <'>? Need to understand regions.
     sep: Option<Token>,
     idx: uint,
-    up: Option<~MatcherPos>,
+    up: Option<Box<MatcherPos>>,
     matches: Vec<Vec<Rc<NamedMatch>>>,
     match_lo: uint, match_hi: uint,
     sp_lo: BytePos,
@@ -120,7 +121,7 @@ pub fn count_names(ms: &[Matcher]) -> uint {
 }
 
 pub fn initial_matcher_pos(ms: Vec<Matcher> , sep: Option<Token>, lo: BytePos)
-                        -> ~MatcherPos {
+                           -> Box<MatcherPos> {
     let mut match_idx_hi = 0u;
     for elt in ms.iter() {
         match elt.node {
@@ -134,7 +135,7 @@ pub fn initial_matcher_pos(ms: Vec<Matcher> , sep: Option<Token>, lo: BytePos)
         }
     }
     let matches = Vec::from_fn(count_names(ms.as_slice()), |_i| Vec::new());
-    ~MatcherPos {
+    box MatcherPos {
         elts: ms,
         sep: sep,
         idx: 0u,
@@ -188,7 +189,9 @@ pub fn nameize(p_s: &ParseSess, ms: &[Matcher], res: &[Rc<NamedMatch>])
             if ret_val.contains_key(&bind_name) {
                 let string = token::get_ident(bind_name);
                 p_s.span_diagnostic
-                   .span_fatal(span, "duplicated bind name: " + string.get())
+                   .span_fatal(span,
+                               format!("duplicated bind name: {}",
+                                       string.get()).as_slice())
             }
             ret_val.insert(bind_name, res[idx].clone());
           }
@@ -201,8 +204,8 @@ pub fn nameize(p_s: &ParseSess, ms: &[Matcher], res: &[Rc<NamedMatch>])
 
 pub enum ParseResult {
     Success(HashMap<Ident, Rc<NamedMatch>>),
-    Failure(codemap::Span, ~str),
-    Error(codemap::Span, ~str)
+    Failure(codemap::Span, String),
+    Error(codemap::Span, String)
 }
 
 pub fn parse_or_else(sess: &ParseSess,
@@ -212,8 +215,12 @@ pub fn parse_or_else(sess: &ParseSess,
                      -> HashMap<Ident, Rc<NamedMatch>> {
     match parse(sess, cfg, rdr, ms.as_slice()) {
         Success(m) => m,
-        Failure(sp, str) => sess.span_diagnostic.span_fatal(sp, str),
-        Error(sp, str) => sess.span_diagnostic.span_fatal(sp, str)
+        Failure(sp, str) => {
+            sess.span_diagnostic.span_fatal(sp, str.as_slice())
+        }
+        Error(sp, str) => {
+            sess.span_diagnostic.span_fatal(sp, str.as_slice())
+        }
     }
 }
 
@@ -334,7 +341,7 @@ pub fn parse(sess: &ParseSess,
 
                     let matches = Vec::from_elem(ei.matches.len(), Vec::new());
                     let ei_t = ei;
-                    cur_eis.push(~MatcherPos {
+                    cur_eis.push(box MatcherPos {
                         elts: (*matchers).clone(),
                         sep: (*sep).clone(),
                         idx: 0u,
@@ -366,9 +373,9 @@ pub fn parse(sess: &ParseSess,
                 }
                 return Success(nameize(sess, ms, v.as_slice()));
             } else if eof_eis.len() > 1u {
-                return Error(sp, ~"ambiguity: multiple successful parses");
+                return Error(sp, "ambiguity: multiple successful parses".to_string());
             } else {
-                return Failure(sp, ~"unexpected end of macro invocation");
+                return Failure(sp, "unexpected end of macro invocation".to_string());
             }
         } else {
             if (bb_eis.len() > 0u && next_eis.len() > 0u)
@@ -376,19 +383,19 @@ pub fn parse(sess: &ParseSess,
                 let nts = bb_eis.iter().map(|ei| {
                     match ei.elts.get(ei.idx).node {
                       MatchNonterminal(bind, name, _) => {
-                        format!("{} ('{}')",
+                        (format!("{} ('{}')",
                                 token::get_ident(name),
-                                token::get_ident(bind))
+                                token::get_ident(bind))).to_string()
                       }
                       _ => fail!()
-                    } }).collect::<Vec<~str>>().connect(" or ");
+                    } }).collect::<Vec<String>>().connect(" or ");
                 return Error(sp, format!(
                     "local ambiguity: multiple parsing options: \
                      built-in NTs {} or {} other options.",
-                    nts, next_eis.len()));
+                    nts, next_eis.len()).to_string());
             } else if bb_eis.len() == 0u && next_eis.len() == 0u {
                 return Failure(sp, format!("no rules expected the token `{}`",
-                            token::to_str(&tok)));
+                            token::to_str(&tok)).to_string());
             } else if next_eis.len() > 0u {
                 /* Now process the next token */
                 while next_eis.len() > 0u {
@@ -396,7 +403,7 @@ pub fn parse(sess: &ParseSess,
                 }
                 rdr.next_token();
             } else /* bb_eis.len() == 1 */ {
-                let mut rust_parser = Parser(sess, cfg.clone(), ~rdr.clone());
+                let mut rust_parser = Parser::new(sess, cfg.clone(), box rdr.clone());
 
                 let mut ei = bb_eis.pop().unwrap();
                 match ei.elts.get(ei.idx).node {
@@ -433,23 +440,27 @@ pub fn parse_nt(p: &mut Parser, name: &str) -> Nonterminal {
       "ty" => token::NtTy(p.parse_ty(false /* no need to disambiguate*/)),
       // this could be handled like a token, since it is one
       "ident" => match p.token {
-        token::IDENT(sn,b) => { p.bump(); token::NtIdent(~sn,b) }
+        token::IDENT(sn,b) => { p.bump(); token::NtIdent(box sn,b) }
         _ => {
             let token_str = token::to_str(&p.token);
-            p.fatal(~"expected ident, found " + token_str)
+            p.fatal((format!("expected ident, found {}",
+                             token_str.as_slice())).as_slice())
         }
       },
       "path" => {
-        token::NtPath(~p.parse_path(LifetimeAndTypesWithoutColons).path)
+        token::NtPath(box p.parse_path(LifetimeAndTypesWithoutColons).path)
       }
       "meta" => token::NtMeta(p.parse_meta_item()),
       "tt" => {
         p.quote_depth += 1u; //but in theory, non-quoted tts might be useful
-        let res = token::NtTT(@p.parse_token_tree());
+        let res = token::NtTT(box(GC) p.parse_token_tree());
         p.quote_depth -= 1u;
         res
       }
       "matchers" => token::NtMatchers(p.parse_matchers()),
-      _ => p.fatal(~"unsupported builtin nonterminal parser: " + name)
+      _ => {
+          p.fatal(format!("unsupported builtin nonterminal parser: {}",
+                          name).as_slice())
+      }
     }
 }

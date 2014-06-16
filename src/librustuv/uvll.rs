@@ -32,13 +32,14 @@
 use libc::{size_t, c_int, c_uint, c_void, c_char, c_double};
 use libc::{ssize_t, sockaddr, free, addrinfo};
 use libc;
-use std::rt::global_heap::malloc_raw;
+use std::rt::libc_heap::malloc_raw;
 
 #[cfg(test)]
 use libc::uintptr_t;
 
 pub use self::errors::{EACCES, ECONNREFUSED, ECONNRESET, EPIPE, ECONNABORTED,
-                       ECANCELED, EBADF, ENOTCONN, ENOENT, EADDRNOTAVAIL};
+                       ECANCELED, EBADF, ENOTCONN, ENOENT, EADDRNOTAVAIL,
+                       EADDRINUSE};
 
 pub static OK: c_int = 0;
 pub static EOF: c_int = -4095;
@@ -61,6 +62,7 @@ pub mod errors {
     pub static ECANCELED: c_int = -4081;
     pub static EBADF: c_int = -4083;
     pub static EADDRNOTAVAIL: c_int = -4090;
+    pub static EADDRINUSE: c_int = -4091;
 }
 #[cfg(not(windows))]
 pub mod errors {
@@ -77,6 +79,7 @@ pub mod errors {
     pub static ECANCELED : c_int = -libc::ECANCELED;
     pub static EBADF : c_int = -libc::EBADF;
     pub static EADDRNOTAVAIL : c_int = -libc::EADDRNOTAVAIL;
+    pub static EADDRINUSE : c_int = -libc::EADDRINUSE;
 }
 
 pub static PROCESS_SETUID: c_int = 1 << 0;
@@ -133,6 +136,7 @@ pub struct uv_process_options_t {
 
 // These fields are private because they must be interfaced with through the
 // functions below.
+#[repr(C)]
 pub struct uv_stdio_container_t {
     flags: libc::c_int,
     stream: *uv_stream_t,
@@ -212,8 +216,7 @@ impl uv_stat_t {
     }
 }
 
-pub type uv_idle_cb = extern "C" fn(handle: *uv_idle_t,
-                                    status: c_int);
+pub type uv_idle_cb = extern "C" fn(handle: *uv_idle_t);
 pub type uv_alloc_cb = extern "C" fn(stream: *uv_stream_t,
                                      suggested_size: size_t,
                                      buf: *mut uv_buf_t);
@@ -230,14 +233,12 @@ pub type uv_udp_recv_cb = extern "C" fn(handle: *uv_udp_t,
 pub type uv_close_cb = extern "C" fn(handle: *uv_handle_t);
 pub type uv_walk_cb = extern "C" fn(handle: *uv_handle_t,
                                     arg: *c_void);
-pub type uv_async_cb = extern "C" fn(handle: *uv_async_t,
-                                     status: c_int);
+pub type uv_async_cb = extern "C" fn(handle: *uv_async_t);
 pub type uv_connect_cb = extern "C" fn(handle: *uv_connect_t,
                                        status: c_int);
 pub type uv_connection_cb = extern "C" fn(handle: *uv_connection_t,
                                           status: c_int);
-pub type uv_timer_cb = extern "C" fn(handle: *uv_timer_t,
-                                     status: c_int);
+pub type uv_timer_cb = extern "C" fn(handle: *uv_timer_t);
 pub type uv_write_cb = extern "C" fn(handle: *uv_write_t,
                                      status: c_int);
 pub type uv_getaddrinfo_cb = extern "C" fn(req: *uv_getaddrinfo_t,
@@ -257,7 +258,7 @@ pub type uv_shutdown_cb = extern "C" fn(req: *uv_shutdown_t, status: c_int);
 #[cfg(windows)] pub type uv_gid_t = libc::c_uchar;
 
 #[repr(C)]
-#[deriving(Eq)]
+#[deriving(PartialEq)]
 pub enum uv_handle_type {
     UV_UNKNOWN_HANDLE,
     UV_ASYNC,
@@ -282,7 +283,7 @@ pub enum uv_handle_type {
 
 #[repr(C)]
 #[cfg(unix)]
-#[deriving(Eq)]
+#[deriving(PartialEq)]
 pub enum uv_req_type {
     UV_UNKNOWN_REQ,
     UV_REQ,
@@ -300,7 +301,7 @@ pub enum uv_req_type {
 // See UV_REQ_TYPE_PRIVATE at libuv/include/uv-win.h
 #[repr(C)]
 #[cfg(windows)]
-#[deriving(Eq)]
+#[deriving(PartialEq)]
 pub enum uv_req_type {
     UV_UNKNOWN_REQ,
     UV_REQ,
@@ -323,7 +324,7 @@ pub enum uv_req_type {
 }
 
 #[repr(C)]
-#[deriving(Eq)]
+#[deriving(PartialEq)]
 pub enum uv_membership {
     UV_LEAVE_GROUP,
     UV_JOIN_GROUP
@@ -597,10 +598,12 @@ extern {
                       flags: c_int, mode: c_int, cb: uv_fs_cb) -> c_int;
     pub fn uv_fs_unlink(loop_ptr: *uv_loop_t, req: *uv_fs_t, path: *c_char,
                         cb: uv_fs_cb) -> c_int;
-    pub fn uv_fs_write(l: *uv_loop_t, req: *uv_fs_t, fd: c_int, buf: *c_void,
-                       len: size_t, offset: i64, cb: uv_fs_cb) -> c_int;
-    pub fn uv_fs_read(l: *uv_loop_t, req: *uv_fs_t, fd: c_int, buf: *c_void,
-                      len: size_t, offset: i64, cb: uv_fs_cb) -> c_int;
+    pub fn uv_fs_write(l: *uv_loop_t, req: *uv_fs_t, fd: c_int,
+                       bufs: *uv_buf_t, nbufs: c_uint,
+                       offset: i64, cb: uv_fs_cb) -> c_int;
+    pub fn uv_fs_read(l: *uv_loop_t, req: *uv_fs_t, fd: c_int,
+                      bufs: *uv_buf_t, nbufs: c_uint,
+                      offset: i64, cb: uv_fs_cb) -> c_int;
     pub fn uv_fs_close(l: *uv_loop_t, req: *uv_fs_t, fd: c_int,
                        cb: uv_fs_cb) -> c_int;
     pub fn uv_fs_stat(l: *uv_loop_t, req: *uv_fs_t, path: *c_char,

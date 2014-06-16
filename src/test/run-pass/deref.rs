@@ -8,9 +8,11 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#[feature(managed_boxes)];
+#![feature(managed_boxes)]
+
+use std::gc::{Gc, GC};
 
 pub fn main() {
-    let x: @int = @10;
+    let x: Gc<int> = box(GC) 10;
     let _y: int = *x;
 }

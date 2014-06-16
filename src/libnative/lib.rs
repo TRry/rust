@@ -41,21 +41,25 @@
 //! }
 //! ```
 
-#![crate_id = "native#0.11-pre"]
+#![crate_id = "native#0.11.0-pre"]
 #![license = "MIT/ASL2"]
 #![crate_type = "rlib"]
 #![crate_type = "dylib"]
 #![doc(html_logo_url = "http://www.rust-lang.org/logos/rust-logo-128x128-blk-v2.png",
        html_favicon_url = "http://www.rust-lang.org/favicon.ico",
-       html_root_url = "http://static.rust-lang.org/doc/master")]
+       html_root_url = "http://doc.rust-lang.org/")]
 #![deny(unused_result, unused_must_use)]
 #![allow(non_camel_case_types)]
+#![feature(macro_rules)]
 
 // NB this crate explicitly does *not* allow glob imports, please seriously
 //    consider whether they're needed before adding that feature here (the
 //    answer is that you don't need them)
+#![feature(macro_rules)]
 
+extern crate alloc;
 extern crate libc;
+#[cfg(test)] extern crate debug;
 
 use std::os;
 use std::rt;
@@ -73,9 +77,9 @@ static OS_DEFAULT_STACK_ESTIMATE: uint = 2 * (1 << 20);
 #[lang = "start"]
 #[cfg(not(test))]
 pub fn lang_start(main: *u8, argc: int, argv: **u8) -> int {
-    use std::cast;
+    use std::mem;
     start(argc, argv, proc() {
-        let main: extern "Rust" fn() = unsafe { cast::transmute(main) };
+        let main: extern "Rust" fn() = unsafe { mem::transmute(main) };
         main();
     })
 }

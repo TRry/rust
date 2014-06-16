@@ -13,6 +13,7 @@
 #include "rustllvm.h"
 
 #include "llvm/Support/CBindingWrapping.h"
+#include "llvm/Support/FileSystem.h"
 #include "llvm/Target/TargetLibraryInfo.h"
 #include "llvm/Transforms/IPO/PassManagerBuilder.h"
 
@@ -69,19 +70,23 @@ LLVMRustCreateTargetMachine(const char *triple,
                             CodeGenOpt::Level OptLevel,
                             bool EnableSegmentedStacks,
                             bool UseSoftFloat,
-                            bool NoFramePointerElim) {
+                            bool NoFramePointerElim,
+                            bool FunctionSections,
+                            bool DataSections) {
     std::string Error;
     Triple Trip(Triple::normalize(triple));
     const llvm::Target *TheTarget = TargetRegistry::lookupTarget(Trip.getTriple(),
                                                                  Error);
     if (TheTarget == NULL) {
-        LLVMRustError = Error.c_str();
+        LLVMRustSetLastError(Error.c_str());
         return NULL;
     }
 
     TargetOptions Options;
     Options.NoFramePointerElim = NoFramePointerElim;
+#if LLVM_VERSION_MINOR < 5
     Options.EnableSegmentedStacks = EnableSegmentedStacks;
+#endif
     Options.FloatABIType = FloatABI::Default;
     Options.UseSoftFloat = UseSoftFloat;
     if (UseSoftFloat) {
@@ -95,6 +100,8 @@ LLVMRustCreateTargetMachine(const char *triple,
                                                        RM,
                                                        CM,
                                                        OptLevel);
+    TM->setDataSections(DataSections);
+    TM->setFunctionSections(FunctionSections);
     return wrap(TM);
 }
 
@@ -111,24 +118,38 @@ LLVMRustAddAnalysisPasses(LLVMTargetMachineRef TM,
                           LLVMPassManagerRef PMR,
                           LLVMModuleRef M) {
     PassManagerBase *PM = unwrap(PMR);
+#if LLVM_VERSION_MINOR >= 5
+    PM->add(new DataLayoutPass(unwrap(M)));
+#else
     PM->add(new DataLayout(unwrap(M)));
+#endif
     unwrap(TM)->addAnalysisPasses(*PM);
 }
 
 // Unfortunately, the LLVM C API doesn't provide a way to set the `LibraryInfo`
 // field of a PassManagerBuilder, we expose our own method of doing so.
 extern "C" void
-LLVMRustAddBuilderLibraryInfo(LLVMPassManagerBuilderRef PMB, LLVMModuleRef M) {
+LLVMRustAddBuilderLibraryInfo(LLVMPassManagerBuilderRef PMB,
+                              LLVMModuleRef M,
+                              bool DisableSimplifyLibCalls) {
     Triple TargetTriple(unwrap(M)->getTargetTriple());
-    unwrap(PMB)->LibraryInfo = new TargetLibraryInfo(TargetTriple);
+    TargetLibraryInfo *TLI = new TargetLibraryInfo(TargetTriple);
+    if (DisableSimplifyLibCalls)
+      TLI->disableAllFunctions();
+    unwrap(PMB)->LibraryInfo = TLI;
 }
 
 // Unfortunately, the LLVM C API doesn't provide a way to create the
 // TargetLibraryInfo pass, so we use this method to do so.
 extern "C" void
-LLVMRustAddLibraryInfo(LLVMPassManagerRef PMB, LLVMModuleRef M) {
+LLVMRustAddLibraryInfo(LLVMPassManagerRef PMB,
+                       LLVMModuleRef M,
+                       bool DisableSimplifyLibCalls) {
     Triple TargetTriple(unwrap(M)->getTargetTriple());
-    unwrap(PMB)->add(new TargetLibraryInfo(TargetTriple));
+    TargetLibraryInfo *TLI = new TargetLibraryInfo(TargetTriple);
+    if (DisableSimplifyLibCalls)
+      TLI->disableAllFunctions();
+    unwrap(PMB)->add(TLI);
 }
 
 // Unfortunately, the LLVM C API doesn't provide an easy way of iterating over
@@ -172,7 +193,7 @@ LLVMRustWriteOutputFile(LLVMTargetMachineRef Target,
   raw_fd_ostream OS(path, ErrorInfo, raw_fd_ostream::F_Binary);
 #endif
   if (ErrorInfo != "") {
-    LLVMRustError = ErrorInfo.c_str();
+    LLVMRustSetLastError(ErrorInfo.c_str());
     return false;
   }
   formatted_raw_ostream FOS(OS);

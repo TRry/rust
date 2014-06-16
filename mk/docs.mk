@@ -26,11 +26,11 @@
 # L10N_LANGS are the languages for which the docs have been
 # translated.
 ######################################################################
-DOCS := index tutorial guide-ffi guide-macros guide-lifetimes \
+DOCS := index intro tutorial guide-ffi guide-macros guide-lifetimes \
 	guide-tasks guide-container guide-pointers guide-testing \
 	guide-runtime complement-bugreport complement-cheatsheet \
-	complement-lang-faq complement-project-faq rust rustdoc \
-	guide-unsafe
+	complement-lang-faq complement-design-faq complement-project-faq rust \
+    rustdoc guide-unsafe
 
 PDF_DOCS := tutorial rust
 
@@ -42,9 +42,12 @@ L10N_LANGS := ja
 # Generally no need to edit below here.
 
 # The options are passed to the documentation generators.
-RUSTDOC_HTML_OPTS = --markdown-css rust.css \
-	--markdown-before-content=doc/version_info.html \
-	--markdown-in-header=doc/favicon.inc --markdown-after-content=doc/footer.inc
+RUSTDOC_HTML_OPTS_NO_CSS = --markdown-before-content=doc/version_info.html \
+	--markdown-in-header=doc/favicon.inc \
+	--markdown-after-content=doc/footer.inc \
+	--markdown-playground-url='http://play.rust-lang.org/'
+
+RUSTDOC_HTML_OPTS = $(RUSTDOC_HTML_OPTS_NO_CSS) --markdown-css rust.css
 
 PANDOC_BASE_OPTS := --standalone --toc --number-sections
 PANDOC_TEX_OPTS = $(PANDOC_BASE_OPTS) --include-before-body=doc/version.tex \
@@ -109,7 +112,7 @@ HTML_DEPS += doc/version_info.html
 doc/version_info.html: $(D)/version_info.html.template $(MKFILE_DEPS) \
                        $(wildcard $(D)/*.*) | doc/
 	@$(call E, version-info: $@)
-	sed -e "s/VERSION/$(CFG_RELEASE)/; s/SHORT_HASH/$(shell echo \
+	$(Q)sed -e "s/VERSION/$(CFG_RELEASE)/; s/SHORT_HASH/$(shell echo \
                     $(CFG_VER_HASH) | head -c 8)/;\
                 s/STAMP/$(CFG_VER_HASH)/;" $< >$@
 
@@ -152,13 +155,20 @@ doc/footer.tex: $(D)/footer.inc | doc/
 	@$(call E, pandoc: $@)
 	$(CFG_PANDOC) --from=html --to=latex $< --output=$@
 
+# HTML (rustdoc)
+DOC_TARGETS += doc/not_found.html
+doc/not_found.html: $(D)/not_found.md $(HTML_DEPS) | doc/
+	@$(call E, rustdoc: $@)
+	$(Q)$(RUSTDOC) $(RUSTDOC_HTML_OPTS_NO_CSS) \
+		--markdown-css http://doc.rust-lang.org/rust.css $<
+
 define DEF_DOC
 
 # HTML (rustdoc)
 DOC_TARGETS += doc/$(1).html
 doc/$(1).html: $$(D)/$(1).md $$(HTML_DEPS) $$(RUSTDOC_DEPS_$(1)) | doc/
 	@$$(call E, rustdoc: $$@)
-	$$(RUSTDOC) $$(RUSTDOC_HTML_OPTS) $$(RUSTDOC_FLAGS_$(1)) $$<
+	$$(Q)$$(RUSTDOC) $$(RUSTDOC_HTML_OPTS) $$(RUSTDOC_FLAGS_$(1)) $$<
 
 ifneq ($(ONLY_HTML_DOCS),1)
 
@@ -263,14 +273,18 @@ LIB_DOC_DEP_$(1) = \
 	$$(RSINPUTS_$(1)) \
 	$$(RUSTDOC_EXE) \
 	$$(foreach dep,$$(RUST_DEPS_$(1)), \
-		$$(TLIB2_T_$(CFG_BUILD)_H_$(CFG_BUILD))/stamp.$$(dep))
+		$$(TLIB2_T_$(CFG_BUILD)_H_$(CFG_BUILD))/stamp.$$(dep) \
+		doc/$$(dep)/)
 else
 LIB_DOC_DEP_$(1) = $$(CRATEFILE_$(1)) $$(RSINPUTS_$(1))
 endif
 
+doc/$(1)/:
+	$$(Q)mkdir -p $$@
+
 $(2) += doc/$(1)/index.html
 doc/$(1)/index.html: CFG_COMPILER_HOST_TRIPLE = $(CFG_TARGET)
-doc/$(1)/index.html: $$(LIB_DOC_DEP_$(1))
+doc/$(1)/index.html: $$(LIB_DOC_DEP_$(1)) doc/$(1)/
 	@$$(call E, rustdoc $$@)
 	$$(Q)$$(RUSTDOC) --cfg dox --cfg stage2 $$<
 endef
@@ -281,6 +295,7 @@ $(foreach crate,$(COMPILER_DOC_CRATES),$(eval $(call DEF_LIB_DOC,$(crate),COMPIL
 ifdef CFG_DISABLE_DOCS
   $(info cfg: disabling doc build (CFG_DISABLE_DOCS))
   DOC_TARGETS :=
+  COMPILER_DOC_TARGETS :=
 endif
 
 docs: $(DOC_TARGETS)

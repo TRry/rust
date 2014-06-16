@@ -8,9 +8,12 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#[feature(managed_boxes)];
+#![feature(managed_boxes)]
 
 // error-pattern:meep
-fn f(_a: int, _b: int, _c: @int) { fail!("moop"); }
 
-fn main() { f(1, fail!("meep"), @42); }
+use std::gc::{Gc, GC};
+
+fn f(_a: int, _b: int, _c: Gc<int>) { fail!("moop"); }
+
+fn main() { f(1, fail!("meep"), box(GC) 42); }

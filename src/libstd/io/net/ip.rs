@@ -15,7 +15,7 @@
 
 #![allow(missing_doc)]
 
-use container::Container;
+use collections::Collection;
 use fmt;
 use from_str::FromStr;
 use iter::Iterator;
@@ -25,7 +25,7 @@ use slice::{MutableCloneableVector, ImmutableVector, MutableVector};
 
 pub type Port = u16;
 
-#[deriving(Eq, TotalEq, Clone, Hash)]
+#[deriving(PartialEq, Eq, Clone, Hash)]
 pub enum IpAddr {
     Ipv4Addr(u8, u8, u8, u8),
     Ipv6Addr(u16, u16, u16, u16, u16, u16, u16, u16)
@@ -35,28 +35,28 @@ impl fmt::Show for IpAddr {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         match *self {
             Ipv4Addr(a, b, c, d) =>
-                write!(fmt.buf, "{}.{}.{}.{}", a, b, c, d),
+                write!(fmt, "{}.{}.{}.{}", a, b, c, d),
 
             // Ipv4 Compatible address
             Ipv6Addr(0, 0, 0, 0, 0, 0, g, h) => {
-                write!(fmt.buf, "::{}.{}.{}.{}", (g >> 8) as u8, g as u8,
+                write!(fmt, "::{}.{}.{}.{}", (g >> 8) as u8, g as u8,
                        (h >> 8) as u8, h as u8)
             }
 
             // Ipv4-Mapped address
             Ipv6Addr(0, 0, 0, 0, 0, 0xFFFF, g, h) => {
-                write!(fmt.buf, "::FFFF:{}.{}.{}.{}", (g >> 8) as u8, g as u8,
+                write!(fmt, "::FFFF:{}.{}.{}.{}", (g >> 8) as u8, g as u8,
                        (h >> 8) as u8, h as u8)
             }
 
             Ipv6Addr(a, b, c, d, e, f, g, h) =>
-                write!(fmt.buf, "{:x}:{:x}:{:x}:{:x}:{:x}:{:x}:{:x}:{:x}",
+                write!(fmt, "{:x}:{:x}:{:x}:{:x}:{:x}:{:x}:{:x}:{:x}",
                        a, b, c, d, e, f, g, h)
         }
     }
 }
 
-#[deriving(Eq, TotalEq, Clone, Hash)]
+#[deriving(PartialEq, Eq, Clone, Hash)]
 pub struct SocketAddr {
     pub ip: IpAddr,
     pub port: Port,
@@ -65,8 +65,8 @@ pub struct SocketAddr {
 impl fmt::Show for SocketAddr {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self.ip {
-            Ipv4Addr(..) => write!(f.buf, "{}:{}", self.ip, self.port),
-            Ipv6Addr(..) => write!(f.buf, "[{}]:{}", self.ip, self.port),
+            Ipv4Addr(..) => write!(f, "{}:{}", self.ip, self.port),
+            Ipv6Addr(..) => write!(f, "[{}]:{}", self.ip, self.port),
         }
     }
 }
@@ -107,9 +107,9 @@ impl<'a> Parser<'a> {
     }
 
     // Return result of first successful parser
-    fn read_or<T>(&mut self, parsers: &[|&mut Parser| -> Option<T>])
+    fn read_or<T>(&mut self, parsers: &mut [|&mut Parser| -> Option<T>])
                -> Option<T> {
-        for pf in parsers.iter() {
+        for pf in parsers.mut_iter() {
             match self.read_atomically(|p: &mut Parser| (*pf)(p)) {
                 Some(r) => return Some(r),
                 None => {}
@@ -305,7 +305,7 @@ impl<'a> Parser<'a> {
     fn read_ip_addr(&mut self) -> Option<IpAddr> {
         let ipv4_addr = |p: &mut Parser| p.read_ipv4_addr();
         let ipv6_addr = |p: &mut Parser| p.read_ipv6_addr();
-        self.read_or([ipv4_addr, ipv6_addr])
+        self.read_or(&mut [ipv4_addr, ipv6_addr])
     }
 
     fn read_socket_addr(&mut self) -> Option<SocketAddr> {
@@ -318,7 +318,7 @@ impl<'a> Parser<'a> {
                 p.read_seq_3::<char, IpAddr, char>(open_br, ip_addr, clos_br)
                         .map(|t| match t { (_, ip, _) => ip })
             };
-            p.read_or([ipv4_p, ipv6_p])
+            p.read_or(&mut [ipv4_p, ipv6_p])
         };
         let colon = |p: &mut Parser| p.read_given_char(':');
         let port  = |p: &mut Parser| p.read_number(10, 5, 0x10000).map(|n| n as u16);
@@ -445,7 +445,8 @@ mod test {
     #[test]
     fn ipv6_addr_to_str() {
         let a1 = Ipv6Addr(0, 0, 0, 0, 0, 0xffff, 0xc000, 0x280);
-        assert!(a1.to_str() == ~"::ffff:192.0.2.128" || a1.to_str() == ~"::FFFF:192.0.2.128");
-        assert_eq!(Ipv6Addr(8, 9, 10, 11, 12, 13, 14, 15).to_str(), ~"8:9:a:b:c:d:e:f");
+        assert!(a1.to_str() == "::ffff:192.0.2.128".to_string() ||
+                a1.to_str() == "::FFFF:192.0.2.128".to_string());
+        assert_eq!(Ipv6Addr(8, 9, 10, 11, 12, 13, 14, 15).to_str(), "8:9:a:b:c:d:e:f".to_string());
     }
 }

@@ -10,9 +10,11 @@
 
 // error-pattern:fail
 
-#[feature(managed_boxes)];
+#![feature(managed_boxes)]
+
+use std::gc::GC;
 
 fn main() {
-    @0;
+    box(GC) 0;
     fail!();
 }

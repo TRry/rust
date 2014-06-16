@@ -8,9 +8,9 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use std::rt::env::max_cached_stacks;
+use std::sync::atomics;
 use std::os::{errno, page_size, MemoryMap, MapReadable, MapWritable,
-              MapNonStandardFlags, MapVirtual};
+              MapNonStandardFlags, MapVirtual, getenv};
 use libc;
 
 /// A task's stack. The name "Stack" is a vestige of segmented stacks.
@@ -51,8 +51,8 @@ impl Stack {
         // page. It isn't guaranteed, but that's why FFI is unsafe. buf.data is
         // guaranteed to be aligned properly.
         if !protect_last_page(&stack) {
-            fail!("Could not memory-protect guard page. stack={:?}, errno={}",
-                  stack, errno());
+            fail!("Could not memory-protect guard page. stack={}, errno={}",
+                  stack.data, errno());
         }
 
         let mut stk = Stack {
@@ -149,6 +149,22 @@ impl StackPool {
             self.stacks.push(stack)
         }
     }
+}
+
+fn max_cached_stacks() -> uint {
+    static mut AMT: atomics::AtomicUint = atomics::INIT_ATOMIC_UINT;
+    match unsafe { AMT.load(atomics::SeqCst) } {
+        0 => {}
+        n => return n - 1,
+    }
+    let amt = getenv("RUST_MAX_CACHED_STACKS").and_then(|s| from_str(s.as_slice()));
+    // This default corresponds to 20M of cache per scheduler (at the
+    // default size).
+    let amt = amt.unwrap_or(10);
+    // 0 is our sentinel value, so ensure that we'll never see 0 after
+    // initialization has run
+    unsafe { AMT.store(amt + 1, atomics::SeqCst); }
+    return amt;
 }
 
 extern {

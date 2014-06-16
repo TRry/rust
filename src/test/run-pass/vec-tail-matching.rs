@@ -10,29 +10,29 @@
 
 
 struct Foo {
-    string: ~str
+    string: String
 }
 
 pub fn main() {
     let x = [
-        Foo { string: ~"foo" },
-        Foo { string: ~"bar" },
-        Foo { string: ~"baz" }
+        Foo { string: "foo".to_string() },
+        Foo { string: "bar".to_string() },
+        Foo { string: "baz".to_string() }
     ];
     match x {
         [ref first, ..tail] => {
-            assert!(first.string == ~"foo");
+            assert!(first.string == "foo".to_string());
             assert_eq!(tail.len(), 2);
-            assert!(tail[0].string == ~"bar");
-            assert!(tail[1].string == ~"baz");
+            assert!(tail[0].string == "bar".to_string());
+            assert!(tail[1].string == "baz".to_string());
 
             match tail {
                 [Foo { .. }, _, Foo { .. }, .. _tail] => {
                     unreachable!();
                 }
                 [Foo { string: ref a }, Foo { string: ref b }] => {
-                    assert_eq!("bar", a.slice(0, a.len()));
-                    assert_eq!("baz", b.slice(0, b.len()));
+                    assert_eq!("bar", a.as_slice().slice(0, a.len()));
+                    assert_eq!("baz", b.as_slice().slice(0, b.len()));
                 }
                 _ => {
                     unreachable!();

@@ -55,11 +55,11 @@ pub struct Edge<E> {
     pub data: E,
 }
 
-#[deriving(Eq)]
+#[deriving(PartialEq)]
 pub struct NodeIndex(pub uint);
 pub static InvalidNodeIndex: NodeIndex = NodeIndex(uint::MAX);
 
-#[deriving(Eq)]
+#[deriving(PartialEq)]
 pub struct EdgeIndex(pub uint);
 pub static InvalidEdgeIndex: EdgeIndex = EdgeIndex(uint::MAX);
 
@@ -70,10 +70,14 @@ pub static Incoming: Direction = Direction { repr: 1 };
 
 impl NodeIndex {
     fn get(&self) -> uint { let NodeIndex(v) = *self; v }
+    /// Returns unique id (unique with respect to the graph holding associated node).
+    pub fn node_id(&self) -> uint { self.get() }
 }
 
 impl EdgeIndex {
     fn get(&self) -> uint { let EdgeIndex(v) = *self; v }
+    /// Returns unique id (unique with respect to the graph holding associated edge).
+    pub fn edge_id(&self) -> uint { self.get() }
 }
 
 impl<N,E> Graph<N,E> {
@@ -201,39 +205,39 @@ impl<N,E> Graph<N,E> {
     ///////////////////////////////////////////////////////////////////////////
     // Iterating over nodes, edges
 
-    pub fn each_node(&self, f: |NodeIndex, &Node<N>| -> bool) -> bool {
+    pub fn each_node<'a>(&'a self, f: |NodeIndex, &'a Node<N>| -> bool) -> bool {
         //! Iterates over all edges defined in the graph.
         self.nodes.iter().enumerate().advance(|(i, node)| f(NodeIndex(i), node))
     }
 
-    pub fn each_edge(&self, f: |EdgeIndex, &Edge<E>| -> bool) -> bool {
+    pub fn each_edge<'a>(&'a self, f: |EdgeIndex, &'a Edge<E>| -> bool) -> bool {
         //! Iterates over all edges defined in the graph
         self.edges.iter().enumerate().advance(|(i, edge)| f(EdgeIndex(i), edge))
     }
 
-    pub fn each_outgoing_edge(&self,
-                              source: NodeIndex,
-                              f: |EdgeIndex, &Edge<E>| -> bool)
-                              -> bool {
+    pub fn each_outgoing_edge<'a>(&'a self,
+                                  source: NodeIndex,
+                                  f: |EdgeIndex, &'a Edge<E>| -> bool)
+                                  -> bool {
         //! Iterates over all outgoing edges from the node `from`
 
         self.each_adjacent_edge(source, Outgoing, f)
     }
 
-    pub fn each_incoming_edge(&self,
-                              target: NodeIndex,
-                              f: |EdgeIndex, &Edge<E>| -> bool)
-                              -> bool {
+    pub fn each_incoming_edge<'a>(&'a self,
+                                  target: NodeIndex,
+                                  f: |EdgeIndex, &'a Edge<E>| -> bool)
+                                  -> bool {
         //! Iterates over all incoming edges to the node `target`
 
         self.each_adjacent_edge(target, Incoming, f)
     }
 
-    pub fn each_adjacent_edge(&self,
-                              node: NodeIndex,
-                              dir: Direction,
-                              f: |EdgeIndex, &Edge<E>| -> bool)
-                              -> bool {
+    pub fn each_adjacent_edge<'a>(&'a self,
+                                  node: NodeIndex,
+                                  dir: Direction,
+                                  f: |EdgeIndex, &'a Edge<E>| -> bool)
+                                  -> bool {
         //! Iterates over all edges adjacent to the node `node`
         //! in the direction `dir` (either `Outgoing` or `Incoming)
 
@@ -253,15 +257,15 @@ impl<N,E> Graph<N,E> {
     //
     // A common use for graphs in our compiler is to perform
     // fixed-point iteration. In this case, each edge represents a
-    // constaint, and the nodes themselves are associated with
+    // constraint, and the nodes themselves are associated with
     // variables or other bitsets. This method facilitates such a
     // computation.
 
-    pub fn iterate_until_fixed_point(&self,
-                                     op: |iter_index: uint,
-                                          edge_index: EdgeIndex,
-                                          edge: &Edge<E>|
-                                          -> bool) {
+    pub fn iterate_until_fixed_point<'a>(&'a self,
+                                         op: |iter_index: uint,
+                                              edge_index: EdgeIndex,
+                                              edge: &'a Edge<E>|
+                                              -> bool) {
         let mut iteration = 0;
         let mut changed = true;
         while changed {
@@ -352,7 +356,7 @@ mod test {
         });
     }
 
-    fn test_adjacent_edges<N:Eq,E:Eq>(graph: &Graph<N,E>,
+    fn test_adjacent_edges<N:PartialEq,E:PartialEq>(graph: &Graph<N,E>,
                                       start_index: NodeIndex,
                                       start_data: N,
                                       expected_incoming: &[(E,N)],

@@ -8,24 +8,30 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+use ast;
 use ast::{MetaItem, Item, Expr, MutMutable};
 use codemap::Span;
 use ext::base::ExtCtxt;
 use ext::build::AstBuilder;
 use ext::deriving::generic::*;
+use ext::deriving::generic::ty::*;
+use parse::token::InternedString;
+
+use std::gc::Gc;
 
 pub fn expand_deriving_hash(cx: &mut ExtCtxt,
                             span: Span,
-                            mitem: @MetaItem,
-                            item: @Item,
-                            push: |@Item|) {
+                            mitem: Gc<MetaItem>,
+                            item: Gc<Item>,
+                            push: |Gc<Item>|) {
 
     let (path, generics, args) = if cx.ecfg.deriving_hash_type_parameter {
         (Path::new_(vec!("std", "hash", "Hash"), None,
-                    vec!(~Literal(Path::new_local("__S"))), true),
+                    vec!(box Literal(Path::new_local("__S"))), true),
          LifetimeBounds {
              lifetimes: Vec::new(),
-             bounds: vec!(("__S", vec!(Path::new(vec!("std", "io", "Writer"))))),
+             bounds: vec!(("__S", ast::StaticSize,
+                           vec!(Path::new(vec!("std", "hash", "Writer"))))),
          },
          Path::new_local("__S"))
     } else {
@@ -33,6 +39,8 @@ pub fn expand_deriving_hash(cx: &mut ExtCtxt,
          LifetimeBounds::empty(),
          Path::new(vec!("std", "hash", "sip", "SipState")))
     };
+    let inline = cx.meta_word(span, InternedString::new("inline"));
+    let attrs = vec!(cx.attribute(span, inline));
     let hash_trait_def = TraitDef {
         span: span,
         attributes: Vec::new(),
@@ -44,11 +52,13 @@ pub fn expand_deriving_hash(cx: &mut ExtCtxt,
                 name: "hash",
                 generics: LifetimeBounds::empty(),
                 explicit_self: borrowed_explicit_self(),
-                args: vec!(Ptr(~Literal(args), Borrowed(None, MutMutable))),
+                args: vec!(Ptr(box Literal(args), Borrowed(None, MutMutable))),
                 ret_ty: nil_ty(),
-                inline: true,
+                attributes: attrs,
                 const_nonmatching: false,
-                combine_substructure: hash_substructure
+                combine_substructure: combine_substructure(|a, b, c| {
+                    hash_substructure(a, b, c)
+                })
             }
         )
     };
@@ -56,7 +66,8 @@ pub fn expand_deriving_hash(cx: &mut ExtCtxt,
     hash_trait_def.expand(cx, mitem, item, push);
 }
 
-fn hash_substructure(cx: &mut ExtCtxt, trait_span: Span, substr: &Substructure) -> @Expr {
+fn hash_substructure(cx: &mut ExtCtxt, trait_span: Span,
+                     substr: &Substructure) -> Gc<Expr> {
     let state_expr = match substr.nonself_args {
         [state_expr] => state_expr,
         _ => cx.span_bug(trait_span, "incorrect number of arguments in `deriving(Hash)`")

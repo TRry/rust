@@ -1,4 +1,4 @@
-// Copyright 2012-2013 The Rust Project Developers. See the COPYRIGHT
+// Copyright 2012-2014 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
 //
@@ -10,10 +10,10 @@
 
 use std::fmt;
 
-#[deriving(Eq)]
-pub enum Os { OsWin32, OsMacos, OsLinux, OsAndroid, OsFreebsd, }
+#[deriving(PartialEq)]
+pub enum Os { OsWin32, OsMacos, OsLinux, OsAndroid, OsFreebsd, OsiOS, }
 
-#[deriving(Eq, TotalEq, Hash, Encodable, Decodable, Clone)]
+#[deriving(PartialEq, Eq, Hash, Encodable, Decodable, Clone)]
 pub enum Abi {
     // NB: This ordering MUST match the AbiDatas array below.
     // (This is ensured by the test indices_are_correct().)
@@ -33,7 +33,7 @@ pub enum Abi {
 }
 
 #[allow(non_camel_case_types)]
-#[deriving(Eq)]
+#[deriving(PartialEq)]
 pub enum Architecture {
     // NB. You cannot change the ordering of these
     // constants without adjusting IntelBits below.
@@ -155,10 +155,24 @@ impl Architecture {
 
 impl fmt::Show for Abi {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f.buf, "\"{}\"", self.name())
+        write!(f, "\"{}\"", self.name())
     }
 }
 
+impl fmt::Show for Os {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            OsLinux => "linux".fmt(f),
+            OsWin32 => "win32".fmt(f),
+            OsMacos => "macos".fmt(f),
+            OsiOS => "ios".fmt(f),
+            OsAndroid => "android".fmt(f),
+            OsFreebsd => "freebsd".fmt(f)
+        }
+    }
+}
+
+#[allow(non_snake_case_functions)]
 #[test]
 fn lookup_Rust() {
     let abi = lookup("Rust");

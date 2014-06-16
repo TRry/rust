@@ -1,4 +1,4 @@
-// Copyright 2013 The Rust Project Developers. See the COPYRIGHT
+// Copyright 2013-2014 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
 //
@@ -10,37 +10,34 @@
 
 //! POSIX file path handling
 
-use container::Container;
 use c_str::{CString, ToCStr};
 use clone::Clone;
-use cmp::{Eq, TotalEq};
+use cmp::{PartialEq, Eq};
+use collections::Collection;
 use from_str::FromStr;
+use hash;
 use io::Writer;
-use iter::{AdditiveIterator, Extendable, Iterator, Map};
+use iter::{DoubleEndedIterator, AdditiveIterator, Extendable, Iterator, Map};
 use option::{Option, None, Some};
-use str;
 use str::Str;
-use slice;
-use slice::{CloneableVector, RevSplits, Splits, Vector, VectorVector,
-            ImmutableEqVector, OwnedVector, ImmutableVector, OwnedCloneableVector};
+use str;
+use slice::{CloneableVector, Splits, Vector, VectorVector,
+            ImmutableEqVector, ImmutableVector};
+use vec::Vec;
+
 use super::{BytesContainer, GenericPath, GenericPathUnsafe};
 
 /// Iterator that yields successive components of a Path as &[u8]
 pub type Components<'a> = Splits<'a, u8>;
-/// Iterator that yields components of a Path in reverse as &[u8]
-pub type RevComponents<'a> = RevSplits<'a, u8>;
 
 /// Iterator that yields successive components of a Path as Option<&str>
 pub type StrComponents<'a> = Map<'a, &'a [u8], Option<&'a str>,
                                        Components<'a>>;
-/// Iterator that yields components of a Path in reverse as Option<&str>
-pub type RevStrComponents<'a> = Map<'a, &'a [u8], Option<&'a str>,
-                                          RevComponents<'a>>;
 
 /// Represents a POSIX file path
 #[deriving(Clone)]
 pub struct Path {
-    repr: ~[u8], // assumed to never be empty or contain NULs
+    repr: Vec<u8>, // assumed to never be empty or contain NULs
     sepidx: Option<uint> // index of the final separator in repr
 }
 
@@ -62,14 +59,14 @@ pub fn is_sep(c: char) -> bool {
     c == SEP
 }
 
-impl Eq for Path {
+impl PartialEq for Path {
     #[inline]
     fn eq(&self, other: &Path) -> bool {
         self.repr == other.repr
     }
 }
 
-impl TotalEq for Path {}
+impl Eq for Path {}
 
 impl FromStr for Path {
     fn from_str(s: &str) -> Option<Path> {
@@ -77,11 +74,18 @@ impl FromStr for Path {
     }
 }
 
+// FIXME (#12938): Until DST lands, we cannot decompose &str into & and str, so
+// we cannot usefully take ToCStr arguments by reference (without forcing an
+// additional & around &str). So we are instead temporarily adding an instance
+// for &Path, so that we can take ToCStr as owned. When DST lands, the &Path
+// instance should be removed, and arguments bound by ToCStr should be passed by
+// reference.
+
 impl ToCStr for Path {
     #[inline]
     fn to_c_str(&self) -> CString {
         // The Path impl guarantees no internal NUL
-        unsafe { self.as_vec().to_c_str_unchecked() }
+        unsafe { self.to_c_str_unchecked() }
     }
 
     #[inline]
@@ -90,7 +94,19 @@ impl ToCStr for Path {
     }
 }
 
-impl<S: Writer> ::hash::Hash<S> for Path {
+impl<'a> ToCStr for &'a Path {
+    #[inline]
+    fn to_c_str(&self) -> CString {
+        (*self).to_c_str()
+    }
+
+    #[inline]
+    unsafe fn to_c_str_unchecked(&self) -> CString {
+        (*self).to_c_str_unchecked()
+    }
+}
+
+impl<S: hash::Writer> hash::Hash<S> for Path {
     #[inline]
     fn hash(&self, state: &mut S) {
         self.repr.hash(state)
@@ -103,7 +119,7 @@ impl BytesContainer for Path {
         self.as_vec()
     }
     #[inline]
-    fn container_into_owned_bytes(self) -> ~[u8] {
+    fn container_into_owned_bytes(self) -> Vec<u8> {
         self.into_vec()
     }
 }
@@ -119,38 +135,41 @@ impl GenericPathUnsafe for Path {
     unsafe fn new_unchecked<T: BytesContainer>(path: T) -> Path {
         let path = Path::normalize(path.container_as_bytes());
         assert!(!path.is_empty());
-        let idx = path.rposition_elem(&SEP_BYTE);
+        let idx = path.as_slice().rposition_elem(&SEP_BYTE);
         Path{ repr: path, sepidx: idx }
     }
 
     unsafe fn set_filename_unchecked<T: BytesContainer>(&mut self, filename: T) {
         let filename = filename.container_as_bytes();
         match self.sepidx {
-            None if bytes!("..") == self.repr => {
-                let mut v = slice::with_capacity(3 + filename.len());
+            None if bytes!("..") == self.repr.as_slice() => {
+                let mut v = Vec::with_capacity(3 + filename.len());
                 v.push_all(dot_dot_static);
                 v.push(SEP_BYTE);
                 v.push_all(filename);
-                self.repr = Path::normalize(v);
+                // FIXME: this is slow
+                self.repr = Path::normalize(v.as_slice());
             }
             None => {
                 self.repr = Path::normalize(filename);
             }
             Some(idx) if self.repr.slice_from(idx+1) == bytes!("..") => {
-                let mut v = slice::with_capacity(self.repr.len() + 1 + filename.len());
-                v.push_all(self.repr);
+                let mut v = Vec::with_capacity(self.repr.len() + 1 + filename.len());
+                v.push_all(self.repr.as_slice());
                 v.push(SEP_BYTE);
                 v.push_all(filename);
-                self.repr = Path::normalize(v);
+                // FIXME: this is slow
+                self.repr = Path::normalize(v.as_slice());
             }
             Some(idx) => {
-                let mut v = slice::with_capacity(idx + 1 + filename.len());
+                let mut v = Vec::with_capacity(idx + 1 + filename.len());
                 v.push_all(self.repr.slice_to(idx+1));
                 v.push_all(filename);
-                self.repr = Path::normalize(v);
+                // FIXME: this is slow
+                self.repr = Path::normalize(v.as_slice());
             }
         }
-        self.sepidx = self.repr.rposition_elem(&SEP_BYTE);
+        self.sepidx = self.repr.as_slice().rposition_elem(&SEP_BYTE);
     }
 
     unsafe fn push_unchecked<T: BytesContainer>(&mut self, path: T) {
@@ -159,13 +178,14 @@ impl GenericPathUnsafe for Path {
             if path[0] == SEP_BYTE {
                 self.repr = Path::normalize(path);
             }  else {
-                let mut v = slice::with_capacity(self.repr.len() + path.len() + 1);
-                v.push_all(self.repr);
+                let mut v = Vec::with_capacity(self.repr.len() + path.len() + 1);
+                v.push_all(self.repr.as_slice());
                 v.push(SEP_BYTE);
                 v.push_all(path);
-                self.repr = Path::normalize(v);
+                // FIXME: this is slow
+                self.repr = Path::normalize(v.as_slice());
             }
-            self.sepidx = self.repr.rposition_elem(&SEP_BYTE);
+            self.sepidx = self.repr.as_slice().rposition_elem(&SEP_BYTE);
         }
     }
 }
@@ -176,13 +196,13 @@ impl GenericPath for Path {
         self.repr.as_slice()
     }
 
-    fn into_vec(self) -> ~[u8] {
+    fn into_vec(self) -> Vec<u8> {
         self.repr
     }
 
     fn dirname<'a>(&'a self) -> &'a [u8] {
         match self.sepidx {
-            None if bytes!("..") == self.repr => self.repr.as_slice(),
+            None if bytes!("..") == self.repr.as_slice() => self.repr.as_slice(),
             None => dot_static,
             Some(0) => self.repr.slice_to(1),
             Some(idx) if self.repr.slice_from(idx+1) == bytes!("..") => self.repr.as_slice(),
@@ -192,7 +212,8 @@ impl GenericPath for Path {
 
     fn filename<'a>(&'a self) -> Option<&'a [u8]> {
         match self.sepidx {
-            None if bytes!(".") == self.repr || bytes!("..") == self.repr => None,
+            None if bytes!(".") == self.repr.as_slice() ||
+                bytes!("..") == self.repr.as_slice() => None,
             None => Some(self.repr.as_slice()),
             Some(idx) if self.repr.slice_from(idx+1) == bytes!("..") => None,
             Some(0) if self.repr.slice_from(1).is_empty() => None,
@@ -202,20 +223,20 @@ impl GenericPath for Path {
 
     fn pop(&mut self) -> bool {
         match self.sepidx {
-            None if bytes!(".") == self.repr => false,
+            None if bytes!(".") == self.repr.as_slice() => false,
             None => {
-                self.repr = ~['.' as u8];
+                self.repr = vec!['.' as u8];
                 self.sepidx = None;
                 true
             }
-            Some(0) if bytes!("/") == self.repr => false,
+            Some(0) if bytes!("/") == self.repr.as_slice() => false,
             Some(idx) => {
                 if idx == 0 {
                     self.repr.truncate(idx+1);
                 } else {
                     self.repr.truncate(idx);
                 }
-                self.sepidx = self.repr.rposition_elem(&SEP_BYTE);
+                self.sepidx = self.repr.as_slice().rposition_elem(&SEP_BYTE);
                 true
             }
         }
@@ -231,7 +252,7 @@ impl GenericPath for Path {
 
     #[inline]
     fn is_absolute(&self) -> bool {
-        self.repr[0] == SEP_BYTE
+        *self.repr.get(0) == SEP_BYTE
     }
 
     fn is_ancestor_of(&self, other: &Path) -> bool {
@@ -240,7 +261,7 @@ impl GenericPath for Path {
         } else {
             let mut ita = self.components();
             let mut itb = other.components();
-            if bytes!(".") == self.repr {
+            if bytes!(".") == self.repr.as_slice() {
                 return match itb.next() {
                     None => true,
                     Some(b) => b != bytes!("..")
@@ -271,7 +292,7 @@ impl GenericPath for Path {
         } else {
             let mut ita = self.components();
             let mut itb = base.components();
-            let mut comps = ~[];
+            let mut comps = vec![];
             loop {
                 match (ita.next(), itb.next()) {
                     (None, None) => break,
@@ -295,14 +316,14 @@ impl GenericPath for Path {
                     }
                 }
             }
-            Some(Path::new(comps.connect_vec(&SEP_BYTE)))
+            Some(Path::new(comps.as_slice().connect_vec(&SEP_BYTE)))
         }
     }
 
     fn ends_with_path(&self, child: &Path) -> bool {
         if !child.is_relative() { return false; }
-        let mut selfit = self.rev_components();
-        let mut childit = child.rev_components();
+        let mut selfit = self.components().rev();
+        let mut childit = child.components().rev();
         loop {
             match (selfit.next(), childit.next()) {
                 (Some(a), Some(b)) => if a != b { return false; },
@@ -334,7 +355,7 @@ impl Path {
 
     /// Returns a normalized byte vector representation of a path, by removing all empty
     /// components, and unnecessary . and .. components.
-    fn normalize<V: Vector<u8>+CloneableVector<u8>>(v: V) -> ~[u8] {
+    fn normalize<V: Vector<u8>+CloneableVector<u8>>(v: V) -> Vec<u8> {
         // borrowck is being very picky
         let val = {
             let is_abs = !v.as_slice().is_empty() && v.as_slice()[0] == SEP_BYTE;
@@ -344,11 +365,11 @@ impl Path {
                 None => None,
                 Some(comps) => {
                     if is_abs && comps.is_empty() {
-                        Some(~[SEP_BYTE])
+                        Some(vec![SEP_BYTE])
                     } else {
                         let n = if is_abs { comps.len() } else { comps.len() - 1} +
                                 comps.iter().map(|v| v.len()).sum();
-                        let mut v = slice::with_capacity(n);
+                        let mut v = Vec::with_capacity(n);
                         let mut it = comps.move_iter();
                         if !is_abs {
                             match it.next() {
@@ -366,7 +387,7 @@ impl Path {
             }
         };
         match val {
-            None => v.into_owned(),
+            None => Vec::from_slice(v.as_slice()),
             Some(val) => val
         }
     }
@@ -376,24 +397,10 @@ impl Path {
     /// /a/b/c and a/b/c yield the same set of components.
     /// A path of "/" yields no components. A path of "." yields one component.
     pub fn components<'a>(&'a self) -> Components<'a> {
-        let v = if self.repr[0] == SEP_BYTE {
+        let v = if *self.repr.get(0) == SEP_BYTE {
             self.repr.slice_from(1)
         } else { self.repr.as_slice() };
         let mut ret = v.split(is_sep_byte);
-        if v.is_empty() {
-            // consume the empty "" component
-            ret.next();
-        }
-        ret
-    }
-
-    /// Returns an iterator that yields each component of the path in reverse.
-    /// See components() for details.
-    pub fn rev_components<'a>(&'a self) -> RevComponents<'a> {
-        let v = if self.repr[0] == SEP_BYTE {
-            self.repr.slice_from(1)
-        } else { self.repr.as_slice() };
-        let mut ret = v.rsplit(is_sep_byte);
         if v.is_empty() {
             // consume the empty "" component
             ret.next();
@@ -406,20 +413,14 @@ impl Path {
     pub fn str_components<'a>(&'a self) -> StrComponents<'a> {
         self.components().map(str::from_utf8)
     }
-
-    /// Returns an iterator that yields each component of the path in reverse as Option<&str>.
-    /// See components() for details.
-    pub fn rev_str_components<'a>(&'a self) -> RevStrComponents<'a> {
-        self.rev_components().map(str::from_utf8)
-    }
 }
 
 // None result means the byte vector didn't need normalizing
-fn normalize_helper<'a>(v: &'a [u8], is_abs: bool) -> Option<~[&'a [u8]]> {
+fn normalize_helper<'a>(v: &'a [u8], is_abs: bool) -> Option<Vec<&'a [u8]>> {
     if is_abs && v.as_slice().is_empty() {
         return None;
     }
-    let mut comps: ~[&'a [u8]] = ~[];
+    let mut comps: Vec<&'a [u8]> = vec![];
     let mut n_up = 0u;
     let mut changed = false;
     for comp in v.split(is_sep_byte) {
@@ -452,6 +453,7 @@ mod tests {
     use prelude::*;
     use super::*;
     use str;
+    use str::StrSlice;
 
     macro_rules! t(
         (s: $path:expr, $exp:expr) => (
@@ -511,9 +513,9 @@ mod tests {
         t!(s: Path::new("foo/../../.."), "../..");
         t!(s: Path::new("foo/../../bar"), "../bar");
 
-        assert!(Path::new(b!("foo/bar")).into_vec() == b!("foo/bar").to_owned());
-        assert!(Path::new(b!("/foo/../../bar")).into_vec() ==
-                   b!("/bar").to_owned());
+        assert_eq!(Path::new(b!("foo/bar")).into_vec().as_slice(), b!("foo/bar"));
+        assert_eq!(Path::new(b!("/foo/../../bar")).into_vec().as_slice(),
+                   b!("/bar"));
 
         let p = Path::new(b!("foo/bar", 0x80));
         assert!(p.as_str() == None);
@@ -552,7 +554,7 @@ mod tests {
             ($path:expr, $disp:ident, $exp:expr) => (
                 {
                     let path = Path::new($path);
-                    assert!(path.$disp().to_str() == ~$exp);
+                    assert!(path.$disp().to_str().as_slice() == $exp);
                 }
             )
         )
@@ -759,10 +761,10 @@ mod tests {
         t!(s: "a/b/c", ["d", "e"], "a/b/c/d/e");
         t!(s: "a/b/c", ["d", "/e"], "/e");
         t!(s: "a/b/c", ["d", "/e", "f"], "/e/f");
-        t!(s: "a/b/c", [~"d", ~"e"], "a/b/c/d/e");
+        t!(s: "a/b/c", ["d".to_string(), "e".to_string()], "a/b/c/d/e");
         t!(v: b!("a/b/c"), [b!("d"), b!("e")], b!("a/b/c/d/e"));
         t!(v: b!("a/b/c"), [b!("d"), b!("/e"), b!("f")], b!("/e/f"));
-        t!(v: b!("a/b/c"), [b!("d").to_owned(), b!("e").to_owned()], b!("a/b/c/d/e"));
+        t!(v: b!("a/b/c"), [Vec::from_slice(b!("d")), Vec::from_slice(b!("e"))], b!("a/b/c/d/e"));
     }
 
     #[test]
@@ -864,9 +866,9 @@ mod tests {
         t!(s: "a/b/c", ["d", "e"], "a/b/c/d/e");
         t!(s: "a/b/c", ["..", "d"], "a/b/d");
         t!(s: "a/b/c", ["d", "/e", "f"], "/e/f");
-        t!(s: "a/b/c", [~"d", ~"e"], "a/b/c/d/e");
+        t!(s: "a/b/c", ["d".to_string(), "e".to_string()], "a/b/c/d/e");
         t!(v: b!("a/b/c"), [b!("d"), b!("e")], b!("a/b/c/d/e"));
-        t!(v: b!("a/b/c"), [b!("d").to_owned(), b!("e").to_owned()], b!("a/b/c/d/e"));
+        t!(v: b!("a/b/c"), [Vec::from_slice(b!("d")), Vec::from_slice(b!("e"))], b!("a/b/c/d/e"));
     }
 
     #[test]
@@ -1179,13 +1181,13 @@ mod tests {
             (s: $path:expr, $exp:expr) => (
                 {
                     let path = Path::new($path);
-                    let comps = path.components().collect::<~[&[u8]]>();
+                    let comps = path.components().collect::<Vec<&[u8]>>();
                     let exp: &[&str] = $exp;
-                    let exps = exp.iter().map(|x| x.as_bytes()).collect::<~[&[u8]]>();
+                    let exps = exp.iter().map(|x| x.as_bytes()).collect::<Vec<&[u8]>>();
                     assert!(comps == exps, "components: Expected {:?}, found {:?}",
                             comps, exps);
-                    let comps = path.rev_components().collect::<~[&[u8]]>();
-                    let exps = exps.move_rev_iter().collect::<~[&[u8]]>();
+                    let comps = path.components().rev().collect::<Vec<&[u8]>>();
+                    let exps = exps.move_iter().rev().collect::<Vec<&[u8]>>();
                     assert!(comps == exps, "rev_components: Expected {:?}, found {:?}",
                             comps, exps);
                 }
@@ -1193,15 +1195,12 @@ mod tests {
             (v: [$($arg:expr),+], [$([$($exp:expr),*]),*]) => (
                 {
                     let path = Path::new(b!($($arg),+));
-                    let comps = path.components().collect::<~[&[u8]]>();
+                    let comps = path.components().collect::<Vec<&[u8]>>();
                     let exp: &[&[u8]] = [$(b!($($exp),*)),*];
-                    assert!(comps.as_slice() == exp, "components: Expected {:?}, found {:?}",
-                            comps.as_slice(), exp);
-                    let comps = path.rev_components().collect::<~[&[u8]]>();
-                    let exp = exp.rev_iter().map(|&x|x).collect::<~[&[u8]]>();
-                    assert!(comps.as_slice() == exp,
-                            "rev_components: Expected {:?}, found {:?}",
-                            comps.as_slice(), exp);
+                    assert_eq!(comps.as_slice(), exp);
+                    let comps = path.components().rev().collect::<Vec<&[u8]>>();
+                    let exp = exp.iter().rev().map(|&x|x).collect::<Vec<&[u8]>>();
+                    assert_eq!(comps, exp)
                 }
             )
         )
@@ -1228,16 +1227,12 @@ mod tests {
             (v: [$($arg:expr),+], $exp:expr) => (
                 {
                     let path = Path::new(b!($($arg),+));
-                    let comps = path.str_components().collect::<~[Option<&str>]>();
+                    let comps = path.str_components().collect::<Vec<Option<&str>>>();
                     let exp: &[Option<&str>] = $exp;
-                    assert!(comps.as_slice() == exp,
-                            "str_components: Expected {:?}, found {:?}",
-                            comps.as_slice(), exp);
-                    let comps = path.rev_str_components().collect::<~[Option<&str>]>();
-                    let exp = exp.rev_iter().map(|&x|x).collect::<~[Option<&str>]>();
-                    assert!(comps.as_slice() == exp,
-                            "rev_str_components: Expected {:?}, found {:?}",
-                            comps.as_slice(), exp);
+                    assert_eq!(comps.as_slice(), exp);
+                    let comps = path.str_components().rev().collect::<Vec<Option<&str>>>();
+                    let exp = exp.iter().rev().map(|&x|x).collect::<Vec<Option<&str>>>();
+                    assert_eq!(comps, exp);
                 }
             )
         )

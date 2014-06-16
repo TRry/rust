@@ -14,23 +14,21 @@ use syntax::ast;
 use syntax::visit;
 use syntax::visit::Visitor;
 
-use std::local_data;
-
 use time;
 
 pub fn time<T, U>(do_it: bool, what: &str, u: U, f: |U| -> T) -> T {
     local_data_key!(depth: uint);
     if !do_it { return f(u); }
 
-    let old = local_data::get(depth, |d| d.map(|a| *a).unwrap_or(0));
-    local_data::set(depth, old + 1);
+    let old = depth.get().map(|d| *d).unwrap_or(0);
+    depth.replace(Some(old + 1));
 
     let start = time::precise_time_s();
     let rv = f(u);
     let end = time::precise_time_s();
 
     println!("{}time: {:3.3f} s\t{}", "  ".repeat(old), end - start, what);
-    local_data::set(depth, old);
+    depth.replace(Some(old));
 
     rv
 }
@@ -44,23 +42,17 @@ pub fn indent<R>(op: || -> R) -> R {
     r
 }
 
-pub struct _indenter {
-    _i: (),
+pub struct Indenter {
+    _cannot_construct_outside_of_this_module: ()
 }
 
-impl Drop for _indenter {
+impl Drop for Indenter {
     fn drop(&mut self) { debug!("<<"); }
 }
 
-pub fn _indenter(_i: ()) -> _indenter {
-    _indenter {
-        _i: ()
-    }
-}
-
-pub fn indenter() -> _indenter {
+pub fn indenter() -> Indenter {
     debug!(">>");
-    _indenter(())
+    Indenter { _cannot_construct_outside_of_this_module: () }
 }
 
 struct LoopQueryVisitor<'a> {
@@ -110,6 +102,6 @@ pub fn block_query(b: ast::P<ast::Block>, p: |&ast::Expr| -> bool) -> bool {
         p: p,
         flag: false,
     };
-    visit::walk_block(&mut v, b, ());
+    visit::walk_block(&mut v, &*b, ());
     return v.flag;
 }

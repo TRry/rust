@@ -54,7 +54,7 @@ static URLSAFE_CHARS: &'static[u8] = bytes!("ABCDEFGHIJKLMNOPQRSTUVWXYZ",
 pub trait ToBase64 {
     /// Converts the value of `self` to a base64 value following the specified
     /// format configuration, returning the owned string.
-    fn to_base64(&self, config: Config) -> ~str;
+    fn to_base64(&self, config: Config) -> String;
 }
 
 impl<'a> ToBase64 for &'a [u8] {
@@ -73,13 +73,13 @@ impl<'a> ToBase64 for &'a [u8] {
      * }
      * ```
      */
-    fn to_base64(&self, config: Config) -> ~str {
+    fn to_base64(&self, config: Config) -> String {
         let bytes = match config.char_set {
             Standard => STANDARD_CHARS,
             UrlSafe => URLSAFE_CHARS
         };
 
-        let mut v: ~[u8] = ~[];
+        let mut v = Vec::new();
         let mut i = 0;
         let mut cur_length = 0;
         let len = self.len();
@@ -146,7 +146,7 @@ impl<'a> ToBase64 for &'a [u8] {
         }
 
         unsafe {
-            str::raw::from_utf8_owned(v)
+            str::raw::from_utf8(v.as_slice()).to_string()
         }
     }
 }
@@ -155,7 +155,7 @@ impl<'a> ToBase64 for &'a [u8] {
 pub trait FromBase64 {
     /// Converts the value of `self`, interpreted as base64 encoded data, into
     /// an owned vector of bytes, returning the vector.
-    fn from_base64(&self) -> Result<~[u8], FromBase64Error>;
+    fn from_base64(&self) -> Result<Vec<u8>, FromBase64Error>;
 }
 
 /// Errors that can occur when decoding a base64 encoded string
@@ -170,8 +170,8 @@ impl fmt::Show for FromBase64Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
             InvalidBase64Character(ch, idx) =>
-                write!(f.buf, "Invalid character '{}' at position {}", ch, idx),
-            InvalidBase64Length => write!(f.buf, "Invalid length"),
+                write!(f, "Invalid character '{}' at position {}", ch, idx),
+            InvalidBase64Length => write!(f, "Invalid length"),
         }
     }
 }
@@ -181,9 +181,8 @@ impl<'a> FromBase64 for &'a str {
      * Convert any base64 encoded string (literal, `@`, `&`, or `~`)
      * to the byte values it encodes.
      *
-     * You can use the `from_utf8_owned` function in `std::str`
-     * to turn a `[u8]` into a string with characters corresponding to those
-     * values.
+     * You can use the `String::from_utf8` function in `std::string` to turn a
+     * `Vec<u8>` into a string with characters corresponding to those values.
      *
      * # Example
      *
@@ -192,23 +191,22 @@ impl<'a> FromBase64 for &'a str {
      * ```rust
      * extern crate serialize;
      * use serialize::base64::{ToBase64, FromBase64, STANDARD};
-     * use std::str;
      *
      * fn main () {
      *     let hello_str = bytes!("Hello, World").to_base64(STANDARD);
      *     println!("base64 output: {}", hello_str);
-     *     let res = hello_str.from_base64();
+     *     let res = hello_str.as_slice().from_base64();
      *     if res.is_ok() {
-     *       let opt_bytes = str::from_utf8_owned(res.unwrap());
-     *       if opt_bytes.is_some() {
+     *       let opt_bytes = String::from_utf8(res.unwrap());
+     *       if opt_bytes.is_ok() {
      *         println!("decoded from base64: {}", opt_bytes.unwrap());
      *       }
      *     }
      * }
      * ```
      */
-    fn from_base64(&self) -> Result<~[u8], FromBase64Error> {
-        let mut r = ~[];
+    fn from_base64(&self) -> Result<Vec<u8>, FromBase64Error> {
+        let mut r = Vec::new();
         let mut buf: u32 = 0;
         let mut modulus = 0;
 
@@ -263,59 +261,59 @@ impl<'a> FromBase64 for &'a str {
 #[cfg(test)]
 mod tests {
     extern crate test;
-    extern crate rand;
     use self::test::Bencher;
     use base64::{Config, FromBase64, ToBase64, STANDARD, URL_SAFE};
 
     #[test]
     fn test_to_base64_basic() {
-        assert_eq!("".as_bytes().to_base64(STANDARD), ~"");
-        assert_eq!("f".as_bytes().to_base64(STANDARD), ~"Zg==");
-        assert_eq!("fo".as_bytes().to_base64(STANDARD), ~"Zm8=");
-        assert_eq!("foo".as_bytes().to_base64(STANDARD), ~"Zm9v");
-        assert_eq!("foob".as_bytes().to_base64(STANDARD), ~"Zm9vYg==");
-        assert_eq!("fooba".as_bytes().to_base64(STANDARD), ~"Zm9vYmE=");
-        assert_eq!("foobar".as_bytes().to_base64(STANDARD), ~"Zm9vYmFy");
+        assert_eq!("".as_bytes().to_base64(STANDARD), "".to_string());
+        assert_eq!("f".as_bytes().to_base64(STANDARD), "Zg==".to_string());
+        assert_eq!("fo".as_bytes().to_base64(STANDARD), "Zm8=".to_string());
+        assert_eq!("foo".as_bytes().to_base64(STANDARD), "Zm9v".to_string());
+        assert_eq!("foob".as_bytes().to_base64(STANDARD), "Zm9vYg==".to_string());
+        assert_eq!("fooba".as_bytes().to_base64(STANDARD), "Zm9vYmE=".to_string());
+        assert_eq!("foobar".as_bytes().to_base64(STANDARD), "Zm9vYmFy".to_string());
     }
 
     #[test]
     fn test_to_base64_line_break() {
         assert!(![0u8, ..1000].to_base64(Config {line_length: None, ..STANDARD})
-                .contains("\r\n"));
+                              .as_slice()
+                              .contains("\r\n"));
         assert_eq!("foobar".as_bytes().to_base64(Config {line_length: Some(4),
                                                          ..STANDARD}),
-                   ~"Zm9v\r\nYmFy");
+                   "Zm9v\r\nYmFy".to_string());
     }
 
     #[test]
     fn test_to_base64_padding() {
-        assert_eq!("f".as_bytes().to_base64(Config {pad: false, ..STANDARD}), ~"Zg");
-        assert_eq!("fo".as_bytes().to_base64(Config {pad: false, ..STANDARD}), ~"Zm8");
+        assert_eq!("f".as_bytes().to_base64(Config {pad: false, ..STANDARD}), "Zg".to_string());
+        assert_eq!("fo".as_bytes().to_base64(Config {pad: false, ..STANDARD}), "Zm8".to_string());
     }
 
     #[test]
     fn test_to_base64_url_safe() {
-        assert_eq!([251, 255].to_base64(URL_SAFE), ~"-_8");
-        assert_eq!([251, 255].to_base64(STANDARD), ~"+/8=");
+        assert_eq!([251, 255].to_base64(URL_SAFE), "-_8".to_string());
+        assert_eq!([251, 255].to_base64(STANDARD), "+/8=".to_string());
     }
 
     #[test]
     fn test_from_base64_basic() {
-        assert_eq!("".from_base64().unwrap(), "".as_bytes().to_owned());
-        assert_eq!("Zg==".from_base64().unwrap(), "f".as_bytes().to_owned());
-        assert_eq!("Zm8=".from_base64().unwrap(), "fo".as_bytes().to_owned());
-        assert_eq!("Zm9v".from_base64().unwrap(), "foo".as_bytes().to_owned());
-        assert_eq!("Zm9vYg==".from_base64().unwrap(), "foob".as_bytes().to_owned());
-        assert_eq!("Zm9vYmE=".from_base64().unwrap(), "fooba".as_bytes().to_owned());
-        assert_eq!("Zm9vYmFy".from_base64().unwrap(), "foobar".as_bytes().to_owned());
+        assert_eq!("".from_base64().unwrap().as_slice(), "".as_bytes());
+        assert_eq!("Zg==".from_base64().unwrap().as_slice(), "f".as_bytes());
+        assert_eq!("Zm8=".from_base64().unwrap().as_slice(), "fo".as_bytes());
+        assert_eq!("Zm9v".from_base64().unwrap().as_slice(), "foo".as_bytes());
+        assert_eq!("Zm9vYg==".from_base64().unwrap().as_slice(), "foob".as_bytes());
+        assert_eq!("Zm9vYmE=".from_base64().unwrap().as_slice(), "fooba".as_bytes());
+        assert_eq!("Zm9vYmFy".from_base64().unwrap().as_slice(), "foobar".as_bytes());
     }
 
     #[test]
     fn test_from_base64_newlines() {
-        assert_eq!("Zm9v\r\nYmFy".from_base64().unwrap(),
-                   "foobar".as_bytes().to_owned());
-        assert_eq!("Zm9vYg==\r\n".from_base64().unwrap(),
-                   "foob".as_bytes().to_owned());
+        assert_eq!("Zm9v\r\nYmFy".from_base64().unwrap().as_slice(),
+                   "foobar".as_bytes());
+        assert_eq!("Zm9vYg==\r\n".from_base64().unwrap().as_slice(),
+                   "foob".as_bytes());
     }
 
     #[test]
@@ -336,13 +334,18 @@ mod tests {
 
     #[test]
     fn test_base64_random() {
-        use self::rand::{task_rng, random, Rng};
-        use std::slice;
+        use std::rand::{task_rng, random, Rng};
 
         for _ in range(0, 1000) {
             let times = task_rng().gen_range(1u, 100);
-            let v = slice::from_fn(times, |_| random::<u8>());
-            assert_eq!(v.to_base64(STANDARD).from_base64().unwrap(), v);
+            let v = Vec::from_fn(times, |_| random::<u8>());
+            assert_eq!(v.as_slice()
+                        .to_base64(STANDARD)
+                        .as_slice()
+                        .from_base64()
+                        .unwrap()
+                        .as_slice(),
+                       v.as_slice());
         }
     }
 
@@ -362,7 +365,7 @@ mod tests {
                  ウヰノオクヤマ ケフコエテ アサキユメミシ ヱヒモセスン";
         let sb = s.as_bytes().to_base64(STANDARD);
         b.iter(|| {
-            sb.from_base64().unwrap();
+            sb.as_slice().from_base64().unwrap();
         });
         b.bytes = sb.len() as u64;
     }

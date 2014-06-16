@@ -8,6 +8,8 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#[feature(managed_boxes)];
+#![feature(managed_boxes)]
 
-pub fn main() { let x = { @100 }; assert!((*x == 100)); }
+use std::gc::GC;
+
+pub fn main() { let x = { box(GC) 100 }; assert!((*x == 100)); }

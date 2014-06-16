@@ -4,16 +4,17 @@
 
 **Int to string**
 
-Use [`ToStr`](http://static.rust-lang.org/doc/master/std/to_str/trait.ToStr.html).
+Use [`ToStr`](std/to_str/trait.ToStr.html).
 
 ~~~
 let x: int = 42;
-let y: ~str = x.to_str();
+let y: String = x.to_str();
 ~~~
 
 **String to int**
 
-Use [`FromStr`](http://static.rust-lang.org/doc/master/std/from_str/trait.FromStr.html), and its helper function, [`from_str`](http://static.rust-lang.org/doc/master/std/from_str/fn.from_str.html).
+Use [`FromStr`](std/from_str/trait.FromStr.html), and its helper function,
+[`from_str`](std/from_str/fn.from_str.html).
 
 ~~~
 let x: Option<int> = from_str("42");
@@ -26,15 +27,16 @@ Use the `format!` syntax extension.
 
 ~~~
 let x: int = 42;
-let y: ~str = format!("{:t}", x);   // binary
-let y: ~str = format!("{:o}", x);   // octal
-let y: ~str = format!("{:x}", x);   // lowercase hexadecimal
-let y: ~str = format!("{:X}", x);   // uppercase hexidecimal
+let y: String = format!("{:t}", x);   // binary
+let y: String = format!("{:o}", x);   // octal
+let y: String = format!("{:x}", x);   // lowercase hexadecimal
+let y: String = format!("{:X}", x);   // uppercase hexadecimal
 ~~~
 
 **String to int, in non-base-10**
 
-Use [`FromStrRadix`](http://static.rust-lang.org/doc/master/std/num/trait.FromStrRadix.html), and its helper function, [`from_str_radix`](http://static.rust-lang.org/doc/master/std/num/fn.from_str_radix.html).
+Use [`FromStrRadix`](std/num/trait.FromStrRadix.html), and its helper
+function, [`from_str_radix`](std/num/fn.from_str_radix.html).
 
 ~~~
 use std::num;
@@ -45,39 +47,68 @@ let y: i64 = x.unwrap();
 
 **Vector of Bytes to String**
 
-To return a Borrowed String Slice (&str) use the str helper function [`from_utf8`](http://static.rust-lang.org/doc/master/std/str/fn.from_utf8.html).
+To return a Borrowed String Slice (&str) use the str helper function
+[`from_utf8`](std/str/fn.from_utf8.html).
 
 ~~~
 use std::str;
 
-let bytes = ~[104u8,105u8];
-let x: Option<&str> = str::from_utf8(bytes);
-let y: &str = x.unwrap();
+let bytes = &[104u8,105u8];
+let x: &str = str::from_utf8(bytes).unwrap();
 ~~~
 
-To return an Owned String (~str) use the str helper function [`from_utf8_owned`](http://static.rust-lang.org/doc/master/std/str/fn.from_utf8_owned.html).
+To return an Owned String use the str helper function
+[`from_utf8_owned`](std/str/fn.from_utf8_owned.html).
 
 ~~~
 use std::str;
 
-let x: Option<~str> = str::from_utf8_owned(~[104u8,105u8]);
-let y: ~str = x.unwrap();
-~~~~
+let x: Option<String> =
+    str::from_utf8([ 104u8, 105u8 ]).map(|x| x.to_string());
+let y: String = x.unwrap();
+~~~
 
-To return a [`MaybeOwned`](http://static.rust-lang.org/doc/master/std/str/enum.MaybeOwned.html) use the str helper function [`from_utf8_lossy`](http://static.rust-lang.org/doc/master/std/str/fn.from_utf8_owned.html).  This function also replaces non-valid utf-8 sequences with U+FFFD replacement character.
+To return a [`MaybeOwned`](std/str/type.MaybeOwned.html) use the str helper
+function [`from_utf8_lossy`](std/str/fn.from_utf8_owned.html).
+This function also replaces non-valid utf-8 sequences with U+FFFD replacement
+character.
 
 ~~~
 use std::str;
 
 let x = bytes!(72u8,"ello ",0xF0,0x90,0x80,"World!");
 let y = str::from_utf8_lossy(x);
-~~~~
+~~~
+
+**`Vec<T>`/`String` to `&[T]`/`&str`**
+
+The `.as_slice` method on each type provides a borrowed slice pointing
+to the contents of a `Vec` or `String`. The slice points directly to
+the data already stored in the vector or string, and so is a very
+cheap operation (no allocations or complicated computations required).
+
+~~~
+let vec: Vec<u32> = vec![1, 2, 3];
+let slice: &[u32] = vec.as_slice();
+
+let string: String = "foo bar".to_string();
+let str_slice: &str = string.as_slice();
+~~~
+
+`Vec` also provides the `.as_mut_slice` method for viewing the
+contained data as a `&mut [T]`.
 
 # File operations
 
 ## How do I read from a file?
 
-Use [`File::open`](http://static.rust-lang.org/doc/master/std/io/fs/struct.File.html#method.open) to create a [`File`](http://static.rust-lang.org/doc/master/std/io/fs/struct.File.html) struct, which implements the [`Reader`](http://static.rust-lang.org/doc/master/std/io/trait.Reader.html) trait.
+Use
+[`File::open`](std/io/fs/struct.File.html#method.open)
+to create a
+[`File`](std/io/fs/struct.File.html)
+struct, which implements the
+[`Reader`](std/io/trait.Reader.html)
+trait.
 
 ~~~ {.ignore}
 use std::path::Path;
@@ -90,7 +121,8 @@ let reader : File = File::open(&path).unwrap_or_else(on_error);
 
 ## How do I iterate over the lines in a file?
 
-Use the [`lines`](http://static.rust-lang.org/doc/master/std/io/trait.Buffer.html#method.lines) method on a [`BufferedReader`](http://static.rust-lang.org/doc/master/std/io/buffered/struct.BufferedReader.html).
+Use the [`lines`](std/io/trait.Buffer.html#method.lines) method on a
+[`BufferedReader`](std/io/struct.BufferedReader.html).
 
 ~~~
 use std::io::BufferedReader;
@@ -108,7 +140,7 @@ for line in reader.lines() {
 
 ## How do I search for a substring?
 
-Use the [`find_str`](http://static.rust-lang.org/doc/master/std/str/trait.StrSlice.html#tymethod.find_str) method.
+Use the [`find_str`](std/str/trait.StrSlice.html#tymethod.find_str) method.
 
 ~~~
 let str = "Hello, this is some random string";
@@ -119,10 +151,10 @@ let index: Option<uint> = str.find_str("rand");
 
 ## How do I get the length of a vector?
 
-The [`Container`](http://static.rust-lang.org/doc/master/std/container/trait.Container.html) trait provides the `len` method.
+The [`Container`](std/container/trait.Container.html) trait provides the `len` method.
 
 ~~~
-let u: ~[u32] = ~[0, 1, 2];
+let u: Vec<u32> = vec![0, 1, 2];
 let v: &[u32] = &[0, 1, 2, 3];
 let w: [u32, .. 5] = [0, 1, 2, 3, 4];
 
@@ -131,16 +163,19 @@ println!("u: {}, v: {}, w: {}", u.len(), v.len(), w.len()); // 3, 4, 5
 
 ## How do I iterate over a vector?
 
-Use the [`iter`](http://static.rust-lang.org/doc/master/std/vec/trait.ImmutableVector.html#tymethod.iter) method.
+Use the [`iter`](std/slice/trait.ImmutableVector.html#tymethod.iter) method.
 
 ~~~
-let values: ~[int] = ~[1, 2, 3, 4, 5];
+let values: Vec<int> = vec![1, 2, 3, 4, 5];
 for value in values.iter() {  // value: &int
     println!("{}", *value);
 }
 ~~~
 
-(See also [`mut_iter`](http://static.rust-lang.org/doc/master/std/vec/trait.MutableVector.html#tymethod.mut_iter) which yields `&mut int` and [`move_iter`](http://static.rust-lang.org/doc/master/std/vec/trait.OwnedVector.html#tymethod.move_iter) which yields `int` while consuming the `values` vector.)
+(See also [`mut_iter`](std/slice/trait.MutableVector.html#tymethod.mut_iter)
+which yields `&mut int` and
+[`move_iter`](std/slice/trait.OwnedVector.html#tymethod.move_iter) which yields
+`int` while consuming the `values` vector.)
 
 # Type system
 
@@ -181,7 +216,7 @@ enum Closed {}
 Phantom types are useful for enforcing state at compile time. For example:
 
 ~~~
-struct Door<State>(~str);
+struct Door<State>(String);
 
 struct Open;
 struct Closed;
@@ -194,25 +229,25 @@ fn open(Door(name): Door<Closed>) -> Door<Open> {
     Door::<Open>(name)
 }
 
-let _ = close(Door::<Open>(~"front"));
+let _ = close(Door::<Open>("front".to_string()));
 ~~~
 
 Attempting to close a closed door is prevented statically:
 
 ~~~ {.ignore}
-let _ = close(Door::<Closed>(~"front")); // error: mismatched types: expected `main::Door<main::Open>` but found `main::Door<main::Closed>`
+let _ = close(Door::<Closed>("front".to_string())); // error: mismatched types: expected `main::Door<main::Open>` but found `main::Door<main::Closed>`
 ~~~
 
 # FFI (Foreign Function Interface)
 
 ## C function signature conversions
 
-Description            C signature                                    Equivalent Rust signature
----------------------- ---------------------------------------------- ------------------------------------------
-no parameters          `void foo(void);`                              `fn foo();`
-return value           `int foo(void);`                               `fn foo() -> c_int;`
-function parameters    `void foo(int x, int y);`                      `fn foo(x: c_int, y: c_int);`
-in-out pointers        `void foo(const int* in_ptr, int* out_ptr);`   `fn foo(in_ptr: *c_int, out_ptr: *mut c_int);`
+| Description         | C signature                                   | Equivalent Rust signature                      |
+|---------------------|-----------------------------------------------|------------------------------------------------|
+| no parameters       | `void foo(void);`                             | `fn foo();`                                    |
+| return value        | `int foo(void);`                              | `fn foo() -> c_int;`                           |
+| function parameters | `void foo(int x, int y);`                     | `fn foo(x: c_int, y: c_int);`                  |
+| in-out pointers     | `void foo(const int* in_ptr, int* out_ptr);`  | `fn foo(in_ptr: *c_int, out_ptr: *mut c_int);` |
 
 Note: The Rust signatures should be wrapped in an `extern "ABI" { ... }` block.
 
@@ -220,7 +255,7 @@ Note: The Rust signatures should be wrapped in an `extern "ABI" { ... }` block.
 
 You might see things like this in C APIs:
 
-~~~ {.notrust}
+~~~c
 typedef struct Window Window;
 Window* createWindow(int width, int height);
 ~~~

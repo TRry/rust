@@ -8,21 +8,22 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-fn parse_args() -> ~str {
+fn parse_args() -> String {
     let args = ::std::os::args();
+    let args = args.as_slice();
     let mut n = 0;
 
     while n < args.len() {
         match args[n].as_slice() {
             "-v" => (),
             s => {
-                return s.into_owned();
+                return s.to_string();
             }
         }
         n += 1;
     }
 
-    return ~""
+    return "".to_string()
 }
 
 pub fn main() {

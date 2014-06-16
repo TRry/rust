@@ -29,10 +29,33 @@ fn baz() -> bool {
                 //~^ WARNING literal out of range for its type
 }
 
+fn bleh() {
+    let u = 42u8;
+    let _ = u > 255; //~ ERROR comparison is useless due to type limits
+    let _ = 255 < u; //~ ERROR comparison is useless due to type limits
+    let _ = u < 0; //~ ERROR comparison is useless due to type limits
+    let _ = 0 > u; //~ ERROR comparison is useless due to type limits
+    let _ = u <= 255; //~ ERROR comparison is useless due to type limits
+    let _ = 255 >= u; //~ ERROR comparison is useless due to type limits
+    let _ = u >= 0; //~ ERROR comparison is useless due to type limits
+    let _ = 0 <= u; //~ ERROR comparison is useless due to type limits
+}
+
 fn qux() {
     let mut i = 1i8;
     while 200 != i { //~ ERROR comparison is useless due to type limits
                      //~^ WARNING literal out of range for its type
         i += 1;
     }
+}
+
+fn quy() {
+    let i = -23u; //~ WARNING negation of unsigned int literal may be unintentional
+                  //~^ WARNING unused variable
+}
+
+fn quz() {
+    let i = 23u;
+    let j = -i;   //~ WARNING negation of unsigned int variable may be unintentional
+                  //~^ WARNING unused variable
 }

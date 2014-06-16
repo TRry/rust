@@ -13,45 +13,52 @@ The compiler code necessary for `#[deriving(Decodable)]`. See
 encodable.rs for more.
 */
 
+use ast;
 use ast::{MetaItem, Item, Expr, MutMutable, Ident};
 use codemap::Span;
 use ext::base::ExtCtxt;
 use ext::build::AstBuilder;
 use ext::deriving::generic::*;
+use ext::deriving::generic::ty::*;
 use parse::token::InternedString;
 use parse::token;
 
+use std::gc::Gc;
+
 pub fn expand_deriving_decodable(cx: &mut ExtCtxt,
                                  span: Span,
-                                 mitem: @MetaItem,
-                                 item: @Item,
-                                 push: |@Item|) {
+                                 mitem: Gc<MetaItem>,
+                                 item: Gc<Item>,
+                                 push: |Gc<Item>|) {
     let trait_def = TraitDef {
         span: span,
         attributes: Vec::new(),
         path: Path::new_(vec!("serialize", "Decodable"), None,
-                         vec!(~Literal(Path::new_local("__D")),
-                              ~Literal(Path::new_local("__E"))), true),
+                         vec!(box Literal(Path::new_local("__D")),
+                              box Literal(Path::new_local("__E"))), true),
         additional_bounds: Vec::new(),
         generics: LifetimeBounds {
             lifetimes: Vec::new(),
-            bounds: vec!(("__D", vec!(Path::new_(
+            bounds: vec!(("__D", ast::StaticSize, vec!(Path::new_(
                             vec!("serialize", "Decoder"), None,
-                            vec!(~Literal(Path::new_local("__E"))), true))),
-                         ("__E", vec!()))
+                            vec!(box Literal(Path::new_local("__E"))), true))),
+                         ("__E", ast::StaticSize, vec!()))
         },
         methods: vec!(
             MethodDef {
                 name: "decode",
                 generics: LifetimeBounds::empty(),
                 explicit_self: None,
-                args: vec!(Ptr(~Literal(Path::new_local("__D")),
+                args: vec!(Ptr(box Literal(Path::new_local("__D")),
                             Borrowed(None, MutMutable))),
                 ret_ty: Literal(Path::new_(vec!("std", "result", "Result"), None,
-                                          vec!(~Self, ~Literal(Path::new_local("__E"))), true)),
-                inline: false,
+                                          vec!(box Self,
+                                               box Literal(Path::new_local("__E"))), true)),
+                attributes: Vec::new(),
                 const_nonmatching: true,
-                combine_substructure: decodable_substructure,
+                combine_substructure: combine_substructure(|a, b, c| {
+                    decodable_substructure(a, b, c)
+                }),
             })
     };
 
@@ -59,7 +66,7 @@ pub fn expand_deriving_decodable(cx: &mut ExtCtxt,
 }
 
 fn decodable_substructure(cx: &mut ExtCtxt, trait_span: Span,
-                          substr: &Substructure) -> @Expr {
+                          substr: &Substructure) -> Gc<Expr> {
     let decoder = substr.nonself_args[0];
     let recurse = vec!(cx.ident_of("serialize"),
                     cx.ident_of("Decodable"),
@@ -154,8 +161,8 @@ fn decode_static_fields(cx: &mut ExtCtxt,
                         trait_span: Span,
                         outer_pat_ident: Ident,
                         fields: &StaticFields,
-                        getarg: |&mut ExtCtxt, Span, InternedString, uint| -> @Expr)
-                        -> @Expr {
+                        getarg: |&mut ExtCtxt, Span, InternedString, uint| -> Gc<Expr>)
+                        -> Gc<Expr> {
     match *fields {
         Unnamed(ref fields) => {
             if fields.is_empty() {
@@ -164,7 +171,7 @@ fn decode_static_fields(cx: &mut ExtCtxt,
                 let fields = fields.iter().enumerate().map(|(i, &span)| {
                     getarg(cx, span,
                            token::intern_and_get_ident(format!("_field{}",
-                                                               i)),
+                                                               i).as_slice()),
                            i)
                 }).collect();
 

@@ -15,9 +15,11 @@
 // I *think* it's the same, more or less.
 
 extern crate time;
+extern crate debug;
 
 use std::os;
 use std::task;
+use std::task::TaskBuilder;
 use std::uint;
 
 fn move_out<T>(_x: T) {}
@@ -33,12 +35,12 @@ fn server(requests: &Receiver<request>, responses: &Sender<uint>) {
     let mut done = false;
     while !done {
         match requests.recv_opt() {
-          Some(get_count) => { responses.send(count.clone()); }
-          Some(bytes(b)) => {
+          Ok(get_count) => { responses.send(count.clone()); }
+          Ok(bytes(b)) => {
             //println!("server: received {:?} bytes", b);
             count += b;
           }
-          None => { done = true; }
+          Err(..) => { done = true; }
           _ => { }
         }
     }
@@ -46,17 +48,17 @@ fn server(requests: &Receiver<request>, responses: &Sender<uint>) {
     //println!("server exiting");
 }
 
-fn run(args: &[~str]) {
+fn run(args: &[String]) {
     let (to_parent, from_child) = channel();
 
-    let size = from_str::<uint>(args[1]).unwrap();
-    let workers = from_str::<uint>(args[2]).unwrap();
+    let size = from_str::<uint>(args[1].as_slice()).unwrap();
+    let workers = from_str::<uint>(args[2].as_slice()).unwrap();
     let num_bytes = 100;
     let start = time::precise_time_s();
     let mut worker_results = Vec::new();
     let from_parent = if workers == 1 {
         let (to_child, from_parent) = channel();
-        let mut builder = task::task();
+        let mut builder = TaskBuilder::new();
         worker_results.push(builder.future_result());
         builder.spawn(proc() {
             for _ in range(0u, size / workers) {
@@ -70,7 +72,7 @@ fn run(args: &[~str]) {
         let (to_child, from_parent) = channel();
         for _ in range(0u, workers) {
             let to_child = to_child.clone();
-            let mut builder = task::task();
+            let mut builder = TaskBuilder::new();
             worker_results.push(builder.future_result());
             builder.spawn(proc() {
                 for _ in range(0u, size / workers) {
@@ -106,11 +108,11 @@ fn run(args: &[~str]) {
 fn main() {
     let args = os::args();
     let args = if os::getenv("RUST_BENCH").is_some() {
-        vec!(~"", ~"1000000", ~"8")
+        vec!("".to_string(), "1000000".to_string(), "8".to_string())
     } else if args.len() <= 1u {
-        vec!(~"", ~"10000", ~"4")
+        vec!("".to_string(), "10000".to_string(), "4".to_string())
     } else {
-        args.clone().move_iter().collect()
+        args.clone().move_iter().map(|x| x.to_string()).collect()
     };
 
     println!("{:?}", args);

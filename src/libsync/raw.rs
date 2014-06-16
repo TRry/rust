@@ -15,14 +15,17 @@
 //! `sync` crate which wrap values directly and provide safer abstractions for
 //! containing data.
 
-use std::cast;
-use std::comm;
-use std::kinds::marker;
-use std::mem::replace;
-use std::sync::atomics;
-use std::unstable::finally::Finally;
+use core::prelude::*;
+
+use core::atomics;
+use core::finally::Finally;
+use core::kinds::marker;
+use core::mem;
+use core::ty::Unsafe;
+use collections::Vec;
 
 use mutex;
+use comm::{Receiver, Sender, channel};
 
 /****************************************************************************
  * Internals
@@ -46,10 +49,10 @@ impl WaitQueue {
     // Signals one live task from the queue.
     fn signal(&self) -> bool {
         match self.head.try_recv() {
-            comm::Data(ch) => {
+            Ok(ch) => {
                 // Send a wakeup signal. If the waiter was killed, its port will
                 // have closed. Keep trying until we get a live task.
-                if ch.try_send(()) {
+                if ch.send_opt(()).is_ok() {
                     true
                 } else {
                     self.signal()
@@ -63,8 +66,8 @@ impl WaitQueue {
         let mut count = 0;
         loop {
             match self.head.try_recv() {
-                comm::Data(ch) => {
-                    if ch.try_send(()) {
+                Ok(ch) => {
+                    if ch.send_opt(()).is_ok() {
                         count += 1;
                     }
                 }
@@ -76,7 +79,7 @@ impl WaitQueue {
 
     fn wait_end(&self) -> WaitEnd {
         let (signal_end, wait_end) = channel();
-        assert!(self.tail.try_send(signal_end));
+        self.tail.send(signal_end);
         wait_end
     }
 }
@@ -87,11 +90,8 @@ struct Sem<Q> {
     // n.b, we need Sem to be `Share`, but the WaitQueue type is not send/share
     //      (for good reason). We have an internal invariant on this semaphore,
     //      however, that the queue is never accessed outside of a locked
-    //      context. For this reason, we shove these behind a pointer which will
-    //      be inferred to be `Share`.
-    //
-    // FIXME: this requires an extra allocation, which is bad.
-    inner: *()
+    //      context.
+    inner: Unsafe<SemInner<Q>>
 }
 
 struct SemInner<Q> {
@@ -109,22 +109,20 @@ struct SemGuard<'a, Q> {
 
 impl<Q: Send> Sem<Q> {
     fn new(count: int, q: Q) -> Sem<Q> {
-        let inner = unsafe {
-            cast::transmute(~SemInner {
+        Sem {
+            lock: mutex::Mutex::new(),
+            inner: Unsafe::new(SemInner {
                 waiters: WaitQueue::new(),
                 count: count,
                 blocked: q,
             })
-        };
-        Sem {
-            lock: mutex::Mutex::new(),
-            inner: inner,
         }
     }
 
     unsafe fn with(&self, f: |&mut SemInner<Q>|) {
         let _g = self.lock.lock();
-        f(&mut *(self.inner as *mut SemInner<Q>))
+        // This &mut is safe because, due to the lock, we are the only one who can touch the data
+        f(&mut *self.inner.get())
     }
 
     pub fn acquire(&self) {
@@ -162,14 +160,6 @@ impl<Q: Send> Sem<Q> {
     pub fn access<'a>(&'a self) -> SemGuard<'a, Q> {
         self.acquire();
         SemGuard { sem: self }
-    }
-}
-
-#[unsafe_destructor]
-impl<Q: Send> Drop for Sem<Q> {
-    fn drop(&mut self) {
-        let _waiters: ~SemInner<Q> = unsafe { cast::transmute(self.inner) };
-        self.inner = 0 as *();
     }
 }
 
@@ -316,8 +306,8 @@ impl<'a> Condvar<'a> {
                     // To avoid :broadcast_heavy, we make a new waitqueue,
                     // swap it out with the old one, and broadcast on the
                     // old one outside of the little-lock.
-                    queue = Some(replace(state.blocked.get_mut(condvar_id),
-                                               WaitQueue::new()));
+                    queue = Some(mem::replace(state.blocked.get_mut(condvar_id),
+                                              WaitQueue::new()));
                 } else {
                     out_of_bounds = Some(state.blocked.len());
                 }
@@ -369,7 +359,7 @@ pub struct Semaphore {
 /// dropped, this value will release the resource back to the semaphore.
 #[must_use]
 pub struct SemaphoreGuard<'a> {
-    guard: SemGuard<'a, ()>,
+    _guard: SemGuard<'a, ()>,
 }
 
 impl Semaphore {
@@ -389,7 +379,7 @@ impl Semaphore {
     /// Acquire a resource of this semaphore, returning an RAII guard which will
     /// release the resource when dropped.
     pub fn access<'a>(&'a self) -> SemaphoreGuard<'a> {
-        SemaphoreGuard { guard: self.sem.access() }
+        SemaphoreGuard { _guard: self.sem.access() }
     }
 }
 
@@ -412,7 +402,7 @@ pub struct Mutex {
 /// corresponding mutex is also unlocked.
 #[must_use]
 pub struct MutexGuard<'a> {
-    guard: SemGuard<'a, Vec<WaitQueue>>,
+    _guard: SemGuard<'a, Vec<WaitQueue>>,
     /// Inner condition variable which is connected to the outer mutex, and can
     /// be used for atomic-unlock-and-deschedule.
     pub cond: Condvar<'a>,
@@ -435,7 +425,7 @@ impl Mutex {
     /// also be accessed through the returned guard.
     pub fn lock<'a>(&'a self) -> MutexGuard<'a> {
         let SemCondGuard { guard, cvar } = self.sem.access_cond();
-        MutexGuard { guard: guard, cond: cvar }
+        MutexGuard { _guard: guard, cond: cvar }
     }
 }
 
@@ -577,7 +567,7 @@ impl<'a> RWLockWriteGuard<'a> {
         let lock = self.lock;
         // Don't run the destructor of the write guard, we're in charge of
         // things from now on
-        unsafe { cast::forget(self) }
+        unsafe { mem::forget(self) }
 
         let old_count = lock.read_count.fetch_add(1, atomics::Release);
         // If another reader was already blocking, we need to hand-off
@@ -622,10 +612,12 @@ impl<'a> Drop for RWLockReadGuard<'a> {
 
 #[cfg(test)]
 mod tests {
-    use arc::Arc;
+    use std::prelude::*;
+
+    use Arc;
     use super::{Semaphore, Mutex, RWLock, Condvar};
 
-    use std::cast;
+    use std::mem;
     use std::result;
     use std::task;
 
@@ -727,7 +719,7 @@ mod tests {
         let (tx, rx) = channel();
         let m = Arc::new(Mutex::new());
         let m2 = m.clone();
-        let mut sharedstate = ~0;
+        let mut sharedstate = box 0;
         {
             let ptr: *mut int = &mut *sharedstate;
             task::spawn(proc() {
@@ -836,7 +828,7 @@ mod tests {
         let m = Arc::new(Mutex::new());
         let m2 = m.clone();
 
-        let result: result::Result<(), ~Any:Send> = task::try(proc() {
+        let result: result::Result<(), Box<Any + Send>> = task::try(proc() {
             let _lock = m2.lock();
             fail!();
         });
@@ -896,12 +888,12 @@ mod tests {
         // mutex mutual exclusion test, a ways above.
         let (tx, rx) = channel();
         let x2 = x.clone();
-        let mut sharedstate = ~0;
+        let mut sharedstate = box 0;
         {
             let ptr: *int = &*sharedstate;
             task::spawn(proc() {
                 let sharedstate: &mut int =
-                    unsafe { cast::transmute(ptr) };
+                    unsafe { mem::transmute(ptr) };
                 access_shared(sharedstate, &x2, mode1, 10);
                 tx.send(());
             });
@@ -1076,7 +1068,7 @@ mod tests {
         let x = Arc::new(RWLock::new());
         let x2 = x.clone();
 
-        let result: result::Result<(), ~Any:Send> = task::try(proc() {
+        let result: result::Result<(), Box<Any + Send>> = task::try(proc() {
             lock_rwlock_in_mode(&x2, mode1, || {
                 fail!();
             })

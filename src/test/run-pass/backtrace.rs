@@ -9,13 +9,11 @@
 // except according to those terms.
 
 // ignore-win32 FIXME #13259
-#![no_uv]
-
 extern crate native;
 
 use std::os;
-use std::io::process::{Process, ProcessConfig};
-use std::unstable::finally::Finally;
+use std::io::process::Command;
+use std::finally::Finally;
 use std::str;
 
 #[start]
@@ -36,58 +34,44 @@ fn double() {
 }
 
 fn runtest(me: &str) {
-    let mut env = os::env();
-    match env.iter().position(|&(ref s, _)| "RUST_BACKTRACE" == *s) {
+    let mut env = os::env().move_iter()
+                           .map(|(ref k, ref v)| {
+                               (k.to_string(), v.to_string())
+                           }).collect::<Vec<(String,String)>>();
+    match env.iter()
+             .position(|&(ref s, _)| "RUST_BACKTRACE" == s.as_slice()) {
         Some(i) => { env.remove(i); }
         None => {}
     }
-    env.push((~"RUST_BACKTRACE", ~"1"));
+    env.push(("RUST_BACKTRACE".to_string(), "1".to_string()));
 
     // Make sure that the stack trace is printed
-    let mut p = Process::configure(ProcessConfig {
-        program: me,
-        args: [~"fail"],
-        env: Some(env.as_slice()),
-        .. ProcessConfig::new()
-    }).unwrap();
-    let out = p.wait_with_output();
+    let mut p = Command::new(me).arg("fail").env(env.as_slice()).spawn().unwrap();
+    let out = p.wait_with_output().unwrap();
     assert!(!out.status.success());
     let s = str::from_utf8(out.error.as_slice()).unwrap();
     assert!(s.contains("stack backtrace") && s.contains("foo::h"),
             "bad output: {}", s);
 
     // Make sure the stack trace is *not* printed
-    let mut p = Process::configure(ProcessConfig {
-        program: me,
-        args: [~"fail"],
-        .. ProcessConfig::new()
-    }).unwrap();
-    let out = p.wait_with_output();
+    let mut p = Command::new(me).arg("fail").spawn().unwrap();
+    let out = p.wait_with_output().unwrap();
     assert!(!out.status.success());
     let s = str::from_utf8(out.error.as_slice()).unwrap();
     assert!(!s.contains("stack backtrace") && !s.contains("foo::h"),
             "bad output2: {}", s);
 
     // Make sure a stack trace is printed
-    let mut p = Process::configure(ProcessConfig {
-        program: me,
-        args: [~"double-fail"],
-        .. ProcessConfig::new()
-    }).unwrap();
-    let out = p.wait_with_output();
+    let mut p = Command::new(me).arg("double-fail").spawn().unwrap();
+    let out = p.wait_with_output().unwrap();
     assert!(!out.status.success());
     let s = str::from_utf8(out.error.as_slice()).unwrap();
     assert!(s.contains("stack backtrace") && s.contains("double::h"),
             "bad output3: {}", s);
 
     // Make sure a stack trace isn't printed too many times
-    let mut p = Process::configure(ProcessConfig {
-        program: me,
-        args: [~"double-fail"],
-        env: Some(env.as_slice()),
-        .. ProcessConfig::new()
-    }).unwrap();
-    let out = p.wait_with_output();
+    let mut p = Command::new(me).arg("double-fail").env(env.as_slice()).spawn().unwrap();
+    let out = p.wait_with_output().unwrap();
     assert!(!out.status.success());
     let s = str::from_utf8(out.error.as_slice()).unwrap();
     let mut i = 0;
@@ -100,11 +84,12 @@ fn runtest(me: &str) {
 
 fn main() {
     let args = os::args();
+    let args = args.as_slice();
     if args.len() >= 2 && args[1].as_slice() == "fail" {
         foo();
     } else if args.len() >= 2 && args[1].as_slice() == "double-fail" {
         double();
     } else {
-        runtest(args[0]);
+        runtest(args[0].as_slice());
     }
 }

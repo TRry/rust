@@ -8,13 +8,13 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#[crate_id="c#0.1"];
-#[crate_type = "lib"];
+#![crate_id="c#0.1"]
+#![crate_type = "lib"]
 
 extern crate a;
 
 use a::to_strz;
 
 impl to_strz for bool {
-    fn to_strz() -> ~str { fmt!("%b", self) }
+    fn to_strz() -> String { fmt!("%b", self) }
 }

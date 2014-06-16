@@ -14,12 +14,12 @@
 
 use ast::Name;
 
-use collections::HashMap;
-use std::cast;
+use std::collections::HashMap;
 use std::cell::RefCell;
 use std::cmp::Equiv;
 use std::fmt;
 use std::hash::Hash;
+use std::mem;
 use std::rc::Rc;
 
 pub struct Interner<T> {
@@ -28,7 +28,7 @@ pub struct Interner<T> {
 }
 
 // when traits can extend traits, we should extend index<Name,T> to get []
-impl<T: TotalEq + Hash + Clone + 'static> Interner<T> {
+impl<T: Eq + Hash + Clone + 'static> Interner<T> {
     pub fn new() -> Interner<T> {
         Interner {
             map: RefCell::new(HashMap::new()),
@@ -90,14 +90,14 @@ impl<T: TotalEq + Hash + Clone + 'static> Interner<T> {
     }
 }
 
-#[deriving(Clone, Eq, Hash, Ord)]
+#[deriving(Clone, PartialEq, Hash, PartialOrd)]
 pub struct RcStr {
-    string: Rc<~str>,
+    string: Rc<String>,
 }
 
-impl TotalEq for RcStr {}
+impl Eq for RcStr {}
 
-impl TotalOrd for RcStr {
+impl Ord for RcStr {
     fn cmp(&self, other: &RcStr) -> Ordering {
         self.as_slice().cmp(&other.as_slice())
     }
@@ -106,13 +106,8 @@ impl TotalOrd for RcStr {
 impl Str for RcStr {
     #[inline]
     fn as_slice<'a>(&'a self) -> &'a str {
-        let s: &'a str = *self.string;
+        let s: &'a str = self.string.as_slice();
         s
-    }
-
-    #[inline]
-    fn into_owned(self) -> ~str {
-        self.string.to_owned()
     }
 }
 
@@ -126,19 +121,19 @@ impl fmt::Show for RcStr {
 impl RcStr {
     pub fn new(string: &str) -> RcStr {
         RcStr {
-            string: Rc::new(string.to_owned()),
+            string: Rc::new(string.to_string()),
         }
     }
 }
 
-// A StrInterner differs from Interner<String> in that it accepts
-// &str rather than RcStr, resulting in less allocation.
+/// A StrInterner differs from Interner<String> in that it accepts
+/// &str rather than RcStr, resulting in less allocation.
 pub struct StrInterner {
     map: RefCell<HashMap<RcStr, Name>>,
     vect: RefCell<Vec<RcStr> >,
 }
 
-// when traits can extend traits, we should extend index<Name,T> to get []
+/// When traits can extend traits, we should extend index<Name,T> to get []
 impl StrInterner {
     pub fn new() -> StrInterner {
         StrInterner {
@@ -182,8 +177,8 @@ impl StrInterner {
     // lightweight way to get what I want, though not
     // necessarily the cleanest.
 
-    // create a gensym with the same name as an existing
-    // entry.
+    /// Create a gensym with the same name as an existing
+    /// entry.
     pub fn gensym_copy(&self, idx : Name) -> Name {
         let new_idx = self.len() as Name;
         // leave out of map to avoid colliding
@@ -203,7 +198,7 @@ impl StrInterner {
         let vect = self.vect.borrow();
         let s: &str = vect.get(idx as uint).as_slice();
         unsafe {
-            cast::transmute(s)
+            mem::transmute(s)
         }
     }
 

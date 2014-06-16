@@ -8,6 +8,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+
 struct Struct {
     person: &'static str
 }
@@ -23,8 +24,8 @@ impl Trait<&'static str> for Struct {
 }
 
 fn main() {
-    let person = ~"Fred";
-    let person: &str = person;  //~ ERROR `person[..]` does not live long enough
-    let s: ~Trait<&'static str> = ~Struct { person: person };
+    let person = "Fred".to_string();
+    let person: &str = person.as_slice();  //~ ERROR `person` does not live long enough
+    let s: Box<Trait<&'static str>> = box Struct { person: person };
 }
 

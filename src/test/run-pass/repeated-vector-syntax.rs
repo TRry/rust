@@ -8,12 +8,9 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#[feature(managed_boxes)];
+#![feature(managed_boxes)]
 
-#[deriving(Clone)]
-struct Foo {
-    a: ~str,
-}
+extern crate debug;
 
 pub fn main() {
     let x = [ [true], ..512 ];

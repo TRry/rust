@@ -64,6 +64,7 @@ mod imp {
     }
 
     #[cfg(target_os = "macos")]
+    #[cfg(target_os = "ios")]
     mod os {
         use libc;
 
@@ -135,12 +136,12 @@ mod imp {
 mod imp {
     use libc;
     use std::mem;
-    use std::os::win32::as_utf16_p;
     use std::os;
     use std::ptr;
 
     static LOCKFILE_EXCLUSIVE_LOCK: libc::DWORD = 0x00000002;
 
+    #[allow(non_snake_case_functions)]
     extern "system" {
         fn LockFileEx(hFile: libc::HANDLE,
                       dwFlags: libc::DWORD,
@@ -161,8 +162,9 @@ mod imp {
 
     impl Lock {
         pub fn new(p: &Path) -> Lock {
-            let handle = as_utf16_p(p.as_str().unwrap(), |p| unsafe {
-                libc::CreateFileW(p,
+            let p_16 = p.as_str().unwrap().to_utf16().append_one(0);
+            let handle = unsafe {
+                libc::CreateFileW(p_16.as_ptr(),
                                   libc::FILE_GENERIC_READ |
                                     libc::FILE_GENERIC_WRITE,
                                   libc::FILE_SHARE_READ |
@@ -172,11 +174,11 @@ mod imp {
                                   libc::CREATE_ALWAYS,
                                   libc::FILE_ATTRIBUTE_NORMAL,
                                   ptr::mut_null())
-            });
+            };
             if handle as uint == libc::INVALID_HANDLE_VALUE as uint {
                 fail!("create file error: {}", os::last_os_error());
             }
-            let mut overlapped: libc::OVERLAPPED = unsafe { mem::init() };
+            let mut overlapped: libc::OVERLAPPED = unsafe { mem::zeroed() };
             let ret = unsafe {
                 LockFileEx(handle, LOCKFILE_EXCLUSIVE_LOCK, 0, 100, 0,
                            &mut overlapped)
@@ -192,7 +194,7 @@ mod imp {
 
     impl Drop for Lock {
         fn drop(&mut self) {
-            let mut overlapped: libc::OVERLAPPED = unsafe { mem::init() };
+            let mut overlapped: libc::OVERLAPPED = unsafe { mem::zeroed() };
             unsafe {
                 UnlockFileEx(self.handle, 0, 100, 0, &mut overlapped);
                 libc::CloseHandle(self.handle);

@@ -8,18 +8,19 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use std::c_str::CString;
-use std::io::IoError;
 use libc;
-use std::rt::rtio::{RtioPipe, RtioUnixListener, RtioUnixAcceptor};
+use std::c_str::CString;
+use std::mem;
+use std::rt::rtio;
+use std::rt::rtio::IoResult;
 use std::rt::task::BlockedTask;
 
-use access::Access;
 use homing::{HomingIO, HomeHandle};
+use net;
 use rc::Refcount;
 use stream::StreamWatcher;
-use super::{Loop, UvError, UvHandle, Request, uv_error_to_io_error,
-            wait_until_woken_after, wakeup};
+use super::{Loop, UvError, UvHandle, uv_error_to_io_error};
+use timeout::{AcceptTimeout, ConnectCtx, AccessTimeout};
 use uvio::UvIoFactory;
 use uvll;
 
@@ -30,19 +31,20 @@ pub struct PipeWatcher {
     refcount: Refcount,
 
     // see comments in TcpWatcher for why these exist
-    write_access: Access,
-    read_access: Access,
+    write_access: AccessTimeout,
+    read_access: AccessTimeout,
 }
 
 pub struct PipeListener {
     home: HomeHandle,
     pipe: *uvll::uv_pipe_t,
-    outgoing: Sender<Result<~RtioPipe:Send, IoError>>,
-    incoming: Receiver<Result<~RtioPipe:Send, IoError>>,
+    outgoing: Sender<IoResult<Box<rtio::RtioPipe + Send>>>,
+    incoming: Receiver<IoResult<Box<rtio::RtioPipe + Send>>>,
 }
 
 pub struct PipeAcceptor {
-    listener: ~PipeListener,
+    listener: Box<PipeListener>,
+    timeout: AcceptTimeout,
 }
 
 // PipeWatcher implementation and traits
@@ -69,8 +71,8 @@ impl PipeWatcher {
             home: home,
             defused: false,
             refcount: Refcount::new(),
-            read_access: Access::new(),
-            write_access: Access::new(),
+            read_access: AccessTimeout::new(),
+            write_access: AccessTimeout::new(),
         }
     }
 
@@ -84,36 +86,18 @@ impl PipeWatcher {
         }
     }
 
-    pub fn connect(io: &mut UvIoFactory, name: &CString)
+    pub fn connect(io: &mut UvIoFactory, name: &CString, timeout: Option<u64>)
         -> Result<PipeWatcher, UvError>
     {
-        struct Ctx { task: Option<BlockedTask>, result: libc::c_int, }
-        let mut cx = Ctx { task: None, result: 0 };
-        let mut req = Request::new(uvll::UV_CONNECT);
         let pipe = PipeWatcher::new(io, false);
-
-        wait_until_woken_after(&mut cx.task, &io.loop_, || {
+        let cx = ConnectCtx { status: -1, task: None, timer: None };
+        cx.connect(pipe, timeout, io, |req, pipe, cb| {
             unsafe {
-                uvll::uv_pipe_connect(req.handle,
-                                      pipe.handle(),
-                                      name.with_ref(|p| p),
-                                      connect_cb)
+                uvll::uv_pipe_connect(req.handle, pipe.handle(),
+                                      name.with_ref(|p| p), cb)
             }
-            req.set_data(&cx);
-            req.defuse(); // uv callback now owns this request
-        });
-        return match cx.result {
-            0 => Ok(pipe),
-            n => Err(UvError(n))
-        };
-
-        extern fn connect_cb(req: *uvll::uv_connect_t, status: libc::c_int) {;
-            let req = Request::wrap(req);
-            assert!(status != uvll::ECANCELED);
-            let cx: &mut Ctx = unsafe { req.get_data() };
-            cx.result = status;
-            wakeup(&mut cx.task);
-        }
+            0
+        })
     }
 
     pub fn handle(&self) -> *uvll::uv_pipe_t { self.stream.handle }
@@ -126,28 +110,95 @@ impl PipeWatcher {
     }
 }
 
-impl RtioPipe for PipeWatcher {
-    fn read(&mut self, buf: &mut [u8]) -> Result<uint, IoError> {
+impl rtio::RtioPipe for PipeWatcher {
+    fn read(&mut self, buf: &mut [u8]) -> IoResult<uint> {
         let m = self.fire_homing_missile();
-        let _g = self.read_access.grant(m);
+        let guard = try!(self.read_access.grant(m));
+
+        // see comments in close_read about this check
+        if guard.access.is_closed() {
+            return Err(uv_error_to_io_error(UvError(uvll::EOF)))
+        }
+
         self.stream.read(buf).map_err(uv_error_to_io_error)
     }
 
-    fn write(&mut self, buf: &[u8]) -> Result<(), IoError> {
+    fn write(&mut self, buf: &[u8]) -> IoResult<()> {
         let m = self.fire_homing_missile();
-        let _g = self.write_access.grant(m);
-        self.stream.write(buf).map_err(uv_error_to_io_error)
+        let guard = try!(self.write_access.grant(m));
+        self.stream.write(buf, guard.can_timeout).map_err(uv_error_to_io_error)
     }
 
-    fn clone(&self) -> ~RtioPipe:Send {
-        ~PipeWatcher {
+    fn clone(&self) -> Box<rtio::RtioPipe + Send> {
+        box PipeWatcher {
             stream: StreamWatcher::new(self.stream.handle),
             defused: false,
             home: self.home.clone(),
             refcount: self.refcount.clone(),
             read_access: self.read_access.clone(),
             write_access: self.write_access.clone(),
-        } as ~RtioPipe:Send
+        } as Box<rtio::RtioPipe + Send>
+    }
+
+    fn close_read(&mut self) -> IoResult<()> {
+        // The current uv_shutdown method only shuts the writing half of the
+        // connection, and no method is provided to shut down the reading half
+        // of the connection. With a lack of method, we emulate shutting down
+        // the reading half of the connection by manually returning early from
+        // all future calls to `read`.
+        //
+        // Note that we must be careful to ensure that *all* cloned handles see
+        // the closing of the read half, so we stored the "is closed" bit in the
+        // Access struct, not in our own personal watcher. Additionally, the
+        // homing missile is used as a locking mechanism to ensure there is no
+        // contention over this bit.
+        //
+        // To shutdown the read half, we must first flag the access as being
+        // closed, and then afterwards we cease any pending read. Note that this
+        // ordering is crucial because we could in theory be rescheduled during
+        // the uv_read_stop which means that another read invocation could leak
+        // in before we set the flag.
+        let task = {
+            let m = self.fire_homing_missile();
+            self.read_access.access.close(&m);
+            self.stream.cancel_read(uvll::EOF as libc::ssize_t)
+        };
+        let _ = task.map(|t| t.reawaken());
+        Ok(())
+    }
+
+    fn close_write(&mut self) -> IoResult<()> {
+        let _m = self.fire_homing_missile();
+        net::shutdown(self.stream.handle, &self.uv_loop())
+    }
+
+    fn set_timeout(&mut self, timeout: Option<u64>) {
+        self.set_read_timeout(timeout);
+        self.set_write_timeout(timeout);
+    }
+
+    fn set_read_timeout(&mut self, ms: Option<u64>) {
+        let _m = self.fire_homing_missile();
+        let loop_ = self.uv_loop();
+        self.read_access.set_timeout(ms, &self.home, &loop_, cancel_read,
+                                     &self.stream as *_ as uint);
+
+        fn cancel_read(stream: uint) -> Option<BlockedTask> {
+            let stream: &mut StreamWatcher = unsafe { mem::transmute(stream) };
+            stream.cancel_read(uvll::ECANCELED as libc::ssize_t)
+        }
+    }
+
+    fn set_write_timeout(&mut self, ms: Option<u64>) {
+        let _m = self.fire_homing_missile();
+        let loop_ = self.uv_loop();
+        self.write_access.set_timeout(ms, &self.home, &loop_, cancel_write,
+                                      &self.stream as *_ as uint);
+
+        fn cancel_write(stream: uint) -> Option<BlockedTask> {
+            let stream: &mut StreamWatcher = unsafe { mem::transmute(stream) };
+            stream.cancel_write()
+        }
     }
 }
 
@@ -172,7 +223,7 @@ impl Drop for PipeWatcher {
 
 impl PipeListener {
     pub fn bind(io: &mut UvIoFactory, name: &CString)
-        -> Result<~PipeListener, UvError>
+        -> Result<Box<PipeListener>, UvError>
     {
         let pipe = PipeWatcher::new(io, false);
         match unsafe {
@@ -183,7 +234,7 @@ impl PipeListener {
                 // we close the pipe differently. We can't rely on
                 // StreamWatcher's default close method.
                 let (tx, rx) = channel();
-                let p = ~PipeListener {
+                let p = box PipeListener {
                     home: io.make_handle(),
                     pipe: pipe.unwrap(),
                     incoming: rx,
@@ -196,15 +247,18 @@ impl PipeListener {
     }
 }
 
-impl RtioUnixListener for PipeListener {
-    fn listen(~self) -> Result<~RtioUnixAcceptor:Send, IoError> {
+impl rtio::RtioUnixListener for PipeListener {
+    fn listen(~self) -> IoResult<Box<rtio::RtioUnixAcceptor + Send>> {
         // create the acceptor object from ourselves
-        let mut acceptor = ~PipeAcceptor { listener: self };
+        let mut acceptor = box PipeAcceptor {
+            listener: self,
+            timeout: AcceptTimeout::new(),
+        };
 
         let _m = acceptor.fire_homing_missile();
         // FIXME: the 128 backlog should be configurable
         match unsafe { uvll::uv_listen(acceptor.listener.pipe, 128, listen_cb) } {
-            0 => Ok(acceptor as ~RtioUnixAcceptor:Send),
+            0 => Ok(acceptor as Box<rtio::RtioUnixAcceptor + Send>),
             n => Err(uv_error_to_io_error(UvError(n))),
         }
     }
@@ -229,7 +283,7 @@ extern fn listen_cb(server: *uvll::uv_stream_t, status: libc::c_int) {
             });
             let client = PipeWatcher::new_home(&loop_, pipe.home().clone(), false);
             assert_eq!(unsafe { uvll::uv_accept(server, client.handle()) }, 0);
-            Ok(~client as ~RtioPipe:Send)
+            Ok(box client as Box<rtio::RtioPipe + Send>)
         }
         n => Err(uv_error_to_io_error(UvError(n)))
     };
@@ -245,9 +299,16 @@ impl Drop for PipeListener {
 
 // PipeAcceptor implementation and traits
 
-impl RtioUnixAcceptor for PipeAcceptor {
-    fn accept(&mut self) -> Result<~RtioPipe:Send, IoError> {
-        self.listener.incoming.recv()
+impl rtio::RtioUnixAcceptor for PipeAcceptor {
+    fn accept(&mut self) -> IoResult<Box<rtio::RtioPipe + Send>> {
+        self.timeout.accept(&self.listener.incoming)
+    }
+
+    fn set_timeout(&mut self, timeout_ms: Option<u64>) {
+        match timeout_ms {
+            None => self.timeout.clear(),
+            Some(ms) => self.timeout.set_timeout(ms, &mut *self.listener),
+        }
     }
 }
 
@@ -265,7 +326,8 @@ mod tests {
 
     #[test]
     fn connect_err() {
-        match PipeWatcher::connect(local_loop(), &"path/to/nowhere".to_c_str()) {
+        match PipeWatcher::connect(local_loop(), &"path/to/nowhere".to_c_str(),
+                                   None) {
             Ok(..) => fail!(),
             Err(..) => {}
         }
@@ -275,7 +337,7 @@ mod tests {
     fn bind_err() {
         match PipeListener::bind(local_loop(), &"path/to/nowhere".to_c_str()) {
             Ok(..) => fail!(),
-            Err(e) => assert_eq!(e.name(), ~"EACCES"),
+            Err(e) => assert_eq!(e.name(), "EACCES".to_string()),
         }
     }
 
@@ -303,19 +365,19 @@ mod tests {
 
         spawn(proc() {
             let p = PipeListener::bind(local_loop(), &path2.to_c_str()).unwrap();
-            let mut p = p.listen().unwrap();
+            let mut p = p.listen().ok().unwrap();
             tx.send(());
-            let mut client = p.accept().unwrap();
+            let mut client = p.accept().ok().unwrap();
             let mut buf = [0];
-            assert!(client.read(buf).unwrap() == 1);
+            assert!(client.read(buf).ok().unwrap() == 1);
             assert_eq!(buf[0], 1);
             assert!(client.write([2]).is_ok());
         });
         rx.recv();
-        let mut c = PipeWatcher::connect(local_loop(), &path.to_c_str()).unwrap();
+        let mut c = PipeWatcher::connect(local_loop(), &path.to_c_str(), None).unwrap();
         assert!(c.write([1]).is_ok());
         let mut buf = [0];
-        assert!(c.read(buf).unwrap() == 1);
+        assert!(c.read(buf).ok().unwrap() == 1);
         assert_eq!(buf[0], 2);
     }
 
@@ -327,12 +389,12 @@ mod tests {
 
         spawn(proc() {
             let p = PipeListener::bind(local_loop(), &path2.to_c_str()).unwrap();
-            let mut p = p.listen().unwrap();
+            let mut p = p.listen().ok().unwrap();
             tx.send(());
-            drop(p.accept().unwrap());
+            drop(p.accept().ok().unwrap());
         });
         rx.recv();
-        let _c = PipeWatcher::connect(local_loop(), &path.to_c_str()).unwrap();
+        let _c = PipeWatcher::connect(local_loop(), &path.to_c_str(), None).unwrap();
         fail!()
 
     }

@@ -61,9 +61,12 @@ independently:
 
 #![allow(non_camel_case_types)]
 
-use driver::session;
+use driver::config;
 
+use middle::def;
 use middle::resolve;
+use middle::subst;
+use middle::subst::VecPerParamSpace;
 use middle::ty;
 use util::common::time;
 use util::ppaux::Repr;
@@ -71,7 +74,6 @@ use util::ppaux;
 use util::nodemap::{DefIdMap, FnvHashMap};
 
 use std::cell::RefCell;
-use std::rc::Rc;
 use syntax::codemap::Span;
 use syntax::print::pprust::*;
 use syntax::{ast, ast_map, abi};
@@ -84,10 +86,10 @@ pub mod collect;
 pub mod coherence;
 pub mod variance;
 
-#[deriving(Clone, Encodable, Decodable, Eq, Ord)]
-pub enum param_index {
-    param_numbered(uint),
-    param_self
+#[deriving(Clone, Encodable, Decodable, PartialEq, PartialOrd)]
+pub struct param_index {
+    pub space: subst::ParamSpace,
+    pub index: uint
 }
 
 #[deriving(Clone, Encodable, Decodable)]
@@ -144,10 +146,10 @@ pub struct MethodObject {
 pub struct MethodCallee {
     pub origin: MethodOrigin,
     pub ty: ty::t,
-    pub substs: ty::substs
+    pub substs: subst::Substs
 }
 
-#[deriving(Clone, Eq, TotalEq, Hash, Show)]
+#[deriving(Clone, PartialEq, Eq, Hash, Show)]
 pub struct MethodCall {
     pub expr_id: ast::NodeId,
     pub autoderef: u32
@@ -171,11 +173,12 @@ impl MethodCall {
 
 // maps from an expression id that corresponds to a method call to the details
 // of the method to be invoked
-pub type MethodMap = @RefCell<FnvHashMap<MethodCall, MethodCallee>>;
+pub type MethodMap = RefCell<FnvHashMap<MethodCall, MethodCallee>>;
 
-pub type vtable_param_res = @Vec<vtable_origin> ;
+pub type vtable_param_res = Vec<vtable_origin>;
+
 // Resolutions for bounds of all parameters, left to right, for a given path.
-pub type vtable_res = @Vec<vtable_param_res> ;
+pub type vtable_res = VecPerParamSpace<vtable_param_res>;
 
 #[deriving(Clone)]
 pub enum vtable_origin {
@@ -184,7 +187,7 @@ pub enum vtable_origin {
       from whence comes the vtable, and tys are the type substs.
       vtable_res is the vtable itself
      */
-    vtable_static(ast::DefId, Vec<ty::t> , vtable_res),
+    vtable_static(ast::DefId, subst::Substs, vtable_res),
 
     /*
       Dynamic vtable, comes from a parameter that has a bound on it:
@@ -195,55 +198,46 @@ pub enum vtable_origin {
       and the second is the bound number (identifying baz)
      */
     vtable_param(param_index, uint),
+
+    /*
+      Asked to determine the vtable for ty_err. This is the value used
+      for the vtables of `Self` in a virtual call like `foo.bar()`
+      where `foo` is of object type. The same value is also used when
+      type errors occur.
+     */
+    vtable_error,
 }
 
 impl Repr for vtable_origin {
-    fn repr(&self, tcx: &ty::ctxt) -> ~str {
+    fn repr(&self, tcx: &ty::ctxt) -> String {
         match *self {
             vtable_static(def_id, ref tys, ref vtable_res) => {
                 format!("vtable_static({:?}:{}, {}, {})",
-                     def_id,
-                     ty::item_path_str(tcx, def_id),
-                     tys.repr(tcx),
-                     vtable_res.repr(tcx))
+                        def_id,
+                        ty::item_path_str(tcx, def_id),
+                        tys.repr(tcx),
+                        vtable_res.repr(tcx))
             }
 
             vtable_param(x, y) => {
                 format!("vtable_param({:?}, {:?})", x, y)
             }
+
+            vtable_error => {
+                format!("vtable_error")
+            }
         }
     }
 }
 
-pub type vtable_map = @RefCell<FnvHashMap<MethodCall, vtable_res>>;
+pub type vtable_map = RefCell<FnvHashMap<MethodCall, vtable_res>>;
 
 
-// Information about the vtable resolutions for a trait impl.
-// Mostly the information is important for implementing default
-// methods.
-#[deriving(Clone)]
-pub struct impl_res {
-    // resolutions for any bounded params on the trait definition
-    pub trait_vtables: vtable_res,
-    // resolutions for the trait /itself/ (and for supertraits)
-    pub self_vtables: vtable_param_res
-}
-
-impl Repr for impl_res {
-    fn repr(&self, tcx: &ty::ctxt) -> ~str {
-        format!("impl_res \\{trait_vtables={}, self_vtables={}\\}",
-             self.trait_vtables.repr(tcx),
-             self.self_vtables.repr(tcx))
-    }
-}
-
-pub type impl_vtable_map = RefCell<DefIdMap<impl_res>>;
+pub type impl_vtable_map = RefCell<DefIdMap<vtable_res>>;
 
 pub struct CrateCtxt<'a> {
     // A mapping from method call sites to traits that have that method.
     trait_map: resolve::TraitMap,
-    method_map: MethodMap,
-    vtable_map: vtable_map,
     tcx: &'a ty::ctxt
 }
 
@@ -255,16 +249,18 @@ pub fn write_ty_to_tcx(tcx: &ty::ctxt, node_id: ast::NodeId, ty: ty::t) {
 }
 pub fn write_substs_to_tcx(tcx: &ty::ctxt,
                            node_id: ast::NodeId,
-                           substs: Vec<ty::t> ) {
-    if substs.len() > 0u {
-        debug!("write_substs_to_tcx({}, {:?})", node_id,
-               substs.iter().map(|t| ppaux::ty_to_str(tcx, *t)).collect::<Vec<~str>>());
-        assert!(substs.iter().all(|t| !ty::type_needs_infer(*t)));
+                           item_substs: ty::ItemSubsts) {
+    if !item_substs.is_noop() {
+        debug!("write_substs_to_tcx({}, {})",
+               node_id,
+               item_substs.repr(tcx));
 
-        tcx.node_type_substs.borrow_mut().insert(node_id, substs);
+        assert!(item_substs.substs.types.all(|t| !ty::type_needs_infer(*t)));
+
+        tcx.item_substs.borrow_mut().insert(node_id, item_substs);
     }
 }
-pub fn lookup_def_tcx(tcx:&ty::ctxt, sp: Span, id: ast::NodeId) -> ast::Def {
+pub fn lookup_def_tcx(tcx:&ty::ctxt, sp: Span, id: ast::NodeId) -> def::Def {
     match tcx.def_map.borrow().find(&id) {
         Some(&x) => x,
         _ => {
@@ -274,14 +270,14 @@ pub fn lookup_def_tcx(tcx:&ty::ctxt, sp: Span, id: ast::NodeId) -> ast::Def {
 }
 
 pub fn lookup_def_ccx(ccx: &CrateCtxt, sp: Span, id: ast::NodeId)
-                   -> ast::Def {
+                   -> def::Def {
     lookup_def_tcx(ccx.tcx, sp, id)
 }
 
 pub fn no_params(t: ty::t) -> ty::ty_param_bounds_and_ty {
     ty::ty_param_bounds_and_ty {
-        generics: ty::Generics {type_param_defs: Rc::new(Vec::new()),
-                                region_param_defs: Rc::new(Vec::new())},
+        generics: ty::Generics {types: VecPerParamSpace::empty(),
+                                regions: VecPerParamSpace::empty()},
         ty: t
     }
 }
@@ -292,7 +288,7 @@ pub fn require_same_types(tcx: &ty::ctxt,
                           span: Span,
                           t1: ty::t,
                           t2: ty::t,
-                          msg: || -> ~str)
+                          msg: || -> String)
                           -> bool {
     let result = match maybe_infcx {
         None => {
@@ -307,30 +303,14 @@ pub fn require_same_types(tcx: &ty::ctxt,
     match result {
         Ok(_) => true,
         Err(ref terr) => {
-            tcx.sess.span_err(span, msg() + ": " +
-                              ty::type_err_to_str(tcx, terr));
+            tcx.sess.span_err(span,
+                              format!("{}: {}",
+                                      msg(),
+                                      ty::type_err_to_str(tcx,
+                                                          terr)).as_slice());
             ty::note_and_explain_type_err(tcx, terr);
             false
         }
-    }
-}
-
-// a list of mapping from in-scope-region-names ("isr") to the
-// corresponding ty::Region
-pub type isr_alist = @Vec<(ty::BoundRegion, ty::Region)>;
-
-trait get_region<'a, T:'static> {
-    fn get(&'a self, br: ty::BoundRegion) -> ty::Region;
-}
-
-impl<'a, T:'static> get_region <'a, T> for isr_alist {
-    fn get(&'a self, br: ty::BoundRegion) -> ty::Region {
-        let mut region = None;
-        for isr in self.iter() {
-            let (isr_br, isr_r) = *isr;
-            if isr_br == br { region = Some(isr_r); break; }
-        };
-        region.unwrap()
     }
 }
 
@@ -368,13 +348,17 @@ fn check_main_fn_ty(ccx: &CrateCtxt,
             });
 
             require_same_types(tcx, None, false, main_span, main_t, se_ty,
-                || format!("main function expects type: `{}`",
-                        ppaux::ty_to_str(ccx.tcx, se_ty)));
+                || {
+                    format!("main function expects type: `{}`",
+                            ppaux::ty_to_str(ccx.tcx, se_ty))
+                });
         }
         _ => {
             tcx.sess.span_bug(main_span,
-                              format!("main has a non-function type: found `{}`",
-                                   ppaux::ty_to_str(tcx, main_t)));
+                              format!("main has a non-function type: found \
+                                       `{}`",
+                                      ppaux::ty_to_str(tcx,
+                                                       main_t)).as_slice());
         }
     }
 }
@@ -417,41 +401,41 @@ fn check_start_fn_ty(ccx: &CrateCtxt,
             });
 
             require_same_types(tcx, None, false, start_span, start_t, se_ty,
-                || format!("start function expects type: `{}`", ppaux::ty_to_str(ccx.tcx, se_ty)));
+                || {
+                    format!("start function expects type: `{}`",
+                            ppaux::ty_to_str(ccx.tcx, se_ty))
+                });
 
         }
         _ => {
             tcx.sess.span_bug(start_span,
-                              format!("start has a non-function type: found `{}`",
-                                   ppaux::ty_to_str(tcx, start_t)));
+                              format!("start has a non-function type: found \
+                                       `{}`",
+                                      ppaux::ty_to_str(tcx,
+                                                       start_t)).as_slice());
         }
     }
 }
 
 fn check_for_entry_fn(ccx: &CrateCtxt) {
     let tcx = ccx.tcx;
-    if !tcx.sess.building_library.get() {
-        match *tcx.sess.entry_fn.borrow() {
-          Some((id, sp)) => match tcx.sess.entry_type.get() {
-              Some(session::EntryMain) => check_main_fn_ty(ccx, id, sp),
-              Some(session::EntryStart) => check_start_fn_ty(ccx, id, sp),
-              Some(session::EntryNone) => {}
-              None => tcx.sess.bug("entry function without a type")
-          },
-          None => {}
-        }
+    match *tcx.sess.entry_fn.borrow() {
+        Some((id, sp)) => match tcx.sess.entry_type.get() {
+            Some(config::EntryMain) => check_main_fn_ty(ccx, id, sp),
+            Some(config::EntryStart) => check_start_fn_ty(ccx, id, sp),
+            Some(config::EntryNone) => {}
+            None => tcx.sess.bug("entry function without a type")
+        },
+        None => {}
     }
 }
 
 pub fn check_crate(tcx: &ty::ctxt,
                    trait_map: resolve::TraitMap,
-                   krate: &ast::Crate)
-                -> (MethodMap, vtable_map) {
+                   krate: &ast::Crate) {
     let time_passes = tcx.sess.time_passes();
     let ccx = CrateCtxt {
         trait_map: trait_map,
-        method_map: @RefCell::new(FnvHashMap::new()),
-        vtable_map: @RefCell::new(FnvHashMap::new()),
         tcx: tcx
     };
 
@@ -473,5 +457,4 @@ pub fn check_crate(tcx: &ty::ctxt,
 
     check_for_entry_fn(&ccx);
     tcx.sess.abort_if_errors();
-    (ccx.method_map, ccx.vtable_map)
 }

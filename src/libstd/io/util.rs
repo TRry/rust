@@ -13,6 +13,7 @@
 use prelude::*;
 use cmp;
 use io;
+use owned::Box;
 use slice::bytes::MutableByteVector;
 
 /// Wraps a `Reader`, limiting the number of bytes that can be read from it.
@@ -54,6 +55,24 @@ impl<R: Reader> Reader for LimitReader<R> {
     }
 }
 
+impl<R: Buffer> Buffer for LimitReader<R> {
+    fn fill_buf<'a>(&'a mut self) -> io::IoResult<&'a [u8]> {
+        let amt = try!(self.inner.fill_buf());
+        let buf = amt.slice_to(cmp::min(amt.len(), self.limit));
+        if buf.len() == 0 {
+            Err(io::standard_error(io::EndOfFile))
+        } else {
+            Ok(buf)
+        }
+    }
+
+    fn consume(&mut self, amt: uint) {
+        self.limit -= amt;
+        self.inner.consume(amt);
+    }
+
+}
+
 /// A `Writer` which ignores bytes written to it, like /dev/null.
 pub struct NullWriter;
 
@@ -73,6 +92,14 @@ impl Reader for ZeroReader {
     }
 }
 
+impl Buffer for ZeroReader {
+    fn fill_buf<'a>(&'a mut self) -> io::IoResult<&'a [u8]> {
+        static DATA: [u8, ..64] = [0, ..64];
+        Ok(DATA.as_slice())
+    }
+    fn consume(&mut self, _amt: uint) {}
+}
+
 /// A `Reader` which is always at EOF, like /dev/null.
 pub struct NullReader;
 
@@ -83,14 +110,21 @@ impl Reader for NullReader {
     }
 }
 
+impl Buffer for NullReader {
+    fn fill_buf<'a>(&'a mut self) -> io::IoResult<&'a [u8]> {
+        Err(io::standard_error(io::EndOfFile))
+    }
+    fn consume(&mut self, _amt: uint) {}
+}
+
 /// A `Writer` which multiplexes writes to a set of `Writers`.
 pub struct MultiWriter {
-    writers: Vec<~Writer>
+    writers: Vec<Box<Writer>>
 }
 
 impl MultiWriter {
     /// Creates a new `MultiWriter`
-    pub fn new(writers: Vec<~Writer>) -> MultiWriter {
+    pub fn new(writers: Vec<Box<Writer>>) -> MultiWriter {
         MultiWriter { writers: writers }
     }
 }
@@ -195,10 +229,41 @@ pub fn copy<R: Reader, W: Writer>(r: &mut R, w: &mut W) -> io::IoResult<()> {
     }
 }
 
+/// A `Reader` which converts an `Iterator<u8>` into a `Reader`.
+pub struct IterReader<T> {
+    iter: T,
+}
+
+impl<T: Iterator<u8>> IterReader<T> {
+    /// Create a new `IterReader` which will read from the specified `Iterator`.
+    pub fn new(iter: T) -> IterReader<T> {
+        IterReader {
+            iter: iter,
+        }
+    }
+}
+
+impl<T: Iterator<u8>> Reader for IterReader<T> {
+    #[inline]
+    fn read(&mut self, buf: &mut [u8]) -> io::IoResult<uint> {
+        let mut len = 0;
+        for (slot, elt) in buf.mut_iter().zip(self.iter.by_ref()) {
+            *slot = elt;
+            len += 1;
+        }
+        if len == 0 {
+            Err(io::standard_error(io::EndOfFile))
+        } else {
+            Ok(len)
+        }
+    }
+}
+
 #[cfg(test)]
 mod test {
+    use io::{MemReader, MemWriter, BufReader};
     use io;
-    use io::{MemReader, MemWriter};
+    use owned::Box;
     use super::*;
     use prelude::*;
 
@@ -235,24 +300,24 @@ mod test {
     #[test]
     fn test_null_writer() {
         let mut s = NullWriter;
-        let buf = ~[0, 0, 0];
-        s.write(buf).unwrap();
+        let buf = vec![0, 0, 0];
+        s.write(buf.as_slice()).unwrap();
         s.flush().unwrap();
     }
 
     #[test]
     fn test_zero_reader() {
         let mut s = ZeroReader;
-        let mut buf = ~[1, 2, 3];
-        assert_eq!(s.read(buf), Ok(3));
-        assert_eq!(~[0, 0, 0], buf);
+        let mut buf = vec![1, 2, 3];
+        assert_eq!(s.read(buf.as_mut_slice()), Ok(3));
+        assert_eq!(vec![0, 0, 0], buf);
     }
 
     #[test]
     fn test_null_reader() {
         let mut r = NullReader;
-        let mut buf = ~[0];
-        assert!(r.read(buf).is_err());
+        let mut buf = vec![0];
+        assert!(r.read(buf.as_mut_slice()).is_err());
     }
 
     #[test]
@@ -273,8 +338,8 @@ mod test {
             }
         }
 
-        let mut multi = MultiWriter::new(vec!(~TestWriter as ~Writer,
-                                              ~TestWriter as ~Writer));
+        let mut multi = MultiWriter::new(vec!(box TestWriter as Box<Writer>,
+                                              box TestWriter as Box<Writer>));
         multi.write([1, 2, 3]).unwrap();
         assert_eq!(2, unsafe { writes });
         assert_eq!(0, unsafe { flushes });
@@ -306,5 +371,48 @@ mod test {
         let mut w = MemWriter::new();
         copy(&mut r, &mut w).unwrap();
         assert_eq!(vec!(0, 1, 2, 3, 4), w.unwrap());
+    }
+
+    #[test]
+    fn limit_reader_buffer() {
+        let data = "0123456789\n0123456789\n";
+        let mut r = BufReader::new(data.as_bytes());
+        {
+            let mut r = LimitReader::new(r.by_ref(), 3);
+            assert_eq!(r.read_line(), Ok("012".to_str()));
+            assert_eq!(r.limit(), 0);
+            assert_eq!(r.read_line().err().unwrap().kind, io::EndOfFile);
+        }
+        {
+            let mut r = LimitReader::new(r.by_ref(), 9);
+            assert_eq!(r.read_line(), Ok("3456789\n".to_str()));
+            assert_eq!(r.limit(), 1);
+            assert_eq!(r.read_line(), Ok("0".to_str()));
+        }
+        {
+            let mut r = LimitReader::new(r.by_ref(), 100);
+            assert_eq!(r.read_char(), Ok('1'));
+            assert_eq!(r.limit(), 99);
+            assert_eq!(r.read_line(), Ok("23456789\n".to_str()));
+        }
+    }
+
+    #[test]
+    fn test_iter_reader() {
+        let mut r = IterReader::new(range(0u8, 8));
+        let mut buf = [0, 0, 0];
+        let len = r.read(buf).unwrap();
+        assert_eq!(len, 3);
+        assert!(buf == [0, 1, 2]);
+
+        let len = r.read(buf).unwrap();
+        assert_eq!(len, 3);
+        assert!(buf == [3, 4, 5]);
+
+        let len = r.read(buf).unwrap();
+        assert_eq!(len, 2);
+        assert!(buf == [6, 7, 5]);
+
+        assert_eq!(r.read(buf).unwrap_err().kind, io::EndOfFile);
     }
 }

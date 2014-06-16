@@ -73,13 +73,13 @@ pub struct VecTypes {
 }
 
 impl VecTypes {
-    pub fn to_str(&self, ccx: &CrateContext) -> ~str {
-        format!("VecTypes \\{unit_ty={}, llunit_ty={}, llunit_size={}, \
-                 llunit_alloc_size={}\\}",
-             ty_to_str(ccx.tcx(), self.unit_ty),
-             ccx.tn.type_to_str(self.llunit_ty),
-             ccx.tn.val_to_str(self.llunit_size),
-             self.llunit_alloc_size)
+    pub fn to_str(&self, ccx: &CrateContext) -> String {
+        format!("VecTypes {{unit_ty={}, llunit_ty={}, \
+                 llunit_size={}, llunit_alloc_size={}}}",
+                ty_to_str(ccx.tcx(), self.unit_ty),
+                ccx.tn.type_to_str(self.llunit_ty),
+                ccx.tn.val_to_str(self.llunit_size),
+                self.llunit_alloc_size)
     }
 }
 
@@ -162,8 +162,10 @@ pub fn trans_slice_vstore<'a>(
         llfixed = base::arrayalloca(bcx, vt.llunit_ty, llcount);
 
         // Arrange for the backing array to be cleaned up.
-        let fixed_ty = ty::mk_vec(bcx.tcx(), vt.unit_ty,
-                                  ty::VstoreFixed(count));
+        let fixed_ty = ty::mk_vec(bcx.tcx(),
+                                  ty::mt {ty: vt.unit_ty,
+                                          mutbl: ast::MutMutable},
+                                  Some(count));
         let llfixed_ty = type_of::type_of(bcx.ccx(), fixed_ty).ptr_to();
         let llfixed_casted = BitCast(bcx, llfixed, llfixed_ty);
         let cleanup_scope = cleanup::temporary_scope(bcx.tcx(), content_expr.id);
@@ -226,7 +228,7 @@ pub fn trans_uniq_vstore<'a>(bcx: &'a Block<'a>,
                              content_expr: &ast::Expr)
                              -> DatumBlock<'a, Expr> {
     /*!
-     * ~[...] and ~"..." allocate boxes in the exchange heap and write
+     * ~[...] and "...".to_string() allocate boxes in the exchange heap and write
      * the array elements into them.
      */
 
@@ -234,7 +236,7 @@ pub fn trans_uniq_vstore<'a>(bcx: &'a Block<'a>,
     let fcx = bcx.fcx;
     let ccx = fcx.ccx;
 
-    // Handle ~"".
+    // Handle "".to_string().
     match content_expr.node {
         ast::ExprLit(lit) => {
             match lit.node {
@@ -242,7 +244,7 @@ pub fn trans_uniq_vstore<'a>(bcx: &'a Block<'a>,
                     let llptrval = C_cstr(ccx, (*s).clone(), false);
                     let llptrval = PointerCast(bcx, llptrval, Type::i8p(ccx));
                     let llsizeval = C_uint(ccx, s.get().len());
-                    let typ = ty::mk_str(bcx.tcx(), ty::VstoreUniq);
+                    let typ = ty::mk_uniq(bcx.tcx(), ty::mk_str(bcx.tcx()));
                     let lldestval = rvalue_scratch_datum(bcx,
                                                          typ,
                                                          "");
@@ -255,7 +257,7 @@ pub fn trans_uniq_vstore<'a>(bcx: &'a Block<'a>,
                         alloc_fn,
                         [ llptrval, llsizeval ],
                         Some(expr::SaveIn(lldestval.val))).bcx;
-                    return DatumBlock(bcx, lldestval).to_expr_datumblock();
+                    return DatumBlock::new(bcx, lldestval).to_expr_datumblock();
                 }
                 _ => {}
             }
@@ -276,15 +278,20 @@ pub fn trans_uniq_vstore<'a>(bcx: &'a Block<'a>,
 
     let vecsize = Add(bcx, alloc, llsize_of(ccx, ccx.opaque_vec_type));
 
-    let Result { bcx: bcx, val: val } = malloc_raw_dyn(bcx, vec_ty, vecsize);
+    // ~[T] is not going to be changed to support alignment, since it's obsolete.
+    let align = C_uint(ccx, 8);
+    let Result { bcx: bcx, val: val } = malloc_raw_dyn(bcx, vec_ty, vecsize, align);
     Store(bcx, fill, GEPi(bcx, val, [0u, abi::vec_elt_fill]));
     Store(bcx, alloc, GEPi(bcx, val, [0u, abi::vec_elt_alloc]));
 
     // Create a temporary scope lest execution should fail while
     // constructing the vector.
     let temp_scope = fcx.push_custom_cleanup_scope();
+
+    // FIXME: #13994: the old `Box<[T]> will not support sized deallocation, this is a placeholder
+    let content_ty = vt.unit_ty;
     fcx.schedule_free_value(cleanup::CustomScope(temp_scope),
-                            val, cleanup::HeapExchange);
+                            val, cleanup::HeapExchange, content_ty);
 
     let dataptr = get_dataptr(bcx, val);
 
@@ -344,7 +351,7 @@ pub fn write_content<'a>(
             match dest {
                 Ignore => {
                     for element in elements.iter() {
-                        bcx = expr::trans_into(bcx, *element, Ignore);
+                        bcx = expr::trans_into(bcx, &**element, Ignore);
                     }
                 }
 
@@ -354,7 +361,7 @@ pub fn write_content<'a>(
                         let lleltptr = GEPi(bcx, lldest, [i]);
                         debug!("writing index {:?} with lleltptr={:?}",
                                i, bcx.val_to_str(lleltptr));
-                        bcx = expr::trans_into(bcx, *element,
+                        bcx = expr::trans_into(bcx, &**element,
                                                SaveIn(lleltptr));
                         fcx.schedule_drop_mem(
                             cleanup::CustomScope(temp_scope),
@@ -366,13 +373,13 @@ pub fn write_content<'a>(
             }
             return bcx;
         }
-        ast::ExprRepeat(element, count_expr) => {
+        ast::ExprRepeat(ref element, ref count_expr) => {
             match dest {
                 Ignore => {
-                    return expr::trans_into(bcx, element, Ignore);
+                    return expr::trans_into(bcx, &**element, Ignore);
                 }
                 SaveIn(lldest) => {
-                    let count = ty::eval_repeat_count(bcx.tcx(), count_expr);
+                    let count = ty::eval_repeat_count(bcx.tcx(), &**count_expr);
                     if count == 0 {
                         return bcx;
                     }
@@ -382,7 +389,7 @@ pub fn write_content<'a>(
                     // this can only happen as a result of OOM. So we just skip out on the
                     // cleanup since things would *probably* be broken at that point anyways.
 
-                    let elem = unpack_datum!(bcx, expr::trans(bcx, element));
+                    let elem = unpack_datum!(bcx, expr::trans(bcx, &**element));
                     assert!(!ty::type_moves_by_default(bcx.tcx(), elem.ty));
 
                     let bcx = iter_vec_loop(bcx, lldest, vt,
@@ -435,8 +442,8 @@ pub fn elements_required(bcx: &Block, content_expr: &ast::Expr) -> uint {
             }
         },
         ast::ExprVec(ref es) => es.len(),
-        ast::ExprRepeat(_, count_expr) => {
-            ty::eval_repeat_count(bcx.tcx(), count_expr)
+        ast::ExprRepeat(_, ref count_expr) => {
+            ty::eval_repeat_count(bcx.tcx(), &**count_expr)
         }
         _ => bcx.tcx().sess.span_bug(content_expr.span,
                                      "unexpected vec content")
@@ -474,37 +481,31 @@ pub fn get_base_and_len(bcx: &Block,
      */
 
     let ccx = bcx.ccx();
-    let vt = vec_types(bcx, ty::sequence_element_type(bcx.tcx(), vec_ty));
 
-    let vstore = match ty::get(vec_ty).sty {
-        ty::ty_vec(_, vst) => vst,
-        ty::ty_str(vst) => {
-            // Convert from immutable-only-Vstore to Vstore.
-            match vst {
-                ty::VstoreFixed(n) => ty::VstoreFixed(n),
-                ty::VstoreSlice(r, ()) => ty::VstoreSlice(r, ast::MutImmutable),
-                ty::VstoreUniq => ty::VstoreUniq
-            }
-        }
-        _ => ty::VstoreUniq
-    };
-
-    match vstore {
-        ty::VstoreFixed(n) => {
+    match ty::get(vec_ty).sty {
+        ty::ty_vec(_, Some(n)) => {
             let base = GEPi(bcx, llval, [0u, 0u]);
             (base, C_uint(ccx, n))
         }
-        ty::VstoreSlice(..) => {
-            assert!(!type_is_immediate(bcx.ccx(), vec_ty));
-            let base = Load(bcx, GEPi(bcx, llval, [0u, abi::slice_elt_base]));
-            let count = Load(bcx, GEPi(bcx, llval, [0u, abi::slice_elt_len]));
-            (base, count)
-        }
-        ty::VstoreUniq => {
-            assert!(type_is_immediate(bcx.ccx(), vec_ty));
-            let body = Load(bcx, llval);
-            (get_dataptr(bcx, body), UDiv(bcx, get_fill(bcx, body), vt.llunit_size))
-        }
+        ty::ty_rptr(_, mt) => match ty::get(mt.ty).sty {
+            ty::ty_vec(_, None) | ty::ty_str => {
+                assert!(!type_is_immediate(bcx.ccx(), vec_ty));
+                let base = Load(bcx, GEPi(bcx, llval, [0u, abi::slice_elt_base]));
+                let count = Load(bcx, GEPi(bcx, llval, [0u, abi::slice_elt_len]));
+                (base, count)
+            }
+            _ => ccx.sess().bug("unexpected type (ty_rptr) in get_base_and_len"),
+        },
+        ty::ty_uniq(t) => match ty::get(t).sty {
+            ty::ty_vec(_, None) | ty::ty_str => {
+                assert!(type_is_immediate(bcx.ccx(), vec_ty));
+                let vt = vec_types(bcx, ty::sequence_element_type(bcx.tcx(), vec_ty));
+                let body = Load(bcx, llval);
+                (get_dataptr(bcx, body), UDiv(bcx, get_fill(bcx, body), vt.llunit_size))
+            }
+            _ => ccx.sess().bug("unexpected type (ty_uniq) in get_base_and_len"),
+        },
+        _ => ccx.sess().bug("unexpected type in get_base_and_len"),
     }
 }
 

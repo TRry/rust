@@ -8,7 +8,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#[feature(struct_variant, macro_rules)];
+#![feature(struct_variant, macro_rules)]
 
 #[deriving(Show)]
 struct Unit;
@@ -28,7 +28,7 @@ enum Enum {
 
 macro_rules! t {
     ($x:expr, $expected:expr) => {
-        assert_eq!(format!("{}", $x), $expected.to_owned())
+        assert_eq!(format!("{}", $x), $expected.to_string())
     }
 }
 

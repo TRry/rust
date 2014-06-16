@@ -15,14 +15,14 @@
 // memory, which makes for some *confusing* logs. That's why these are here
 // instead of in std.
 
-#[feature(macro_rules)];
+#![feature(macro_rules)]
 extern crate libc;
 
 extern crate native;
 extern crate green;
 extern crate rustuv;
 
-use std::io::Process;
+use std::io::{Process, Command};
 
 macro_rules! succeed( ($e:expr) => (
     match $e { Ok(..) => {}, Err(e) => fail!("failure: {}", e) }
@@ -31,12 +31,12 @@ macro_rules! succeed( ($e:expr) => (
 macro_rules! iotest (
     { fn $name:ident() $b:block $($a:attr)* } => (
         mod $name {
-            #[allow(unused_imports)];
+            #![allow(unused_imports)]
 
             use std::io::timer;
             use libc;
             use std::str;
-            use std::io::process::{Process, ProcessOutput};
+            use std::io::process::Command;
             use native;
             use super::*;
 
@@ -68,14 +68,14 @@ iotest!(fn test_destroy_once() {
 
 #[cfg(unix)]
 pub fn sleeper() -> Process {
-    Process::new("sleep", [~"1000"]).unwrap()
+    Command::new("sleep").arg("1000").spawn().unwrap()
 }
 #[cfg(windows)]
 pub fn sleeper() -> Process {
     // There's a `timeout` command on windows, but it doesn't like having
     // its output piped, so instead just ping ourselves a few times with
     // gaps inbetweeen so we're sure this process is alive for awhile
-    Process::new("ping", [~"127.0.0.1", ~"-n", ~"1000"]).unwrap()
+    Command::new("ping").arg("127.0.0.1").arg("-n").arg("1000").spawn().unwrap()
 }
 
 iotest!(fn test_destroy_twice() {
@@ -85,7 +85,7 @@ iotest!(fn test_destroy_twice() {
 })
 
 pub fn test_destroy_actually_kills(force: bool) {
-    use std::io::process::{Process, ProcessOutput, ExitStatus, ExitSignal};
+    use std::io::process::{Command, ProcessOutput, ExitStatus, ExitSignal};
     use std::io::timer;
     use libc;
     use std::str;
@@ -100,7 +100,7 @@ pub fn test_destroy_actually_kills(force: bool) {
     static BLOCK_COMMAND: &'static str = "cmd";
 
     // this process will stay alive indefinitely trying to read from stdin
-    let mut p = Process::new(BLOCK_COMMAND, []).unwrap();
+    let mut p = Command::new(BLOCK_COMMAND).spawn().unwrap();
 
     assert!(p.signal(0).is_ok());
 
@@ -120,7 +120,7 @@ pub fn test_destroy_actually_kills(force: bool) {
             () = rx1.recv() => {}
         }
     });
-    match p.wait() {
+    match p.wait().unwrap() {
         ExitStatus(..) => fail!("expected a signal"),
         ExitSignal(..) => tx.send(()),
     }

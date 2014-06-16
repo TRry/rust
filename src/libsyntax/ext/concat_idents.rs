@@ -16,18 +16,18 @@ use owned_slice::OwnedSlice;
 use parse::token;
 use parse::token::{str_to_ident};
 
-use std::strbuf::StrBuf;
+use std::gc::GC;
 
 pub fn expand_syntax_ext(cx: &mut ExtCtxt, sp: Span, tts: &[ast::TokenTree])
-    -> base::MacResult {
-    let mut res_str = StrBuf::new();
+                         -> Box<base::MacResult> {
+    let mut res_str = String::new();
     for (i, e) in tts.iter().enumerate() {
         if i & 1 == 1 {
             match *e {
                 ast::TTTok(_, token::COMMA) => (),
                 _ => {
                     cx.span_err(sp, "concat_idents! expecting comma.");
-                    return MacResult::dummy_expr(sp);
+                    return DummyResult::expr(sp);
                 }
             }
         } else {
@@ -37,14 +37,14 @@ pub fn expand_syntax_ext(cx: &mut ExtCtxt, sp: Span, tts: &[ast::TokenTree])
                 }
                 _ => {
                     cx.span_err(sp, "concat_idents! requires ident args.");
-                    return MacResult::dummy_expr(sp);
+                    return DummyResult::expr(sp);
                 }
             }
         }
     }
-    let res = str_to_ident(res_str.into_owned());
+    let res = str_to_ident(res_str.as_slice());
 
-    let e = @ast::Expr {
+    let e = box(GC) ast::Expr {
         id: ast::DUMMY_NODE_ID,
         node: ast::ExprPath(
             ast::Path {
@@ -61,5 +61,5 @@ pub fn expand_syntax_ext(cx: &mut ExtCtxt, sp: Span, tts: &[ast::TokenTree])
         ),
         span: sp,
     };
-    MRExpr(e)
+    MacExpr::new(e)
 }

@@ -13,7 +13,7 @@
 ######################################################################
 
 # The version number
-CFG_RELEASE_NUM=0.11
+CFG_RELEASE_NUM=0.11.0
 CFG_RELEASE_LABEL=-pre
 
 ifndef CFG_ENABLE_NIGHTLY
@@ -311,8 +311,6 @@ HSREQ$(1)_H_$(3) = $$(HBIN$(1)_H_$(3))/rustc$$(X_$(3))
 else
 HSREQ$(1)_H_$(3) = \
 	$$(HBIN$(1)_H_$(3))/rustc$$(X_$(3)) \
-	$$(HLIB$(1)_H_$(3))/stamp.rustc \
-	$$(foreach dep,$$(RUST_DEPS_rustc),$$(HLIB$(1)_H_$(3))/stamp.$$(dep)) \
 	$$(MKFILE_DEPS)
 endif
 
@@ -334,8 +332,7 @@ SREQ$(1)_T_$(2)_H_$(3) = \
 CSREQ$(1)_T_$(2)_H_$(3) = \
 	$$(TSREQ$(1)_T_$(2)_H_$(3)) \
 	$$(HBIN$(1)_H_$(3))/rustdoc$$(X_$(3)) \
-	$$(foreach dep,$$(CRATES),$$(TLIB$(1)_T_$(2)_H_$(3))/stamp.$$(dep)) \
-	$$(foreach dep,$$(HOST_CRATES),$$(HLIB$(1)_H_$(3))/stamp.$$(dep))
+	$$(foreach dep,$$(CRATES),$$(TLIB$(1)_T_$(2)_H_$(3))/stamp.$$(dep))
 
 ifeq ($(1),0)
 # Don't run the stage0 compiler under valgrind - that ship has sailed
@@ -349,21 +346,65 @@ EXTRAFLAGS_STAGE$(1) = $$(RUSTFLAGS_STAGE$(1))
 
 CFGFLAG$(1)_T_$(2)_H_$(3) = stage$(1)
 
-# Pass --cfg stage0 only for the build->host part of stage0;
-# if you're building a cross config, the host->* parts are
-# effectively stage1, since it uses the just-built stage0.
-ifeq ($(1),0)
-ifneq ($(strip $(CFG_BUILD)),$(strip $(3)))
-CFGFLAG$(1)_T_$(2)_H_$(3) = stage1
+endef
+
+# Same macro/variables as above, but defined in a separate loop so it can use
+# all the variables above for all archs. The RPATH_VAR setup sometimes needs to
+# reach across triples to get things in order.
+#
+# Defines (with the standard $(1)_T_$(2)_H_$(3) suffix):
+# * `LD_LIBRARY_PATH_ENV_NAME`: the name for the key to use in the OS
+#   environment to access or extend the lookup path for dynamic
+#   libraries.  Note on Windows, that key is `$PATH`, and thus not
+#   only conflates programs with dynamic libraries, but also often
+#   contains spaces which confuse make.
+# * `LD_LIBRARY_PATH_ENV_HOSTDIR`: the entry to add to lookup path for the host
+# * `LD_LIBRARY_PATH_ENV_TARGETDIR`: the entry to add to lookup path for target
+# 
+# Below that, HOST_RPATH_VAR and TARGET_RPATH_VAR are defined in terms of the
+# above settings.
+# 
+define SREQ_CMDS
+
+ifeq ($$(OSTYPE_$(3)),apple-darwin)
+  LD_LIBRARY_PATH_ENV_NAME$(1)_T_$(2)_H_$(3) := DYLD_LIBRARY_PATH
+else
+ifeq ($$(CFG_WINDOWSY_$(2)),1)
+  LD_LIBRARY_PATH_ENV_NAME$(1)_T_$(2)_H_$(3) := PATH
+else
+  LD_LIBRARY_PATH_ENV_NAME$(1)_T_$(2)_H_$(3) := LD_LIBRARY_PATH
 endif
 endif
 
-ifeq ($$(OSTYPE_$(3)),apple-darwin)
-  RPATH_VAR$(1)_T_$(2)_H_$(3) := \
-      DYLD_LIBRARY_PATH="$$$$DYLD_LIBRARY_PATH:$$(CURDIR)/$$(HLIB$(1)_H_$(3))"
-else
-  RPATH_VAR$(1)_T_$(2)_H_$(3) := \
-      LD_LIBRARY_PATH="$$$$LD_LIBRARY_PATH:$$(CURDIR)/$$(HLIB$(1)_H_$(3))"
+LD_LIBRARY_PATH_ENV_HOSTDIR$(1)_T_$(2)_H_$(3) := \
+    $$(CURDIR)/$$(HLIB$(1)_H_$(3))
+LD_LIBRARY_PATH_ENV_TARGETDIR$(1)_T_$(2)_H_$(3) := \
+    $$(CURDIR)/$$(TLIB1_T_$(2)_H_$(CFG_BUILD))
+
+HOST_RPATH_VAR$(1)_T_$(2)_H_$(3) := \
+  $$(LD_LIBRARY_PATH_ENV_NAME$(1)_T_$(2)_H_$(3))=$$$$$$(LD_LIBRARY_PATH_ENV_NAME$(1)_T_$(2)_H_$(3)):$$(LD_LIBRARY_PATH_ENV_HOSTDIR$(1)_T_$(2)_H_$(3))
+TARGET_RPATH_VAR$(1)_T_$(2)_H_$(3) := \
+  $$(LD_LIBRARY_PATH_ENV_NAME$(1)_T_$(2)_H_$(3))=$$$$$$(LD_LIBRARY_PATH_ENV_NAME$(1)_T_$(2)_H_$(3)):$$(LD_LIBRARY_PATH_ENV_TARGETDIR$(1)_T_$(2)_H_$(3))
+
+RPATH_VAR$(1)_T_$(2)_H_$(3) := $$(HOST_RPATH_VAR$(1)_T_$(2)_H_$(3))
+
+# Pass --cfg stage0 only for the build->host part of stage0;
+# if you're building a cross config, the host->* parts are
+# effectively stage1, since it uses the just-built stage0.
+#
+# This logic is similar to how the LD_LIBRARY_PATH variable must
+# change be slightly different when doing cross compilations.
+# The build doesn't copy over all target libraries into
+# a new directory, so we need to point the library path at
+# the build directory where all the target libraries came
+# from (the stage0 build host). Otherwise the relative rpaths
+# inside of the rustc binary won't get resolved correctly.
+ifeq ($(1),0)
+ifneq ($(strip $(CFG_BUILD)),$(strip $(3)))
+CFGFLAG$(1)_T_$(2)_H_$(3) = stage1
+
+RPATH_VAR$(1)_T_$(2)_H_$(3) := $$(TARGET_RPATH_VAR$(1)_T_$(2)_H_$(3))
+endif
 endif
 
 STAGE$(1)_T_$(2)_H_$(3) := 						\
@@ -389,6 +430,11 @@ $(foreach build,$(CFG_HOST), \
  $(eval $(foreach target,$(CFG_TARGET), \
   $(eval $(foreach stage,$(STAGES), \
    $(eval $(call SREQ,$(stage),$(target),$(build))))))))
+
+$(foreach build,$(CFG_HOST), \
+ $(eval $(foreach target,$(CFG_TARGET), \
+  $(eval $(foreach stage,$(STAGES), \
+   $(eval $(call SREQ_CMDS,$(stage),$(target),$(build))))))))
 
 ######################################################################
 # rustc-H-targets

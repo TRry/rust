@@ -8,11 +8,10 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-extern crate sync;
 extern crate arena;
 
 use std::iter::range_step;
-use sync::Future;
+use std::sync::Future;
 use arena::TypedArena;
 
 enum Tree<'a> {
@@ -40,12 +39,13 @@ fn bottom_up_tree<'r>(arena: &'r TypedArena<Tree<'r>>, item: int, depth: int)
 
 fn main() {
     let args = std::os::args();
+    let args = args.as_slice();
     let n = if std::os::getenv("RUST_BENCH").is_some() {
         17
     } else if args.len() <= 1u {
         8
     } else {
-        from_str(args[1]).unwrap()
+        from_str(args[1].as_slice()).unwrap()
     };
     let min_depth = 4;
     let max_depth = if min_depth + 2 > n {min_depth + 2} else {n};
@@ -76,7 +76,7 @@ fn main() {
                 format!("{}\t trees of depth {}\t check: {}",
                         iterations * 2, depth, chk)
             })
-        }).collect::<Vec<Future<~str>>>();
+        }).collect::<Vec<Future<String>>>();
 
     for message in messages.mut_iter() {
         println!("{}", *message.get_ref());

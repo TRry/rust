@@ -8,11 +8,9 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-extern crate rand;
-use rand::{task_rng, Rng};
-
 use std::{char, os, str};
-use std::io::{File, Process};
+use std::io::{File, Command};
+use std::rand::{task_rng, Rng};
 
 // creates unicode_input_multiple_files_{main,chars}.rs, where the
 // former imports the latter. `_chars` just contains an indentifier
@@ -36,11 +34,10 @@ fn random_char() -> char {
 
 fn main() {
     let args = os::args();
-    let rustc = args[1].as_slice();
-    let tmpdir = Path::new(args[2].as_slice());
+    let rustc = args.get(1).as_slice();
+    let tmpdir = Path::new(args.get(2).as_slice());
 
     let main_file = tmpdir.join("unicode_input_multiple_files_main.rs");
-    let main_file_str = main_file.as_str().unwrap();
     {
         let _ = File::create(&main_file).unwrap()
             .write_str("mod unicode_input_multiple_files_chars;");
@@ -57,7 +54,13 @@ fn main() {
 
         // rustc is passed to us with --out-dir and -L etc., so we
         // can't exec it directly
-        let result = Process::output("sh", [~"-c", rustc + " " + main_file_str]).unwrap();
+        let result = Command::new("sh")
+                             .arg("-c")
+                             .arg(format!("{} {}",
+                                          rustc,
+                                          main_file.as_str()
+                                                   .unwrap()).as_slice())
+                             .output().unwrap();
         let err = str::from_utf8_lossy(result.error.as_slice());
 
         // positive test so that this test will be updated when the

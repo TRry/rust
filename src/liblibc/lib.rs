@@ -1,4 +1,4 @@
-// Copyright 2012 The Rust Project Developers. See the COPYRIGHT
+// Copyright 2012-2014 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
 //
@@ -9,12 +9,11 @@
 // except according to those terms.
 
 #![feature(globs)]
-#![crate_id = "libc#0.11-pre"]
+#![crate_id = "libc#0.11.0-pre"]
 #![experimental]
 #![no_std] // we don't need std, and we can't have std, since it doesn't exist
            // yet. std depends on us.
 #![crate_type = "rlib"]
-#![crate_type = "dylib"]
 
 /*!
 * Bindings for the C standard library and other platform libraries
@@ -71,6 +70,7 @@
 */
 
 #![allow(non_camel_case_types)]
+#![allow(non_snake_case_functions)]
 #![allow(non_uppercase_statics)]
 #![allow(missing_doc)]
 #![allow(uppercase_variables)]
@@ -79,73 +79,24 @@
 #[cfg(test)] extern crate test;
 #[cfg(test)] extern crate native;
 
-// Initial glob-exports mean that all the contents of all the modules
-// wind up exported, if you're interested in writing platform-specific code.
-
-pub use types::common::c95::*;
-pub use types::common::c99::*;
-pub use types::common::posix88::*;
-pub use types::common::posix01::*;
-pub use types::common::posix08::*;
-pub use types::common::bsd44::*;
-pub use types::os::common::posix01::*;
-pub use types::os::common::bsd44::*;
-pub use types::os::arch::c95::*;
-pub use types::os::arch::c99::*;
-pub use types::os::arch::posix88::*;
-pub use types::os::arch::posix01::*;
-pub use types::os::arch::posix08::*;
-pub use types::os::arch::bsd44::*;
-pub use types::os::arch::extra::*;
-
-pub use consts::os::c95::*;
-pub use consts::os::c99::*;
-pub use consts::os::posix88::*;
-pub use consts::os::posix01::*;
-pub use consts::os::posix08::*;
-pub use consts::os::bsd44::*;
-pub use consts::os::extra::*;
-pub use consts::os::sysconf::*;
-
-pub use funcs::c95::ctype::*;
-pub use funcs::c95::stdio::*;
-pub use funcs::c95::stdlib::*;
-pub use funcs::c95::string::*;
-
-pub use funcs::posix88::stat_::*;
-pub use funcs::posix88::stdio::*;
-pub use funcs::posix88::fcntl::*;
-pub use funcs::posix88::dirent::*;
-pub use funcs::posix88::unistd::*;
-pub use funcs::posix88::mman::*;
-
-pub use funcs::posix01::stat_::*;
-pub use funcs::posix01::unistd::*;
-pub use funcs::posix01::glob::*;
-pub use funcs::posix01::mman::*;
-pub use funcs::posix08::unistd::*;
-
-pub use funcs::bsd43::*;
-pub use funcs::bsd44::*;
-pub use funcs::extra::*;
-
-#[cfg(target_os = "win32")]
-pub use funcs::extra::kernel32::*;
-#[cfg(target_os = "win32")]
-pub use funcs::extra::msvcrt::*;
-
 // Explicit export lists for the intersection (provided here) mean that
 // you can write more-platform-agnostic code if you stick to just these
 // symbols.
 
 pub use types::common::c95::{FILE, c_void, fpos_t};
+pub use types::common::c99::{int8_t, int16_t, int32_t, int64_t};
+pub use types::common::c99::{uint8_t, uint16_t, uint32_t, uint64_t};
 pub use types::common::posix88::{DIR, dirent_t};
-pub use types::os::arch::c95::{c_char, c_double, c_float, c_int};
-pub use types::os::arch::c95::{c_long, c_short, c_uchar, c_ulong};
-pub use types::os::arch::c95::{c_ushort, clock_t, ptrdiff_t};
-pub use types::os::arch::c95::{size_t, time_t};
-pub use types::os::arch::c99::{c_longlong, c_ulonglong, intptr_t};
-pub use types::os::arch::c99::{uintptr_t};
+pub use types::os::common::posix01::{timeval};
+pub use types::os::common::bsd44::{addrinfo, in_addr, in6_addr, sockaddr_storage};
+pub use types::os::common::bsd44::{ip_mreq, ip6_mreq, sockaddr, sockaddr_un};
+pub use types::os::common::bsd44::{sa_family_t, sockaddr_in, sockaddr_in6, socklen_t};
+pub use types::os::arch::c95::{c_char, c_double, c_float, c_int, c_uint};
+pub use types::os::arch::c95::{c_long, c_short, c_uchar, c_ulong, wchar_t};
+pub use types::os::arch::c95::{c_ushort, clock_t, ptrdiff_t, c_schar};
+pub use types::os::arch::c95::{size_t, time_t, suseconds_t};
+pub use types::os::arch::c99::{c_longlong, c_ulonglong};
+pub use types::os::arch::c99::{intptr_t, uintptr_t};
 pub use types::os::arch::posix88::{dev_t, ino_t, mode_t};
 pub use types::os::arch::posix88::{off_t, pid_t, ssize_t};
 
@@ -159,8 +110,15 @@ pub use consts::os::posix88::{O_RDONLY, O_RDWR, O_TRUNC, O_WRONLY};
 pub use consts::os::posix88::{R_OK, S_IEXEC, S_IFBLK, S_IFCHR};
 pub use consts::os::posix88::{S_IFDIR, S_IFIFO, S_IFMT, S_IFREG, S_IFLNK};
 pub use consts::os::posix88::{S_IREAD, S_IRUSR, S_IRWXU, S_IWUSR};
-pub use consts::os::posix88::{STDERR_FILENO, STDIN_FILENO};
+pub use consts::os::posix88::{STDERR_FILENO, STDIN_FILENO, S_IXUSR};
 pub use consts::os::posix88::{STDOUT_FILENO, W_OK, X_OK};
+pub use consts::os::bsd44::{AF_INET, AF_INET6, SOCK_STREAM, SOCK_DGRAM};
+pub use consts::os::bsd44::{IPPROTO_IP, IPPROTO_IPV6, IPPROTO_TCP, TCP_NODELAY};
+pub use consts::os::bsd44::{SOL_SOCKET, SO_KEEPALIVE, SO_ERROR};
+pub use consts::os::bsd44::{SO_REUSEADDR, SO_BROADCAST, SHUT_WR, IP_MULTICAST_LOOP};
+pub use consts::os::bsd44::{IP_ADD_MEMBERSHIP, IP_DROP_MEMBERSHIP};
+pub use consts::os::bsd44::{IPV6_ADD_MEMBERSHIP, IPV6_DROP_MEMBERSHIP};
+pub use consts::os::bsd44::{IP_MULTICAST_TTL, IP_TTL, SHUT_RD};
 
 pub use funcs::c95::ctype::{isalnum, isalpha, iscntrl, isdigit};
 pub use funcs::c95::ctype::{islower, isprint, ispunct, isspace};
@@ -169,7 +127,7 @@ pub use funcs::c95::ctype::{isupper, isxdigit, tolower, toupper};
 pub use funcs::c95::stdio::{fclose, feof, ferror, fflush, fgetc};
 pub use funcs::c95::stdio::{fgetpos, fgets, fopen, fputc, fputs};
 pub use funcs::c95::stdio::{fread, freopen, fseek, fsetpos, ftell};
-pub use funcs::c95::stdio::{fwrite, perror, puts, remove, rewind};
+pub use funcs::c95::stdio::{fwrite, perror, puts, remove, rename, rewind};
 pub use funcs::c95::stdio::{setbuf, setvbuf, tmpfile, ungetc};
 
 pub use funcs::c95::stdlib::{abs, atof, atoi, calloc, exit, _exit};
@@ -192,13 +150,151 @@ pub use funcs::posix88::unistd::{execv, execve, execvp, getcwd};
 pub use funcs::posix88::unistd::{getpid, isatty, lseek, pipe, read};
 pub use funcs::posix88::unistd::{rmdir, unlink, write};
 
+pub use funcs::bsd43::{socket, setsockopt, bind, send, recv, recvfrom};
+pub use funcs::bsd43::{listen, sendto, accept, connect, getpeername, getsockname};
+pub use funcs::bsd43::{shutdown};
+
+// But we also reexport most everything
+// if you're interested in writing platform-specific code.
+
+// FIXME: This is a mess, but the design of this entire module needs to be
+// reconsidered, so I'm not inclined to do better right now. As part of
+// #11870 I removed all the pub globs here, leaving explicit reexports
+// of everything that is actually used in-tree.
+//
+// So the following exports don't follow any particular plan.
+
+#[cfg(unix)] pub use consts::os::sysconf::{_SC_PAGESIZE};
+#[cfg(unix)] pub use consts::os::posix88::{PROT_READ, PROT_WRITE, PROT_EXEC};
+#[cfg(unix)] pub use consts::os::posix88::{MAP_FIXED, MAP_FILE, MAP_ANON, MAP_PRIVATE, MAP_FAILED};
+#[cfg(unix)] pub use consts::os::posix88::{EACCES, EBADF, EINVAL, ENODEV, ENOMEM};
+#[cfg(unix)] pub use consts::os::posix88::{ECONNREFUSED, ECONNRESET, EPERM, EPIPE};
+#[cfg(unix)] pub use consts::os::posix88::{ENOTCONN, ECONNABORTED, EADDRNOTAVAIL, EINTR};
+#[cfg(unix)] pub use consts::os::posix88::{EADDRINUSE, ENOENT, EISDIR, EAGAIN, EWOULDBLOCK};
+#[cfg(unix)] pub use consts::os::posix88::{ECANCELED, SIGINT, EINPROGRESS};
+#[cfg(unix)] pub use consts::os::posix88::{ENOSYS, ENOTTY, ETIMEDOUT};
+#[cfg(unix)] pub use consts::os::posix88::{SIGTERM, SIGKILL, SIGPIPE, PROT_NONE};
+#[cfg(unix)] pub use consts::os::posix01::{SIG_IGN};
+#[cfg(unix)] pub use consts::os::bsd44::{AF_UNIX};
+
+#[cfg(unix)] pub use types::os::common::posix01::{pthread_t, timespec, timezone};
+
+#[cfg(unix)] pub use types::os::arch::posix88::{uid_t, gid_t};
+#[cfg(unix)] pub use types::os::arch::posix01::{pthread_attr_t};
+#[cfg(unix)] pub use types::os::arch::posix01::{stat, utimbuf};
+#[cfg(unix)] pub use funcs::posix88::unistd::{sysconf, setgid, setsid, setuid, pread, pwrite};
+#[cfg(unix)] pub use funcs::posix88::unistd::{getgid, getuid};
+#[cfg(unix)] pub use funcs::posix88::unistd::{_PC_NAME_MAX, utime, nanosleep, pathconf, link};
+#[cfg(unix)] pub use funcs::posix88::unistd::{chown};
+#[cfg(unix)] pub use funcs::posix88::mman::{mmap, munmap, mprotect};
+#[cfg(unix)] pub use funcs::posix88::dirent::{opendir, readdir_r, closedir};
+#[cfg(unix)] pub use funcs::posix88::fcntl::{fcntl};
+#[cfg(unix)] pub use funcs::posix01::stat_::{lstat};
+#[cfg(unix)] pub use funcs::posix01::unistd::{fsync, ftruncate};
+#[cfg(unix)] pub use funcs::posix01::unistd::{readlink, symlink};
+
+#[cfg(windows)] pub use consts::os::c95::{WSAECONNREFUSED, WSAECONNRESET, WSAEACCES};
+#[cfg(windows)] pub use consts::os::c95::{WSAEWOULDBLOCK, WSAENOTCONN, WSAECONNABORTED};
+#[cfg(windows)] pub use consts::os::c95::{WSAEADDRNOTAVAIL, WSAEADDRINUSE, WSAEINTR};
+#[cfg(windows)] pub use consts::os::c95::{WSAEINPROGRESS, WSAEINVAL};
+#[cfg(windows)] pub use consts::os::extra::{ERROR_INSUFFICIENT_BUFFER};
+#[cfg(windows)] pub use consts::os::extra::{O_BINARY, O_NOINHERIT, PAGE_NOACCESS};
+#[cfg(windows)] pub use consts::os::extra::{PAGE_READONLY, PAGE_READWRITE, PAGE_EXECUTE};
+#[cfg(windows)] pub use consts::os::extra::{PAGE_EXECUTE_READ, PAGE_EXECUTE_READWRITE};
+#[cfg(windows)] pub use consts::os::extra::{MEM_COMMIT, MEM_RESERVE, MEM_RELEASE};
+#[cfg(windows)] pub use consts::os::extra::{FILE_MAP_READ, FILE_MAP_WRITE, FILE_MAP_EXECUTE};
+#[cfg(windows)] pub use consts::os::extra::{ERROR_ALREADY_EXISTS, ERROR_NO_DATA};
+#[cfg(windows)] pub use consts::os::extra::{ERROR_FILE_NOT_FOUND, ERROR_INVALID_NAME};
+#[cfg(windows)] pub use consts::os::extra::{ERROR_BROKEN_PIPE, ERROR_INVALID_FUNCTION};
+#[cfg(windows)] pub use consts::os::extra::{ERROR_CALL_NOT_IMPLEMENTED};
+#[cfg(windows)] pub use consts::os::extra::{ERROR_NOTHING_TO_TERMINATE};
+#[cfg(windows)] pub use consts::os::extra::{ERROR_INVALID_HANDLE};
+#[cfg(windows)] pub use consts::os::extra::{TRUE, FALSE, INFINITE};
+#[cfg(windows)] pub use consts::os::extra::{PROCESS_TERMINATE, PROCESS_QUERY_INFORMATION};
+#[cfg(windows)] pub use consts::os::extra::{STILL_ACTIVE, DETACHED_PROCESS};
+#[cfg(windows)] pub use consts::os::extra::{CREATE_NEW_PROCESS_GROUP, CREATE_UNICODE_ENVIRONMENT};
+#[cfg(windows)] pub use consts::os::extra::{FILE_BEGIN, FILE_END, FILE_CURRENT};
+#[cfg(windows)] pub use consts::os::extra::{FILE_GENERIC_READ, FILE_GENERIC_WRITE};
+#[cfg(windows)] pub use consts::os::extra::{FILE_SHARE_READ, FILE_SHARE_WRITE, FILE_SHARE_DELETE};
+#[cfg(windows)] pub use consts::os::extra::{TRUNCATE_EXISTING, CREATE_ALWAYS, OPEN_EXISTING};
+#[cfg(windows)] pub use consts::os::extra::{CREATE_NEW, FILE_APPEND_DATA, FILE_WRITE_DATA};
+#[cfg(windows)] pub use consts::os::extra::{OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL};
+#[cfg(windows)] pub use consts::os::extra::{FILE_FLAG_BACKUP_SEMANTICS, INVALID_HANDLE_VALUE};
+#[cfg(windows)] pub use consts::os::extra::{MOVEFILE_REPLACE_EXISTING};
+#[cfg(windows)] pub use consts::os::extra::{GENERIC_READ, GENERIC_WRITE};
+#[cfg(windows)] pub use consts::os::extra::{VOLUME_NAME_DOS, FILE_ATTRIBUTE_NORMAL};
+#[cfg(windows)] pub use consts::os::extra::{PIPE_ACCESS_DUPLEX, FILE_FLAG_FIRST_PIPE_INSTANCE};
+#[cfg(windows)] pub use consts::os::extra::{FILE_FLAG_OVERLAPPED, PIPE_TYPE_BYTE};
+#[cfg(windows)] pub use consts::os::extra::{PIPE_READMODE_BYTE, PIPE_WAIT};
+#[cfg(windows)] pub use consts::os::extra::{PIPE_UNLIMITED_INSTANCES, ERROR_ACCESS_DENIED};
+#[cfg(windows)] pub use consts::os::extra::{FILE_WRITE_ATTRIBUTES, FILE_READ_ATTRIBUTES};
+#[cfg(windows)] pub use consts::os::extra::{ERROR_PIPE_BUSY, ERROR_IO_PENDING};
+#[cfg(windows)] pub use consts::os::extra::{ERROR_PIPE_CONNECTED, WAIT_OBJECT_0};
+#[cfg(windows)] pub use consts::os::extra::{ERROR_NOT_FOUND};
+#[cfg(windows)] pub use consts::os::extra::{ERROR_OPERATION_ABORTED};
+#[cfg(windows)] pub use types::os::common::bsd44::{SOCKET};
+#[cfg(windows)] pub use types::os::common::posix01::{stat, utimbuf};
+#[cfg(windows)] pub use types::os::arch::extra::{HANDLE, BOOL, LPSECURITY_ATTRIBUTES};
+#[cfg(windows)] pub use types::os::arch::extra::{LPCSTR, WORD, DWORD, BYTE, FILETIME};
+#[cfg(windows)] pub use types::os::arch::extra::{LARGE_INTEGER, LPVOID, LONG};
+#[cfg(windows)] pub use types::os::arch::extra::{time64_t, OVERLAPPED, LPCWSTR};
+#[cfg(windows)] pub use types::os::arch::extra::{LPOVERLAPPED, SIZE_T, LPDWORD};
+#[cfg(windows)] pub use types::os::arch::extra::{SECURITY_ATTRIBUTES};
+#[cfg(windows)] pub use funcs::c95::string::{wcslen};
+#[cfg(windows)] pub use funcs::posix88::stat_::{wstat, wutime, wchmod, wrmdir};
+#[cfg(windows)] pub use funcs::bsd43::{closesocket};
+#[cfg(windows)] pub use funcs::extra::kernel32::{GetCurrentDirectoryW, GetLastError};
+#[cfg(windows)] pub use funcs::extra::kernel32::{GetEnvironmentVariableW, SetEnvironmentVariableW};
+#[cfg(windows)] pub use funcs::extra::kernel32::{GetModuleFileNameW, SetCurrentDirectoryW};
+#[cfg(windows)] pub use funcs::extra::kernel32::{GetSystemInfo, VirtualAlloc, VirtualFree};
+#[cfg(windows)] pub use funcs::extra::kernel32::{CreateFileMappingW, MapViewOfFile};
+#[cfg(windows)] pub use funcs::extra::kernel32::{UnmapViewOfFile, CloseHandle};
+#[cfg(windows)] pub use funcs::extra::kernel32::{WaitForSingleObject, GetSystemTimeAsFileTime};
+#[cfg(windows)] pub use funcs::extra::kernel32::{QueryPerformanceCounter};
+#[cfg(windows)] pub use funcs::extra::kernel32::{WaitForSingleObject, QueryPerformanceFrequency};
+#[cfg(windows)] pub use funcs::extra::kernel32::{GetExitCodeProcess, TerminateProcess};
+#[cfg(windows)] pub use funcs::extra::kernel32::{ReadFile, WriteFile, SetFilePointerEx};
+#[cfg(windows)] pub use funcs::extra::kernel32::{FlushFileBuffers, SetEndOfFile, CreateFileW};
+#[cfg(windows)] pub use funcs::extra::kernel32::{CreateDirectoryW, FindFirstFileW};
+#[cfg(windows)] pub use funcs::extra::kernel32::{FindNextFileW, FindClose, DeleteFileW};
+#[cfg(windows)] pub use funcs::extra::kernel32::{CreateHardLinkW, CreateEventW};
+#[cfg(windows)] pub use funcs::extra::kernel32::{FlushFileBuffers, CreateNamedPipeW};
+#[cfg(windows)] pub use funcs::extra::kernel32::{SetNamedPipeHandleState, WaitNamedPipeW};
+#[cfg(windows)] pub use funcs::extra::kernel32::{GetOverlappedResult, ConnectNamedPipe};
+#[cfg(windows)] pub use funcs::extra::kernel32::{DisconnectNamedPipe, OpenProcess};
+#[cfg(windows)] pub use funcs::extra::kernel32::{MoveFileExW, VirtualProtect};
+#[cfg(windows)] pub use funcs::extra::msvcrt::{get_osfhandle, open_osfhandle};
+
+#[cfg(target_os = "linux")] #[cfg(target_os = "android")] #[cfg(target_os = "freebsd")]
+pub use consts::os::posix01::{CLOCK_REALTIME, CLOCK_MONOTONIC};
+
+#[cfg(target_os = "linux")] #[cfg(target_os = "android")]
+pub use funcs::posix01::unistd::{fdatasync};
+
+#[cfg(unix, not(target_os = "freebsd"))]
+pub use consts::os::extra::{MAP_STACK};
+
+#[cfg(target_os = "freebsd")]
+pub use consts::os::bsd44::{TCP_KEEPIDLE};
+
+#[cfg(target_os = "macos")]
+#[cfg(target_os = "ios")]
+pub use consts::os::bsd44::{TCP_KEEPALIVE};
+#[cfg(target_os = "macos")]
+#[cfg(target_os = "ios")]
+pub use consts::os::extra::{F_FULLFSYNC};
+#[cfg(target_os = "macos")]
+#[cfg(target_os = "ios")]
+pub use types::os::arch::extra::{mach_timebase_info};
+
+
 #[cfg(not(windows))]
 #[link(name = "c")]
 #[link(name = "m")]
 extern {}
 
 /// A wrapper for a nullable pointer. Don't use this except for interacting
-/// with libc. Basically Option, but without the dependance on libstd.
+/// with libc. Basically Option, but without the dependence on libstd.
 // If/when libprim happens, this can be removed in favor of that
 pub enum Nullable<T> {
     Null,
@@ -229,8 +325,8 @@ pub mod types {
             */
             #[repr(u8)]
             pub enum c_void {
-                priv variant1,
-                priv variant2
+                __variant1,
+                __variant2,
             }
             pub enum FILE {}
             pub enum fpos_t {}
@@ -342,8 +438,19 @@ pub mod types {
                     pub ai_socktype: c_int,
                     pub ai_protocol: c_int,
                     pub ai_addrlen: socklen_t,
+
+                    #[cfg(target_os = "linux")]
                     pub ai_addr: *sockaddr,
+
+                    #[cfg(target_os = "linux")]
                     pub ai_canonname: *c_char,
+
+                    #[cfg(target_os = "android")]
+                    pub ai_canonname: *c_char,
+
+                    #[cfg(target_os = "android")]
+                    pub ai_addr: *sockaddr,
+
                     pub ai_next: *addrinfo,
                 }
                 pub struct sockaddr_un {
@@ -1041,8 +1148,12 @@ pub mod types {
                 pub type LPWCH = *mut WCHAR;
                 pub type LPCH = *mut CHAR;
 
-                // Not really, but opaque to us.
-                pub type LPSECURITY_ATTRIBUTES = LPVOID;
+                pub struct SECURITY_ATTRIBUTES {
+                    pub nLength: DWORD,
+                    pub lpSecurityDescriptor: LPVOID,
+                    pub bInheritHandle: BOOL,
+                }
+                pub type LPSECURITY_ATTRIBUTES = *mut SECURITY_ATTRIBUTES;
 
                 pub type LPVOID = *mut c_void;
                 pub type LPCVOID = *c_void;
@@ -1135,8 +1246,8 @@ pub mod types {
 
                 pub struct GUID {
                     pub Data1: DWORD,
-                    pub Data2: DWORD,
-                    pub Data3: DWORD,
+                    pub Data2: WORD,
+                    pub Data3: WORD,
                     pub Data4: [BYTE, ..8],
                 }
 
@@ -1178,6 +1289,7 @@ pub mod types {
     }
 
     #[cfg(target_os = "macos")]
+    #[cfg(target_os = "ios")]
     pub mod os {
         pub mod common {
             pub mod posix01 {
@@ -1622,6 +1734,7 @@ pub mod consts {
             pub static SO_KEEPALIVE: c_int = 8;
             pub static SO_BROADCAST: c_int = 32;
             pub static SO_REUSEADDR: c_int = 4;
+            pub static SO_ERROR: c_int = 0x1007;
 
             pub static SHUT_RD: c_int = 0;
             pub static SHUT_WR: c_int = 1;
@@ -1645,6 +1758,7 @@ pub mod consts {
             pub static ERROR_INVALID_HANDLE : c_int = 6;
             pub static ERROR_BROKEN_PIPE: c_int = 109;
             pub static ERROR_DISK_FULL : c_int = 112;
+            pub static ERROR_CALL_NOT_IMPLEMENTED : c_int = 120;
             pub static ERROR_INSUFFICIENT_BUFFER : c_int = 122;
             pub static ERROR_INVALID_NAME : c_int = 123;
             pub static ERROR_ALREADY_EXISTS : c_int = 183;
@@ -1652,8 +1766,11 @@ pub mod consts {
             pub static ERROR_NO_DATA: c_int = 232;
             pub static ERROR_INVALID_ADDRESS : c_int = 487;
             pub static ERROR_PIPE_CONNECTED: c_int = 535;
+            pub static ERROR_NOTHING_TO_TERMINATE: c_int = 758;
+            pub static ERROR_OPERATION_ABORTED: c_int = 995;
             pub static ERROR_IO_PENDING: c_int = 997;
             pub static ERROR_FILE_INVALID : c_int = 1006;
+            pub static ERROR_NOT_FOUND: c_int = 1168;
             pub static INVALID_HANDLE_VALUE : c_int = -1;
 
             pub static DELETE : DWORD = 0x00010000;
@@ -1834,6 +1951,7 @@ pub mod consts {
 
             pub static DETACHED_PROCESS: DWORD = 0x00000008;
             pub static CREATE_NEW_PROCESS_GROUP: DWORD = 0x00000200;
+            pub static CREATE_UNICODE_ENVIRONMENT: DWORD = 0x00000400;
 
             pub static PIPE_ACCESS_DUPLEX: DWORD = 0x00000003;
             pub static PIPE_ACCESS_INBOUND: DWORD = 0x00000001;
@@ -2369,11 +2487,12 @@ pub mod consts {
 
             pub static CLOCK_REALTIME: c_int = 0;
             pub static CLOCK_MONOTONIC: c_int = 1;
-
-            pub static WNOHANG: c_int = 1;
         }
         pub mod posix08 {
         }
+        #[cfg(target_arch = "arm")]
+        #[cfg(target_arch = "x86")]
+        #[cfg(target_arch = "x86_64")]
         pub mod bsd44 {
             use types::os::arch::c95::c_int;
 
@@ -2410,6 +2529,50 @@ pub mod consts {
             pub static SO_KEEPALIVE: c_int = 9;
             pub static SO_BROADCAST: c_int = 6;
             pub static SO_REUSEADDR: c_int = 2;
+            pub static SO_ERROR: c_int = 4;
+
+            pub static SHUT_RD: c_int = 0;
+            pub static SHUT_WR: c_int = 1;
+            pub static SHUT_RDWR: c_int = 2;
+        }
+        #[cfg(target_arch = "mips")]
+        pub mod bsd44 {
+            use types::os::arch::c95::c_int;
+
+            pub static MADV_NORMAL : c_int = 0;
+            pub static MADV_RANDOM : c_int = 1;
+            pub static MADV_SEQUENTIAL : c_int = 2;
+            pub static MADV_WILLNEED : c_int = 3;
+            pub static MADV_DONTNEED : c_int = 4;
+            pub static MADV_REMOVE : c_int = 9;
+            pub static MADV_DONTFORK : c_int = 10;
+            pub static MADV_DOFORK : c_int = 11;
+            pub static MADV_MERGEABLE : c_int = 12;
+            pub static MADV_UNMERGEABLE : c_int = 13;
+            pub static MADV_HWPOISON : c_int = 100;
+
+            pub static AF_UNIX: c_int = 1;
+            pub static AF_INET: c_int = 2;
+            pub static AF_INET6: c_int = 10;
+            pub static SOCK_STREAM: c_int = 2;
+            pub static SOCK_DGRAM: c_int = 1;
+            pub static IPPROTO_TCP: c_int = 6;
+            pub static IPPROTO_IP: c_int = 0;
+            pub static IPPROTO_IPV6: c_int = 41;
+            pub static IP_MULTICAST_TTL: c_int = 33;
+            pub static IP_MULTICAST_LOOP: c_int = 34;
+            pub static IP_TTL: c_int = 2;
+            pub static IP_ADD_MEMBERSHIP: c_int = 35;
+            pub static IP_DROP_MEMBERSHIP: c_int = 36;
+            pub static IPV6_ADD_MEMBERSHIP: c_int = 20;
+            pub static IPV6_DROP_MEMBERSHIP: c_int = 21;
+
+            pub static TCP_NODELAY: c_int = 1;
+            pub static SOL_SOCKET: c_int = 65535;
+            pub static SO_KEEPALIVE: c_int = 8;
+            pub static SO_BROADCAST: c_int = 32;
+            pub static SO_REUSEADDR: c_int = 4;
+            pub static SO_ERROR: c_int = 4103;
 
             pub static SHUT_RD: c_int = 0;
             pub static SHUT_WR: c_int = 1;
@@ -2819,8 +2982,6 @@ pub mod consts {
 
             pub static CLOCK_REALTIME: c_int = 0;
             pub static CLOCK_MONOTONIC: c_int = 4;
-
-            pub static WNOHANG: c_int = 1;
         }
         pub mod posix08 {
         }
@@ -2868,6 +3029,7 @@ pub mod consts {
             pub static SO_KEEPALIVE: c_int = 0x0008;
             pub static SO_BROADCAST: c_int = 0x0020;
             pub static SO_REUSEADDR: c_int = 0x0004;
+            pub static SO_ERROR: c_int = 0x1007;
 
             pub static SHUT_RD: c_int = 0;
             pub static SHUT_WR: c_int = 1;
@@ -2948,6 +3110,7 @@ pub mod consts {
     }
 
     #[cfg(target_os = "macos")]
+    #[cfg(target_os = "ios")]
     pub mod os {
         pub mod c95 {
             use types::os::arch::c95::{c_int, c_uint};
@@ -3028,7 +3191,6 @@ pub mod consts {
             pub static MAP_PRIVATE : c_int = 0x0002;
             pub static MAP_FIXED : c_int = 0x0010;
             pub static MAP_ANON : c_int = 0x1000;
-            pub static MAP_STACK : c_int = 0;
 
             pub static MAP_FAILED : *c_void = -1 as *c_void;
 
@@ -3208,8 +3370,6 @@ pub mod consts {
             pub static PTHREAD_CREATE_JOINABLE: c_int = 1;
             pub static PTHREAD_CREATE_DETACHED: c_int = 2;
             pub static PTHREAD_STACK_MIN: size_t = 8192;
-
-            pub static WNOHANG: c_int = 1;
         }
         pub mod posix08 {
         }
@@ -3255,6 +3415,7 @@ pub mod consts {
             pub static SO_KEEPALIVE: c_int = 0x0008;
             pub static SO_BROADCAST: c_int = 0x0020;
             pub static SO_REUSEADDR: c_int = 0x0004;
+            pub static SO_ERROR: c_int = 0x1007;
 
             pub static SHUT_RD: c_int = 0;
             pub static SHUT_WR: c_int = 1;
@@ -3274,6 +3435,7 @@ pub mod consts {
             pub static MAP_HASSEMAPHORE : c_int = 0x0200;
             pub static MAP_NOCACHE : c_int = 0x0400;
             pub static MAP_JIT : c_int = 0x0800;
+            pub static MAP_STACK : c_int = 0;
         }
         pub mod sysconf {
             use types::os::arch::c95::c_int;
@@ -3340,7 +3502,7 @@ pub mod consts {
 
 
 pub mod funcs {
-    // Thankfull most of c95 is universally available and does not vary by OS
+    // Thankfully most of c95 is universally available and does not vary by OS
     // or anything. The same is not true of POSIX.
 
     pub mod c95 {
@@ -3612,6 +3774,7 @@ pub mod funcs {
     #[cfg(target_os = "linux")]
     #[cfg(target_os = "android")]
     #[cfg(target_os = "macos")]
+    #[cfg(target_os = "ios")]
     #[cfg(target_os = "freebsd")]
     pub mod posix88 {
         pub mod stat_ {
@@ -3626,6 +3789,7 @@ pub mod funcs {
                 #[cfg(target_os = "linux")]
                 #[cfg(target_os = "freebsd")]
                 #[cfg(target_os = "android")]
+                #[cfg(target_os = "ios")]
                 pub fn fstat(fildes: c_int, buf: *mut stat) -> c_int;
 
                 #[cfg(target_os = "macos")]
@@ -3638,6 +3802,7 @@ pub mod funcs {
                 #[cfg(target_os = "linux")]
                 #[cfg(target_os = "freebsd")]
                 #[cfg(target_os = "android")]
+                #[cfg(target_os = "ios")]
                 pub fn stat(path: *c_char, buf: *mut stat) -> c_int;
 
                 #[cfg(target_os = "macos")]
@@ -3810,6 +3975,7 @@ pub mod funcs {
     #[cfg(target_os = "linux")]
     #[cfg(target_os = "android")]
     #[cfg(target_os = "macos")]
+    #[cfg(target_os = "ios")]
     #[cfg(target_os = "freebsd")]
     pub mod posix01 {
         pub mod stat_ {
@@ -3820,6 +3986,7 @@ pub mod funcs {
                 #[cfg(target_os = "linux")]
                 #[cfg(target_os = "freebsd")]
                 #[cfg(target_os = "android")]
+                #[cfg(target_os = "ios")]
                 pub fn lstat(path: *c_char, buf: *mut stat) -> c_int;
 
                 #[cfg(target_os = "macos")]
@@ -3873,16 +4040,6 @@ pub mod funcs {
             }
         }
 
-        pub mod wait {
-            use types::os::arch::c95::{c_int};
-            use types::os::arch::posix88::{pid_t};
-
-            extern {
-                pub fn waitpid(pid: pid_t, status: *mut c_int, options: c_int)
-                               -> pid_t;
-            }
-        }
-
         pub mod glob {
             use types::os::arch::c95::{c_char, c_int};
             use types::os::common::posix01::{glob_t};
@@ -3929,6 +4086,7 @@ pub mod funcs {
     #[cfg(target_os = "linux")]
     #[cfg(target_os = "android")]
     #[cfg(target_os = "macos")]
+    #[cfg(target_os = "ios")]
     #[cfg(target_os = "freebsd")]
     pub mod posix08 {
         pub mod unistd {
@@ -4009,6 +4167,7 @@ pub mod funcs {
     }
 
     #[cfg(target_os = "macos")]
+    #[cfg(target_os = "ios")]
     #[cfg(target_os = "freebsd")]
     pub mod bsd44 {
         use types::common::c95::{c_void};
@@ -4062,6 +4221,7 @@ pub mod funcs {
     }
 
     #[cfg(target_os = "macos")]
+    #[cfg(target_os = "ios")]
     pub mod extra {
         use types::os::arch::c95::{c_char, c_int};
 
@@ -4087,16 +4247,16 @@ pub mod funcs {
         pub mod kernel32 {
             use types::os::arch::c95::{c_uint};
             use types::os::arch::extra::{BOOL, DWORD, SIZE_T, HMODULE,
-                                               LPCWSTR, LPWSTR, LPCSTR, LPSTR,
-                                               LPCH, LPDWORD, LPVOID,
+                                               LPCWSTR, LPWSTR,
+                                               LPWCH, LPDWORD, LPVOID,
                                                LPCVOID, LPOVERLAPPED,
                                                LPSECURITY_ATTRIBUTES,
                                                LPSTARTUPINFO,
                                                LPPROCESS_INFORMATION,
                                                LPMEMORY_BASIC_INFORMATION,
-                                               LPSYSTEM_INFO, BOOLEAN,
-                                               HANDLE, LPHANDLE, LARGE_INTEGER,
-                                               PLARGE_INTEGER, LPFILETIME};
+                                               LPSYSTEM_INFO, HANDLE, LPHANDLE,
+                                               LARGE_INTEGER, PLARGE_INTEGER,
+                                               LPFILETIME};
 
             extern "system" {
                 pub fn GetEnvironmentVariableW(n: LPCWSTR,
@@ -4105,8 +4265,8 @@ pub mod funcs {
                                                -> DWORD;
                 pub fn SetEnvironmentVariableW(n: LPCWSTR, v: LPCWSTR)
                                                -> BOOL;
-                pub fn GetEnvironmentStringsA() -> LPCH;
-                pub fn FreeEnvironmentStringsA(env_ptr: LPCH) -> BOOL;
+                pub fn GetEnvironmentStringsW() -> LPWCH;
+                pub fn FreeEnvironmentStringsW(env_ptr: LPWCH) -> BOOL;
                 pub fn GetModuleFileNameW(hModule: HMODULE,
                                           lpFilename: LPWSTR,
                                           nSize: DWORD)
@@ -4145,8 +4305,8 @@ pub mod funcs {
                                    dwProcessId: DWORD)
                                    -> HANDLE;
                 pub fn GetCurrentProcess() -> HANDLE;
-                pub fn CreateProcessA(lpApplicationName: LPCSTR,
-                                      lpCommandLine: LPSTR,
+                pub fn CreateProcessW(lpApplicationName: LPCWSTR,
+                                      lpCommandLine: LPWSTR,
                                       lpProcessAttributes:
                                       LPSECURITY_ATTRIBUTES,
                                       lpThreadAttributes:
@@ -4154,7 +4314,7 @@ pub mod funcs {
                                       bInheritHandles: BOOL,
                                       dwCreationFlags: DWORD,
                                       lpEnvironment: LPVOID,
-                                      lpCurrentDirectory: LPCSTR,
+                                      lpCurrentDirectory: LPCWSTR,
                                       lpStartupInfo: LPSTARTUPINFO,
                                       lpProcessInformation:
                                       LPPROCESS_INFORMATION)
@@ -4206,9 +4366,6 @@ pub mod funcs {
                 pub fn MoveFileExW(lpExistingFileName: LPCWSTR,
                                    lpNewFileName: LPCWSTR,
                                    dwFlags: DWORD) -> BOOL;
-                pub fn CreateSymbolicLinkW(lpSymlinkFileName: LPCWSTR,
-                                           lpTargetFileName: LPCWSTR,
-                                           dwFlags: DWORD) -> BOOLEAN;
                 pub fn CreateHardLinkW(lpSymlinkFileName: LPCWSTR,
                                        lpTargetFileName: LPCWSTR,
                                        lpSecurityAttributes: LPSECURITY_ATTRIBUTES)
@@ -4221,10 +4378,6 @@ pub mod funcs {
                                    dwCreationDisposition: DWORD,
                                    dwFlagsAndAttributes: DWORD,
                                    hTemplateFile: HANDLE) -> HANDLE;
-                pub fn GetFinalPathNameByHandleW(hFile: HANDLE,
-                                                 lpszFilePath: LPCWSTR,
-                                                 cchFilePath: DWORD,
-                                                 dwFlags: DWORD) -> DWORD;
                 pub fn ReadFile(hFile: HANDLE,
                                 lpBuffer: LPVOID,
                                 nNumberOfBytesToRead: DWORD,
@@ -4299,5 +4452,8 @@ pub mod funcs {
         }
     }
 }
+
+#[doc(hidden)]
+pub fn issue_14344_workaround() {} // FIXME #14344 force linkage to happen correctly
 
 #[test] fn work_on_windows() { } // FIXME #10872 needed for a happy windows

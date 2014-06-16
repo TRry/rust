@@ -16,7 +16,7 @@ Utilities for program-wide and customizable logging
 
 ```
 #![feature(phase)]
-#[phase(syntax, link)] extern crate log;
+#[phase(plugin, link)] extern crate log;
 
 fn main() {
     debug!("this is a debug {}", "message");
@@ -40,12 +40,12 @@ There are five macros that the logging subsystem uses:
 * `warn!(...)` - a macro hard-wired to the log level of `WARN`
 * `error!(...)` - a macro hard-wired to the log level of `ERROR`
 
-All of these macros use std::the same style of syntax as the `format!` syntax
+All of these macros use the same style of syntax as the `format!` syntax
 extension. Details about the syntax can be found in the documentation of
 `std::fmt` along with the Rust tutorial/manual.
 
 If you want to check at runtime if a given logging level is enabled (e.g. if the
-information you would want to log is expensive to produce), you can use std::the
+information you would want to log is expensive to produce), you can use the
 following macro:
 
 * `log_enabled!(level)` - returns true if logging of the given level is enabled
@@ -57,13 +57,13 @@ disabled except for `error!` (a log level of 1). Logging is controlled via the
 `RUST_LOG` environment variable. The value of this environment variable is a
 comma-separated list of logging directives. A logging directive is of the form:
 
-```notrust
+```text
 path::to::module=log_level
 ```
 
 The path to the module is rooted in the name of the crate it was compiled for,
 so if your program is contained in a file `hello.rs`, for example, to turn on
-logging for this file you would use std::a value of `RUST_LOG=hello`.
+logging for this file you would use a value of `RUST_LOG=hello`.
 Furthermore, this path is a prefix-search, so all modules nested in the
 specified module will also have logging enabled.
 
@@ -80,7 +80,7 @@ all modules is set to this value.
 
 Some examples of valid values of `RUST_LOG` are:
 
-```notrust
+```text
 hello                // turns on all logging for the 'hello' module
 info                 // turns on all info logging
 hello=debug          // turns on debug logging for 'hello'
@@ -105,29 +105,28 @@ if logging is disabled, none of the components of the log will be executed.
 
 */
 
-#![crate_id = "log#0.11-pre"]
+#![crate_id = "log#0.11.0-pre"]
 #![license = "MIT/ASL2"]
 #![crate_type = "rlib"]
 #![crate_type = "dylib"]
 #![doc(html_logo_url = "http://www.rust-lang.org/logos/rust-logo-128x128-blk-v2.png",
        html_favicon_url = "http://www.rust-lang.org/favicon.ico",
-       html_root_url = "http://static.rust-lang.org/doc/master")]
+       html_root_url = "http://doc.rust-lang.org/",
+       html_playground_url = "http://play.rust-lang.org/")]
 
 #![feature(macro_rules)]
-#![deny(missing_doc, deprecated_owned_vector)]
+#![deny(missing_doc)]
 
-extern crate sync;
-
-use std::cast;
 use std::fmt;
 use std::io::LineBufferedWriter;
 use std::io;
-use std::local_data;
+use std::mem;
 use std::os;
 use std::rt;
 use std::slice;
+use std::sync::{Once, ONCE_INIT};
 
-use sync::one::{Once, ONCE_INIT};
+use directive::LOG_LEVEL_NAMES;
 
 pub mod macros;
 mod directive;
@@ -156,25 +155,48 @@ pub static WARN: u32 = 2;
 /// Error log level
 pub static ERROR: u32 = 1;
 
-local_data_key!(local_logger: ~Logger:Send)
+local_data_key!(local_logger: Box<Logger + Send>)
 
 /// A trait used to represent an interface to a task-local logger. Each task
 /// can have its own custom logger which can respond to logging messages
 /// however it likes.
 pub trait Logger {
-    /// Logs a single message described by the `args` structure. The level is
-    /// provided in case you want to do things like color the message, etc.
-    fn log(&mut self, level: u32, args: &fmt::Arguments);
+    /// Logs a single message described by the `record`.
+    fn log(&mut self, record: &LogRecord);
 }
 
 struct DefaultLogger {
     handle: LineBufferedWriter<io::stdio::StdWriter>,
 }
 
+/// Wraps the log level with fmt implementations.
+#[deriving(PartialEq, PartialOrd)]
+pub struct LogLevel(pub u32);
+
+impl fmt::Show for LogLevel {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        let LogLevel(level) = *self;
+        match LOG_LEVEL_NAMES.get(level as uint - 1) {
+            Some(name) => name.fmt(fmt),
+            None => level.fmt(fmt)
+        }
+    }
+}
+
+impl fmt::Signed for LogLevel {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        let LogLevel(level) = *self;
+        write!(fmt, "{}", level)
+    }
+}
+
 impl Logger for DefaultLogger {
-    // by default, just ignore the level
-    fn log(&mut self, _level: u32, args: &fmt::Arguments) {
-        match fmt::writeln(&mut self.handle, args) {
+    fn log(&mut self, record: &LogRecord) {
+        match writeln!(&mut self.handle,
+                       "{}:{}: {}",
+                       record.level,
+                       record.module_path,
+                       record.args) {
             Err(e) => fail!("failed to log: {}", e),
             Ok(()) => {}
         }
@@ -198,15 +220,22 @@ impl Drop for DefaultLogger {
 ///
 /// It is not recommended to call this function directly, rather it should be
 /// invoked through the logging family of macros.
-pub fn log(level: u32, args: &fmt::Arguments) {
+#[doc(hidden)]
+pub fn log(level: u32, loc: &'static LogLocation, args: &fmt::Arguments) {
     // Completely remove the local logger from TLS in case anyone attempts to
     // frob the slot while we're doing the logging. This will destroy any logger
     // set during logging.
-    let mut logger = local_data::pop(local_logger).unwrap_or_else(|| {
-        ~DefaultLogger { handle: io::stderr() } as ~Logger:Send
+    let mut logger = local_logger.replace(None).unwrap_or_else(|| {
+        box DefaultLogger { handle: io::stderr() } as Box<Logger + Send>
     });
-    logger.log(level, args);
-    local_data::set(local_logger, logger);
+    logger.log(&LogRecord {
+        level: LogLevel(level),
+        args: args,
+        file: loc.file,
+        module_path: loc.module_path,
+        line: loc.line,
+    });
+    local_logger.replace(Some(logger));
 }
 
 /// Getter for the global log level. This is a function so that it can be called
@@ -217,10 +246,36 @@ pub fn log_level() -> u32 { unsafe { LOG_LEVEL } }
 
 /// Replaces the task-local logger with the specified logger, returning the old
 /// logger.
-pub fn set_logger(logger: ~Logger:Send) -> Option<~Logger:Send> {
-    let prev = local_data::pop(local_logger);
-    local_data::set(local_logger, logger);
-    return prev;
+pub fn set_logger(logger: Box<Logger + Send>) -> Option<Box<Logger + Send>> {
+    local_logger.replace(Some(logger))
+}
+
+/// A LogRecord is created by the logging macros, and passed as the only
+/// argument to Loggers.
+#[deriving(Show)]
+pub struct LogRecord<'a> {
+
+    /// The module path of where the LogRecord originated.
+    pub module_path: &'a str,
+
+    /// The LogLevel of this record.
+    pub level: LogLevel,
+
+    /// The arguments from the log line.
+    pub args: &'a fmt::Arguments<'a>,
+
+    /// The file of where the LogRecord originated.
+    pub file: &'a str,
+
+    /// The line number of where the LogRecord originated.
+    pub line: uint,
+}
+
+#[doc(hidden)]
+pub struct LogLocation {
+    pub module_path: &'static str,
+    pub file: &'static str,
+    pub line: uint,
 }
 
 /// Tests whether a given module's name is enabled for a particular level of
@@ -245,12 +300,14 @@ pub fn mod_enabled(level: u32, module: &str) -> bool {
     enabled(level, module, unsafe { (*DIRECTIVES).iter() })
 }
 
-fn enabled(level: u32, module: &str,
-           iter: slice::Items<directive::LogDirective>) -> bool {
+fn enabled(level: u32,
+           module: &str,
+           iter: slice::Items<directive::LogDirective>)
+           -> bool {
     // Search for the longest match, the vector is assumed to be pre-sorted.
     for directive in iter.rev() {
         match directive.name {
-            Some(ref name) if !module.starts_with(*name) => {},
+            Some(ref name) if !module.starts_with(name.as_slice()) => {},
             Some(..) | None => {
                 return level <= directive.level
             }
@@ -265,7 +322,7 @@ fn enabled(level: u32, module: &str,
 /// `Once` primitive (and this function is called from that primitive).
 fn init() {
     let mut directives = match os::getenv("RUST_LOG") {
-        Some(spec) => directive::parse_logging_spec(spec),
+        Some(spec) => directive::parse_logging_spec(spec.as_slice()),
         None => Vec::new(),
     };
 
@@ -286,13 +343,13 @@ fn init() {
         LOG_LEVEL = max_level;
 
         assert!(DIRECTIVES.is_null());
-        DIRECTIVES = cast::transmute(~directives);
+        DIRECTIVES = mem::transmute(box directives);
 
         // Schedule the cleanup for this global for when the runtime exits.
         rt::at_exit(proc() {
             assert!(!DIRECTIVES.is_null());
-            let _directives: ~Vec<directive::LogDirective> =
-                cast::transmute(DIRECTIVES);
+            let _directives: Box<Vec<directive::LogDirective>> =
+                mem::transmute(DIRECTIVES);
             DIRECTIVES = 0 as *Vec<directive::LogDirective>;
         });
     }
@@ -305,8 +362,16 @@ mod tests {
 
     #[test]
     fn match_full_path() {
-        let dirs = [LogDirective { name: Some(~"crate2"), level: 3 },
-                    LogDirective { name: Some(~"crate1::mod1"), level: 2 }];
+        let dirs = [
+            LogDirective {
+                name: Some("crate2".to_string()),
+                level: 3
+            },
+            LogDirective {
+                name: Some("crate1::mod1".to_string()),
+                level: 2
+            }
+        ];
         assert!(enabled(2, "crate1::mod1", dirs.iter()));
         assert!(!enabled(3, "crate1::mod1", dirs.iter()));
         assert!(enabled(3, "crate2", dirs.iter()));
@@ -315,39 +380,49 @@ mod tests {
 
     #[test]
     fn no_match() {
-        let dirs = [LogDirective { name: Some(~"crate2"), level: 3 },
-                    LogDirective { name: Some(~"crate1::mod1"), level: 2 }];
+        let dirs = [
+            LogDirective { name: Some("crate2".to_string()), level: 3 },
+            LogDirective { name: Some("crate1::mod1".to_string()), level: 2 }
+        ];
         assert!(!enabled(2, "crate3", dirs.iter()));
     }
 
     #[test]
     fn match_beginning() {
-        let dirs = [LogDirective { name: Some(~"crate2"), level: 3 },
-                    LogDirective { name: Some(~"crate1::mod1"), level: 2 }];
+        let dirs = [
+            LogDirective { name: Some("crate2".to_string()), level: 3 },
+            LogDirective { name: Some("crate1::mod1".to_string()), level: 2 }
+        ];
         assert!(enabled(3, "crate2::mod1", dirs.iter()));
     }
 
     #[test]
     fn match_beginning_longest_match() {
-        let dirs = [LogDirective { name: Some(~"crate2"), level: 3 },
-                    LogDirective { name: Some(~"crate2::mod"), level: 4 },
-                    LogDirective { name: Some(~"crate1::mod1"), level: 2 }];
+        let dirs = [
+            LogDirective { name: Some("crate2".to_string()), level: 3 },
+            LogDirective { name: Some("crate2::mod".to_string()), level: 4 },
+            LogDirective { name: Some("crate1::mod1".to_string()), level: 2 }
+        ];
         assert!(enabled(4, "crate2::mod1", dirs.iter()));
         assert!(!enabled(4, "crate2", dirs.iter()));
     }
 
     #[test]
     fn match_default() {
-        let dirs = [LogDirective { name: None, level: 3 },
-                    LogDirective { name: Some(~"crate1::mod1"), level: 2 }];
+        let dirs = [
+            LogDirective { name: None, level: 3 },
+            LogDirective { name: Some("crate1::mod1".to_string()), level: 2 }
+        ];
         assert!(enabled(2, "crate1::mod1", dirs.iter()));
         assert!(enabled(3, "crate2::mod2", dirs.iter()));
     }
 
     #[test]
     fn zero_level() {
-        let dirs = [LogDirective { name: None, level: 3 },
-                    LogDirective { name: Some(~"crate1::mod1"), level: 0 }];
+        let dirs = [
+            LogDirective { name: None, level: 3 },
+            LogDirective { name: Some("crate1::mod1".to_string()), level: 0 }
+        ];
         assert!(!enabled(1, "crate1::mod1", dirs.iter()));
         assert!(enabled(3, "crate2::mod2", dirs.iter()));
     }

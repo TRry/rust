@@ -8,10 +8,12 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#[feature(managed_boxes)];
-#[allow(dead_assignment)];
-#[allow(unused_variable)];
+#![feature(managed_boxes)]
+#![allow(dead_assignment)]
+#![allow(unused_variable)]
 
-enum t { a, b(@int), }
+use std::gc::{Gc, GC};
 
-pub fn main() { let mut x = b(@10); x = a; }
+enum t { a, b(Gc<int>), }
+
+pub fn main() { let mut x = b(box(GC) 10); x = a; }

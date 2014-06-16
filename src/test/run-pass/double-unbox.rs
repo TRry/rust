@@ -8,13 +8,15 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#[feature(managed_boxes)];
+#![feature(managed_boxes)]
+
+use std::gc::Gc;
 
 struct Quux {
     bar: int
 }
 
 fn g(_i: int) { }
-fn f(foo: @@Quux) { g(foo.bar); }
+fn f(foo: Gc<Gc<Quux>>) { g(foo.bar); }
 
 pub fn main() { }

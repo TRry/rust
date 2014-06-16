@@ -13,12 +13,18 @@ use codemap::Span;
 use ext::base::ExtCtxt;
 use ext::build::AstBuilder;
 use ext::deriving::generic::*;
+use ext::deriving::generic::ty::*;
+use parse::token::InternedString;
+
+use std::gc::Gc;
 
 pub fn expand_deriving_zero(cx: &mut ExtCtxt,
                             span: Span,
-                            mitem: @MetaItem,
-                            item: @Item,
-                            push: |@Item|) {
+                            mitem: Gc<MetaItem>,
+                            item: Gc<Item>,
+                            push: |Gc<Item>|) {
+    let inline = cx.meta_word(span, InternedString::new("inline"));
+    let attrs = vec!(cx.attribute(span, inline));
     let trait_def = TraitDef {
         span: span,
         attributes: Vec::new(),
@@ -32,9 +38,11 @@ pub fn expand_deriving_zero(cx: &mut ExtCtxt,
                 explicit_self: None,
                 args: Vec::new(),
                 ret_ty: Self,
-                inline: true,
+                attributes: attrs.clone(),
                 const_nonmatching: false,
-                combine_substructure: zero_substructure
+                combine_substructure: combine_substructure(|a, b, c| {
+                    zero_substructure(a, b, c)
+                })
             },
             MethodDef {
                 name: "is_zero",
@@ -42,22 +50,23 @@ pub fn expand_deriving_zero(cx: &mut ExtCtxt,
                 explicit_self: borrowed_explicit_self(),
                 args: Vec::new(),
                 ret_ty: Literal(Path::new(vec!("bool"))),
-                inline: true,
+                attributes: attrs,
                 const_nonmatching: false,
-                combine_substructure: |cx, span, substr| {
+                combine_substructure: combine_substructure(|cx, span, substr| {
                     cs_and(|cx, span, _, _| cx.span_bug(span,
                                                         "Non-matching enum \
                                                          variant in \
                                                          deriving(Zero)"),
                            cx, span, substr)
-                }
+                })
             }
         )
     };
     trait_def.expand(cx, mitem, item, push)
 }
 
-fn zero_substructure(cx: &mut ExtCtxt, trait_span: Span, substr: &Substructure) -> @Expr {
+fn zero_substructure(cx: &mut ExtCtxt, trait_span: Span,
+                     substr: &Substructure) -> Gc<Expr> {
     let zero_ident = vec!(
         cx.ident_of("std"),
         cx.ident_of("num"),

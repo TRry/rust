@@ -8,7 +8,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#[feature(default_type_params)];
+#![feature(default_type_params)]
 
 struct Foo<A = (int, char)> {
     a: A
@@ -49,10 +49,10 @@ fn default_foo(x: Foo) {
     assert_eq!(x.baz(), (1, 'a'));
 }
 
-#[deriving(Eq, Show)]
+#[deriving(PartialEq, Show)]
 struct BazHelper<T>(T);
 
-#[deriving(Eq, Show)]
+#[deriving(PartialEq, Show)]
 // Ensure that we can use previous type parameters in defaults.
 struct Baz<T, U = BazHelper<T>, V = Option<U>>(T, U, V);
 

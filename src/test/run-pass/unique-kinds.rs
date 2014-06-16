@@ -8,59 +8,59 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use std::cmp::Eq;
+use std::cmp::PartialEq;
 
 fn sendable() {
 
-    fn f<T:Send + Eq>(i: T, j: T) {
+    fn f<T:Send + PartialEq>(i: T, j: T) {
         assert!(i == j);
     }
 
-    fn g<T:Send + Eq>(i: T, j: T) {
+    fn g<T:Send + PartialEq>(i: T, j: T) {
         assert!(i != j);
     }
 
-    let i = ~100;
-    let j = ~100;
+    let i = box 100;
+    let j = box 100;
     f(i, j);
-    let i = ~100;
-    let j = ~101;
+    let i = box 100;
+    let j = box 101;
     g(i, j);
 }
 
 fn copyable() {
 
-    fn f<T:Eq>(i: T, j: T) {
+    fn f<T:PartialEq>(i: T, j: T) {
         assert!(i == j);
     }
 
-    fn g<T:Eq>(i: T, j: T) {
+    fn g<T:PartialEq>(i: T, j: T) {
         assert!(i != j);
     }
 
-    let i = ~100;
-    let j = ~100;
+    let i = box 100;
+    let j = box 100;
     f(i, j);
-    let i = ~100;
-    let j = ~101;
+    let i = box 100;
+    let j = box 101;
     g(i, j);
 }
 
 fn noncopyable() {
 
-    fn f<T:Eq>(i: T, j: T) {
+    fn f<T:PartialEq>(i: T, j: T) {
         assert!(i == j);
     }
 
-    fn g<T:Eq>(i: T, j: T) {
+    fn g<T:PartialEq>(i: T, j: T) {
         assert!(i != j);
     }
 
-    let i = ~100;
-    let j = ~100;
+    let i = box 100;
+    let j = box 100;
     f(i, j);
-    let i = ~100;
-    let j = ~101;
+    let i = box 100;
+    let j = box 101;
     g(i, j);
 }
 

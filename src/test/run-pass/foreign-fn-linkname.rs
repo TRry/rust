@@ -22,9 +22,9 @@ mod mlibc {
     }
 }
 
-fn strlen(str: ~str) -> uint {
+fn strlen(str: String) -> uint {
     // C string is terminated with a zero
-    str.with_c_str(|buf| {
+    str.as_slice().with_c_str(|buf| {
         unsafe {
             mlibc::my_strlen(buf) as uint
         }
@@ -32,6 +32,6 @@ fn strlen(str: ~str) -> uint {
 }
 
 pub fn main() {
-    let len = strlen(~"Rust");
+    let len = strlen("Rust".to_string());
     assert_eq!(len, 4u);
 }

@@ -74,12 +74,13 @@ fn make_fasta<W: Writer, I: Iterator<u8>>(
 
 fn run<W: Writer>(writer: &mut W) {
     let args = os::args();
+    let args = args.as_slice();
     let n = if os::getenv("RUST_BENCH").is_some() {
         25000000
     } else if args.len() <= 1u {
         1000
     } else {
-        from_str(args[1]).unwrap()
+        from_str(args[1].as_slice()).unwrap()
     };
 
     let rng = &mut MyRandom::new();

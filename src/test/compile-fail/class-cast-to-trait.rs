@@ -8,15 +8,16 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+
 trait noisy {
   fn speak(&self);
 }
 
 struct cat {
-  priv meows : uint,
+  meows : uint,
 
   how_hungry : int,
-  name : ~str,
+  name : String,
 }
 
 impl cat {
@@ -48,7 +49,7 @@ impl cat {
     }
 }
 
-fn cat(in_x : uint, in_y : int, in_name: ~str) -> cat {
+fn cat(in_x : uint, in_y : int, in_name: String) -> cat {
     cat {
         meows: in_x,
         how_hungry: in_y,
@@ -57,6 +58,6 @@ fn cat(in_x : uint, in_y : int, in_name: ~str) -> cat {
 }
 
 fn main() {
-  let nyan: ~noisy = ~cat(0, 2, ~"nyan") as ~noisy;
+  let nyan: Box<noisy> = box cat(0, 2, "nyan".to_string()) as Box<noisy>;
   nyan.eat(); //~ ERROR does not implement any method in scope named `eat`
 }

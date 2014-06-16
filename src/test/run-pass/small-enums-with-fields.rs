@@ -8,11 +8,13 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#[feature(macro_rules)];
+#![feature(macro_rules)]
+
+extern crate debug;
 
 use std::mem::size_of;
 
-#[deriving(Eq, Show)]
+#[deriving(PartialEq, Show)]
 enum Either<T, U> { Left(T), Right(U) }
 
 macro_rules! check {
@@ -22,8 +24,8 @@ macro_rules! check {
             static S: $t = $e;
             let v: $t = $e;
             assert_eq!(S, v);
-            assert_eq!(format!("{:?}", v), ~$s);
-            assert_eq!(format!("{:?}", S), ~$s);
+            assert_eq!(format!("{:?}", v).as_slice(), $s);
+            assert_eq!(format!("{:?}", S).as_slice(), $s);
         });*
     }}
 }

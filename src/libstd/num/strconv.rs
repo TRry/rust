@@ -10,19 +10,19 @@
 
 #![allow(missing_doc)]
 
+use char;
 use clone::Clone;
-use container::Container;
-use std::cmp::{Ord, Eq};
+use collections::Collection;
+use num::{NumCast, Zero, One, cast, Int};
+use num::{Float, FPNaN, FPInfinite, ToPrimitive};
+use num;
 use ops::{Add, Sub, Mul, Div, Rem, Neg};
 use option::{None, Option, Some};
-use char;
-use str::{StrSlice};
-use str;
-use slice::{CloneableVector, ImmutableVector, MutableVector};
-use slice::OwnedVector;
-use num;
-use num::{NumCast, Zero, One, cast, Int};
-use num::{Round, Float, FPNaN, FPInfinite, ToPrimitive};
+use slice::{ImmutableVector, MutableVector};
+use std::cmp::{PartialOrd, PartialEq};
+use str::StrSlice;
+use string::String;
+use vec::Vec;
 
 /// A flag that specifies whether to use exponential (scientific) notation.
 pub enum ExponentFormat {
@@ -168,6 +168,7 @@ static NAN_BUF:          [u8, ..3] = ['N' as u8, 'a' as u8, 'N' as u8];
  * # Failure
  * - Fails if `radix` < 2 or `radix` > 36.
  */
+#[deprecated = "format!() and friends should be favored instead"]
 pub fn int_to_str_bytes_common<T: Int>(num: T, radix: uint, sign: SignFormat, f: |u8|) {
     assert!(2 <= radix && radix <= 36);
 
@@ -256,11 +257,12 @@ pub fn int_to_str_bytes_common<T: Int>(num: T, radix: uint, sign: SignFormat, f:
  * - Fails if `radix` > 25 and `exp_format` is `ExpBin` due to conflict
  *   between digit and exponent sign `'p'`.
  */
-pub fn float_to_str_bytes_common<T:NumCast+Zero+One+Eq+Ord+Float+Round+
+#[allow(deprecated)]
+pub fn float_to_str_bytes_common<T:NumCast+Zero+One+PartialEq+PartialOrd+Float+
                                   Div<T,T>+Neg<T>+Rem<T,T>+Mul<T,T>>(
         num: T, radix: uint, negative_zero: bool,
         sign: SignFormat, digits: SignificantDigits, exp_format: ExponentFormat, exp_upper: bool
-        ) -> (~[u8], bool) {
+        ) -> (Vec<u8>, bool) {
     assert!(2 <= radix && radix <= 36);
     match exp_format {
         ExpDec if radix >= DIGIT_E_RADIX       // decimal exponent 'e'
@@ -276,24 +278,24 @@ pub fn float_to_str_bytes_common<T:NumCast+Zero+One+Eq+Ord+Float+Round+
     let _1: T = One::one();
 
     match num.classify() {
-        FPNaN => { return ("NaN".as_bytes().to_owned(), true); }
+        FPNaN => { return (Vec::from_slice("NaN".as_bytes()), true); }
         FPInfinite if num > _0 => {
             return match sign {
-                SignAll => ("+inf".as_bytes().to_owned(), true),
-                _       => ("inf".as_bytes().to_owned(), true)
+                SignAll => (Vec::from_slice("+inf".as_bytes()), true),
+                _       => (Vec::from_slice("inf".as_bytes()), true)
             };
         }
         FPInfinite if num < _0 => {
             return match sign {
-                SignNone => ("inf".as_bytes().to_owned(), true),
-                _        => ("-inf".as_bytes().to_owned(), true),
+                SignNone => (Vec::from_slice("inf".as_bytes()), true),
+                _        => (Vec::from_slice("-inf".as_bytes()), true),
             };
         }
         _ => {}
     }
 
     let neg = num < _0 || (negative_zero && _1 / num == Float::neg_infinity());
-    let mut buf: ~[u8] = ~[];
+    let mut buf = Vec::new();
     let radix_gen: T   = cast(radix as int).unwrap();
 
     let (num, exp) = match exp_format {
@@ -308,7 +310,7 @@ pub fn float_to_str_bytes_common<T:NumCast+Zero+One+Eq+Ord+Float+Round+
                     ExpNone => unreachable!()
                 };
 
-                (num / exp_base.powf(&exp), cast::<T, i32>(exp).unwrap())
+                (num / exp_base.powf(exp), cast::<T, i32>(exp).unwrap())
             }
         }
     };
@@ -411,23 +413,23 @@ pub fn float_to_str_bytes_common<T:NumCast+Zero+One+Eq+Ord+Float+Round+
                     // If reached left end of number, have to
                     // insert additional digit:
                     if i < 0
-                    || buf[i as uint] == '-' as u8
-                    || buf[i as uint] == '+' as u8 {
+                    || *buf.get(i as uint) == '-' as u8
+                    || *buf.get(i as uint) == '+' as u8 {
                         buf.insert((i + 1) as uint, value2ascii(1));
                         break;
                     }
 
                     // Skip the '.'
-                    if buf[i as uint] == '.' as u8 { i -= 1; continue; }
+                    if *buf.get(i as uint) == '.' as u8 { i -= 1; continue; }
 
                     // Either increment the digit,
                     // or set to 0 if max and carry the 1.
-                    let current_digit = ascii2value(buf[i as uint]);
+                    let current_digit = ascii2value(*buf.get(i as uint));
                     if current_digit < (radix - 1) {
-                        buf[i as uint] = value2ascii(current_digit+1);
+                        *buf.get_mut(i as uint) = value2ascii(current_digit+1);
                         break;
                     } else {
-                        buf[i as uint] = value2ascii(0);
+                        *buf.get_mut(i as uint) = value2ascii(0);
                         i -= 1;
                     }
                 }
@@ -444,25 +446,25 @@ pub fn float_to_str_bytes_common<T:NumCast+Zero+One+Eq+Ord+Float+Round+
         let mut i = buf_max_i;
 
         // discover trailing zeros of fractional part
-        while i > start_fractional_digits && buf[i] == '0' as u8 {
+        while i > start_fractional_digits && *buf.get(i) == '0' as u8 {
             i -= 1;
         }
 
         // Only attempt to truncate digits if buf has fractional digits
         if i >= start_fractional_digits {
             // If buf ends with '.', cut that too.
-            if buf[i] == '.' as u8 { i -= 1 }
+            if *buf.get(i) == '.' as u8 { i -= 1 }
 
             // only resize buf if we actually remove digits
             if i < buf_max_i {
-                buf = buf.slice(0, i + 1).to_owned();
+                buf = Vec::from_slice(buf.slice(0, i + 1));
             }
         }
     } // If exact and trailing '.', just cut that
     else {
         let max_i = buf.len() - 1;
-        if buf[max_i] == '.' as u8 {
-            buf = buf.slice(0, max_i).to_owned();
+        if *buf.get(max_i) == '.' as u8 {
+            buf = Vec::from_slice(buf.slice(0, max_i));
         }
     }
 
@@ -489,14 +491,14 @@ pub fn float_to_str_bytes_common<T:NumCast+Zero+One+Eq+Ord+Float+Round+
  * `to_str_bytes_common()`, for details see there.
  */
 #[inline]
-pub fn float_to_str_common<T:NumCast+Zero+One+Eq+Ord+NumStrConv+Float+Round+
+pub fn float_to_str_common<T:NumCast+Zero+One+PartialEq+PartialOrd+NumStrConv+Float+
                              Div<T,T>+Neg<T>+Rem<T,T>+Mul<T,T>>(
         num: T, radix: uint, negative_zero: bool,
         sign: SignFormat, digits: SignificantDigits, exp_format: ExponentFormat, exp_capital: bool
-        ) -> (~str, bool) {
+        ) -> (String, bool) {
     let (bytes, special) = float_to_str_bytes_common(num, radix,
                                negative_zero, sign, digits, exp_format, exp_capital);
-    (str::from_utf8_owned(bytes).unwrap(), special)
+    (String::from_utf8(bytes).unwrap(), special)
 }
 
 // Some constants for from_str_bytes_common's input validation,
@@ -544,7 +546,7 @@ static DIGIT_E_RADIX: uint = ('e' as uint) - ('a' as uint) + 11u;
  * - Fails if `radix` > 18 and `special == true` due to conflict
  *   between digit and lowest first character in `inf` and `NaN`, the `'i'`.
  */
-pub fn from_str_bytes_common<T:NumCast+Zero+One+Eq+Ord+Div<T,T>+
+pub fn from_str_bytes_common<T:NumCast+Zero+One+PartialEq+PartialOrd+Div<T,T>+
                                     Mul<T,T>+Sub<T,T>+Neg<T>+Add<T,T>+
                                     NumStrConv+Clone>(
         buf: &[u8], radix: uint, negative: bool, fractional: bool,
@@ -634,7 +636,7 @@ pub fn from_str_bytes_common<T:NumCast+Zero+One+Eq+Ord+Div<T,T>+
                     if accum_positive && accum <= last_accum { return NumStrConv::inf(); }
                     if !accum_positive && accum >= last_accum { return NumStrConv::neg_inf(); }
 
-                    // Detect overflow by reversing the shift-and-add proccess
+                    // Detect overflow by reversing the shift-and-add process
                     if accum_positive &&
                         (last_accum != ((accum - cast(digit as int).unwrap())/radix_gen.clone())) {
                         return NumStrConv::inf();
@@ -751,7 +753,7 @@ pub fn from_str_bytes_common<T:NumCast+Zero+One+Eq+Ord+Div<T,T>+
  * `from_str_bytes_common()`, for details see there.
  */
 #[inline]
-pub fn from_str_common<T:NumCast+Zero+One+Eq+Ord+Div<T,T>+Mul<T,T>+
+pub fn from_str_common<T:NumCast+Zero+One+PartialEq+PartialOrd+Div<T,T>+Mul<T,T>+
                               Sub<T,T>+Neg<T>+Add<T,T>+NumStrConv+Clone>(
         buf: &str, radix: uint, negative: bool, fractional: bool,
         special: bool, exponent: ExponentFormat, empty_zero: bool,
@@ -816,84 +818,84 @@ mod bench {
 
     mod uint {
         use super::test::Bencher;
-        use rand::{XorShiftRng, Rng};
+        use rand::{weak_rng, Rng};
         use num::ToStrRadix;
 
         #[bench]
         fn to_str_bin(b: &mut Bencher) {
-            let mut rng = XorShiftRng::new().unwrap();
+            let mut rng = weak_rng();
             b.iter(|| { rng.gen::<uint>().to_str_radix(2); })
         }
 
         #[bench]
         fn to_str_oct(b: &mut Bencher) {
-            let mut rng = XorShiftRng::new().unwrap();
+            let mut rng = weak_rng();
             b.iter(|| { rng.gen::<uint>().to_str_radix(8); })
         }
 
         #[bench]
         fn to_str_dec(b: &mut Bencher) {
-            let mut rng = XorShiftRng::new().unwrap();
+            let mut rng = weak_rng();
             b.iter(|| { rng.gen::<uint>().to_str_radix(10); })
         }
 
         #[bench]
         fn to_str_hex(b: &mut Bencher) {
-            let mut rng = XorShiftRng::new().unwrap();
+            let mut rng = weak_rng();
             b.iter(|| { rng.gen::<uint>().to_str_radix(16); })
         }
 
         #[bench]
         fn to_str_base_36(b: &mut Bencher) {
-            let mut rng = XorShiftRng::new().unwrap();
+            let mut rng = weak_rng();
             b.iter(|| { rng.gen::<uint>().to_str_radix(36); })
         }
     }
 
     mod int {
         use super::test::Bencher;
-        use rand::{XorShiftRng, Rng};
+        use rand::{weak_rng, Rng};
         use num::ToStrRadix;
 
         #[bench]
         fn to_str_bin(b: &mut Bencher) {
-            let mut rng = XorShiftRng::new().unwrap();
+            let mut rng = weak_rng();
             b.iter(|| { rng.gen::<int>().to_str_radix(2); })
         }
 
         #[bench]
         fn to_str_oct(b: &mut Bencher) {
-            let mut rng = XorShiftRng::new().unwrap();
+            let mut rng = weak_rng();
             b.iter(|| { rng.gen::<int>().to_str_radix(8); })
         }
 
         #[bench]
         fn to_str_dec(b: &mut Bencher) {
-            let mut rng = XorShiftRng::new().unwrap();
+            let mut rng = weak_rng();
             b.iter(|| { rng.gen::<int>().to_str_radix(10); })
         }
 
         #[bench]
         fn to_str_hex(b: &mut Bencher) {
-            let mut rng = XorShiftRng::new().unwrap();
+            let mut rng = weak_rng();
             b.iter(|| { rng.gen::<int>().to_str_radix(16); })
         }
 
         #[bench]
         fn to_str_base_36(b: &mut Bencher) {
-            let mut rng = XorShiftRng::new().unwrap();
+            let mut rng = weak_rng();
             b.iter(|| { rng.gen::<int>().to_str_radix(36); })
         }
     }
 
     mod f64 {
         use super::test::Bencher;
-        use rand::{XorShiftRng, Rng};
+        use rand::{weak_rng, Rng};
         use f64;
 
         #[bench]
         fn float_to_str(b: &mut Bencher) {
-            let mut rng = XorShiftRng::new().unwrap();
+            let mut rng = weak_rng();
             b.iter(|| { f64::to_str(rng.gen()); })
         }
     }

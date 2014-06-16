@@ -8,25 +8,26 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#[feature(managed_boxes)];
+#![feature(managed_boxes)]
 
 use std::cell::RefCell;
+use std::gc::{Gc, GC};
 
 enum maybe_pointy {
     none,
-    p(@RefCell<Pointy>),
+    p(Gc<RefCell<Pointy>>),
 }
 
 struct Pointy {
     a : maybe_pointy,
-    c : ~int,
+    c : Box<int>,
     d : proc():Send->(),
 }
 
-fn empty_pointy() -> @RefCell<Pointy> {
-    return @RefCell::new(Pointy {
+fn empty_pointy() -> Gc<RefCell<Pointy>> {
+    return box(GC) RefCell::new(Pointy {
         a : none,
-        c : ~22,
+        c : box 22,
         d : proc() {},
     })
 }

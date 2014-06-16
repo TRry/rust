@@ -8,9 +8,10 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#[feature(macro_rules)];
+#![feature(macro_rules, managed_boxes)]
 
 use std::mem;
+use std::gc::Gc;
 
 enum E<T> { Thing(int, T), Nothing((), ((), ()), [i8, ..0]) }
 struct S<T>(int, T);
@@ -38,8 +39,7 @@ macro_rules! check_type {
 
 pub fn main() {
     check_type!(&'static int);
-    check_type!(~int);
-    check_type!(@int);
-    check_type!(~str);
+    check_type!(Box<int>);
+    check_type!(Gc<int>);
     check_type!(extern fn());
 }

@@ -8,8 +8,9 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-fn foo(b: bool) -> Result<bool,~str> {
-    Err(~"bar"); //~ ERROR: cannot determine a type for this expression: unconstrained type
+fn foo(b: bool) -> Result<bool,String> {
+    Err("bar".to_string());
+    //~^ ERROR: cannot determine a type for this expression: unconstrained type
 }
 
 fn main() {

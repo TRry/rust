@@ -11,18 +11,18 @@
 
 use std::task;
 
-fn start(tx: &Sender<Sender<~str>>) {
+fn start(tx: &Sender<Sender<String>>) {
     let (tx2, rx) = channel();
     tx.send(tx2);
 
     let mut a;
     let mut b;
     a = rx.recv();
-    assert!(a == ~"A");
-    println!("{:?}", a);
+    assert!(a == "A".to_string());
+    println!("{}", a);
     b = rx.recv();
-    assert!(b == ~"B");
-    println!("{:?}", b);
+    assert!(b == "B".to_string());
+    println!("{}", b);
 }
 
 pub fn main() {
@@ -30,7 +30,7 @@ pub fn main() {
     let _child = task::spawn(proc() { start(&tx) });
 
     let mut c = rx.recv();
-    c.send(~"A");
-    c.send(~"B");
+    c.send("A".to_string());
+    c.send("B".to_string());
     task::deschedule();
 }

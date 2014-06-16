@@ -10,7 +10,7 @@
 
 //! Temporary files and directories
 
-use io::fs;
+use io::{fs, IoResult};
 use io;
 use iter::{Iterator, range};
 use libc;
@@ -24,7 +24,8 @@ use sync::atomics;
 /// A wrapper for a path to temporary directory implementing automatic
 /// scope-based deletion.
 pub struct TempDir {
-    path: Option<Path>
+    path: Option<Path>,
+    disarmed: bool
 }
 
 impl TempDir {
@@ -41,14 +42,15 @@ impl TempDir {
         static mut CNT: atomics::AtomicUint = atomics::INIT_ATOMIC_UINT;
 
         for _ in range(0u, 1000) {
-            let filename = format!("rs-{}-{}-{}",
-                                   unsafe { libc::getpid() },
-                                   unsafe { CNT.fetch_add(1, atomics::SeqCst) },
-                                   suffix);
+            let filename =
+                format!("rs-{}-{}-{}",
+                        unsafe { libc::getpid() },
+                        unsafe { CNT.fetch_add(1, atomics::SeqCst) },
+                        suffix);
             let p = tmpdir.join(filename);
             match fs::mkdir(&p, io::UserRWX) {
                 Err(..) => {}
-                Ok(()) => return Some(TempDir { path: Some(p) })
+                Ok(()) => return Some(TempDir { path: Some(p), disarmed: false })
             }
         }
         None
@@ -75,15 +77,32 @@ impl TempDir {
     pub fn path<'a>(&'a self) -> &'a Path {
         self.path.get_ref()
     }
+
+    /// Close and remove the temporary directory
+    ///
+    /// Although `TempDir` removes the directory on drop, in the destructor
+    /// any errors are ignored. To detect errors cleaning up the temporary
+    /// directory, call `close` instead.
+    pub fn close(mut self) -> IoResult<()> {
+        self.cleanup_dir()
+    }
+
+    fn cleanup_dir(&mut self) -> IoResult<()> {
+        assert!(!self.disarmed);
+        self.disarmed = true;
+        match self.path {
+            Some(ref p) => {
+                fs::rmdir_recursive(p)
+            }
+            None => Ok(())
+        }
+    }
 }
 
 impl Drop for TempDir {
     fn drop(&mut self) {
-        for path in self.path.iter() {
-            if path.exists() {
-                // FIXME: is failing the right thing to do?
-                fs::rmdir_recursive(path).unwrap();
-            }
+        if !self.disarmed {
+            let _ = self.cleanup_dir();
         }
     }
 }

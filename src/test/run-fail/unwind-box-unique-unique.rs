@@ -10,14 +10,18 @@
 
 // error-pattern:fail
 
-#[feature(managed_boxes)];
+#![feature(managed_boxes)]
+
+extern crate debug;
+
+use std::gc::GC;
 
 fn failfn() {
     fail!();
 }
 
 fn main() {
-    let x = @~~0;
+    let x = box(GC) box box 0;
     failfn();
     println!("{:?}", x);
 }

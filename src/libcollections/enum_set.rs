@@ -13,9 +13,11 @@
 //! This module defines a container which uses an efficient bit mask
 //! representation to hold C-like enum variants.
 
-use std::num::Bitwise;
+use core::prelude::*;
 
-#[deriving(Clone, Eq, TotalEq, Hash, Show)]
+use core::num::Bitwise;
+
+#[deriving(Clone, PartialEq, Eq, Hash, Show)]
 /// A specialized Set implementation to use enum types.
 pub struct EnumSet<E> {
     // We must maintain the invariant that no bits are set
@@ -136,12 +138,12 @@ impl<E:CLike> Iterator<E> for Items<E> {
 
 #[cfg(test)]
 mod test {
-
-    use std::cast;
+    use std::prelude::*;
+    use std::mem;
 
     use enum_set::{EnumSet, CLike};
 
-    #[deriving(Eq, Show)]
+    #[deriving(PartialEq, Show)]
     #[repr(uint)]
     enum Foo {
         A, B, C
@@ -153,7 +155,7 @@ mod test {
         }
 
         fn from_uint(v: uint) -> Foo {
-            unsafe { cast::transmute(v) }
+            unsafe { mem::transmute(v) }
         }
     }
 

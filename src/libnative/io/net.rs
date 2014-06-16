@@ -8,15 +8,16 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use std::cast;
-use std::io::net::ip;
-use std::io;
+use alloc::arc::Arc;
 use libc;
 use std::mem;
+use std::rt::mutex;
 use std::rt::rtio;
-use std::sync::arc::UnsafeArc;
+use std::rt::rtio::{IoResult, IoError};
 
-use super::{IoResult, retry, keep_going};
+use super::{retry, keep_going};
+use super::c;
+use super::util;
 
 ////////////////////////////////////////////////////////////////////////////////
 // sockaddr and misc bindings
@@ -26,10 +27,10 @@ use super::{IoResult, retry, keep_going};
 #[cfg(unix)]    pub type sock_t = super::file::fd_t;
 
 pub fn htons(u: u16) -> u16 {
-    mem::to_be16(u as i16) as u16
+    mem::to_be16(u)
 }
 pub fn ntohs(u: u16) -> u16 {
-    mem::from_be16(u as i16) as u16
+    mem::from_be16(u)
 }
 
 enum InAddr {
@@ -37,17 +38,18 @@ enum InAddr {
     In6Addr(libc::in6_addr),
 }
 
-fn ip_to_inaddr(ip: ip::IpAddr) -> InAddr {
+fn ip_to_inaddr(ip: rtio::IpAddr) -> InAddr {
     match ip {
-        ip::Ipv4Addr(a, b, c, d) => {
+        rtio::Ipv4Addr(a, b, c, d) => {
+            let ip = (a as u32 << 24) |
+                     (b as u32 << 16) |
+                     (c as u32 <<  8) |
+                     (d as u32 <<  0);
             InAddr(libc::in_addr {
-                s_addr: (d as u32 << 24) |
-                        (c as u32 << 16) |
-                        (b as u32 <<  8) |
-                        (a as u32 <<  0)
+                s_addr: mem::from_be32(ip)
             })
         }
-        ip::Ipv6Addr(a, b, c, d, e, f, g, h) => {
+        rtio::Ipv6Addr(a, b, c, d, e, f, g, h) => {
             In6Addr(libc::in6_addr {
                 s6_addr: [
                     htons(a),
@@ -64,19 +66,19 @@ fn ip_to_inaddr(ip: ip::IpAddr) -> InAddr {
     }
 }
 
-fn addr_to_sockaddr(addr: ip::SocketAddr) -> (libc::sockaddr_storage, uint) {
+fn addr_to_sockaddr(addr: rtio::SocketAddr) -> (libc::sockaddr_storage, uint) {
     unsafe {
-        let storage: libc::sockaddr_storage = mem::init();
+        let storage: libc::sockaddr_storage = mem::zeroed();
         let len = match ip_to_inaddr(addr.ip) {
             InAddr(inaddr) => {
-                let storage: *mut libc::sockaddr_in = cast::transmute(&storage);
+                let storage: *mut libc::sockaddr_in = mem::transmute(&storage);
                 (*storage).sin_family = libc::AF_INET as libc::sa_family_t;
                 (*storage).sin_port = htons(addr.port);
                 (*storage).sin_addr = inaddr;
                 mem::size_of::<libc::sockaddr_in>()
             }
             In6Addr(inaddr) => {
-                let storage: *mut libc::sockaddr_in6 = cast::transmute(&storage);
+                let storage: *mut libc::sockaddr_in6 = mem::transmute(&storage);
                 (*storage).sin6_family = libc::AF_INET6 as libc::sa_family_t;
                 (*storage).sin6_port = htons(addr.port);
                 (*storage).sin6_addr = inaddr;
@@ -87,11 +89,11 @@ fn addr_to_sockaddr(addr: ip::SocketAddr) -> (libc::sockaddr_storage, uint) {
     }
 }
 
-fn socket(addr: ip::SocketAddr, ty: libc::c_int) -> IoResult<sock_t> {
+fn socket(addr: rtio::SocketAddr, ty: libc::c_int) -> IoResult<sock_t> {
     unsafe {
         let fam = match addr.ip {
-            ip::Ipv4Addr(..) => libc::AF_INET,
-            ip::Ipv6Addr(..) => libc::AF_INET6,
+            rtio::Ipv4Addr(..) => libc::AF_INET,
+            rtio::Ipv6Addr(..) => libc::AF_INET6,
         };
         match libc::socket(fam, ty, 0) {
             -1 => Err(super::last_error()),
@@ -115,16 +117,36 @@ fn setsockopt<T>(fd: sock_t, opt: libc::c_int, val: libc::c_int,
     }
 }
 
-#[cfg(windows)]
-fn last_error() -> io::IoError {
-    extern "system" {
-        fn WSAGetLastError() -> libc::c_int;
+pub fn getsockopt<T: Copy>(fd: sock_t, opt: libc::c_int,
+                           val: libc::c_int) -> IoResult<T> {
+    unsafe {
+        let mut slot: T = mem::zeroed();
+        let mut len = mem::size_of::<T>() as libc::socklen_t;
+        let ret = c::getsockopt(fd, opt, val,
+                                &mut slot as *mut _ as *mut _,
+                                &mut len);
+        if ret != 0 {
+            Err(last_error())
+        } else {
+            assert!(len as uint == mem::size_of::<T>());
+            Ok(slot)
+        }
     }
-    io::IoError::from_errno(unsafe { WSAGetLastError() } as uint, true)
+}
+
+#[cfg(windows)]
+pub fn last_error() -> IoError {
+    use std::os;
+    let code = unsafe { c::WSAGetLastError() as uint };
+    IoError {
+        code: code,
+        extra: 0,
+        detail: Some(os::error_string(code)),
+    }
 }
 
 #[cfg(not(windows))]
-fn last_error() -> io::IoError {
+fn last_error() -> IoError {
     super::last_error()
 }
 
@@ -132,11 +154,11 @@ fn last_error() -> io::IoError {
 #[cfg(unix)]    unsafe fn close(sock: sock_t) { let _ = libc::close(sock); }
 
 fn sockname(fd: sock_t,
-            f: extern "system" unsafe fn(sock_t, *mut libc::sockaddr,
+            f: unsafe extern "system" fn(sock_t, *mut libc::sockaddr,
                                          *mut libc::socklen_t) -> libc::c_int)
-    -> IoResult<ip::SocketAddr>
+    -> IoResult<rtio::SocketAddr>
 {
-    let mut storage: libc::sockaddr_storage = unsafe { mem::init() };
+    let mut storage: libc::sockaddr_storage = unsafe { mem::zeroed() };
     let mut len = mem::size_of::<libc::sockaddr_storage>() as libc::socklen_t;
     unsafe {
         let storage = &mut storage as *mut libc::sockaddr_storage;
@@ -151,27 +173,27 @@ fn sockname(fd: sock_t,
 }
 
 pub fn sockaddr_to_addr(storage: &libc::sockaddr_storage,
-                        len: uint) -> IoResult<ip::SocketAddr> {
+                        len: uint) -> IoResult<rtio::SocketAddr> {
     match storage.ss_family as libc::c_int {
         libc::AF_INET => {
             assert!(len as uint >= mem::size_of::<libc::sockaddr_in>());
             let storage: &libc::sockaddr_in = unsafe {
-                cast::transmute(storage)
+                mem::transmute(storage)
             };
-            let addr = storage.sin_addr.s_addr as u32;
-            let a = (addr >>  0) as u8;
-            let b = (addr >>  8) as u8;
-            let c = (addr >> 16) as u8;
-            let d = (addr >> 24) as u8;
-            Ok(ip::SocketAddr {
-                ip: ip::Ipv4Addr(a, b, c, d),
+            let ip = mem::to_be32(storage.sin_addr.s_addr as u32);
+            let a = (ip >> 24) as u8;
+            let b = (ip >> 16) as u8;
+            let c = (ip >>  8) as u8;
+            let d = (ip >>  0) as u8;
+            Ok(rtio::SocketAddr {
+                ip: rtio::Ipv4Addr(a, b, c, d),
                 port: ntohs(storage.sin_port),
             })
         }
         libc::AF_INET6 => {
             assert!(len as uint >= mem::size_of::<libc::sockaddr_in6>());
             let storage: &libc::sockaddr_in6 = unsafe {
-                cast::transmute(storage)
+                mem::transmute(storage)
             };
             let a = ntohs(storage.sin6_addr.s6_addr[0]);
             let b = ntohs(storage.sin6_addr.s6_addr[1]);
@@ -181,13 +203,19 @@ pub fn sockaddr_to_addr(storage: &libc::sockaddr_storage,
             let f = ntohs(storage.sin6_addr.s6_addr[5]);
             let g = ntohs(storage.sin6_addr.s6_addr[6]);
             let h = ntohs(storage.sin6_addr.s6_addr[7]);
-            Ok(ip::SocketAddr {
-                ip: ip::Ipv6Addr(a, b, c, d, e, f, g, h),
+            Ok(rtio::SocketAddr {
+                ip: rtio::Ipv6Addr(a, b, c, d, e, f, g, h),
                 port: ntohs(storage.sin6_port),
             })
         }
         _ => {
-            Err(io::standard_error(io::OtherIoError))
+            #[cfg(unix)] use ERROR = libc::EINVAL;
+            #[cfg(windows)] use ERROR = libc::WSAEINVAL;
+            Err(IoError {
+                code: ERROR as uint,
+                extra: 0,
+                detail: None,
+            })
         }
     }
 }
@@ -197,35 +225,17 @@ pub fn init() {}
 
 #[cfg(windows)]
 pub fn init() {
-    static WSADESCRIPTION_LEN: uint = 256;
-    static WSASYS_STATUS_LEN: uint = 128;
-    struct WSADATA {
-        wVersion: libc::WORD,
-        wHighVersion: libc::WORD,
-        szDescription: [u8, ..WSADESCRIPTION_LEN + 1],
-        szSystemStatus: [u8, ..WSASYS_STATUS_LEN + 1],
-        iMaxSockets: u16,
-        iMaxUdpDg: u16,
-        lpVendorInfo: *u8,
-    }
-    type LPWSADATA = *mut WSADATA;
-
-    #[link(name = "ws2_32")]
-    extern "system" {
-        fn WSAStartup(wVersionRequested: libc::WORD,
-                       lpWSAData: LPWSADATA) -> libc::c_int;
-    }
 
     unsafe {
-        use std::unstable::mutex::{StaticNativeMutex, NATIVE_MUTEX_INIT};
+        use std::rt::mutex::{StaticNativeMutex, NATIVE_MUTEX_INIT};
         static mut INITIALIZED: bool = false;
         static mut LOCK: StaticNativeMutex = NATIVE_MUTEX_INIT;
 
         let _guard = LOCK.lock();
         if !INITIALIZED {
-            let mut data: WSADATA = mem::init();
-            let ret = WSAStartup(0x202,      // version 2.2
-                                 &mut data);
+            let mut data: c::WSADATA = mem::zeroed();
+            let ret = c::WSAStartup(0x202,      // version 2.2
+                                    &mut data);
             assert_eq!(ret, 0);
             INITIALIZED = true;
         }
@@ -237,36 +247,63 @@ pub fn init() {
 ////////////////////////////////////////////////////////////////////////////////
 
 pub struct TcpStream {
-    inner: UnsafeArc<Inner>,
+    inner: Arc<Inner>,
+    read_deadline: u64,
+    write_deadline: u64,
 }
 
 struct Inner {
     fd: sock_t,
+
+    // Unused on Linux, where this lock is not necessary.
+    #[allow(dead_code)]
+    lock: mutex::NativeMutex
+}
+
+pub struct Guard<'a> {
+    pub fd: sock_t,
+    pub guard: mutex::LockGuard<'a>,
+}
+
+impl Inner {
+    fn new(fd: sock_t) -> Inner {
+        Inner { fd: fd, lock: unsafe { mutex::NativeMutex::new() } }
+    }
 }
 
 impl TcpStream {
-    pub fn connect(addr: ip::SocketAddr) -> IoResult<TcpStream> {
-        unsafe {
-            socket(addr, libc::SOCK_STREAM).and_then(|fd| {
-                let (addr, len) = addr_to_sockaddr(addr);
-                let addrp = &addr as *libc::sockaddr_storage;
-                let inner = Inner { fd: fd };
-                let ret = TcpStream { inner: UnsafeArc::new(inner) };
-                match retry(|| {
-                    libc::connect(fd, addrp as *libc::sockaddr,
-                                  len as libc::socklen_t)
-                }) {
+    pub fn connect(addr: rtio::SocketAddr,
+                   timeout: Option<u64>) -> IoResult<TcpStream> {
+        let fd = try!(socket(addr, libc::SOCK_STREAM));
+        let ret = TcpStream::new(Inner::new(fd));
+
+        let (addr, len) = addr_to_sockaddr(addr);
+        let addrp = &addr as *_ as *libc::sockaddr;
+        let len = len as libc::socklen_t;
+
+        match timeout {
+            Some(timeout) => {
+                try!(util::connect_timeout(fd, addrp, len, timeout));
+                Ok(ret)
+            },
+            None => {
+                match retry(|| unsafe { libc::connect(fd, addrp, len) }) {
                     -1 => Err(last_error()),
                     _ => Ok(ret),
                 }
-            })
+            }
         }
     }
 
-    pub fn fd(&self) -> sock_t {
-        // This unsafety is fine because it's just a read-only arc
-        unsafe { (*self.inner.get()).fd }
+    fn new(inner: Inner) -> TcpStream {
+        TcpStream {
+            inner: Arc::new(inner),
+            read_deadline: 0,
+            write_deadline: 0,
+        }
     }
+
+    pub fn fd(&self) -> sock_t { self.inner.fd }
 
     fn set_nodelay(&mut self, nodelay: bool) -> IoResult<()> {
         setsockopt(self.fd(), libc::IPPROTO_TCP, libc::TCP_NODELAY,
@@ -283,6 +320,7 @@ impl TcpStream {
     }
 
     #[cfg(target_os = "macos")]
+    #[cfg(target_os = "ios")]
     fn set_tcp_keepalive(&mut self, seconds: uint) -> IoResult<()> {
         setsockopt(self.fd(), libc::IPPROTO_TCP, libc::TCP_KEEPALIVE,
                    seconds as libc::c_int)
@@ -292,9 +330,22 @@ impl TcpStream {
         setsockopt(self.fd(), libc::IPPROTO_TCP, libc::TCP_KEEPIDLE,
                    seconds as libc::c_int)
     }
-    #[cfg(not(target_os = "macos"), not(target_os = "freebsd"))]
+    #[cfg(not(target_os = "macos"), not(target_os = "ios"), not(target_os = "freebsd"))]
     fn set_tcp_keepalive(&mut self, _seconds: uint) -> IoResult<()> {
         Ok(())
+    }
+
+    #[cfg(target_os = "linux")]
+    fn lock_nonblocking(&self) {}
+
+    #[cfg(not(target_os = "linux"))]
+    fn lock_nonblocking<'a>(&'a self) -> Guard<'a> {
+        let ret = Guard {
+            fd: self.fd(),
+            guard: unsafe { self.inner.lock.lock() },
+        };
+        assert!(util::set_nonblocking(self.fd(), true).is_ok());
+        ret
     }
 }
 
@@ -303,36 +354,34 @@ impl TcpStream {
 
 impl rtio::RtioTcpStream for TcpStream {
     fn read(&mut self, buf: &mut [u8]) -> IoResult<uint> {
-        let ret = retry(|| {
-            unsafe {
-                libc::recv(self.fd(),
-                           buf.as_mut_ptr() as *mut libc::c_void,
-                           buf.len() as wrlen,
-                           0) as libc::c_int
-            }
-        });
-        if ret == 0 {
-            Err(io::standard_error(io::EndOfFile))
-        } else if ret < 0 {
-            Err(last_error())
-        } else {
-            Ok(ret as uint)
-        }
+        let fd = self.fd();
+        let dolock = || self.lock_nonblocking();
+        let doread = |nb| unsafe {
+            let flags = if nb {c::MSG_DONTWAIT} else {0};
+            libc::recv(fd,
+                       buf.as_mut_ptr() as *mut libc::c_void,
+                       buf.len() as wrlen,
+                       flags) as libc::c_int
+        };
+        read(fd, self.read_deadline, dolock, doread)
     }
+
     fn write(&mut self, buf: &[u8]) -> IoResult<()> {
-        let ret = keep_going(buf, |buf, len| unsafe {
-            libc::send(self.fd(),
+        let fd = self.fd();
+        let dolock = || self.lock_nonblocking();
+        let dowrite = |nb: bool, buf: *u8, len: uint| unsafe {
+            let flags = if nb {c::MSG_DONTWAIT} else {0};
+            libc::send(fd,
                        buf as *mut libc::c_void,
                        len as wrlen,
-                       0) as i64
-        });
-        if ret < 0 {
-            Err(super::last_error())
-        } else {
-            Ok(())
+                       flags) as i64
+        };
+        match write(fd, self.write_deadline, buf, true, dolock, dowrite) {
+            Ok(_) => Ok(()),
+            Err(e) => Err(e)
         }
     }
-    fn peer_name(&mut self) -> IoResult<ip::SocketAddr> {
+    fn peer_name(&mut self) -> IoResult<rtio::SocketAddr> {
         sockname(self.fd(), libc::getpeername)
     }
     fn control_congestion(&mut self) -> IoResult<()> {
@@ -348,18 +397,36 @@ impl rtio::RtioTcpStream for TcpStream {
         self.set_keepalive(None)
     }
 
-    fn clone(&self) -> ~rtio::RtioTcpStream:Send {
-        ~TcpStream { inner: self.inner.clone() } as ~rtio::RtioTcpStream:Send
+    fn clone(&self) -> Box<rtio::RtioTcpStream + Send> {
+        box TcpStream {
+            inner: self.inner.clone(),
+            read_deadline: 0,
+            write_deadline: 0,
+        } as Box<rtio::RtioTcpStream + Send>
     }
+
     fn close_write(&mut self) -> IoResult<()> {
-        super::mkerr_libc(unsafe {
-            libc::shutdown(self.fd(), libc::SHUT_WR)
-        })
+        super::mkerr_libc(unsafe { libc::shutdown(self.fd(), libc::SHUT_WR) })
+    }
+    fn close_read(&mut self) -> IoResult<()> {
+        super::mkerr_libc(unsafe { libc::shutdown(self.fd(), libc::SHUT_RD) })
+    }
+
+    fn set_timeout(&mut self, timeout: Option<u64>) {
+        let deadline = timeout.map(|a| ::io::timer::now() + a).unwrap_or(0);
+        self.read_deadline = deadline;
+        self.write_deadline = deadline;
+    }
+    fn set_read_timeout(&mut self, timeout: Option<u64>) {
+        self.read_deadline = timeout.map(|a| ::io::timer::now() + a).unwrap_or(0);
+    }
+    fn set_write_timeout(&mut self, timeout: Option<u64>) {
+        self.write_deadline = timeout.map(|a| ::io::timer::now() + a).unwrap_or(0);
     }
 }
 
 impl rtio::RtioSocket for TcpStream {
-    fn socket_name(&mut self) -> IoResult<ip::SocketAddr> {
+    fn socket_name(&mut self) -> IoResult<rtio::SocketAddr> {
         sockname(self.fd(), libc::getsockname)
     }
 }
@@ -368,77 +435,82 @@ impl Drop for Inner {
     fn drop(&mut self) { unsafe { close(self.fd); } }
 }
 
+#[unsafe_destructor]
+impl<'a> Drop for Guard<'a> {
+    fn drop(&mut self) {
+        assert!(util::set_nonblocking(self.fd, false).is_ok());
+    }
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // TCP listeners
 ////////////////////////////////////////////////////////////////////////////////
 
 pub struct TcpListener {
-    inner: UnsafeArc<Inner>,
+    inner: Inner,
 }
 
 impl TcpListener {
-    pub fn bind(addr: ip::SocketAddr) -> IoResult<TcpListener> {
-        unsafe {
-            socket(addr, libc::SOCK_STREAM).and_then(|fd| {
-                let (addr, len) = addr_to_sockaddr(addr);
-                let addrp = &addr as *libc::sockaddr_storage;
-                let inner = Inner { fd: fd };
-                let ret = TcpListener { inner: UnsafeArc::new(inner) };
-                // On platforms with Berkeley-derived sockets, this allows
-                // to quickly rebind a socket, without needing to wait for
-                // the OS to clean up the previous one.
-                if cfg!(unix) {
-                    match setsockopt(fd, libc::SOL_SOCKET,
-                                     libc::SO_REUSEADDR,
-                                     1 as libc::c_int) {
-                        Err(n) => { return Err(n); },
-                        Ok(..) => { }
-                    }
-                }
-                match libc::bind(fd, addrp as *libc::sockaddr,
-                                 len as libc::socklen_t) {
-                    -1 => Err(last_error()),
-                    _ => Ok(ret),
-                }
-            })
+    pub fn bind(addr: rtio::SocketAddr) -> IoResult<TcpListener> {
+        let fd = try!(socket(addr, libc::SOCK_STREAM));
+        let ret = TcpListener { inner: Inner::new(fd) };
+
+        let (addr, len) = addr_to_sockaddr(addr);
+        let addrp = &addr as *_ as *libc::sockaddr;
+        let len = len as libc::socklen_t;
+
+        // On platforms with Berkeley-derived sockets, this allows
+        // to quickly rebind a socket, without needing to wait for
+        // the OS to clean up the previous one.
+        if cfg!(unix) {
+            try!(setsockopt(fd, libc::SOL_SOCKET, libc::SO_REUSEADDR,
+                            1 as libc::c_int));
+        }
+
+        match unsafe { libc::bind(fd, addrp, len) } {
+            -1 => Err(last_error()),
+            _ => Ok(ret),
         }
     }
 
-    pub fn fd(&self) -> sock_t {
-        // This is just a read-only arc so the unsafety is fine
-        unsafe { (*self.inner.get()).fd }
-    }
+    pub fn fd(&self) -> sock_t { self.inner.fd }
 
     pub fn native_listen(self, backlog: int) -> IoResult<TcpAcceptor> {
         match unsafe { libc::listen(self.fd(), backlog as libc::c_int) } {
             -1 => Err(last_error()),
-            _ => Ok(TcpAcceptor { listener: self })
+            _ => Ok(TcpAcceptor { listener: self, deadline: 0 })
         }
     }
 }
 
 impl rtio::RtioTcpListener for TcpListener {
-    fn listen(~self) -> IoResult<~rtio::RtioTcpAcceptor:Send> {
-        self.native_listen(128).map(|a| ~a as ~rtio::RtioTcpAcceptor:Send)
+    fn listen(~self) -> IoResult<Box<rtio::RtioTcpAcceptor + Send>> {
+        self.native_listen(128).map(|a| {
+            box a as Box<rtio::RtioTcpAcceptor + Send>
+        })
     }
 }
 
 impl rtio::RtioSocket for TcpListener {
-    fn socket_name(&mut self) -> IoResult<ip::SocketAddr> {
+    fn socket_name(&mut self) -> IoResult<rtio::SocketAddr> {
         sockname(self.fd(), libc::getsockname)
     }
 }
 
 pub struct TcpAcceptor {
     listener: TcpListener,
+    deadline: u64,
 }
 
 impl TcpAcceptor {
     pub fn fd(&self) -> sock_t { self.listener.fd() }
 
     pub fn native_accept(&mut self) -> IoResult<TcpStream> {
+        if self.deadline != 0 {
+            try!(util::await(self.fd(), Some(self.deadline), util::Readable));
+        }
         unsafe {
-            let mut storage: libc::sockaddr_storage = mem::init();
+            let mut storage: libc::sockaddr_storage = mem::zeroed();
             let storagep = &mut storage as *mut libc::sockaddr_storage;
             let size = mem::size_of::<libc::sockaddr_storage>();
             let mut size = size as libc::socklen_t;
@@ -448,25 +520,28 @@ impl TcpAcceptor {
                              &mut size as *mut libc::socklen_t) as libc::c_int
             }) as sock_t {
                 -1 => Err(last_error()),
-                fd => Ok(TcpStream { inner: UnsafeArc::new(Inner { fd: fd })})
+                fd => Ok(TcpStream::new(Inner::new(fd))),
             }
         }
     }
 }
 
 impl rtio::RtioSocket for TcpAcceptor {
-    fn socket_name(&mut self) -> IoResult<ip::SocketAddr> {
+    fn socket_name(&mut self) -> IoResult<rtio::SocketAddr> {
         sockname(self.fd(), libc::getsockname)
     }
 }
 
 impl rtio::RtioTcpAcceptor for TcpAcceptor {
-    fn accept(&mut self) -> IoResult<~rtio::RtioTcpStream:Send> {
-        self.native_accept().map(|s| ~s as ~rtio::RtioTcpStream:Send)
+    fn accept(&mut self) -> IoResult<Box<rtio::RtioTcpStream + Send>> {
+        self.native_accept().map(|s| box s as Box<rtio::RtioTcpStream + Send>)
     }
 
     fn accept_simultaneously(&mut self) -> IoResult<()> { Ok(()) }
     fn dont_accept_simultaneously(&mut self) -> IoResult<()> { Ok(()) }
+    fn set_timeout(&mut self, timeout: Option<u64>) {
+        self.deadline = timeout.map(|a| ::io::timer::now() + a).unwrap_or(0);
+    }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -474,30 +549,31 @@ impl rtio::RtioTcpAcceptor for TcpAcceptor {
 ////////////////////////////////////////////////////////////////////////////////
 
 pub struct UdpSocket {
-    inner: UnsafeArc<Inner>,
+    inner: Arc<Inner>,
+    read_deadline: u64,
+    write_deadline: u64,
 }
 
 impl UdpSocket {
-    pub fn bind(addr: ip::SocketAddr) -> IoResult<UdpSocket> {
-        unsafe {
-            socket(addr, libc::SOCK_DGRAM).and_then(|fd| {
-                let (addr, len) = addr_to_sockaddr(addr);
-                let addrp = &addr as *libc::sockaddr_storage;
-                let inner = Inner { fd: fd };
-                let ret = UdpSocket { inner: UnsafeArc::new(inner) };
-                match libc::bind(fd, addrp as *libc::sockaddr,
-                                 len as libc::socklen_t) {
-                    -1 => Err(last_error()),
-                    _ => Ok(ret),
-                }
-            })
+    pub fn bind(addr: rtio::SocketAddr) -> IoResult<UdpSocket> {
+        let fd = try!(socket(addr, libc::SOCK_DGRAM));
+        let ret = UdpSocket {
+            inner: Arc::new(Inner::new(fd)),
+            read_deadline: 0,
+            write_deadline: 0,
+        };
+
+        let (addr, len) = addr_to_sockaddr(addr);
+        let addrp = &addr as *_ as *libc::sockaddr;
+        let len = len as libc::socklen_t;
+
+        match unsafe { libc::bind(fd, addrp, len) } {
+            -1 => Err(last_error()),
+            _ => Ok(ret),
         }
     }
 
-    pub fn fd(&self) -> sock_t {
-        // unsafety is fine because it's just a read-only arc
-        unsafe { (*self.inner.get()).fd }
-    }
+    pub fn fd(&self) -> sock_t { self.inner.fd }
 
     pub fn set_broadcast(&mut self, on: bool) -> IoResult<()> {
         setsockopt(self.fd(), libc::SOL_SOCKET, libc::SO_BROADCAST,
@@ -509,7 +585,7 @@ impl UdpSocket {
                    on as libc::c_int)
     }
 
-    pub fn set_membership(&mut self, addr: ip::IpAddr,
+    pub fn set_membership(&mut self, addr: rtio::IpAddr,
                           opt: libc::c_int) -> IoResult<()> {
         match ip_to_inaddr(addr) {
             InAddr(addr) => {
@@ -529,10 +605,23 @@ impl UdpSocket {
             }
         }
     }
+
+    #[cfg(target_os = "linux")]
+    fn lock_nonblocking(&self) {}
+
+    #[cfg(not(target_os = "linux"))]
+    fn lock_nonblocking<'a>(&'a self) -> Guard<'a> {
+        let ret = Guard {
+            fd: self.fd(),
+            guard: unsafe { self.inner.lock.lock() },
+        };
+        assert!(util::set_nonblocking(self.fd(), true).is_ok());
+        ret
+    }
 }
 
 impl rtio::RtioSocket for UdpSocket {
-    fn socket_name(&mut self) -> IoResult<ip::SocketAddr> {
+    fn socket_name(&mut self) -> IoResult<rtio::SocketAddr> {
         sockname(self.fd(), libc::getsockname)
     }
 }
@@ -541,68 +630,69 @@ impl rtio::RtioSocket for UdpSocket {
 #[cfg(unix)]    type msglen_t = libc::size_t;
 
 impl rtio::RtioUdpSocket for UdpSocket {
-    fn recvfrom(&mut self, buf: &mut [u8]) -> IoResult<(uint, ip::SocketAddr)> {
-        unsafe {
-            let mut storage: libc::sockaddr_storage = mem::init();
-            let storagep = &mut storage as *mut libc::sockaddr_storage;
-            let mut addrlen: libc::socklen_t =
-                    mem::size_of::<libc::sockaddr_storage>() as libc::socklen_t;
-            let ret = retry(|| {
-                libc::recvfrom(self.fd(),
-                               buf.as_ptr() as *mut libc::c_void,
-                               buf.len() as msglen_t,
-                               0,
-                               storagep as *mut libc::sockaddr,
-                               &mut addrlen) as libc::c_int
-            });
-            if ret < 0 { return Err(last_error()) }
-            sockaddr_to_addr(&storage, addrlen as uint).and_then(|addr| {
-                Ok((ret as uint, addr))
-            })
-        }
+    fn recvfrom(&mut self, buf: &mut [u8]) -> IoResult<(uint, rtio::SocketAddr)> {
+        let fd = self.fd();
+        let mut storage: libc::sockaddr_storage = unsafe { mem::zeroed() };
+        let storagep = &mut storage as *mut _ as *mut libc::sockaddr;
+        let mut addrlen: libc::socklen_t =
+                mem::size_of::<libc::sockaddr_storage>() as libc::socklen_t;
+
+        let dolock = || self.lock_nonblocking();
+        let n = try!(read(fd, self.read_deadline, dolock, |nb| unsafe {
+            let flags = if nb {c::MSG_DONTWAIT} else {0};
+            libc::recvfrom(fd,
+                           buf.as_mut_ptr() as *mut libc::c_void,
+                           buf.len() as msglen_t,
+                           flags,
+                           storagep,
+                           &mut addrlen) as libc::c_int
+        }));
+        sockaddr_to_addr(&storage, addrlen as uint).and_then(|addr| {
+            Ok((n as uint, addr))
+        })
     }
-    fn sendto(&mut self, buf: &[u8], dst: ip::SocketAddr) -> IoResult<()> {
-        let (dst, len) = addr_to_sockaddr(dst);
-        let dstp = &dst as *libc::sockaddr_storage;
-        unsafe {
-            let ret = retry(|| {
-                libc::sendto(self.fd(),
-                             buf.as_ptr() as *libc::c_void,
-                             buf.len() as msglen_t,
-                             0,
-                             dstp as *libc::sockaddr,
-                             len as libc::socklen_t) as libc::c_int
-            });
-            match ret {
-                -1 => Err(last_error()),
-                n if n as uint != buf.len() => {
-                    Err(io::IoError {
-                        kind: io::OtherIoError,
-                        desc: "couldn't send entire packet at once",
-                        detail: None,
-                    })
-                }
-                _ => Ok(())
-            }
+
+    fn sendto(&mut self, buf: &[u8], dst: rtio::SocketAddr) -> IoResult<()> {
+        let (dst, dstlen) = addr_to_sockaddr(dst);
+        let dstp = &dst as *_ as *libc::sockaddr;
+        let dstlen = dstlen as libc::socklen_t;
+
+        let fd = self.fd();
+        let dolock = || self.lock_nonblocking();
+        let dowrite = |nb, buf: *u8, len: uint| unsafe {
+            let flags = if nb {c::MSG_DONTWAIT} else {0};
+            libc::sendto(fd,
+                         buf as *libc::c_void,
+                         len as msglen_t,
+                         flags,
+                         dstp,
+                         dstlen) as i64
+        };
+
+        let n = try!(write(fd, self.write_deadline, buf, false, dolock, dowrite));
+        if n != buf.len() {
+            Err(util::short_write(n, "couldn't send entire packet at once"))
+        } else {
+            Ok(())
         }
     }
 
-    fn join_multicast(&mut self, multi: ip::IpAddr) -> IoResult<()> {
+    fn join_multicast(&mut self, multi: rtio::IpAddr) -> IoResult<()> {
         match multi {
-            ip::Ipv4Addr(..) => {
+            rtio::Ipv4Addr(..) => {
                 self.set_membership(multi, libc::IP_ADD_MEMBERSHIP)
             }
-            ip::Ipv6Addr(..) => {
+            rtio::Ipv6Addr(..) => {
                 self.set_membership(multi, libc::IPV6_ADD_MEMBERSHIP)
             }
         }
     }
-    fn leave_multicast(&mut self, multi: ip::IpAddr) -> IoResult<()> {
+    fn leave_multicast(&mut self, multi: rtio::IpAddr) -> IoResult<()> {
         match multi {
-            ip::Ipv4Addr(..) => {
+            rtio::Ipv4Addr(..) => {
                 self.set_membership(multi, libc::IP_DROP_MEMBERSHIP)
             }
-            ip::Ipv6Addr(..) => {
+            rtio::Ipv6Addr(..) => {
                 self.set_membership(multi, libc::IPV6_DROP_MEMBERSHIP)
             }
         }
@@ -630,7 +720,178 @@ impl rtio::RtioUdpSocket for UdpSocket {
         self.set_broadcast(false)
     }
 
-    fn clone(&self) -> ~rtio::RtioUdpSocket:Send {
-        ~UdpSocket { inner: self.inner.clone() } as ~rtio::RtioUdpSocket:Send
+    fn clone(&self) -> Box<rtio::RtioUdpSocket + Send> {
+        box UdpSocket {
+            inner: self.inner.clone(),
+            read_deadline: 0,
+            write_deadline: 0,
+        } as Box<rtio::RtioUdpSocket + Send>
+    }
+
+    fn set_timeout(&mut self, timeout: Option<u64>) {
+        let deadline = timeout.map(|a| ::io::timer::now() + a).unwrap_or(0);
+        self.read_deadline = deadline;
+        self.write_deadline = deadline;
+    }
+    fn set_read_timeout(&mut self, timeout: Option<u64>) {
+        self.read_deadline = timeout.map(|a| ::io::timer::now() + a).unwrap_or(0);
+    }
+    fn set_write_timeout(&mut self, timeout: Option<u64>) {
+        self.write_deadline = timeout.map(|a| ::io::timer::now() + a).unwrap_or(0);
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Timeout helpers
+//
+// The read/write functions below are the helpers for reading/writing a socket
+// with a possible deadline specified. This is generally viewed as a timed out
+// I/O operation.
+//
+// From the application's perspective, timeouts apply to the I/O object, not to
+// the underlying file descriptor (it's one timeout per object). This means that
+// we can't use the SO_RCVTIMEO and corresponding send timeout option.
+//
+// The next idea to implement timeouts would be to use nonblocking I/O. An
+// invocation of select() would wait (with a timeout) for a socket to be ready.
+// Once its ready, we can perform the operation. Note that the operation *must*
+// be nonblocking, even though select() says the socket is ready. This is
+// because some other thread could have come and stolen our data (handles can be
+// cloned).
+//
+// To implement nonblocking I/O, the first option we have is to use the
+// O_NONBLOCK flag. Remember though that this is a global setting, affecting all
+// I/O objects, so this was initially viewed as unwise.
+//
+// It turns out that there's this nifty MSG_DONTWAIT flag which can be passed to
+// send/recv, but the niftiness wears off once you realize it only works well on
+// linux [1] [2]. This means that it's pretty easy to get a nonblocking
+// operation on linux (no flag fidding, no affecting other objects), but not on
+// other platforms.
+//
+// To work around this constraint on other platforms, we end up using the
+// original strategy of flipping the O_NONBLOCK flag. As mentioned before, this
+// could cause other objects' blocking operations to suddenly become
+// nonblocking. To get around this, a "blocking operation" which returns EAGAIN
+// falls back to using the same code path as nonblocking operations, but with an
+// infinite timeout (select + send/recv). This helps emulate blocking
+// reads/writes despite the underlying descriptor being nonblocking, as well as
+// optimizing the fast path of just hitting one syscall in the good case.
+//
+// As a final caveat, this implementation uses a mutex so only one thread is
+// doing a nonblocking operation at at time. This is the operation that comes
+// after the select() (at which point we think the socket is ready). This is
+// done for sanity to ensure that the state of the O_NONBLOCK flag is what we
+// expect (wouldn't want someone turning it on when it should be off!). All
+// operations performed in the lock are *nonblocking* to avoid holding the mutex
+// forever.
+//
+// So, in summary, linux uses MSG_DONTWAIT and doesn't need mutexes, everyone
+// else uses O_NONBLOCK and mutexes with some trickery to make sure blocking
+// reads/writes are still blocking.
+//
+// Fun, fun!
+//
+// [1] http://twistedmatrix.com/pipermail/twisted-commits/2012-April/034692.html
+// [2] http://stackoverflow.com/questions/19819198/does-send-msg-dontwait
+
+pub fn read<T>(fd: sock_t,
+               deadline: u64,
+               lock: || -> T,
+               read: |bool| -> libc::c_int) -> IoResult<uint> {
+    let mut ret = -1;
+    if deadline == 0 {
+        ret = retry(|| read(false));
+    }
+
+    if deadline != 0 || (ret == -1 && util::wouldblock()) {
+        let deadline = match deadline {
+            0 => None,
+            n => Some(n),
+        };
+        loop {
+            // With a timeout, first we wait for the socket to become
+            // readable using select(), specifying the relevant timeout for
+            // our previously set deadline.
+            try!(util::await(fd, deadline, util::Readable));
+
+            // At this point, we're still within the timeout, and we've
+            // determined that the socket is readable (as returned by
+            // select). We must still read the socket in *nonblocking* mode
+            // because some other thread could come steal our data. If we
+            // fail to read some data, we retry (hence the outer loop) and
+            // wait for the socket to become readable again.
+            let _guard = lock();
+            match retry(|| read(deadline.is_some())) {
+                -1 if util::wouldblock() => { assert!(deadline.is_some()); }
+                -1 => return Err(last_error()),
+               n => { ret = n; break }
+            }
+        }
+    }
+
+    match ret {
+        0 => Err(util::eof()),
+        n if n < 0 => Err(last_error()),
+        n => Ok(n as uint)
+    }
+}
+
+pub fn write<T>(fd: sock_t,
+                deadline: u64,
+                buf: &[u8],
+                write_everything: bool,
+                lock: || -> T,
+                write: |bool, *u8, uint| -> i64) -> IoResult<uint> {
+    let mut ret = -1;
+    let mut written = 0;
+    if deadline == 0 {
+        if write_everything {
+            ret = keep_going(buf, |inner, len| {
+                written = buf.len() - len;
+                write(false, inner, len)
+            });
+        } else {
+            ret = retry(|| {
+                write(false, buf.as_ptr(), buf.len()) as libc::c_int
+            }) as i64;
+            if ret > 0 { written = ret as uint; }
+        }
+    }
+
+    if deadline != 0 || (ret == -1 && util::wouldblock()) {
+        let deadline = match deadline {
+            0 => None,
+            n => Some(n),
+        };
+        while written < buf.len() && (write_everything || written == 0) {
+            // As with read(), first wait for the socket to be ready for
+            // the I/O operation.
+            match util::await(fd, deadline, util::Writable) {
+                Err(ref e) if e.code == libc::EOF as uint && written > 0 => {
+                    assert!(deadline.is_some());
+                    return Err(util::short_write(written, "short write"))
+                }
+                Err(e) => return Err(e),
+                Ok(()) => {}
+            }
+
+            // Also as with read(), we use MSG_DONTWAIT to guard ourselves
+            // against unforseen circumstances.
+            let _guard = lock();
+            let ptr = buf.slice_from(written).as_ptr();
+            let len = buf.len() - written;
+            match retry(|| write(deadline.is_some(), ptr, len) as libc::c_int) {
+                -1 if util::wouldblock() => {}
+                -1 => return Err(last_error()),
+                n => { written += n as uint; }
+            }
+        }
+        ret = 0;
+    }
+    if ret < 0 {
+        Err(last_error())
+    } else {
+        Ok(written)
     }
 }

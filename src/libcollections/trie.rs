@@ -10,11 +10,17 @@
 
 //! Ordered containers with integer keys, implemented as radix tries (`TrieSet` and `TrieMap` types)
 
-use std::mem;
-use std::uint;
-use std::mem::init;
-use std::slice;
-use std::slice::{Items, MutItems};
+use core::prelude::*;
+
+use alloc::owned::Box;
+use core::default::Default;
+use core::mem::zeroed;
+use core::mem;
+use core::uint;
+
+use {Collection, Mutable, Map, MutableMap, Set, MutableSet};
+use slice::{Items, MutItems};
+use slice;
 
 // FIXME: #5244: need to manually update the TrieNode constructor
 static SHIFT: uint = 4;
@@ -23,7 +29,7 @@ static MASK: uint = SIZE - 1;
 static NUM_CHUNKS: uint = uint::BITS / SHIFT;
 
 enum Child<T> {
-    Internal(~TrieNode<T>),
+    Internal(Box<TrieNode<T>>),
     External(uint, T),
     Nothing
 }
@@ -34,7 +40,7 @@ pub struct TrieMap<T> {
     length: uint
 }
 
-impl<T> Container for TrieMap<T> {
+impl<T> Collection for TrieMap<T> {
     /// Return the number of elements in the map
     #[inline]
     fn len(&self) -> uint { self.length }
@@ -100,6 +106,11 @@ impl<T> MutableMap<uint, T> for TrieMap<T> {
     }
 }
 
+impl<T> Default for TrieMap<T> {
+    #[inline]
+    fn default() -> TrieMap<T> { TrieMap::new() }
+}
+
 impl<T> TrieMap<T> {
     /// Create an empty TrieMap
     #[inline]
@@ -141,7 +152,7 @@ impl<T> TrieMap<T> {
 // (with many different `x`) below, so we need to optionally pass mut
 // as a tt, but the only thing we can do with a `tt` is pass them to
 // other macros, so this takes the `& <mutability> <operand>` token
-// sequence and forces their evalutation as an expression. (see also
+// sequence and forces their evaluation as an expression. (see also
 // `item!` below.)
 macro_rules! addr { ($e:expr) => { $e } }
 
@@ -281,7 +292,7 @@ pub struct TrieSet {
     map: TrieMap<()>
 }
 
-impl Container for TrieSet {
+impl Collection for TrieSet {
     /// Return the number of elements in the set
     #[inline]
     fn len(&self) -> uint { self.map.len() }
@@ -325,6 +336,11 @@ impl MutableSet<uint> for TrieSet {
     fn remove(&mut self, value: &uint) -> bool {
         self.map.remove(value)
     }
+}
+
+impl Default for TrieSet {
+    #[inline]
+    fn default() -> TrieSet { TrieSet::new() }
 }
 
 impl TrieSet {
@@ -395,7 +411,7 @@ impl<T> TrieNode<T> {
 
 impl<T> TrieNode<T> {
     fn each_reverse<'a>(&'a self, f: |&uint, &'a T| -> bool) -> bool {
-        for elt in self.children.rev_iter() {
+        for elt in self.children.iter().rev() {
             match *elt {
                 Internal(ref x) => if !x.each_reverse(|i,t| f(i,t)) { return false },
                 External(k, ref v) => if !f(&k, v) { return false },
@@ -448,7 +464,7 @@ fn insert<T>(count: &mut uint, child: &mut Child<T>, key: uint, value: T,
     // have to move out of `child`.
     match mem::replace(child, Nothing) {
         External(stored_key, stored_value) => {
-            let mut new = ~TrieNode::new();
+            let mut new = box TrieNode::new();
             insert(&mut new.count,
                    &mut new.children[chunk(stored_key, idx)],
                    stored_key, stored_value, idx + 1);
@@ -457,7 +473,7 @@ fn insert<T>(count: &mut uint, child: &mut Child<T>, key: uint, value: T,
             *child = Internal(new);
             return ret;
         }
-        _ => unreachable!()
+        _ => fail!("unreachable code"),
     }
 }
 
@@ -522,7 +538,8 @@ macro_rules! iterator_impl {
                     remaining_max: 0,
                     length: 0,
                     // ick :( ... at least the compiler will tell us if we screwed up.
-                    stack: [init(), init(), init(), init(), init(), init(), init(), init()]
+                    stack: [zeroed(), zeroed(), zeroed(), zeroed(), zeroed(),
+                            zeroed(), zeroed(), zeroed()]
                 }
             }
 
@@ -532,8 +549,10 @@ macro_rules! iterator_impl {
                     remaining_min: 0,
                     remaining_max: 0,
                     length: 0,
-                    stack: [init(), init(), init(), init(), init(), init(), init(), init(),
-                            init(), init(), init(), init(), init(), init(), init(), init()]
+                    stack: [zeroed(), zeroed(), zeroed(), zeroed(),
+                            zeroed(), zeroed(), zeroed(), zeroed(),
+                            zeroed(), zeroed(), zeroed(), zeroed(),
+                            zeroed(), zeroed(), zeroed(), zeroed()]
                 }
             }
         }
@@ -634,9 +653,12 @@ impl<'a> Iterator<uint> for SetItems<'a> {
 
 #[cfg(test)]
 mod test_map {
-    use super::{TrieMap, TrieNode, Internal, External};
+    use std::prelude::*;
     use std::iter::range_step;
     use std::uint;
+
+    use {MutableMap, Map};
+    use super::{TrieMap, TrieNode, Internal, External, Nothing};
 
     fn check_integrity<T>(trie: &TrieNode<T>) {
         assert!(trie.count != 0);
@@ -910,10 +932,12 @@ mod test_map {
 
 #[cfg(test)]
 mod bench_map {
-    extern crate test;
+    use std::prelude::*;
+    use std::rand::{weak_rng, Rng};
+    use test::Bencher;
+
+    use MutableMap;
     use super::TrieMap;
-    use rand::{weak_rng, Rng};
-    use self::test::Bencher;
 
     #[bench]
     fn bench_iter_small(b: &mut Bencher) {
@@ -1018,8 +1042,11 @@ mod bench_map {
 
 #[cfg(test)]
 mod test_set {
-    use super::TrieSet;
+    use std::prelude::*;
     use std::uint;
+
+    use {MutableSet, Set};
+    use super::TrieSet;
 
     #[test]
     fn test_sane_chunk() {

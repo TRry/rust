@@ -118,7 +118,8 @@ and report an error, and it just seems like more mess in the end.)
 
 */
 
-
+use middle::def;
+use middle::def::{DefArg, DefBinding, DefLocal, DefUpvar};
 use middle::freevars;
 use mc = middle::mem_categorization;
 use middle::ty::{ReScope};
@@ -131,15 +132,16 @@ use middle::typeck::infer::resolve_type;
 use middle::typeck::infer;
 use middle::typeck::MethodCall;
 use middle::pat_util;
+use util::nodemap::NodeMap;
 use util::ppaux::{ty_to_str, region_to_str, Repr};
 
-use syntax::ast::{ManagedSigil, OwnedSigil, BorrowedSigil};
-use syntax::ast::{DefArg, DefBinding, DefLocal, DefUpvar};
 use syntax::ast;
-use syntax::ast_util;
 use syntax::codemap::Span;
 use syntax::visit;
 use syntax::visit::Visitor;
+
+use std::cell::RefCell;
+use std::gc::Gc;
 
 // If mem categorization results in an error, it's because the type
 // check failed (or will fail, when the error is uncovered and
@@ -156,13 +158,12 @@ macro_rules! ignore_err(
 
 pub struct Rcx<'a> {
     fcx: &'a FnCtxt<'a>,
-    errors_reported: uint,
 
     // id of innermost fn or loop
     repeating_scope: ast::NodeId,
 }
 
-fn region_of_def(fcx: &FnCtxt, def: ast::Def) -> ty::Region {
+fn region_of_def(fcx: &FnCtxt, def: def::Def) -> ty::Region {
     /*!
      * Returns the validity region of `def` -- that is, how long
      * is `def` valid?
@@ -175,14 +176,14 @@ fn region_of_def(fcx: &FnCtxt, def: ast::Def) -> ty::Region {
             tcx.region_maps.var_region(node_id)
         }
         DefUpvar(_, subdef, closure_id, body_id) => {
-            match ty::ty_closure_sigil(fcx.node_ty(closure_id)) {
-                BorrowedSigil => region_of_def(fcx, *subdef),
-                ManagedSigil | OwnedSigil => ReScope(body_id)
+            match ty::ty_closure_store(fcx.node_ty(closure_id)) {
+                ty::RegionTraitStore(..) => region_of_def(fcx, *subdef),
+                ty::UniqTraitStore => ReScope(body_id)
             }
         }
         _ => {
             tcx.sess.bug(format!("unexpected def in region_of_def: {:?}",
-                              def))
+                                 def).as_slice())
         }
     }
 }
@@ -235,7 +236,7 @@ impl<'a> Rcx<'a> {
     }
 
     /// Try to resolve the type for the given node.
-    fn resolve_node_type(&mut self, id: ast::NodeId) -> ty::t {
+    fn resolve_node_type(&self, id: ast::NodeId) -> ty::t {
         let t = self.fcx.node_ty(id);
         self.resolve_type(t)
     }
@@ -253,19 +254,19 @@ impl<'a> Rcx<'a> {
             ty_unadjusted
         } else {
             let tcx = self.fcx.tcx();
-            let adjustment = self.fcx.inh.adjustments.borrow().find_copy(&expr.id);
-            ty::adjust_ty(tcx, expr.span, expr.id, ty_unadjusted, adjustment,
+            ty::adjust_ty(tcx, expr.span, expr.id, ty_unadjusted,
+                          self.fcx.inh.adjustments.borrow().find(&expr.id),
                           |method_call| self.resolve_method_type(method_call))
         }
     }
 }
 
-impl<'a, 'b> mc::Typer for &'a mut Rcx<'b> {
+impl<'fcx> mc::Typer for Rcx<'fcx> {
     fn tcx<'a>(&'a self) -> &'a ty::ctxt {
         self.fcx.tcx()
     }
 
-    fn node_ty(&mut self, id: ast::NodeId) -> mc::McResult<ty::t> {
+    fn node_ty(&self, id: ast::NodeId) -> mc::McResult<ty::t> {
         let t = self.resolve_node_type(id);
         if ty::type_is_error(t) {Err(())} else {Ok(t)}
     }
@@ -274,43 +275,41 @@ impl<'a, 'b> mc::Typer for &'a mut Rcx<'b> {
         self.resolve_method_type(method_call)
     }
 
-    fn adjustment(&mut self, id: ast::NodeId) -> Option<@ty::AutoAdjustment> {
-        self.fcx.inh.adjustments.borrow().find_copy(&id)
+    fn adjustments<'a>(&'a self) -> &'a RefCell<NodeMap<ty::AutoAdjustment>> {
+        &self.fcx.inh.adjustments
     }
 
-    fn is_method_call(&mut self, id: ast::NodeId) -> bool {
+    fn is_method_call(&self, id: ast::NodeId) -> bool {
         self.fcx.inh.method_map.borrow().contains_key(&MethodCall::expr(id))
     }
 
-    fn temporary_scope(&mut self, id: ast::NodeId) -> Option<ast::NodeId> {
+    fn temporary_scope(&self, id: ast::NodeId) -> Option<ast::NodeId> {
         self.tcx().region_maps.temporary_scope(id)
     }
 
-    fn upvar_borrow(&mut self, id: ty::UpvarId) -> ty::UpvarBorrow {
+    fn upvar_borrow(&self, id: ty::UpvarId) -> ty::UpvarBorrow {
         self.fcx.inh.upvar_borrow_map.borrow().get_copy(&id)
     }
 }
 
 pub fn regionck_expr(fcx: &FnCtxt, e: &ast::Expr) {
-    let mut rcx = Rcx { fcx: fcx, errors_reported: 0,
-                         repeating_scope: e.id };
+    let mut rcx = Rcx { fcx: fcx, repeating_scope: e.id };
     let rcx = &mut rcx;
     if fcx.err_count_since_creation() == 0 {
         // regionck assumes typeck succeeded
         rcx.visit_expr(e, ());
     }
-    fcx.infcx().resolve_regions();
+    fcx.infcx().resolve_regions_and_report_errors();
 }
 
 pub fn regionck_fn(fcx: &FnCtxt, blk: &ast::Block) {
-    let mut rcx = Rcx { fcx: fcx, errors_reported: 0,
-                         repeating_scope: blk.id };
+    let mut rcx = Rcx { fcx: fcx, repeating_scope: blk.id };
     let rcx = &mut rcx;
     if fcx.err_count_since_creation() == 0 {
         // regionck assumes typeck succeeded
         rcx.visit_block(blk, ());
     }
-    fcx.infcx().resolve_regions();
+    fcx.infcx().resolve_regions_and_report_errors();
 }
 
 impl<'a> Visitor<()> for Rcx<'a> {
@@ -345,8 +344,8 @@ fn visit_block(rcx: &mut Rcx, b: &ast::Block) {
 
 fn visit_arm(rcx: &mut Rcx, arm: &ast::Arm) {
     // see above
-    for &p in arm.pats.iter() {
-        constrain_bindings_in_pat(p, rcx);
+    for p in arm.pats.iter() {
+        constrain_bindings_in_pat(&**p, rcx);
     }
 
     visit::walk_arm(rcx, arm, ());
@@ -354,7 +353,7 @@ fn visit_arm(rcx: &mut Rcx, arm: &ast::Arm) {
 
 fn visit_local(rcx: &mut Rcx, l: &ast::Local) {
     // see above
-    constrain_bindings_in_pat(l.pat, rcx);
+    constrain_bindings_in_pat(&*l.pat, rcx);
     link_local(rcx, l);
     visit::walk_local(rcx, l, ());
 }
@@ -362,13 +361,13 @@ fn visit_local(rcx: &mut Rcx, l: &ast::Local) {
 fn constrain_bindings_in_pat(pat: &ast::Pat, rcx: &mut Rcx) {
     let tcx = rcx.fcx.tcx();
     debug!("regionck::visit_pat(pat={})", pat.repr(tcx));
-    pat_util::pat_bindings(tcx.def_map, pat, |_, id, span, _| {
+    pat_util::pat_bindings(&tcx.def_map, pat, |_, id, span, _| {
         // If we have a variable that contains region'd data, that
         // data will be accessible from anywhere that the variable is
         // accessed. We must be wary of loops like this:
         //
         //     // from src/test/compile-fail/borrowck-lend-flow.rs
-        //     let mut v = ~3, w = ~4;
+        //     let mut v = box 3, w = box 4;
         //     let mut x = &mut w;
         //     loop {
         //         **x += 1;   // (2)
@@ -403,7 +402,7 @@ fn visit_expr(rcx: &mut Rcx, expr: &ast::Expr) {
     // Check any autoderefs or autorefs that appear.
     for &adjustment in rcx.fcx.inh.adjustments.borrow().find(&expr.id).iter() {
         debug!("adjustment={:?}", adjustment);
-        match **adjustment {
+        match *adjustment {
             ty::AutoDerefRef(ty::AutoDerefRef {autoderefs, autoref: opt_autoref}) => {
                 let expr_ty = rcx.resolve_node_type(expr.id);
                 constrain_autoderefs(rcx, expr, autoderefs, expr_ty);
@@ -420,7 +419,7 @@ fn visit_expr(rcx: &mut Rcx, expr: &ast::Expr) {
                 }
             }
             ty::AutoObject(ty::RegionTraitStore(trait_region, _), _, _, _) => {
-                // Determine if we are casting `expr` to an trait
+                // Determine if we are casting `expr` to a trait
                 // instance.  If so, we have to be sure that the type of
                 // the source obeys the trait's region bound.
                 //
@@ -434,7 +433,7 @@ fn visit_expr(rcx: &mut Rcx, expr: &ast::Expr) {
                 // function check_cast_for_escaping_regions() in kind.rs
                 // explaining how it goes about doing that.
 
-                let source_ty = rcx.fcx.expr_ty(expr);
+                let source_ty = rcx.resolve_node_type(expr.id);
                 constrain_regions_in_type(rcx, trait_region,
                                             infer::RelateObjectBound(expr.span), source_ty);
             }
@@ -443,14 +442,16 @@ fn visit_expr(rcx: &mut Rcx, expr: &ast::Expr) {
     }
 
     match expr.node {
-        ast::ExprCall(callee, ref args) => {
-            constrain_callee(rcx, callee.id, expr, callee);
-            constrain_call(rcx,
-                           Some(callee.id),
-                           expr,
-                           None,
-                           args.as_slice(),
-                           false);
+        ast::ExprCall(ref callee, ref args) => {
+            if !has_method_map {
+                constrain_callee(rcx, callee.id, expr, &**callee);
+                constrain_call(rcx,
+                               Some(callee.id),
+                               expr,
+                               None,
+                               args.as_slice(),
+                               false);
+            }
 
             visit::walk_expr(rcx, expr, ());
         }
@@ -462,45 +463,47 @@ fn visit_expr(rcx: &mut Rcx, expr: &ast::Expr) {
             visit::walk_expr(rcx, expr, ());
         }
 
-        ast::ExprAssign(lhs, _) => {
-            adjust_borrow_kind_for_assignment_lhs(rcx, lhs);
+        ast::ExprAssign(ref lhs, _) => {
+            adjust_borrow_kind_for_assignment_lhs(rcx, &**lhs);
             visit::walk_expr(rcx, expr, ());
         }
 
-        ast::ExprAssignOp(_, lhs, rhs) => {
+        ast::ExprAssignOp(_, ref lhs, ref rhs) => {
             if has_method_map {
-                constrain_call(rcx, None, expr, Some(lhs), [rhs], true);
+                constrain_call(rcx, None, expr, Some(lhs.clone()),
+                               [rhs.clone()], true);
             }
 
-            adjust_borrow_kind_for_assignment_lhs(rcx, lhs);
+            adjust_borrow_kind_for_assignment_lhs(rcx, &**lhs);
 
             visit::walk_expr(rcx, expr, ());
         }
 
-        ast::ExprIndex(lhs, rhs) |
-        ast::ExprBinary(_, lhs, rhs) if has_method_map => {
+        ast::ExprIndex(ref lhs, ref rhs) |
+        ast::ExprBinary(_, ref lhs, ref rhs) if has_method_map => {
             // As `expr_method_call`, but the call is via an
             // overloaded op.  Note that we (sadly) currently use an
             // implicit "by ref" sort of passing style here.  This
             // should be converted to an adjustment!
-            constrain_call(rcx, None, expr, Some(lhs), [rhs], true);
+            constrain_call(rcx, None, expr, Some(lhs.clone()),
+                           [rhs.clone()], true);
 
             visit::walk_expr(rcx, expr, ());
         }
 
-        ast::ExprUnary(_, lhs) if has_method_map => {
+        ast::ExprUnary(_, ref lhs) if has_method_map => {
             // As above.
-            constrain_call(rcx, None, expr, Some(lhs), [], true);
+            constrain_call(rcx, None, expr, Some(lhs.clone()), [], true);
 
             visit::walk_expr(rcx, expr, ());
         }
 
-        ast::ExprUnary(ast::UnDeref, base) => {
+        ast::ExprUnary(ast::UnDeref, ref base) => {
             // For *a, the lifetime of a must enclose the deref
             let method_call = MethodCall::expr(expr.id);
             let base_ty = match rcx.fcx.inh.method_map.borrow().find(&method_call) {
                 Some(method) => {
-                    constrain_call(rcx, None, expr, Some(base), [], true);
+                    constrain_call(rcx, None, expr, Some(base.clone()), [], true);
                     ty::ty_fn_ret(method.ty)
                 }
                 None => rcx.resolve_node_type(base.id)
@@ -516,16 +519,16 @@ fn visit_expr(rcx: &mut Rcx, expr: &ast::Expr) {
             visit::walk_expr(rcx, expr, ());
         }
 
-        ast::ExprIndex(vec_expr, _) => {
+        ast::ExprIndex(ref vec_expr, _) => {
             // For a[b], the lifetime of a must enclose the deref
-            let vec_type = rcx.resolve_expr_type_adjusted(vec_expr);
+            let vec_type = rcx.resolve_expr_type_adjusted(&**vec_expr);
             constrain_index(rcx, expr, vec_type);
 
             visit::walk_expr(rcx, expr, ());
         }
 
-        ast::ExprCast(source, _) => {
-            // Determine if we are casting `source` to an trait
+        ast::ExprCast(ref source, _) => {
+            // Determine if we are casting `source` to a trait
             // instance.  If so, we have to be sure that the type of
             // the source obeys the trait's region bound.
             //
@@ -540,10 +543,10 @@ fn visit_expr(rcx: &mut Rcx, expr: &ast::Expr) {
             // explaining how it goes about doing that.
             let target_ty = rcx.resolve_node_type(expr.id);
             match ty::get(target_ty).sty {
-                ty::ty_trait(~ty::TyTrait {
+                ty::ty_trait(box ty::TyTrait {
                     store: ty::RegionTraitStore(trait_region, _), ..
                 }) => {
-                    let source_ty = rcx.resolve_expr_type_adjusted(source);
+                    let source_ty = rcx.resolve_expr_type_adjusted(&**source);
                     constrain_regions_in_type(
                         rcx,
                         trait_region,
@@ -556,8 +559,8 @@ fn visit_expr(rcx: &mut Rcx, expr: &ast::Expr) {
             visit::walk_expr(rcx, expr, ());
         }
 
-        ast::ExprAddrOf(m, base) => {
-            link_addr_of(rcx, expr, m, base);
+        ast::ExprAddrOf(m, ref base) => {
+            link_addr_of(rcx, expr, m, &**base);
 
             // Require that when you write a `&expr` expression, the
             // resulting pointer has a lifetime that encompasses the
@@ -572,8 +575,8 @@ fn visit_expr(rcx: &mut Rcx, expr: &ast::Expr) {
             visit::walk_expr(rcx, expr, ());
         }
 
-        ast::ExprMatch(discr, ref arms) => {
-            link_match(rcx, discr, arms.as_slice());
+        ast::ExprMatch(ref discr, ref arms) => {
+            link_match(rcx, &**discr, arms.as_slice());
 
             visit::walk_expr(rcx, expr, ());
         }
@@ -582,18 +585,18 @@ fn visit_expr(rcx: &mut Rcx, expr: &ast::Expr) {
             check_expr_fn_block(rcx, expr, &**body);
         }
 
-        ast::ExprLoop(body, _) => {
+        ast::ExprLoop(ref body, _) => {
             let repeating_scope = rcx.set_repeating_scope(body.id);
             visit::walk_expr(rcx, expr, ());
             rcx.set_repeating_scope(repeating_scope);
         }
 
-        ast::ExprWhile(cond, body) => {
+        ast::ExprWhile(ref cond, ref body) => {
             let repeating_scope = rcx.set_repeating_scope(cond.id);
-            rcx.visit_expr(cond, ());
+            rcx.visit_expr(&**cond, ());
 
             rcx.set_repeating_scope(body.id);
-            rcx.visit_block(body, ());
+            rcx.visit_block(&**body, ());
 
             rcx.set_repeating_scope(repeating_scope);
         }
@@ -610,22 +613,23 @@ fn check_expr_fn_block(rcx: &mut Rcx,
     let tcx = rcx.fcx.tcx();
     let function_type = rcx.resolve_node_type(expr.id);
     match ty::get(function_type).sty {
-        ty::ty_closure(~ty::ClosureTy {
-                sigil: ast::BorrowedSigil, region: region, ..}) => {
-            let freevars = freevars::get_freevars(tcx, expr.id);
-            if freevars.is_empty() {
-                // No free variables means that the environment
-                // will be NULL at runtime and hence the closure
-                // has static lifetime.
-            } else {
-                // Closure must not outlive the variables it closes over.
-                constrain_free_variables(rcx, region, expr, freevars);
+        ty::ty_closure(box ty::ClosureTy {
+                store: ty::RegionTraitStore(region, _), ..}) => {
+            freevars::with_freevars(tcx, expr.id, |freevars| {
+                if freevars.is_empty() {
+                    // No free variables means that the environment
+                    // will be NULL at runtime and hence the closure
+                    // has static lifetime.
+                } else {
+                    // Closure must not outlive the variables it closes over.
+                    constrain_free_variables(rcx, region, expr, freevars);
 
-                // Closure cannot outlive the appropriate temporary scope.
-                let s = rcx.repeating_scope;
-                rcx.fcx.mk_subr(true, infer::InfStackClosure(expr.span),
-                                region, ty::ReScope(s));
-            }
+                    // Closure cannot outlive the appropriate temporary scope.
+                    let s = rcx.repeating_scope;
+                    rcx.fcx.mk_subr(true, infer::InfStackClosure(expr.span),
+                                    region, ty::ReScope(s));
+                }
+            });
         }
         _ => ()
     }
@@ -635,9 +639,13 @@ fn check_expr_fn_block(rcx: &mut Rcx,
     rcx.set_repeating_scope(repeating_scope);
 
     match ty::get(function_type).sty {
-        ty::ty_closure(~ty::ClosureTy {sigil: ast::BorrowedSigil, ..}) => {
-            let freevars = freevars::get_freevars(tcx, expr.id);
-            propagate_upupvar_borrow_kind(rcx, expr, freevars);
+        ty::ty_closure(box ty::ClosureTy {
+                store: ty::RegionTraitStore(..),
+                ..
+            }) => {
+            freevars::with_freevars(tcx, expr.id, |freevars| {
+                propagate_upupvar_borrow_kind(rcx, expr, freevars);
+            })
         }
         _ => ()
     }
@@ -645,7 +653,7 @@ fn check_expr_fn_block(rcx: &mut Rcx,
     fn constrain_free_variables(rcx: &mut Rcx,
                                 region: ty::Region,
                                 expr: &ast::Expr,
-                                freevars: freevars::freevar_info) {
+                                freevars: &[freevars::freevar_entry]) {
         /*!
          * Make sure that all free variables referenced inside the closure
          * outlive the closure itself. Also, create an entry in the
@@ -661,7 +669,7 @@ fn check_expr_fn_block(rcx: &mut Rcx,
 
             // Identify the variable being closed over and its node-id.
             let def = freevar.def;
-            let def_id = ast_util::def_id_of_def(def);
+            let def_id = def.def_id();
             assert!(def_id.krate == ast::LOCAL_CRATE);
             let upvar_id = ty::UpvarId { var_id: def_id.node,
                                          closure_expr_id: expr.id };
@@ -691,7 +699,7 @@ fn check_expr_fn_block(rcx: &mut Rcx,
 
     fn propagate_upupvar_borrow_kind(rcx: &mut Rcx,
                                      expr: &ast::Expr,
-                                     freevars: freevars::freevar_info) {
+                                     freevars: &[freevars::freevar_entry]) {
         let tcx = rcx.fcx.ccx.tcx;
         debug!("propagate_upupvar_borrow_kind({})", expr.repr(tcx));
         for freevar in freevars.iter() {
@@ -721,7 +729,7 @@ fn check_expr_fn_block(rcx: &mut Rcx,
             // determining the final borrow_kind) and propagate that as
             // a constraint on the outer closure.
             match freevar.def {
-                ast::DefUpvar(var_id, _, outer_closure_id, _) => {
+                def::DefUpvar(var_id, _, outer_closure_id, _) => {
                     // thing being captured is itself an upvar:
                     let outer_upvar_id = ty::UpvarId {
                         var_id: var_id,
@@ -749,8 +757,20 @@ fn constrain_callee(rcx: &mut Rcx,
     match ty::get(callee_ty).sty {
         ty::ty_bare_fn(..) => { }
         ty::ty_closure(ref closure_ty) => {
+            let region = match closure_ty.store {
+                ty::RegionTraitStore(r, _) => {
+                    // While we're here, link the closure's region with a unique
+                    // immutable borrow (gathered later in borrowck)
+                    let mc = mc::MemCategorizationContext::new(rcx);
+                    let expr_cmt = ignore_err!(mc.cat_expr(callee_expr));
+                    link_region(rcx, callee_expr.span, call_region,
+                                ty::UniqueImmBorrow, expr_cmt);
+                    r
+                }
+                ty::UniqTraitStore => ty::ReStatic
+            };
             rcx.fcx.mk_subr(true, infer::InvokeClosure(callee_expr.span),
-                            call_region, closure_ty.region);
+                            call_region, region);
         }
         _ => {
             // this should not happen, but it does if the program is
@@ -768,8 +788,8 @@ fn constrain_call(rcx: &mut Rcx,
                   // operator
                   fn_expr_id: Option<ast::NodeId>,
                   call_expr: &ast::Expr,
-                  receiver: Option<@ast::Expr>,
-                  arg_exprs: &[@ast::Expr],
+                  receiver: Option<Gc<ast::Expr>>,
+                  arg_exprs: &[Gc<ast::Expr>],
                   implicitly_ref_args: bool) {
     //! Invoked on every call site (i.e., normal calls, method calls,
     //! and overloaded operators). Constrains the regions which appear
@@ -803,7 +823,7 @@ fn constrain_call(rcx: &mut Rcx,
     let callee_scope = call_expr.id;
     let callee_region = ty::ReScope(callee_scope);
 
-    for &arg_expr in arg_exprs.iter() {
+    for arg_expr in arg_exprs.iter() {
         debug!("Argument");
 
         // ensure that any regions appearing in the argument type are
@@ -817,17 +837,17 @@ fn constrain_call(rcx: &mut Rcx,
         // result. modes are going away and the "DerefArgs" code
         // should be ported to use adjustments
         if implicitly_ref_args {
-            link_by_ref(rcx, arg_expr, callee_scope);
+            link_by_ref(rcx, &**arg_expr, callee_scope);
         }
     }
 
     // as loop above, but for receiver
-    for &r in receiver.iter() {
+    for r in receiver.iter() {
         debug!("Receiver");
         constrain_regions_in_type_of_node(
             rcx, r.id, callee_region, infer::CallRcvr(r.span));
         if implicitly_ref_args {
-            link_by_ref(rcx, r, callee_scope);
+            link_by_ref(rcx, &**r, callee_scope);
         }
     }
 
@@ -864,12 +884,13 @@ fn constrain_autoderefs(rcx: &mut Rcx,
                     ty::ty_rptr(r, ref m) => (m.mutbl, r),
                     _ => rcx.tcx().sess.span_bug(deref_expr.span,
                             format!("bad overloaded deref type {}",
-                                method.ty.repr(rcx.tcx())))
+                                    method.ty.repr(rcx.tcx())).as_slice())
                 };
                 {
-                    let mut mc = mc::MemCategorizationContext { typer: &mut *rcx };
+                    let mc = mc::MemCategorizationContext::new(rcx);
                     let self_cmt = ignore_err!(mc.cat_expr_autoderefd(deref_expr, i));
-                    link_region(mc.typer, deref_expr.span, r, m, self_cmt);
+                    link_region(rcx, deref_expr.span, r,
+                                ty::BorrowKind::from_mutbl(m), self_cmt);
                 }
 
                 // Specialized version of constrain_call.
@@ -925,11 +946,13 @@ fn constrain_index(rcx: &mut Rcx,
 
     let r_index_expr = ty::ReScope(index_expr.id);
     match ty::get(indexed_ty).sty {
-        ty::ty_str(ty::VstoreSlice(r_ptr, ())) |
-        ty::ty_vec(_, ty::VstoreSlice(r_ptr, _)) => {
-            rcx.fcx.mk_subr(true, infer::IndexSlice(index_expr.span),
-                            r_index_expr, r_ptr);
-        }
+        ty::ty_rptr(r_ptr, mt) => match ty::get(mt.ty).sty {
+            ty::ty_vec(_, None) | ty::ty_str => {
+                rcx.fcx.mk_subr(true, infer::IndexSlice(index_expr.span),
+                                r_index_expr, r_ptr);
+            }
+            _ => {}
+        },
 
         _ => {}
     }
@@ -939,8 +962,7 @@ fn constrain_regions_in_type_of_node(
     rcx: &mut Rcx,
     id: ast::NodeId,
     minimum_lifetime: ty::Region,
-    origin: infer::SubregionOrigin) -> bool
-{
+    origin: infer::SubregionOrigin) {
     //! Guarantees that any lifetimes which appear in the type of
     //! the node `id` (after applying adjustments) are valid for at
     //! least `minimum_lifetime`
@@ -951,22 +973,21 @@ fn constrain_regions_in_type_of_node(
     // is going to fail anyway, so just stop here and let typeck
     // report errors later on in the writeback phase.
     let ty0 = rcx.resolve_node_type(id);
-    let adjustment = rcx.fcx.inh.adjustments.borrow().find_copy(&id);
-    let ty = ty::adjust_ty(tcx, origin.span(), id, ty0, adjustment,
+    let ty = ty::adjust_ty(tcx, origin.span(), id, ty0,
+                           rcx.fcx.inh.adjustments.borrow().find(&id),
                            |method_call| rcx.resolve_method_type(method_call));
     debug!("constrain_regions_in_type_of_node(\
-            ty={}, ty0={}, id={}, minimum_lifetime={:?}, adjustment={:?})",
+            ty={}, ty0={}, id={}, minimum_lifetime={:?})",
            ty_to_str(tcx, ty), ty_to_str(tcx, ty0),
-           id, minimum_lifetime, adjustment);
-    constrain_regions_in_type(rcx, minimum_lifetime, origin, ty)
+           id, minimum_lifetime);
+    constrain_regions_in_type(rcx, minimum_lifetime, origin, ty);
 }
 
 fn constrain_regions_in_type(
     rcx: &mut Rcx,
     minimum_lifetime: ty::Region,
     origin: infer::SubregionOrigin,
-    ty: ty::t) -> bool
-{
+    ty: ty::t) {
     /*!
      * Requires that any regions which appear in `ty` must be
      * superregions of `minimum_lifetime`.  Also enforces the constraint
@@ -981,7 +1002,6 @@ fn constrain_regions_in_type(
      * code that R corresponds to."
      */
 
-    let e = rcx.errors_reported;
     let tcx = rcx.fcx.ccx.tcx;
 
     debug!("constrain_regions_in_type(minimum_lifetime={}, ty={})",
@@ -1000,7 +1020,7 @@ fn constrain_regions_in_type(
             // for regions that are as-yet-unknown.
         } else if r_sub == minimum_lifetime {
             rcx.fcx.mk_subr(
-                true, origin,
+                true, origin.clone(),
                 r_sub, r_sup);
         } else {
             rcx.fcx.mk_subr(
@@ -1008,8 +1028,6 @@ fn constrain_regions_in_type(
                 r_sub, r_sup);
         }
     });
-
-    return e == rcx.errors_reported;
 }
 
 fn link_addr_of(rcx: &mut Rcx, expr: &ast::Expr,
@@ -1023,13 +1041,13 @@ fn link_addr_of(rcx: &mut Rcx, expr: &ast::Expr,
     debug!("link_addr_of(base=?)");
 
     let cmt = {
-        let mut mc = mc::MemCategorizationContext { typer: &mut *rcx };
+        let mc = mc::MemCategorizationContext::new(rcx);
         ignore_err!(mc.cat_expr(base))
     };
     link_region_from_node_type(rcx, expr.span, expr.id, mutability, cmt);
 }
 
-fn link_local(rcx: &mut Rcx, local: &ast::Local) {
+fn link_local(rcx: &Rcx, local: &ast::Local) {
     /*!
      * Computes the guarantors for any ref bindings in a `let` and
      * then ensures that the lifetime of the resulting pointer is
@@ -1039,14 +1057,14 @@ fn link_local(rcx: &mut Rcx, local: &ast::Local) {
     debug!("regionck::for_local()");
     let init_expr = match local.init {
         None => { return; }
-        Some(expr) => expr,
+        Some(ref expr) => expr,
     };
-    let mut mc = mc::MemCategorizationContext { typer: rcx };
-    let discr_cmt = ignore_err!(mc.cat_expr(init_expr));
-    link_pattern(&mut mc, discr_cmt, local.pat);
+    let mc = mc::MemCategorizationContext::new(rcx);
+    let discr_cmt = ignore_err!(mc.cat_expr(&**init_expr));
+    link_pattern(rcx, mc, discr_cmt, &*local.pat);
 }
 
-fn link_match(rcx: &mut Rcx, discr: &ast::Expr, arms: &[ast::Arm]) {
+fn link_match(rcx: &Rcx, discr: &ast::Expr, arms: &[ast::Arm]) {
     /*!
      * Computes the guarantors for any ref bindings in a match and
      * then ensures that the lifetime of the resulting pointer is
@@ -1054,19 +1072,20 @@ fn link_match(rcx: &mut Rcx, discr: &ast::Expr, arms: &[ast::Arm]) {
      */
 
     debug!("regionck::for_match()");
-    let mut mc = mc::MemCategorizationContext { typer: rcx };
+    let mc = mc::MemCategorizationContext::new(rcx);
     let discr_cmt = ignore_err!(mc.cat_expr(discr));
-    debug!("discr_cmt={}", discr_cmt.repr(mc.typer.tcx()));
+    debug!("discr_cmt={}", discr_cmt.repr(rcx.tcx()));
     for arm in arms.iter() {
-        for &root_pat in arm.pats.iter() {
-            link_pattern(&mut mc, discr_cmt, root_pat);
+        for root_pat in arm.pats.iter() {
+            link_pattern(rcx, mc, discr_cmt.clone(), &**root_pat);
         }
     }
 }
 
-fn link_pattern(mc: &mut mc::MemCategorizationContext<&mut Rcx>,
+fn link_pattern(rcx: &Rcx,
+                mc: mc::MemCategorizationContext<Rcx>,
                 discr_cmt: mc::cmt,
-                root_pat: @ast::Pat) {
+                root_pat: &ast::Pat) {
     /*!
      * Link lifetimes of any ref bindings in `root_pat` to
      * the pointers found in the discriminant, if needed.
@@ -1077,16 +1096,17 @@ fn link_pattern(mc: &mut mc::MemCategorizationContext<&mut Rcx>,
                 // `ref x` pattern
                 ast::PatIdent(ast::BindByRef(mutbl), _, _) => {
                     link_region_from_node_type(
-                        mc.typer, sub_pat.span, sub_pat.id,
+                        rcx, sub_pat.span, sub_pat.id,
                         mutbl, sub_cmt);
                 }
 
                 // `[_, ..slice, _]` pattern
-                ast::PatVec(_, Some(slice_pat), _) => {
-                    match mc.cat_slice_pattern(sub_cmt, slice_pat) {
+                ast::PatVec(_, Some(ref slice_pat), _) => {
+                    match mc.cat_slice_pattern(sub_cmt, &**slice_pat) {
                         Ok((slice_cmt, slice_mutbl, slice_r)) => {
-                            link_region(mc.typer, sub_pat.span, slice_r,
-                                        slice_mutbl, slice_cmt);
+                            link_region(rcx, sub_pat.span, slice_r,
+                                        ty::BorrowKind::from_mutbl(slice_mutbl),
+                                        slice_cmt);
                         }
                         Err(()) => {}
                     }
@@ -1096,7 +1116,7 @@ fn link_pattern(mc: &mut mc::MemCategorizationContext<&mut Rcx>,
         });
 }
 
-fn link_autoref(rcx: &mut Rcx,
+fn link_autoref(rcx: &Rcx,
                 expr: &ast::Expr,
                 autoderefs: uint,
                 autoref: &ty::AutoRef) {
@@ -1106,35 +1126,33 @@ fn link_autoref(rcx: &mut Rcx,
      */
 
     debug!("link_autoref(autoref={:?})", autoref);
-    let mut mc = mc::MemCategorizationContext { typer: rcx };
+    let mc = mc::MemCategorizationContext::new(rcx);
     let expr_cmt = ignore_err!(mc.cat_expr_autoderefd(expr, autoderefs));
-    debug!("expr_cmt={}", expr_cmt.repr(mc.typer.tcx()));
+    debug!("expr_cmt={}", expr_cmt.repr(rcx.tcx()));
 
     match *autoref {
         ty::AutoPtr(r, m) => {
-            link_region(mc.typer, expr.span, r, m, expr_cmt);
+            link_region(rcx, expr.span, r,
+                        ty::BorrowKind::from_mutbl(m), expr_cmt);
         }
 
         ty::AutoBorrowVec(r, m) | ty::AutoBorrowVecRef(r, m) => {
             let cmt_index = mc.cat_index(expr, expr_cmt, autoderefs+1);
-            link_region(mc.typer, expr.span, r, m, cmt_index);
-        }
-
-        ty::AutoBorrowFn(r) => {
-            let cmt_deref = mc.cat_deref_fn_or_obj(expr, expr_cmt, 0);
-            link_region(mc.typer, expr.span, r, ast::MutImmutable, cmt_deref);
+            link_region(rcx, expr.span, r,
+                        ty::BorrowKind::from_mutbl(m), cmt_index);
         }
 
         ty::AutoBorrowObj(r, m) => {
-            let cmt_deref = mc.cat_deref_fn_or_obj(expr, expr_cmt, 0);
-            link_region(mc.typer, expr.span, r, m, cmt_deref);
+            let cmt_deref = mc.cat_deref_obj(expr, expr_cmt);
+            link_region(rcx, expr.span, r,
+                        ty::BorrowKind::from_mutbl(m), cmt_deref);
         }
 
         ty::AutoUnsafe(_) => {}
     }
 }
 
-fn link_by_ref(rcx: &mut Rcx,
+fn link_by_ref(rcx: &Rcx,
                expr: &ast::Expr,
                callee_scope: ast::NodeId) {
     /*!
@@ -1146,13 +1164,13 @@ fn link_by_ref(rcx: &mut Rcx,
     let tcx = rcx.tcx();
     debug!("link_by_ref(expr={}, callee_scope={})",
            expr.repr(tcx), callee_scope);
-    let mut mc = mc::MemCategorizationContext { typer: rcx };
+    let mc = mc::MemCategorizationContext::new(rcx);
     let expr_cmt = ignore_err!(mc.cat_expr(expr));
     let region_min = ty::ReScope(callee_scope);
-    link_region(mc.typer, expr.span, region_min, ast::MutImmutable, expr_cmt);
+    link_region(rcx, expr.span, region_min, ty::ImmBorrow, expr_cmt);
 }
 
-fn link_region_from_node_type(rcx: &mut Rcx,
+fn link_region_from_node_type(rcx: &Rcx,
                               span: Span,
                               id: ast::NodeId,
                               mutbl: ast::Mutability,
@@ -1168,18 +1186,19 @@ fn link_region_from_node_type(rcx: &mut Rcx,
         let tcx = rcx.fcx.ccx.tcx;
         debug!("rptr_ty={}", ty_to_str(tcx, rptr_ty));
         let r = ty::ty_region(tcx, span, rptr_ty);
-        link_region(rcx, span, r, mutbl, cmt_borrowed);
+        link_region(rcx, span, r, ty::BorrowKind::from_mutbl(mutbl),
+                    cmt_borrowed);
     }
 }
 
-fn link_region(rcx: &mut Rcx,
+fn link_region(rcx: &Rcx,
                span: Span,
                region_min: ty::Region,
-               mutbl: ast::Mutability,
+               kind: ty::BorrowKind,
                cmt_borrowed: mc::cmt) {
     /*!
      * Informs the inference engine that a borrow of `cmt`
-     * must have mutability `mutbl` and lifetime `region_min`.
+     * must have the borrow kind `kind` and lifetime `region_min`.
      * If `cmt` is a deref of a region pointer with
      * lifetime `r_borrowed`, this will add the constraint that
      * `region_min <= r_borrowed`.
@@ -1189,11 +1208,11 @@ fn link_region(rcx: &mut Rcx,
     // for the lifetime `region_min` for the borrow to be valid:
     let mut cmt_borrowed = cmt_borrowed;
     loop {
-        debug!("link_region(region_min={}, mutbl={}, cmt_borrowed={})",
+        debug!("link_region(region_min={}, kind={}, cmt_borrowed={})",
                region_min.repr(rcx.tcx()),
-               mutbl.repr(rcx.tcx()),
+               kind.repr(rcx.tcx()),
                cmt_borrowed.repr(rcx.tcx()));
-        match cmt_borrowed.cat {
+        match cmt_borrowed.cat.clone() {
             mc::cat_deref(base, _, mc::BorrowedPtr(_, r_borrowed)) => {
                 // References to an upvar `x` are translated to
                 // `*x`, since that is what happens in the
@@ -1213,14 +1232,15 @@ fn link_region(rcx: &mut Rcx,
                                 adjust_upvar_borrow_kind_for_loan(
                                     *upvar_id,
                                     upvar_borrow,
-                                    mutbl);
+                                    kind);
                                 infer::ReborrowUpvar(span, *upvar_id)
                             }
                             None => {
                                 rcx.tcx().sess.span_bug(
                                     span,
                                     format!("Illegal upvar id: {}",
-                                            upvar_id.repr(rcx.tcx())));
+                                            upvar_id.repr(
+                                                rcx.tcx())).as_slice());
                             }
                         }
                     }
@@ -1235,7 +1255,7 @@ fn link_region(rcx: &mut Rcx,
                        r_borrowed.repr(rcx.tcx()));
                 rcx.fcx.mk_subr(true, cause, region_min, r_borrowed);
 
-                if mutbl == ast::MutMutable {
+                if kind != ty::ImmBorrow {
                     // If this is a mutable borrow, then the thing
                     // being borrowed will have to be unique.
                     // In user code, this means it must be an `&mut`
@@ -1262,12 +1282,12 @@ fn link_region(rcx: &mut Rcx,
             }
             mc::cat_discr(cmt_base, _) |
             mc::cat_downcast(cmt_base) |
+            mc::cat_deref(cmt_base, _, mc::GcPtr(..)) |
             mc::cat_deref(cmt_base, _, mc::OwnedPtr) |
             mc::cat_interior(cmt_base, _) => {
                 // Interior or owned data requires its base to be valid
                 cmt_borrowed = cmt_base;
             }
-            mc::cat_deref(_, _, mc::GcPtr(..)) |
             mc::cat_deref(_, _, mc::UnsafePtr(..)) |
             mc::cat_static_item |
             mc::cat_copied_upvar(..) |
@@ -1283,7 +1303,7 @@ fn link_region(rcx: &mut Rcx,
     }
 }
 
-fn adjust_borrow_kind_for_assignment_lhs(rcx: &mut Rcx,
+fn adjust_borrow_kind_for_assignment_lhs(rcx: &Rcx,
                                          lhs: &ast::Expr) {
     /*!
      * Adjusts the inferred borrow_kind as needed to account
@@ -1291,19 +1311,19 @@ fn adjust_borrow_kind_for_assignment_lhs(rcx: &mut Rcx,
      * expression.
      */
 
-    let mut mc = mc::MemCategorizationContext { typer: rcx };
+    let mc = mc::MemCategorizationContext::new(rcx);
     let cmt = ignore_err!(mc.cat_expr(lhs));
-    adjust_upvar_borrow_kind_for_mut(mc.typer, cmt);
+    adjust_upvar_borrow_kind_for_mut(rcx, cmt);
 }
 
-fn adjust_upvar_borrow_kind_for_mut(rcx: &mut Rcx,
+fn adjust_upvar_borrow_kind_for_mut(rcx: &Rcx,
                                     cmt: mc::cmt) {
     let mut cmt = cmt;
     loop {
         debug!("adjust_upvar_borrow_kind_for_mut(cmt={})",
                cmt.repr(rcx.tcx()));
 
-        match cmt.cat {
+        match cmt.cat.clone() {
             mc::cat_deref(base, _, mc::OwnedPtr) |
             mc::cat_interior(base, _) |
             mc::cat_downcast(base) |
@@ -1327,14 +1347,14 @@ fn adjust_upvar_borrow_kind_for_mut(rcx: &mut Rcx,
                         return adjust_upvar_borrow_kind(*upvar_id, ub, ty::MutBorrow);
                     }
 
-                    _ => {
-                        // assignment to deref of an `&mut`
-                        // borrowed pointer implies that the
-                        // pointer itself must be unique, but not
-                        // necessarily *mutable*
-                        return adjust_upvar_borrow_kind_for_unique(rcx, base);
-                    }
+                    _ => {}
                 }
+
+                // assignment to deref of an `&mut`
+                // borrowed pointer implies that the
+                // pointer itself must be unique, but not
+                // necessarily *mutable*
+                return adjust_upvar_borrow_kind_for_unique(rcx, base);
             }
 
             mc::cat_deref(_, _, mc::UnsafePtr(..)) |
@@ -1351,14 +1371,13 @@ fn adjust_upvar_borrow_kind_for_mut(rcx: &mut Rcx,
     }
 }
 
-fn adjust_upvar_borrow_kind_for_unique(rcx: &mut Rcx,
-                                       cmt: mc::cmt) {
+fn adjust_upvar_borrow_kind_for_unique(rcx: &Rcx, cmt: mc::cmt) {
     let mut cmt = cmt;
     loop {
         debug!("adjust_upvar_borrow_kind_for_unique(cmt={})",
                cmt.repr(rcx.tcx()));
 
-        match cmt.cat {
+        match cmt.cat.clone() {
             mc::cat_deref(base, _, mc::OwnedPtr) |
             mc::cat_interior(base, _) |
             mc::cat_downcast(base) |
@@ -1381,12 +1400,12 @@ fn adjust_upvar_borrow_kind_for_unique(rcx: &mut Rcx,
                         return adjust_upvar_borrow_kind(*upvar_id, ub, ty::UniqueImmBorrow);
                     }
 
-                    _ => {
-                        // for a borrowed pointer to be unique, its
-                        // base must be unique
-                        return adjust_upvar_borrow_kind_for_unique(rcx, base);
-                    }
+                    _ => {}
                 }
+
+                // for a borrowed pointer to be unique, its
+                // base must be unique
+                return adjust_upvar_borrow_kind_for_unique(rcx, base);
             }
 
             mc::cat_deref(_, _, mc::UnsafePtr(..)) |
@@ -1428,12 +1447,11 @@ fn link_upvar_borrow_kind_for_nested_closures(rcx: &mut Rcx,
 
 fn adjust_upvar_borrow_kind_for_loan(upvar_id: ty::UpvarId,
                                      upvar_borrow: &mut ty::UpvarBorrow,
-                                     mutbl: ast::Mutability) {
+                                     kind: ty::BorrowKind) {
     debug!("adjust_upvar_borrow_kind_for_loan: upvar_id={:?} kind={:?} -> {:?}",
-           upvar_id, upvar_borrow.kind, mutbl);
+           upvar_id, upvar_borrow.kind, kind);
 
-    adjust_upvar_borrow_kind(upvar_id, upvar_borrow,
-                             ty::BorrowKind::from_mutbl(mutbl))
+    adjust_upvar_borrow_kind(upvar_id, upvar_borrow, kind)
 }
 
 fn adjust_upvar_borrow_kind(upvar_id: ty::UpvarId,

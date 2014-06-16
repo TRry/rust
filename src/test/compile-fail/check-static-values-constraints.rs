@@ -12,6 +12,7 @@
 // Verifies all possible restrictions for static items values.
 
 use std::kinds::marker;
+use std::gc::{Gc, GC};
 
 struct WithDtor;
 
@@ -27,7 +28,7 @@ enum SafeEnum {
     Variant1,
     Variant2(int),
     Variant3(WithDtor),
-    Variant4(~str)
+    Variant4(String)
 }
 
 // These should be ok
@@ -92,8 +93,10 @@ impl Drop for UnsafeStruct {
 static STATIC10: UnsafeStruct = UnsafeStruct;
 //~^ ERROR static items are not allowed to have destructor
 
-static STATIC11: ~str = ~"Owned pointers are not allowed either";
-//~^ ERROR static items are not allowed to have owned pointers
+struct MyOwned;
+
+static STATIC11: Box<MyOwned> = box MyOwned;
+//~^ ERROR static items are not allowed to have custom pointers
 
 // The following examples test that mutable structs are just forbidden
 // to have types with destructors
@@ -104,27 +107,31 @@ static mut STATIC12: UnsafeStruct = UnsafeStruct;
 static mut STATIC13: SafeStruct = SafeStruct{field1: Variant1, field2: Variant3(WithDtor)};
 //~^ ERROR mutable static items are not allowed to have destructors
 
-static mut STATIC14: SafeStruct = SafeStruct{field1: Variant1, field2: Variant4(~"str")};
+static mut STATIC14: SafeStruct = SafeStruct {
 //~^ ERROR mutable static items are not allowed to have destructors
+    field1: Variant1,
+    field2: Variant4("str".to_string())
+};
 
-static STATIC15: &'static [~str] = &'static [~"str", ~"str"];
-//~^ ERROR static items are not allowed to have owned pointers
-//~^^ ERROR static items are not allowed to have owned pointers
+static STATIC15: &'static [Box<MyOwned>] = &'static [box MyOwned, box MyOwned];
+//~^ ERROR static items are not allowed to have custom pointers
+//~^^ ERROR static items are not allowed to have custom pointers
 
-static STATIC16: (~str, ~str) = (~"str", ~"str");
-//~^ ERROR static items are not allowed to have owned pointers
-//~^^ ERROR static items are not allowed to have owned pointers
+static STATIC16: (&'static Box<MyOwned>, &'static Box<MyOwned>) =
+    (&'static box MyOwned, &'static box MyOwned);
+//~^ ERROR static items are not allowed to have custom pointers
+//~^^ ERROR static items are not allowed to have custom pointers
 
 static mut STATIC17: SafeEnum = Variant1;
 //~^ ERROR mutable static items are not allowed to have destructors
 
-static STATIC18: @SafeStruct = @SafeStruct{field1: Variant1, field2: Variant2(0)};
-//~^ ERROR static items are not allowed to have managed pointers
+static STATIC18: Gc<SafeStruct> = box(GC) SafeStruct{field1: Variant1, field2: Variant2(0)};
+//~^ ERROR static items are not allowed to have custom pointers
 
-static STATIC19: ~int = box 3;
-//~^ ERROR static items are not allowed to have owned pointers
+static STATIC19: Box<int> = box 3;
+//~^ ERROR static items are not allowed to have custom pointers
 
 pub fn main() {
-    let y = { static x: ~int = ~3; x };
-    //~^ ERROR static items are not allowed to have owned pointers
+    let y = { static x: Box<int> = box 3; x };
+    //~^ ERROR static items are not allowed to have custom pointers
 }

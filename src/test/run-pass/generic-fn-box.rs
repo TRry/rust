@@ -8,8 +8,12 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#[feature(managed_boxes)];
+#![feature(managed_boxes)]
 
-fn f<T>(x: @T) -> @T { return x; }
+extern crate debug;
 
-pub fn main() { let x = f(@3); println!("{:?}", *x); }
+use std::gc::{Gc, GC};
+
+fn f<T>(x: Gc<T>) -> Gc<T> { return x; }
+
+pub fn main() { let x = f(box(GC) 3); println!("{:?}", *x); }

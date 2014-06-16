@@ -20,7 +20,7 @@ use metadata::loader;
 use std::cell::RefCell;
 use std::c_vec::CVec;
 use std::rc::Rc;
-use collections::HashMap;
+use std::collections::HashMap;
 use syntax::ast;
 use syntax::crateid::CrateId;
 use syntax::codemap::Span;
@@ -30,7 +30,7 @@ use syntax::parse::token::IdentInterner;
 // local crate numbers (as generated during this session). Each external
 // crate may refer to types in other external crates, and each has their
 // own crate numbers.
-pub type cnum_map = @RefCell<HashMap<ast::CrateNum, ast::CrateNum>>;
+pub type cnum_map = HashMap<ast::CrateNum, ast::CrateNum>;
 
 pub enum MetadataBlob {
     MetadataVec(CVec<u8>),
@@ -38,20 +38,20 @@ pub enum MetadataBlob {
 }
 
 pub struct crate_metadata {
-    pub name: ~str,
+    pub name: String,
     pub data: MetadataBlob,
     pub cnum_map: cnum_map,
     pub cnum: ast::CrateNum,
     pub span: Span,
 }
 
-#[deriving(Eq)]
+#[deriving(Show, PartialEq, Clone)]
 pub enum LinkagePreference {
     RequireDynamic,
     RequireStatic,
 }
 
-#[deriving(Eq, FromPrimitive)]
+#[deriving(PartialEq, FromPrimitive)]
 pub enum NativeLibaryKind {
     NativeStatic,    // native static library (.a archive)
     NativeFramework, // OSX-specific
@@ -60,7 +60,7 @@ pub enum NativeLibaryKind {
 
 // Where a crate came from on the local filesystem. One of these two options
 // must be non-None.
-#[deriving(Eq, Clone)]
+#[deriving(PartialEq, Clone)]
 pub struct CrateSource {
     pub dylib: Option<Path>,
     pub rlib: Option<Path>,
@@ -68,11 +68,11 @@ pub struct CrateSource {
 }
 
 pub struct CStore {
-    metas: RefCell<HashMap<ast::CrateNum, @crate_metadata>>,
+    metas: RefCell<HashMap<ast::CrateNum, Rc<crate_metadata>>>,
     extern_mod_crate_map: RefCell<extern_mod_crate_map>,
     used_crate_sources: RefCell<Vec<CrateSource>>,
-    used_libraries: RefCell<Vec<(~str, NativeLibaryKind)>>,
-    used_link_args: RefCell<Vec<~str>>,
+    used_libraries: RefCell<Vec<(String, NativeLibaryKind)>>,
+    used_link_args: RefCell<Vec<String>>,
     pub intr: Rc<IdentInterner>,
 }
 
@@ -95,8 +95,8 @@ impl CStore {
         self.metas.borrow().len() as ast::CrateNum + 1
     }
 
-    pub fn get_crate_data(&self, cnum: ast::CrateNum) -> @crate_metadata {
-        *self.metas.borrow().get(&cnum)
+    pub fn get_crate_data(&self, cnum: ast::CrateNum) -> Rc<crate_metadata> {
+        self.metas.borrow().get(&cnum).clone()
     }
 
     pub fn get_crate_hash(&self, cnum: ast::CrateNum) -> Svh {
@@ -104,13 +104,24 @@ impl CStore {
         decoder::get_crate_hash(cdata.data())
     }
 
-    pub fn set_crate_data(&self, cnum: ast::CrateNum, data: @crate_metadata) {
+    pub fn set_crate_data(&self, cnum: ast::CrateNum, data: Rc<crate_metadata>) {
         self.metas.borrow_mut().insert(cnum, data);
     }
 
-    pub fn iter_crate_data(&self, i: |ast::CrateNum, @crate_metadata|) {
-        for (&k, &v) in self.metas.borrow().iter() {
-            i(k, v);
+    pub fn iter_crate_data(&self, i: |ast::CrateNum, &crate_metadata|) {
+        for (&k, v) in self.metas.borrow().iter() {
+            i(k, &**v);
+        }
+    }
+
+    /// Like `iter_crate_data`, but passes source paths (if available) as well.
+    pub fn iter_crate_data_origins(&self, i: |ast::CrateNum,
+                                              &crate_metadata,
+                                              Option<CrateSource>|) {
+        for (&k, v) in self.metas.borrow().iter() {
+            let origin = self.get_used_crate_source(k);
+            origin.as_ref().map(|cs| { assert!(k == cs.cnum); });
+            i(k, &**v, origin);
         }
     }
 
@@ -126,9 +137,6 @@ impl CStore {
         self.used_crate_sources.borrow_mut()
             .iter().find(|source| source.cnum == cnum)
             .map(|source| source.clone())
-    }
-
-    pub fn dump_phase_syntax_crates(&self) {
     }
 
     pub fn reset(&self) {
@@ -155,7 +163,7 @@ impl CStore {
                  ordering: &mut Vec<ast::CrateNum>) {
             if ordering.as_slice().contains(&cnum) { return }
             let meta = cstore.get_crate_data(cnum);
-            for (_, &dep) in meta.cnum_map.borrow().iter() {
+            for (_, &dep) in meta.cnum_map.iter() {
                 visit(cstore, dep, ordering);
             }
             ordering.push(cnum);
@@ -178,23 +186,23 @@ impl CStore {
         libs
     }
 
-    pub fn add_used_library(&self, lib: ~str, kind: NativeLibaryKind) {
+    pub fn add_used_library(&self, lib: String, kind: NativeLibaryKind) {
         assert!(!lib.is_empty());
         self.used_libraries.borrow_mut().push((lib, kind));
     }
 
     pub fn get_used_libraries<'a>(&'a self)
-                              -> &'a RefCell<Vec<(~str, NativeLibaryKind)> > {
+                              -> &'a RefCell<Vec<(String, NativeLibaryKind)> > {
         &self.used_libraries
     }
 
     pub fn add_used_link_args(&self, args: &str) {
         for s in args.split(' ') {
-            self.used_link_args.borrow_mut().push(s.to_owned());
+            self.used_link_args.borrow_mut().push(s.to_string());
         }
     }
 
-    pub fn get_used_link_args<'a>(&'a self) -> &'a RefCell<Vec<~str> > {
+    pub fn get_used_link_args<'a>(&'a self) -> &'a RefCell<Vec<String> > {
         &self.used_link_args
     }
 

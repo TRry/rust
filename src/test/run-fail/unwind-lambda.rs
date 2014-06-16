@@ -8,22 +8,24 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#[feature(managed_boxes)];
-
 // error-pattern:fail
 
-fn main() {
-    let cheese = ~"roquefort";
-    let carrots = @~"crunchy";
+#![feature(managed_boxes)]
 
-    let result: |@~str, |~str||: 'static = (|tasties, macerate| {
+use std::gc::{Gc, GC};
+
+fn main() {
+    let cheese = "roquefort".to_string();
+    let carrots = box(GC) "crunchy".to_string();
+
+    let result: |Gc<String>, |String||: 'static = (|tasties, macerate| {
         macerate((*tasties).clone());
     });
     result(carrots, |food| {
-        let mush = food + cheese;
+        let mush = format!("{}{}", food, cheese);
         let cheese = cheese.clone();
         let f: || = || {
-            let _chew = mush + cheese;
+            let _chew = format!("{}{}", mush, cheese);
             fail!("so yummy")
         };
         f();

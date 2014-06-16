@@ -1,5 +1,3 @@
-// ignore-pretty
-
 // Copyright 2013-2014 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
@@ -10,13 +8,15 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+// ignore-pretty very bad with line comments
+
 extern crate collections;
 extern crate rand;
 extern crate time;
 
-use collections::bitv::BitvSet;
-use collections::TreeSet;
-use collections::HashSet;
+use std::collections::bitv::BitvSet;
+use std::collections::TreeSet;
+use std::collections::HashSet;
 use std::os;
 use std::uint;
 
@@ -80,7 +80,7 @@ impl Results {
         }
     }
 
-    pub fn bench_str<T:MutableSet<~str>,
+    pub fn bench_str<T:MutableSet<String>,
                      R:rand::Rng>(
                      &mut self,
                      rng: &mut R,
@@ -155,9 +155,10 @@ fn empty_results() -> Results {
 
 fn main() {
     let args = os::args();
+    let args = args.as_slice();
     let num_keys = {
         if args.len() == 2 {
-            from_str::<uint>(args[1]).unwrap()
+            from_str::<uint>(args[1].as_slice()).unwrap()
         } else {
             100 // woefully inadequate for any real measurement
         }
@@ -174,7 +175,7 @@ fn main() {
             s
         });
         results.bench_str(&mut rng, num_keys, || {
-            let s: HashSet<~str> = HashSet::new();
+            let s: HashSet<String> = HashSet::new();
             s
         });
         write_results("collections::HashSet", &results);
@@ -188,7 +189,7 @@ fn main() {
             s
         });
         results.bench_str(&mut rng, num_keys, || {
-            let s: TreeSet<~str> = TreeSet::new();
+            let s: TreeSet<String> = TreeSet::new();
             s
         });
         write_results("collections::TreeSet", &results);

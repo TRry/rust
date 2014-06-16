@@ -14,7 +14,6 @@
  */
 
 use lib::llvm::{BasicBlockRef, ValueRef};
-use middle::lang_items::{EhPersonalityLangItem};
 use middle::trans::base;
 use middle::trans::build;
 use middle::trans::callee;
@@ -26,6 +25,7 @@ use middle::ty;
 use syntax::ast;
 use util::ppaux::Repr;
 
+
 pub struct CleanupScope<'a> {
     // The id of this cleanup scope. If the id is None,
     // this is a *temporary scope* that is pushed during trans to
@@ -35,7 +35,7 @@ pub struct CleanupScope<'a> {
     kind: CleanupScopeKind<'a>,
 
     // Cleanups to run upon scope exit.
-    cleanups: Vec<~Cleanup>,
+    cleanups: Vec<Box<Cleanup>>,
 
     cached_early_exits: Vec<CachedEarlyExit>,
     cached_landing_pad: Option<BasicBlockRef>,
@@ -55,7 +55,7 @@ pub enum CleanupScopeKind<'a> {
     LoopScopeKind(ast::NodeId, [&'a Block<'a>, ..EXIT_MAX])
 }
 
-#[deriving(Eq)]
+#[deriving(PartialEq)]
 pub enum EarlyExitLabel {
     UnwindExit,
     ReturnExit,
@@ -236,7 +236,7 @@ impl<'a> CleanupMethods<'a> for FunctionContext<'a> {
          */
 
         if !ty::type_needs_drop(self.ccx.tcx(), ty) { return; }
-        let drop = ~DropValue {
+        let drop = box DropValue {
             is_immediate: false,
             on_unwind: ty::type_needs_unwind_cleanup(self.ccx.tcx(), ty),
             val: val,
@@ -248,7 +248,7 @@ impl<'a> CleanupMethods<'a> for FunctionContext<'a> {
                self.ccx.tn.val_to_str(val),
                ty.repr(self.ccx.tcx()));
 
-        self.schedule_clean(cleanup_scope, drop as ~Cleanup);
+        self.schedule_clean(cleanup_scope, drop as Box<Cleanup>);
     }
 
     fn schedule_drop_immediate(&self,
@@ -260,7 +260,7 @@ impl<'a> CleanupMethods<'a> for FunctionContext<'a> {
          */
 
         if !ty::type_needs_drop(self.ccx.tcx(), ty) { return; }
-        let drop = ~DropValue {
+        let drop = box DropValue {
             is_immediate: true,
             on_unwind: ty::type_needs_unwind_cleanup(self.ccx.tcx(), ty),
             val: val,
@@ -272,31 +272,32 @@ impl<'a> CleanupMethods<'a> for FunctionContext<'a> {
                self.ccx.tn.val_to_str(val),
                ty.repr(self.ccx.tcx()));
 
-        self.schedule_clean(cleanup_scope, drop as ~Cleanup);
+        self.schedule_clean(cleanup_scope, drop as Box<Cleanup>);
     }
 
     fn schedule_free_value(&self,
                            cleanup_scope: ScopeId,
                            val: ValueRef,
-                           heap: Heap) {
+                           heap: Heap,
+                           content_ty: ty::t) {
         /*!
          * Schedules a call to `free(val)`. Note that this is a shallow
          * operation.
          */
 
-        let drop = ~FreeValue { ptr: val, heap: heap };
+        let drop = box FreeValue { ptr: val, heap: heap, content_ty: content_ty };
 
         debug!("schedule_free_value({:?}, val={}, heap={:?})",
                cleanup_scope,
                self.ccx.tn.val_to_str(val),
                heap);
 
-        self.schedule_clean(cleanup_scope, drop as ~Cleanup);
+        self.schedule_clean(cleanup_scope, drop as Box<Cleanup>);
     }
 
     fn schedule_clean(&self,
                       cleanup_scope: ScopeId,
-                      cleanup: ~Cleanup) {
+                      cleanup: Box<Cleanup>) {
         match cleanup_scope {
             AstScope(id) => self.schedule_clean_in_ast_scope(id, cleanup),
             CustomScope(id) => self.schedule_clean_in_custom_scope(id, cleanup),
@@ -305,7 +306,7 @@ impl<'a> CleanupMethods<'a> for FunctionContext<'a> {
 
     fn schedule_clean_in_ast_scope(&self,
                                    cleanup_scope: ast::NodeId,
-                                   cleanup: ~Cleanup) {
+                                   cleanup: Box<Cleanup>) {
         /*!
          * Schedules a cleanup to occur upon exit from `cleanup_scope`.
          * If `cleanup_scope` is not provided, then the cleanup is scheduled
@@ -328,12 +329,12 @@ impl<'a> CleanupMethods<'a> for FunctionContext<'a> {
 
         self.ccx.sess().bug(
             format!("no cleanup scope {} found",
-                    self.ccx.tcx.map.node_to_str(cleanup_scope)));
+                    self.ccx.tcx.map.node_to_str(cleanup_scope)).as_slice());
     }
 
     fn schedule_clean_in_custom_scope(&self,
                                       custom_scope: CustomScopeIndex,
-                                      cleanup: ~Cleanup) {
+                                      cleanup: Box<Cleanup>) {
         /*!
          * Schedules a cleanup to occur in the top-most scope,
          * which must be a temporary scope.
@@ -530,7 +531,7 @@ impl<'a> CleanupHelperMethods<'a> for FunctionContext<'a> {
                     LoopExit(id, _) => {
                         self.ccx.sess().bug(format!(
                                 "cannot exit from scope {:?}, \
-                                not in scope", id));
+                                not in scope", id).as_slice());
                     }
                 }
             }
@@ -598,7 +599,9 @@ impl<'a> CleanupHelperMethods<'a> for FunctionContext<'a> {
             {
                 let name = scope.block_name("clean");
                 debug!("generating cleanups for {}", name);
-                let bcx_in = self.new_block(label.is_unwind(), name, None);
+                let bcx_in = self.new_block(label.is_unwind(),
+                                            name.as_slice(),
+                                            None);
                 let mut bcx_out = bcx_in;
                 for cleanup in scope.cleanups.iter().rev() {
                     if cleanup_is_suitable_for(*cleanup, label) {
@@ -648,7 +651,7 @@ impl<'a> CleanupHelperMethods<'a> for FunctionContext<'a> {
                 Some(llbb) => { return llbb; }
                 None => {
                     let name = last_scope.block_name("unwind");
-                    pad_bcx = self.new_block(true, name, None);
+                    pad_bcx = self.new_block(true, name.as_slice(), None);
                     last_scope.cached_landing_pad = Some(pad_bcx.llbb);
                 }
             }
@@ -662,8 +665,31 @@ impl<'a> CleanupHelperMethods<'a> for FunctionContext<'a> {
                                     false);
 
         // The exception handling personality function.
-        let def_id = common::langcall(pad_bcx, None, "", EhPersonalityLangItem);
-        let llpersonality = callee::trans_fn_ref(pad_bcx, def_id, ExprId(0));
+        //
+        // If our compilation unit has the `eh_personality` lang item somewhere
+        // within it, then we just need to translate that. Otherwise, we're
+        // building an rlib which will depend on some upstream implementation of
+        // this function, so we just codegen a generic reference to it. We don't
+        // specify any of the types for the function, we just make it a symbol
+        // that LLVM can later use.
+        let llpersonality = match pad_bcx.tcx().lang_items.eh_personality() {
+            Some(def_id) => callee::trans_fn_ref(pad_bcx, def_id, ExprId(0)),
+            None => {
+                let mut personality = self.ccx.eh_personality.borrow_mut();
+                match *personality {
+                    Some(llpersonality) => llpersonality,
+                    None => {
+                        let fty = Type::variadic_func(&[], &Type::i32(self.ccx));
+                        let f = base::decl_cdecl_fn(self.ccx,
+                                                    "rust_eh_personality",
+                                                    fty,
+                                                    ty::mk_i32());
+                        *personality = Some(f);
+                        f
+                    }
+                }
+            }
+        };
 
         // The only landing pad clause will be 'cleanup'
         let llretval = build::LandingPad(pad_bcx, llretty, llpersonality, 1u);
@@ -730,7 +756,7 @@ impl<'a> CleanupScope<'a> {
             self.cleanups.iter().any(|c| c.clean_on_unwind())
     }
 
-    fn block_name(&self, prefix: &str) -> ~str {
+    fn block_name(&self, prefix: &str) -> String {
         /*!
          * Returns a suitable name to use for the basic block that
          * handles this cleanup scope
@@ -822,6 +848,7 @@ pub enum Heap {
 pub struct FreeValue {
     ptr: ValueRef,
     heap: Heap,
+    content_ty: ty::t
 }
 
 impl Cleanup for FreeValue {
@@ -835,7 +862,7 @@ impl Cleanup for FreeValue {
                 glue::trans_free(bcx, self.ptr)
             }
             HeapExchange => {
-                glue::trans_exchange_free(bcx, self.ptr)
+                glue::trans_exchange_free_ty(bcx, self.ptr, self.content_ty)
             }
         }
     }
@@ -851,7 +878,8 @@ pub fn temporary_scope(tcx: &ty::ctxt,
             r
         }
         None => {
-            tcx.sess.bug(format!("no temporary scope available for expr {}", id))
+            tcx.sess.bug(format!("no temporary scope available for expr {}",
+                                 id).as_slice())
         }
     }
 }
@@ -906,16 +934,17 @@ pub trait CleanupMethods<'a> {
     fn schedule_free_value(&self,
                            cleanup_scope: ScopeId,
                            val: ValueRef,
-                           heap: Heap);
+                           heap: Heap,
+                           content_ty: ty::t);
     fn schedule_clean(&self,
                       cleanup_scope: ScopeId,
-                      cleanup: ~Cleanup);
+                      cleanup: Box<Cleanup>);
     fn schedule_clean_in_ast_scope(&self,
                                    cleanup_scope: ast::NodeId,
-                                   cleanup: ~Cleanup);
+                                   cleanup: Box<Cleanup>);
     fn schedule_clean_in_custom_scope(&self,
                                     custom_scope: CustomScopeIndex,
-                                    cleanup: ~Cleanup);
+                                    cleanup: Box<Cleanup>);
     fn needs_invoke(&self) -> bool;
     fn get_landing_pad(&'a self) -> BasicBlockRef;
 }

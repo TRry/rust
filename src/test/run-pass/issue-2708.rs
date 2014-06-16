@@ -8,7 +8,9 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#[feature(managed_boxes)];
+#![feature(managed_boxes)]
+
+use std::gc::GC;
 
 struct Font {
     fontbuf: uint,
@@ -30,5 +32,5 @@ fn Font() -> Font {
 }
 
 pub fn main() {
-    let _f = @Font();
+    let _f = box(GC) Font();
 }

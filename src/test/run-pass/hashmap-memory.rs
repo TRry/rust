@@ -9,10 +9,10 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#[feature(managed_boxes)];
+#![feature(managed_boxes)]
 
 extern crate collections;
-
+extern crate debug;
 
 /**
    A somewhat reduced test case to expose some Valgrind issues.
@@ -20,20 +20,22 @@ extern crate collections;
    This originally came from the word-count benchmark.
 */
 
-pub fn map(filename: ~str, emit: map_reduce::putter) { emit(filename, ~"1"); }
+pub fn map(filename: String, emit: map_reduce::putter) {
+    emit(filename, "1".to_string());
+}
 
 mod map_reduce {
-    use collections::HashMap;
+    use std::collections::HashMap;
     use std::str;
     use std::task;
 
-    pub type putter<'a> = |~str, ~str|: 'a;
+    pub type putter<'a> = |String, String|: 'a;
 
-    pub type mapper = extern fn(~str, putter);
+    pub type mapper = extern fn(String, putter);
 
     enum ctrl_proto { find_reducer(Vec<u8>, Sender<int>), mapper_done, }
 
-    fn start_mappers(ctrl: Sender<ctrl_proto>, inputs: Vec<~str>) {
+    fn start_mappers(ctrl: Sender<ctrl_proto>, inputs: Vec<String>) {
         for i in inputs.iter() {
             let ctrl = ctrl.clone();
             let i = i.clone();
@@ -41,12 +43,12 @@ mod map_reduce {
         }
     }
 
-    fn map_task(ctrl: Sender<ctrl_proto>, input: ~str) {
+    fn map_task(ctrl: Sender<ctrl_proto>, input: String) {
         let mut intermediates = HashMap::new();
 
-        fn emit(im: &mut HashMap<~str, int>,
-                ctrl: Sender<ctrl_proto>, key: ~str,
-                _val: ~str) {
+        fn emit(im: &mut HashMap<String, int>,
+                ctrl: Sender<ctrl_proto>, key: String,
+                _val: String) {
             if im.contains_key(&key) {
                 return;
             }
@@ -64,13 +66,13 @@ mod map_reduce {
         ctrl_clone.send(mapper_done);
     }
 
-    pub fn map_reduce(inputs: Vec<~str>) {
+    pub fn map_reduce(inputs: Vec<String>) {
         let (tx, rx) = channel();
 
         // This task becomes the master control task. It spawns others
         // to do the rest.
 
-        let mut reducers: HashMap<~str, int>;
+        let mut reducers: HashMap<String, int>;
 
         reducers = HashMap::new();
 
@@ -83,8 +85,8 @@ mod map_reduce {
               mapper_done => { num_mappers -= 1; }
               find_reducer(k, cc) => {
                 let mut c;
-                match reducers.find(&str::from_utf8(k.as_slice()).unwrap()
-                                                                 .to_owned()) {
+                match reducers.find(&str::from_utf8(
+                        k.as_slice()).unwrap().to_string()) {
                   Some(&_c) => { c = _c; }
                   None => { c = 0; }
                 }
@@ -96,5 +98,6 @@ mod map_reduce {
 }
 
 pub fn main() {
-    map_reduce::map_reduce(vec!(~"../src/test/run-pass/hashmap-memory.rs"));
+    map_reduce::map_reduce(
+        vec!("../src/test/run-pass/hashmap-memory.rs".to_string()));
 }

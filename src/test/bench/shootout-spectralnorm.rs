@@ -8,14 +8,17 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-extern crate sync;
+#![feature(phase)]
+#![allow(non_snake_case_functions)]
+#[phase(plugin)] extern crate green;
 
 use std::from_str::FromStr;
 use std::iter::count;
 use std::cmp::min;
 use std::os;
-use std::slice::from_elem;
-use sync::{Arc, RWLock};
+use std::sync::{Arc, RWLock};
+
+green_start!(main)
 
 fn A(i: uint, j: uint) -> f64 {
     ((i + j) * (i + j + 1) / 2 + i + 1) as f64
@@ -39,7 +42,7 @@ fn mult(v: Arc<RWLock<Vec<f64>>>, out: Arc<RWLock<Vec<f64>>>,
     let (tx, rx) = channel();
 
     let len = out.read().len();
-    let chunk = len / 100 + 1;
+    let chunk = len / 20 + 1;
     for chk in count(0, chunk) {
         if chk >= len {break;}
         let tx = tx.clone();
@@ -91,12 +94,13 @@ fn mult_AtAv(v: Arc<RWLock<Vec<f64>>>, out: Arc<RWLock<Vec<f64>>>,
 
 fn main() {
     let args = os::args();
+    let args = args.as_slice();
     let n = if os::getenv("RUST_BENCH").is_some() {
         5500
     } else if args.len() < 2 {
         2000
     } else {
-        FromStr::from_str(args[1]).unwrap()
+        FromStr::from_str(args[1].as_slice()).unwrap()
     };
     let u = Arc::new(RWLock::new(Vec::from_elem(n, 1.)));
     let v = Arc::new(RWLock::new(Vec::from_elem(n, 1.)));

@@ -45,7 +45,7 @@ There are several critical invariants which we maintain:
 > types lie in between.  The bottom type is then the Null type.
 > So the tree looks like:
 >
-> ```notrust
+> ```text
 >         Object
 >         /    \
 >     String   Other
@@ -106,7 +106,7 @@ Pictorally, what this does is to take two distinct variables with
 (hopefully not completely) distinct type ranges and produce one with
 the intersection.
 
-```notrust
+```text
                   B.ub                  B.ub
                    /\                    /
            A.ub   /  \           A.ub   /
@@ -129,7 +129,7 @@ bounds in such a way that, whatever happens, we know that A <: B will hold.
 This can be achieved by ensuring that A.ub <: B.lb.  In practice there
 are two ways to do that, depicted pictorally here:
 
-```notrust
+```text
     Before                Option #1            Option #2
 
              B.ub                B.ub                B.ub
@@ -164,7 +164,7 @@ course, it depends on the program.
 
 The main case which fails today that I would like to support is:
 
-```notrust
+```text
 fn foo<T>(x: T, y: T) { ... }
 
 fn bar() {
@@ -244,7 +244,7 @@ yet, that's what we're trying to find!  In our code, we opt to unify
 
 # Implementation details
 
-We make use of a trait-like impementation strategy to consolidate
+We make use of a trait-like implementation strategy to consolidate
 duplicated code between subtypes, GLB, and LUB computations.  See the
 section on "Type Combining" below for details.
 

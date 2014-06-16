@@ -10,13 +10,13 @@
 
 // Microbenchmarks for various functions in std and extra
 
-#[feature(macro_rules)];
+#![feature(macro_rules)]
 
-extern crate rand;
 extern crate time;
 
 use time::precise_time_s;
-use rand::Rng;
+use std::rand;
+use std::rand::Rng;
 use std::mem::swap;
 use std::os;
 use std::str;
@@ -24,11 +24,13 @@ use std::vec;
 use std::io::File;
 
 macro_rules! bench (
-    ($argv:expr, $id:ident) => (maybe_run_test($argv, stringify!($id).to_owned(), $id))
+    ($argv:expr, $id:ident) => (maybe_run_test($argv.as_slice(),
+                                               stringify!($id).to_string(),
+                                                          $id))
 )
 
 fn main() {
-    let argv = os::args();
+    let argv = os::args().move_iter().map(|x| x.to_string()).collect::<Vec<String>>();
     let _tests = argv.slice(1, argv.len());
 
     bench!(argv, shift_push);
@@ -40,13 +42,13 @@ fn main() {
     bench!(argv, is_utf8_multibyte);
 }
 
-fn maybe_run_test(argv: &[~str], name: ~str, test: ||) {
+fn maybe_run_test(argv: &[String], name: String, test: ||) {
     let mut run_test = false;
 
     if os::getenv("RUST_BENCH").is_some() {
         run_test = true
     } else if argv.len() > 0 {
-        run_test = argv.iter().any(|x| x == &~"all") || argv.iter().any(|x| x == &name)
+        run_test = argv.iter().any(|x| x == &"all".to_string()) || argv.iter().any(|x| x == &name)
     }
 
     if !run_test {

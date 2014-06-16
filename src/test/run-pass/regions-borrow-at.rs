@@ -8,14 +8,16 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#[feature(managed_boxes)];
+#![feature(managed_boxes)]
+
+use std::gc::GC;
 
 fn foo(x: &uint) -> uint {
     *x
 }
 
 pub fn main() {
-    let p = @22u;
+    let p = box(GC) 22u;
     let r = foo(p);
     println!("r={}", r);
     assert_eq!(r, 22u);

@@ -1,4 +1,4 @@
-// Copyright 2012 The Rust Project Developers. See the COPYRIGHT
+// Copyright 2012-2014 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
 //
@@ -11,10 +11,11 @@
 
 use back::abi;
 use back::link::mangle_internal_name_by_path_and_seq;
-use driver::session::FullDebugInfo;
+use driver::config::FullDebugInfo;
 use lib::llvm::ValueRef;
+use middle::def;
+use middle::freevars;
 use middle::lang_items::ClosureExchangeMallocFnLangItem;
-use middle::moves;
 use middle::trans::base::*;
 use middle::trans::build::*;
 use middle::trans::common::*;
@@ -30,7 +31,6 @@ use util::ppaux::ty_to_str;
 
 use arena::TypedArena;
 use syntax::ast;
-use syntax::ast_util;
 
 // ___Good to know (tm)__________________________________________________
 //
@@ -38,17 +38,14 @@ use syntax::ast_util;
 // roughly as follows:
 //
 // struct rust_opaque_box {         // see rust_internal.h
-//   unsigned ref_count;            // only used for @fn()
-//   type_desc *tydesc;             // describes closure_data struct
-//   rust_opaque_box *prev;         // (used internally by memory alloc)
-//   rust_opaque_box *next;         // (used internally by memory alloc)
+//   unsigned ref_count;            // obsolete (part of @T's header)
+//   fn(void*) *drop_glue;          // destructor (for proc)
+//   rust_opaque_box *prev;         // obsolete (part of @T's header)
+//   rust_opaque_box *next;         // obsolete (part of @T's header)
 //   struct closure_data {
-//       type_desc *bound_tdescs[]; // bound descriptors
-//       struct {
-//         upvar1_t upvar1;
-//         ...
-//         upvarN_t upvarN;
-//       } bound_data;
+//       upvar1_t upvar1;
+//       ...
+//       upvarN_t upvarN;
 //    }
 // };
 //
@@ -87,7 +84,7 @@ use syntax::ast_util;
 // because the alignment requirements of the bound data affects the
 // alignment requires of the closure_data struct as a whole.  However,
 // right now this is a non-issue in any case, because the size of the
-// rust_opaque_box header is always a mutiple of 16-bytes, which is
+// rust_opaque_box header is always a multiple of 16-bytes, which is
 // the maximum alignment requirement we ever have to worry about.
 //
 // The only reason alignment matters is that, in order to learn what data
@@ -101,35 +98,14 @@ use syntax::ast_util;
 //
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-pub enum EnvAction {
-    /// Copy the value from this llvm ValueRef into the environment.
-    EnvCopy,
-
-    /// Move the value from this llvm ValueRef into the environment.
-    EnvMove,
-
-    /// Access by reference (used for stack closures).
-    EnvRef
-}
-
 pub struct EnvValue {
-    action: EnvAction,
+    action: freevars::CaptureMode,
     datum: Datum<Lvalue>
 }
 
-impl EnvAction {
-    pub fn to_str(&self) -> ~str {
-        match *self {
-            EnvCopy => ~"EnvCopy",
-            EnvMove => ~"EnvMove",
-            EnvRef => ~"EnvRef"
-        }
-    }
-}
-
 impl EnvValue {
-    pub fn to_str(&self, ccx: &CrateContext) -> ~str {
-        format!("{}({})", self.action.to_str(), self.datum.to_str(ccx))
+    pub fn to_str(&self, ccx: &CrateContext) -> String {
+        format!("{}({})", self.action, self.datum.to_str(ccx))
     }
 }
 
@@ -143,8 +119,8 @@ pub fn mk_closure_tys(tcx: &ty::ctxt,
     // converted to ptrs.
     let bound_tys = bound_values.iter().map(|bv| {
         match bv.action {
-            EnvCopy | EnvMove => bv.datum.ty,
-            EnvRef => ty::mk_mut_ptr(tcx, bv.datum.ty)
+            freevars::CaptureByValue => bv.datum.ty,
+            freevars::CaptureByRef => ty::mk_mut_ptr(tcx, bv.datum.ty)
         }
     }).collect();
     let cdata_ty = ty::mk_tup(tcx, bound_tys);
@@ -158,27 +134,24 @@ fn tuplify_box_ty(tcx: &ty::ctxt, t: ty::t) -> ty::t {
 }
 
 fn allocate_cbox<'a>(bcx: &'a Block<'a>,
-                     sigil: ast::Sigil,
+                     store: ty::TraitStore,
                      cdata_ty: ty::t)
                      -> Result<'a> {
     let _icx = push_ctxt("closure::allocate_cbox");
     let tcx = bcx.tcx();
 
     // Allocate and initialize the box:
-    match sigil {
-        ast::ManagedSigil => {
-            tcx.sess.bug("trying to trans allocation of @fn")
-        }
-        ast::OwnedSigil => {
+    match store {
+        ty::UniqTraitStore => {
             let ty = type_of(bcx.ccx(), cdata_ty);
             let size = llsize_of(bcx.ccx(), ty);
             // we treat proc as @ here, which isn't ideal
             malloc_raw_dyn_managed(bcx, cdata_ty, ClosureExchangeMallocFnLangItem, size)
         }
-        ast::BorrowedSigil => {
+        ty::RegionTraitStore(..) => {
             let cbox_ty = tuplify_box_ty(tcx, cdata_ty);
             let llbox = alloc_ty(bcx, cbox_ty, "__closure");
-            rslt(bcx, llbox)
+            Result::new(bcx, llbox)
         }
     }
 }
@@ -196,7 +169,7 @@ pub struct ClosureResult<'a> {
 pub fn store_environment<'a>(
                          bcx: &'a Block<'a>,
                          bound_values: Vec<EnvValue> ,
-                         sigil: ast::Sigil)
+                         store: ty::TraitStore)
                          -> ClosureResult<'a> {
     let _icx = push_ctxt("closure::store_environment");
     let ccx = bcx.ccx();
@@ -220,7 +193,7 @@ pub fn store_environment<'a>(
     }
 
     // allocate closure in the heap
-    let Result {bcx: bcx, val: llbox} = allocate_cbox(bcx, sigil, cdata_ty);
+    let Result {bcx: bcx, val: llbox} = allocate_cbox(bcx, store, cdata_ty);
 
     let llbox = PointerCast(bcx, llbox, llboxptr_ty);
     debug!("tuplify_box_ty = {}", ty_to_str(tcx, cbox_ty));
@@ -232,16 +205,16 @@ pub fn store_environment<'a>(
 
         if ccx.sess().asm_comments() {
             add_comment(bcx, format!("Copy {} into closure",
-                                  bv.to_str(ccx)));
+                                     bv.to_str(ccx)).as_slice());
         }
 
         let bound_data = GEPi(bcx, llbox, [0u, abi::box_field_body, i]);
 
         match bv.action {
-            EnvCopy | EnvMove => {
+            freevars::CaptureByValue => {
                 bcx = bv.datum.store_to(bcx, bound_data);
             }
-            EnvRef => {
+            freevars::CaptureByRef => {
                 Store(bcx, bv.datum.to_llref(), bound_data);
             }
         }
@@ -253,9 +226,11 @@ pub fn store_environment<'a>(
 // Given a context and a list of upvars, build a closure. This just
 // collects the upvars and packages them up for store_environment.
 fn build_closure<'a>(bcx0: &'a Block<'a>,
-                     cap_vars: &[moves::CaptureVar],
-                     sigil: ast::Sigil)
-                     -> ClosureResult<'a> {
+                     freevar_mode: freevars::CaptureMode,
+                     freevars: &Vec<freevars::freevar_entry>,
+                     store: ty::TraitStore)
+                     -> ClosureResult<'a>
+{
     let _icx = push_ctxt("closure::build_closure");
 
     // If we need to, package up the iterator body to call
@@ -263,39 +238,26 @@ fn build_closure<'a>(bcx0: &'a Block<'a>,
 
     // Package up the captured upvars
     let mut env_vals = Vec::new();
-    for cap_var in cap_vars.iter() {
-        debug!("Building closure: captured variable {:?}", *cap_var);
-        let datum = expr::trans_local_var(bcx, cap_var.def);
-        match cap_var.mode {
-            moves::CapRef => {
-                assert_eq!(sigil, ast::BorrowedSigil);
-                env_vals.push(EnvValue {action: EnvRef,
-                                        datum: datum});
-            }
-            moves::CapCopy => {
-                env_vals.push(EnvValue {action: EnvCopy,
-                                        datum: datum});
-            }
-            moves::CapMove => {
-                env_vals.push(EnvValue {action: EnvMove,
-                                        datum: datum});
-            }
-        }
+    for freevar in freevars.iter() {
+        let datum = expr::trans_local_var(bcx, freevar.def);
+        env_vals.push(EnvValue {action: freevar_mode, datum: datum});
     }
 
-    return store_environment(bcx, env_vals, sigil);
+    store_environment(bcx, env_vals, store)
 }
 
 // Given an enclosing block context, a new function context, a closure type,
 // and a list of upvars, generate code to load and populate the environment
 // with the upvars and type descriptors.
-fn load_environment<'a>(bcx: &'a Block<'a>, cdata_ty: ty::t,
-                        cap_vars: &[moves::CaptureVar],
-                        sigil: ast::Sigil) -> &'a Block<'a> {
+fn load_environment<'a>(bcx: &'a Block<'a>,
+                        cdata_ty: ty::t,
+                        freevars: &Vec<freevars::freevar_entry>,
+                        store: ty::TraitStore)
+                        -> &'a Block<'a> {
     let _icx = push_ctxt("closure::load_environment");
 
     // Don't bother to create the block if there's nothing to load
-    if cap_vars.len() == 0 {
+    if freevars.len() == 0 {
         return bcx;
     }
 
@@ -314,13 +276,13 @@ fn load_environment<'a>(bcx: &'a Block<'a>, cdata_ty: ty::t,
 
     // Populate the upvars from the environment
     let mut i = 0u;
-    for cap_var in cap_vars.iter() {
+    for freevar in freevars.iter() {
         let mut upvarptr = GEPi(bcx, llcdata, [0u, i]);
-        match sigil {
-            ast::BorrowedSigil => { upvarptr = Load(bcx, upvarptr); }
-            ast::ManagedSigil | ast::OwnedSigil => {}
+        match store {
+            ty::RegionTraitStore(..) => { upvarptr = Load(bcx, upvarptr); }
+            ty::UniqTraitStore => {}
         }
-        let def_id = ast_util::def_id_of_def(cap_var.def);
+        let def_id = freevar.def.def_id();
 
         bcx.fcx.llupvars.borrow_mut().insert(def_id.node, upvarptr);
 
@@ -331,8 +293,8 @@ fn load_environment<'a>(bcx: &'a Block<'a>, cdata_ty: ty::t,
                 cdata_ty,
                 env_pointer_alloca,
                 i,
-                sigil,
-                cap_var.span);
+                store,
+                freevar.span);
         }
 
         i += 1u;
@@ -349,7 +311,7 @@ fn fill_fn_pair(bcx: &Block, pair: ValueRef, llfn: ValueRef, llenvptr: ValueRef)
 
 pub fn trans_expr_fn<'a>(
                      bcx: &'a Block<'a>,
-                     sigil: ast::Sigil,
+                     store: ty::TraitStore,
                      decl: &ast::FnDecl,
                      body: &ast::Block,
                      id: ast::NodeId,
@@ -359,7 +321,7 @@ pub fn trans_expr_fn<'a>(
      *
      * Translates the body of a closure expression.
      *
-     * - `sigil`
+     * - `store`
      * - `decl`
      * - `body`
      * - `id`: The id of the closure expression.
@@ -378,50 +340,46 @@ pub fn trans_expr_fn<'a>(
     };
 
     let ccx = bcx.ccx();
-    let fty = node_id_type(bcx, id);
-    let f = match ty::get(fty).sty {
-        ty::ty_closure(ref f) => f,
-        _ => fail!("expected closure")
-    };
-
     let tcx = bcx.tcx();
+    let fty = node_id_type(bcx, id);
     let s = tcx.map.with_path(id, |path| {
         mangle_internal_name_by_path_and_seq(path, "closure")
     });
-    let llfn = decl_internal_rust_fn(ccx,
-                                     true,
-                                     f.sig.inputs.as_slice(),
-                                     f.sig.output,
-                                     s);
+    let llfn = decl_internal_rust_fn(ccx, fty, s.as_slice());
 
     // set an inline hint for all closures
     set_inline_hint(llfn);
 
-    let cap_vars = ccx.maps.capture_map.borrow().get_copy(&id);
+    let freevar_mode = freevars::get_capture_mode(tcx, id);
+    let freevars: Vec<freevars::freevar_entry> =
+        freevars::with_freevars(
+            tcx, id,
+            |fv| fv.iter().map(|&fv| fv).collect());
+
     let ClosureResult {llbox, cdata_ty, bcx} =
-        build_closure(bcx, cap_vars.as_slice(), sigil);
+        build_closure(bcx, freevar_mode, &freevars, store);
     trans_closure(ccx, decl, body, llfn,
                   bcx.fcx.param_substs, id,
                   [], ty::ty_fn_ret(fty),
-                  |bcx| load_environment(bcx, cdata_ty, cap_vars.as_slice(), sigil));
+                  |bcx| load_environment(bcx, cdata_ty, &freevars, store));
     fill_fn_pair(bcx, dest_addr, llfn, llbox);
-
     bcx
 }
 
 pub fn get_wrapper_for_bare_fn(ccx: &CrateContext,
                                closure_ty: ty::t,
-                               def: ast::Def,
+                               def: def::Def,
                                fn_ptr: ValueRef,
                                is_local: bool) -> ValueRef {
 
     let def_id = match def {
-        ast::DefFn(did, _) | ast::DefStaticMethod(did, _, _) |
-        ast::DefVariant(_, did, _) | ast::DefStruct(did) => did,
+        def::DefFn(did, _) | def::DefStaticMethod(did, _, _) |
+        def::DefVariant(_, did, _) | def::DefStruct(did) => did,
         _ => {
             ccx.sess().bug(format!("get_wrapper_for_bare_fn: \
-                                    expected a statically resolved fn, got {:?}",
-                                    def));
+                                    expected a statically resolved fn, got \
+                                    {:?}",
+                                    def).as_slice());
         }
     };
 
@@ -439,7 +397,7 @@ pub fn get_wrapper_for_bare_fn(ccx: &CrateContext,
         _ => {
             ccx.sess().bug(format!("get_wrapper_for_bare_fn: \
                                     expected a closure ty, got {}",
-                                    closure_ty.repr(tcx)));
+                                    closure_ty.repr(tcx)).as_slice());
         }
     };
 
@@ -447,13 +405,9 @@ pub fn get_wrapper_for_bare_fn(ccx: &CrateContext,
         mangle_internal_name_by_path_and_seq(path, "as_closure")
     });
     let llfn = if is_local {
-        decl_internal_rust_fn(ccx,
-                              true,
-                              f.sig.inputs.as_slice(),
-                              f.sig.output,
-                              name)
+        decl_internal_rust_fn(ccx, closure_ty, name.as_slice())
     } else {
-        decl_rust_fn(ccx, true, f.sig.inputs.as_slice(), f.sig.output, name)
+        decl_rust_fn(ccx, closure_ty, name.as_slice())
     };
 
     ccx.closure_bare_wrapper_cache.borrow_mut().insert(fn_ptr, llfn);
@@ -467,8 +421,10 @@ pub fn get_wrapper_for_bare_fn(ccx: &CrateContext,
     let _icx = push_ctxt("closure::get_wrapper_for_bare_fn");
 
     let arena = TypedArena::new();
-    let fcx = new_fn_ctxt(ccx, llfn, -1, true, f.sig.output, None, None, &arena);
-    init_function(&fcx, true, f.sig.output, None);
+    let empty_param_substs = param_substs::empty();
+    let fcx = new_fn_ctxt(ccx, llfn, -1, true, f.sig.output,
+                          &empty_param_substs, None, &arena);
+    init_function(&fcx, true, f.sig.output);
     let bcx = fcx.entry_bcx.borrow().clone().unwrap();
 
     let args = create_datums_for_fn_args(&fcx,
@@ -499,12 +455,12 @@ pub fn get_wrapper_for_bare_fn(ccx: &CrateContext,
 
 pub fn make_closure_from_bare_fn<'a>(bcx: &'a Block<'a>,
                                      closure_ty: ty::t,
-                                     def: ast::Def,
+                                     def: def::Def,
                                      fn_ptr: ValueRef)
                                      -> DatumBlock<'a, Expr>  {
     let scratch = rvalue_scratch_datum(bcx, closure_ty, "__adjust");
     let wrapper = get_wrapper_for_bare_fn(bcx.ccx(), closure_ty, def, fn_ptr, true);
     fill_fn_pair(bcx, scratch.val, wrapper, C_null(Type::i8p(bcx.ccx())));
 
-    DatumBlock(bcx, scratch.to_expr_datum())
+    DatumBlock::new(bcx, scratch.to_expr_datum())
 }

@@ -33,7 +33,7 @@ pleasant high-level features include:
 This is an introductory tutorial for the Rust programming language. It
 covers the fundamentals of the language, including the syntax, the
 type system and memory model, generics, and modules. [Additional
-tutorials](#what-next) cover specific language features in greater
+tutorials](#what-next?) cover specific language features in greater
 depth.
 
 This tutorial assumes that the reader is already familiar with one or
@@ -51,19 +51,30 @@ fragments of programs that don't compile on their own. To try them
 out, you might have to wrap them in `fn main() { ... }`, and make sure
 they don't contain references to names that aren't actually defined.
 
-> ***Warning:*** Rust is a language under ongoing development. Notes
+> *Warning:* Rust is a language under ongoing development. Notes
 > about potential changes to the language, implementation
 > deficiencies, and other caveats appear offset in blockquotes.
 
 # Getting started
 
-> ***Warning:*** The tarball and installer links are for the most recent
-> release, not master. To use master, you **must** build from [git].
+There are two ways to install the Rust compiler: by building from source or
+by downloading prebuilt binaries or installers for your platform. The
+[install page][rust-install] contains links to download binaries for both
+the nightly build and the most current Rust major release. For Windows and
+OS X, the install page provides links to native installers.
 
-The Rust compiler currently must be built from a [tarball] or [git], unless
-you are on Windows, in which case using the [installer][win-exe] is
-recommended. There is a list of community-maintained nightly builds and
-packages [on the wiki][wiki-packages].
+> *Note:* Windows users should read the detailed
+> [Getting started][wiki-start] notes on the wiki. Even when using
+> the binary installer, the Windows build requires a MinGW installation,
+> the precise details of which are not discussed here.
+
+For Linux and OS X, the install page provides links to binary tarballs.
+To install the Rust compiler from the from a binary tarball, download
+the binary package, extract it, and execute the `install.sh` script in
+the root directory of the package.
+
+To build the Rust compiler from source, you will need to obtain the source through
+[Git][git] or by downloading the source package from the [install page][rust-install].
 
 Since the Rust compiler is written in Rust, it must be built by
 a precompiled "snapshot" version of itself (made in an earlier state
@@ -79,18 +90,14 @@ Snapshot binaries are currently built and tested on several platforms:
 You may find that other platforms work, but these are our "tier 1"
 supported build environments that are most likely to work.
 
-> ***Note:*** Windows users should read the detailed
-> [Getting started][wiki-start] notes on the wiki. Even when using
-> the binary installer, the Windows build requires a MinGW installation,
-> the precise details of which are not discussed here.
-
 [wiki-start]: https://github.com/mozilla/rust/wiki/Note-getting-started-developing-Rust
 [git]: https://github.com/mozilla/rust.git
+[rust-install]: http://www.rust-lang.org/install.html
 
 To build from source you will also need the following prerequisite
 packages:
 
-* g++ 4.4 or clang++ 3.x
+* g++ 4.7 or clang++ 3.x
 * python 2.6 or later (but not 3.x)
 * perl 5.0 or later
 * gnu make 3.81 or later
@@ -99,7 +106,7 @@ packages:
 If you've fulfilled those prerequisites, something along these lines
 should work.
 
-~~~~ {.notrust}
+~~~~console
 $ curl -O http://static.rust-lang.org/dist/rust-nightly.tar.gz
 $ tar -xzf rust-nightly.tar.gz
 $ cd rust-nightly
@@ -130,7 +137,7 @@ fn main() {
     println!("hello?");
 }
 ~~~~
-> ***Note:*** An identifier followed by an exclamation point, like
+> *Note:* An identifier followed by an exclamation point, like
 > `println!`, is a macro invocation.  Macros are explained
 > [later](#syntax-extensions); for now just remember to include the
 > exclamation point.
@@ -144,7 +151,7 @@ error. If you introduce an error into the program (for example, by changing
 `println!` to some nonexistent macro), and then compile it, you'll see
 an error message like this:
 
-~~~~ {.notrust}
+~~~~text
 hello.rs:2:5: 2:24 error: macro undefined: 'print_with_unicorns'
 hello.rs:2     print_with_unicorns!("hello?");
                ^~~~~~~~~~~~~~~~~~~
@@ -382,7 +389,7 @@ let y: uint = x as uint;
 assert!(y == 4u);
 ~~~~
 
-[transmute]: http://static.rust-lang.org/doc/master/std/cast/fn.transmute.html
+[transmute]: http://doc.rust-lang.org/std/mem/fn.transmute.html
 
 ## Syntax extensions
 
@@ -398,18 +405,24 @@ will often see in examples, and its related family of macros: `print!`,
 that [printf][pf] has. Unlike printf, `format!` will give you a compile-time
 error when the types of the directives don't match the types of the arguments.
 
-~~~~
-# let mystery_object = ();
-
+~~~
 // `{}` will print the "default format" of a type
 println!("{} is {}", "the answer", 43);
+~~~
 
-// `{:?}` will conveniently print any type
+~~~~
+extern crate debug;
+
+# fn main() {
+# let mystery_object = ();
+// `{:?}` will conveniently print any type,
+// but requires the `debug` crate to be linked in
 println!("what is this thing: {:?}", mystery_object);
+# }
 ~~~~
 
 [pf]: http://en.cppreference.com/w/cpp/io/c/fprintf
-[fmt]: http://static.rust-lang.org/doc/master/std/fmt/index.html
+[fmt]: http://doc.rust-lang.org/std/fmt/
 
 You can define your own syntax extensions with the macro system. For details,
 see the [macro tutorial][macros]. Note that macro definition is currently
@@ -455,7 +468,7 @@ against each pattern in order until one matches. The matching pattern
 executes its corresponding arm.
 
 ~~~~
-# let my_number = 1;
+let my_number = 1;
 match my_number {
   0     => println!("zero"),
   1 | 2 => println!("one or two"),
@@ -468,19 +481,16 @@ Unlike in C, there is no "falling through" between arms: only one arm
 executes, and it doesn't have to explicitly `break` out of the
 construct when it is finished.
 
-A `match` arm consists of a *pattern*, then an arrow `=>`, followed by
-an *action* (expression). Literals are valid patterns and match only
-their own value. A single arm may match multiple different patterns by
-combining them with the pipe operator (`|`), so long as every pattern
-binds the same set of variables. Ranges of numeric literal patterns
-can be expressed with two dots, as in `M..N`. The underscore (`_`) is
-a wildcard pattern that matches any single value. (`..`) is a different
-wildcard that can match one or more fields in an `enum` variant.
-
-The patterns in a match arm are followed by a fat arrow, `=>`, then an
-expression to evaluate. Each case is separated by commas. It's often
-convenient to use a block expression for each case, in which case the
-commas are optional.
+A `match` arm consists of a *pattern*, then a fat arrow `=>`, followed
+by an *action* (expression). Each case is separated by commas. It is
+often convenient to use a block expression for each case, in which case
+the commas are optional as shown below. Literals are valid patterns and
+match only their own value. A single arm may match multiple different
+patterns by combining them with the pipe operator (`|`), so long as every
+pattern binds the same set of variables. Ranges of numeric literal
+patterns can be expressed with two dots, as in `M..N`. The underscore
+(`_`) is a wildcard pattern that matches any single value. (`..`) is a
+different wildcard that can match one or more fields in an `enum` variant.
 
 ~~~
 # let my_number = 1;
@@ -498,7 +508,7 @@ omitted.
 A powerful application of pattern matching is *destructuring*:
 matching in order to bind names to the contents of data types.
 
-> ***Note:*** The following code makes use of tuples (`(f64, f64)`) which
+> *Note:* The following code makes use of tuples (`(f64, f64)`) which
 > are explained in section 5.3. For now you can think of tuples as a list of
 > items.
 
@@ -694,8 +704,8 @@ When an enum has simple integer discriminators, you can apply the `as` cast
 operator to convert a variant to its discriminator value as an `int`:
 
 ~~~~
-# enum Direction { North }
-println!( "{:?} => {}", North, North as int );
+# #[deriving(Show)] enum Direction { North }
+println!( "{} => {}", North, North as int );
 ~~~~
 
 It is possible to set the discriminator values to chosen constant values:
@@ -764,6 +774,7 @@ fn point_from_direction(dir: Direction) -> Point {
 Enum variants may also be structs. For example:
 
 ~~~~
+# #![feature(struct_variant)]
 use std::f64;
 # struct Point { x: f64, y: f64 }
 # fn square(x: f64) -> f64 { x * x }
@@ -779,9 +790,10 @@ fn area(sh: Shape) -> f64 {
         }
     }
 }
+# fn main() {}
 ~~~~
 
-> ***Note:*** This feature of the compiler is currently gated behind the
+> *Note:* This feature of the compiler is currently gated behind the
 > `#[feature(struct_variant)]` directive. More about these directives can be
 > found in the manual.
 
@@ -841,7 +853,6 @@ values can be extracted with pattern matching:
 
 ~~~
 # struct Inches(int);
-
 let length_with_unit = Inches(10);
 let Inches(integer_length) = length_with_unit;
 println!("length is {} inches", integer_length);
@@ -915,12 +926,12 @@ Objects are never accessible after their destructor has been called, so no
 dynamic failures are possible from accessing freed resources. When a task
 fails, destructors of all objects in the task are called.
 
-The `~` sigil represents a unique handle for a memory allocation on the heap:
+The `box` operator performs memory allocation on the heap:
 
 ~~~~
 {
     // an integer allocated on the heap
-    let y = ~10;
+    let y = box 10;
 }
 // the destructor frees the heap memory as soon as `y` goes out of scope
 ~~~~
@@ -942,17 +953,17 @@ and destroy the contained object when they go out of scope.
 
 ~~~~
 // the struct owns the objects contained in the `x` and `y` fields
-struct Foo { x: int, y: ~int }
+struct Foo { x: int, y: Box<int> }
 
 {
     // `a` is the owner of the struct, and thus the owner of the struct's fields
-    let a = Foo { x: 5, y: ~10 };
+    let a = Foo { x: 5, y: box 10 };
 }
-// when `a` goes out of scope, the destructor for the `~int` in the struct's
+// when `a` goes out of scope, the destructor for the `Box<int>` in the struct's
 // field is called
 
 // `b` is mutable, and the mutability is inherited by the objects it owns
-let mut b = Foo { x: 5, y: ~10 };
+let mut b = Foo { x: 5, y: box 10 };
 b.x = 10;
 ~~~~
 
@@ -963,8 +974,8 @@ that are `Send`, but non-`Send` types can still *contain* types with custom
 destructors. Example of types which are not `Send` are [`Gc<T>`][gc] and
 [`Rc<T>`][rc], the shared-ownership types.
 
-[gc]: http://static.rust-lang.org/doc/master/std/gc/struct.Gc.html
-[rc]: http://static.rust-lang.org/doc/master/std/rc/struct.Rc.html
+[gc]: http://doc.rust-lang.org/std/gc/struct.Gc.html
+[rc]: http://doc.rust-lang.org/std/rc/struct.Rc.html
 
 # Implementing a linked list
 
@@ -983,7 +994,8 @@ The obvious approach is to define `Cons` as containing an element in the list
 along with the next `List` node. However, this will generate a compiler error.
 
 ~~~ {.ignore}
-// error: illegal recursive enum type; wrap the inner value in a box to make it representable
+// error: illegal recursive enum type; wrap the inner value in a box to make it
+// representable
 enum List {
     Cons(u32, List), // an element (`u32`) and the next node in the list
     Nil
@@ -1024,13 +1036,15 @@ Our previous attempt at defining the `List` type included an `u32` and a `List`
 directly inside `Cons`, making it at least as big as the sum of both types. The
 type was invalid because the size was infinite!
 
-An *owned box* (`~`) uses a dynamic memory allocation to provide the invariant
-of always being the size of a pointer, regardless of the contained type. This
-can be leveraged to create a valid `List` definition:
+An *owned box* (`Box`, located in the `std::owned` module) uses a dynamic memory
+allocation to provide the invariant of always being the size of a pointer,
+regardless of the contained type. This can be leveraged to create a valid `List`
+definition:
 
 ~~~
+
 enum List {
-    Cons(u32, ~List),
+    Cons(u32, Box<List>),
     Nil
 }
 ~~~
@@ -1043,10 +1057,10 @@ Consider an instance of our `List` type:
 
 ~~~
 # enum List {
-#     Cons(u32, ~List),
+#     Cons(u32, Box<List>),
 #     Nil
 # }
-let list = Cons(1, ~Cons(2, ~Cons(3, ~Nil)));
+let list = Cons(1, box Cons(2, box Cons(3, box Nil)));
 ~~~
 
 It represents an owned tree of values, inheriting mutability down the tree and
@@ -1054,14 +1068,14 @@ being destroyed along with the owner. Since the `list` variable above is
 immutable, the whole list is immutable. The memory allocation itself is the
 box, while the owner holds onto a pointer to it:
 
-~~~ {.notrust}
-          List box             List box           List box            List box
-        +--------------+    +--------------+    +--------------+    +--------------+
-list -> | Cons | 1 | ~ | -> | Cons | 2 | ~ | -> | Cons | 3 | ~ | -> | Nil          |
-        +--------------+    +--------------+    +--------------+    +--------------+
+~~~text
+            List box            List box            List box          List box
+        +--------------+    +--------------+    +--------------+    +----------+
+list -> | Cons | 1 |   | -> | Cons | 2 |   | -> | Cons | 3 |   | -> | Nil      |
+        +--------------+    +--------------+    +--------------+    +----------+
 ~~~
 
-> ***Note:*** the above diagram shows the logical contents of the enum. The actual
+> *Note:* the above diagram shows the logical contents of the enum. The actual
 > memory layout of the enum may vary. For example, for the `List` enum shown
 > above, Rust guarantees that there will be no enum tag field in the actual
 > structure. See the language reference for more details.
@@ -1077,10 +1091,10 @@ the box rather than doing an implicit heap allocation.
 
 ~~~
 # enum List {
-#     Cons(u32, ~List),
+#     Cons(u32, Box<List>),
 #     Nil
 # }
-let xs = Cons(1, ~Cons(2, ~Cons(3, ~Nil)));
+let xs = Cons(1, box Cons(2, box Cons(3, box Nil)));
 let ys = xs; // copies `Cons(u32, pointer)` shallowly
 ~~~
 
@@ -1090,7 +1104,7 @@ location cannot be used unless it is reinitialized.
 
 ~~~
 # enum List {
-#     Cons(u32, ~List),
+#     Cons(u32, Box<List>),
 #     Nil
 # }
 let mut xs = Nil;
@@ -1110,7 +1124,7 @@ as it is only called a single time.
 Avoiding a move can be done with the library-defined `clone` method:
 
 ~~~~
-let x = ~5;
+let x = box 5;
 let y = x.clone(); // `y` is a newly allocated box
 let z = x; // no new memory allocated, `x` can no longer be used
 ~~~~
@@ -1121,11 +1135,11 @@ our `List` type. Traits will be explained in detail [later](#traits).
 ~~~{.ignore}
 #[deriving(Clone)]
 enum List {
-    Cons(u32, ~List),
+    Cons(u32, Box<List>),
     Nil
 }
 
-let x = Cons(5, ~Nil);
+let x = Cons(5, box Nil);
 let y = x.clone();
 
 // `x` can still be used!
@@ -1138,7 +1152,7 @@ let z = x;
 The mutability of a value may be changed by moving it to a new owner:
 
 ~~~~
-let r = ~13;
+let r = box 13;
 let mut s = r; // box becomes mutable
 *s += 1;
 let t = s; // box becomes immutable
@@ -1149,12 +1163,12 @@ advantage of moves:
 
 ~~~
 enum List {
-    Cons(u32, ~List),
+    Cons(u32, Box<List>),
     Nil
 }
 
 fn prepend(xs: List, value: u32) -> List {
-    Cons(value, ~xs)
+    Cons(value, box xs)
 }
 
 let mut xs = Nil;
@@ -1189,7 +1203,7 @@ by-value. A recursive definition of equality using references is as follows:
 
 ~~~
 # enum List {
-#     Cons(u32, ~List),
+#     Cons(u32, Box<List>),
 #     Nil
 # }
 fn eq(xs: &List, ys: &List) -> bool {
@@ -1197,19 +1211,20 @@ fn eq(xs: &List, ys: &List) -> bool {
     match (xs, ys) {
         // If we have reached the end of both lists, they are equal.
         (&Nil, &Nil) => true,
-        // If the current element in both lists is equal, keep going.
-        (&Cons(x, ~ref next_xs), &Cons(y, ~ref next_ys)) if x == y => eq(next_xs, next_ys),
+        // If the current elements of both lists are equal, keep going.
+        (&Cons(x, box ref next_xs), &Cons(y, box ref next_ys))
+                if x == y => eq(next_xs, next_ys),
         // If the current elements are not equal, the lists are not equal.
         _ => false
     }
 }
 
-let xs = Cons(5, ~Cons(10, ~Nil));
-let ys = Cons(5, ~Cons(10, ~Nil));
+let xs = Cons(5, box Cons(10, box Nil));
+let ys = Cons(5, box Cons(10, box Nil));
 assert!(eq(&xs, &ys));
 ~~~
 
-> ***Note:*** Rust doesn't guarantee [tail-call](http://en.wikipedia.org/wiki/Tail_call) optimization,
+> *Note:* Rust doesn't guarantee [tail-call](http://en.wikipedia.org/wiki/Tail_call) optimization,
 > but LLVM is able to handle a simple case like this with optimizations enabled.
 
 ## Lists of other types
@@ -1220,12 +1235,12 @@ element type.
 
 The `u32` in the previous definition can be substituted with a type parameter:
 
-> ***Note:*** The following code introduces generics, which are explained in a
+> *Note:* The following code introduces generics, which are explained in a
 > [dedicated section](#generics).
 
 ~~~
 enum List<T> {
-    Cons(T, ~List<T>),
+    Cons(T, Box<List<T>>),
     Nil
 }
 ~~~
@@ -1235,11 +1250,11 @@ definition has to be updated too:
 
 ~~~
 # enum List<T> {
-#     Cons(T, ~List<T>),
+#     Cons(T, Box<List<T>>),
 #     Nil
 # }
 fn prepend<T>(xs: List<T>, value: T) -> List<T> {
-    Cons(value, ~xs)
+    Cons(value, box xs)
 }
 ~~~
 
@@ -1250,14 +1265,14 @@ Using the generic `List<T>` works much like before, thanks to type inference:
 
 ~~~
 # enum List<T> {
-#     Cons(T, ~List<T>),
+#     Cons(T, Box<List<T>>),
 #     Nil
 # }
 # fn prepend<T>(xs: List<T>, value: T) -> List<T> {
-#     Cons(value, ~xs)
+#     Cons(value, box xs)
 # }
 let mut xs = Nil; // Unknown type! This is a `List<T>`, but `T` can be anything.
-xs = prepend(xs, 10); // The compiler infers the type of `xs` as `List<int>` from this.
+xs = prepend(xs, 10); // Here the compiler infers `xs`'s type as `List<int>`.
 xs = prepend(xs, 15);
 xs = prepend(xs, 20);
 ~~~
@@ -1267,11 +1282,11 @@ equivalent to the following type-annotated code:
 
 ~~~
 # enum List<T> {
-#     Cons(T, ~List<T>),
+#     Cons(T, Box<List<T>>),
 #     Nil
 # }
 # fn prepend<T>(xs: List<T>, value: T) -> List<T> {
-#     Cons(value, ~xs)
+#     Cons(value, box xs)
 # }
 let mut xs: List<int> = Nil::<int>;
 xs = prepend::<int>(xs, 10);
@@ -1290,63 +1305,65 @@ be specified up-front. Our previous definition of list equality relied on the el
 the `==` operator available, and took advantage of the lack of a destructor on `u32` to copy it
 without a move of ownership.
 
-We can add a *trait bound* on the `Eq` trait to require that the type implement the `==` operator.
+We can add a *trait bound* on the `PartialEq` trait to require that the type implement the `==` operator.
 Two more `ref` annotations need to be added to avoid attempting to move out the element types:
 
 ~~~
 # enum List<T> {
-#     Cons(T, ~List<T>),
+#     Cons(T, Box<List<T>>),
 #     Nil
 # }
-fn eq<T: Eq>(xs: &List<T>, ys: &List<T>) -> bool {
+fn eq<T: PartialEq>(xs: &List<T>, ys: &List<T>) -> bool {
     // Match on the next node in both lists.
     match (xs, ys) {
         // If we have reached the end of both lists, they are equal.
         (&Nil, &Nil) => true,
-        // If the current element in both lists is equal, keep going.
-        (&Cons(ref x, ~ref next_xs), &Cons(ref y, ~ref next_ys)) if x == y => eq(next_xs, next_ys),
+        // If the current elements of both lists are equal, keep going.
+        (&Cons(ref x, box ref next_xs), &Cons(ref y, box ref next_ys))
+                if x == y => eq(next_xs, next_ys),
         // If the current elements are not equal, the lists are not equal.
         _ => false
     }
 }
 
-let xs = Cons('c', ~Cons('a', ~Cons('t', ~Nil)));
-let ys = Cons('c', ~Cons('a', ~Cons('t', ~Nil)));
+let xs = Cons('c', box Cons('a', box Cons('t', box Nil)));
+let ys = Cons('c', box Cons('a', box Cons('t', box Nil)));
 assert!(eq(&xs, &ys));
 ~~~
 
-This would be a good opportunity to implement the `Eq` trait for our list type, making the `==` and
-`!=` operators available. We'll need to provide an `impl` for the `Eq` trait and a definition of the
+This would be a good opportunity to implement the `PartialEq` trait for our list type, making the `==` and
+`!=` operators available. We'll need to provide an `impl` for the `PartialEq` trait and a definition of the
 `eq` method. In a method, the `self` parameter refers to an instance of the type we're implementing
 on.
 
 ~~~
 # enum List<T> {
-#     Cons(T, ~List<T>),
+#     Cons(T, Box<List<T>>),
 #     Nil
 # }
-impl<T: Eq> Eq for List<T> {
+impl<T: PartialEq> PartialEq for List<T> {
     fn eq(&self, ys: &List<T>) -> bool {
         // Match on the next node in both lists.
         match (self, ys) {
             // If we have reached the end of both lists, they are equal.
             (&Nil, &Nil) => true,
-            // If the current element in both lists is equal, keep going.
-            (&Cons(ref x, ~ref next_xs), &Cons(ref y, ~ref next_ys)) if x == y => next_xs == next_ys,
+            // If the current elements of both lists are equal, keep going.
+            (&Cons(ref x, box ref next_xs), &Cons(ref y, box ref next_ys))
+                    if x == y => next_xs == next_ys,
             // If the current elements are not equal, the lists are not equal.
             _ => false
         }
     }
 }
 
-let xs = Cons(5, ~Cons(10, ~Nil));
-let ys = Cons(5, ~Cons(10, ~Nil));
-// The methods below are part of the Eq trait,
+let xs = Cons(5, box Cons(10, box Nil));
+let ys = Cons(5, box Cons(10, box Nil));
+// The methods below are part of the PartialEq trait,
 // which we implemented on our linked list.
 assert!(xs.eq(&ys));
 assert!(!xs.ne(&ys));
 
-// The Eq trait also allows us to use the shorthand infix operators.
+// The PartialEq trait also allows us to use the shorthand infix operators.
 assert!(xs == ys);    // `xs == ys` is short for `xs.eq(&ys)`
 assert!(!(xs != ys)); // `xs != ys` is short for `xs.ne(&ys)`
 ~~~
@@ -1373,7 +1390,7 @@ fn foo() -> (u64, u64, u64, u64, u64, u64) {
     (5, 5, 5, 5, 5, 5)
 }
 
-let x = ~foo(); // allocates a `~` box, and writes the integers directly to it
+let x = box foo(); // allocates a box, and writes the integers directly to it
 ~~~~
 
 Beyond the properties granted by the size, an owned box behaves as a regular
@@ -1384,8 +1401,8 @@ let x = 5; // immutable
 let mut y = 5; // mutable
 y += 2;
 
-let x = ~5; // immutable
-let mut y = ~5; // mutable
+let x = box 5; // immutable
+let mut y = box 5; // mutable
 *y += 2; // the `*` operator is needed to access the contained value
 ~~~~
 
@@ -1405,7 +1422,7 @@ struct Point {
     x: f64,
     y: f64
 }
-~~~~
+~~~
 
 We can use this simple definition to allocate points in many different
 ways. For example, in this code, each of these local variables
@@ -1413,8 +1430,8 @@ contains a point, but allocated in a different location:
 
 ~~~
 # struct Point { x: f64, y: f64 }
-let on_the_stack : Point  =  Point { x: 3.0, y: 4.0 };
-let owned_box    : ~Point = ~Point { x: 7.0, y: 9.0 };
+let on_the_stack :     Point  =     Point { x: 3.0, y: 4.0 };
+let on_the_heap  : Box<Point> = box Point { x: 7.0, y: 9.0 };
 ~~~
 
 Suppose we want to write a procedure that computes the distance
@@ -1438,10 +1455,10 @@ Now we can call `compute_distance()` in various ways:
 
 ~~~
 # struct Point{ x: f64, y: f64 };
-# let on_the_stack : Point  =  Point { x: 3.0, y: 4.0 };
-# let owned_box    : ~Point = ~Point { x: 7.0, y: 9.0 };
+# let on_the_stack :     Point  =     Point { x: 3.0, y: 4.0 };
+# let on_the_heap  : Box<Point> = box Point { x: 7.0, y: 9.0 };
 # fn compute_distance(p1: &Point, p2: &Point) -> f64 { 0.0 }
-compute_distance(&on_the_stack, owned_box);
+compute_distance(&on_the_stack, on_the_heap);
 ~~~
 
 Here the `&` operator is used to take the address of the variable
@@ -1453,7 +1470,7 @@ route to the same data.
 
 In the case of `owned_box`, however, no
 explicit action is necessary. The compiler will automatically convert
-a box `~point` to a reference like
+a box `box point` to a reference like
 `&point`. This is another form of borrowing; in this case, the
 contents of the owned box are being lent out.
 
@@ -1484,7 +1501,7 @@ let mut x = 5;
 # x = 3;
 ~~~~
 
-[refcell]: http://static.rust-lang.org/doc/master/std/cell/struct.RefCell.html
+[refcell]: http://doc.rust-lang.org/std/cell/struct.RefCell.html
 
 # Dereferencing pointers
 
@@ -1492,7 +1509,7 @@ Rust uses the unary star operator (`*`) to access the contents of a
 box or pointer, similarly to C.
 
 ~~~
-let owned = ~10;
+let owned = box 10;
 let borrowed = &20;
 
 let sum = *owned + *borrowed;
@@ -1503,7 +1520,7 @@ assignments. Such an assignment modifies the value that the pointer
 points to.
 
 ~~~
-let mut owned = ~10;
+let mut owned = box 10;
 
 let mut value = 20;
 let borrowed = &mut value;
@@ -1520,8 +1537,8 @@ can sometimes make code awkward and parenthesis-filled.
 # struct Point { x: f64, y: f64 }
 # enum Shape { Rectangle(Point, Point) }
 # impl Shape { fn area(&self) -> int { 0 } }
-let start = ~Point { x: 10.0, y: 20.0 };
-let end = ~Point { x: (*start).x + 100.0, y: (*start).y + 100.0 };
+let start = box Point { x: 10.0, y: 20.0 };
+let end = box Point { x: (*start).x + 100.0, y: (*start).y + 100.0 };
 let rect = &Rectangle(*start, *end);
 let area = (*rect).area();
 ~~~
@@ -1534,8 +1551,8 @@ dot), so in most cases, explicitly dereferencing the receiver is not necessary.
 # struct Point { x: f64, y: f64 }
 # enum Shape { Rectangle(Point, Point) }
 # impl Shape { fn area(&self) -> int { 0 } }
-let start = ~Point { x: 10.0, y: 20.0 };
-let end = ~Point { x: start.x + 100.0, y: start.y + 100.0 };
+let start = box Point { x: 10.0, y: 20.0 };
+let end = box Point { x: start.x + 100.0, y: start.y + 100.0 };
 let rect = &Rectangle(*start, *end);
 let area = rect.area();
 ~~~
@@ -1546,7 +1563,7 @@ something silly like
 
 ~~~
 # struct Point { x: f64, y: f64 }
-let point = &~Point { x: 10.0, y: 20.0 };
+let point = &box Point { x: 10.0, y: 20.0 };
 println!("{:f}", point.x);
 ~~~
 
@@ -1579,19 +1596,19 @@ allocated memory on the heap. A unique vector owns the elements it contains, so
 the elements are mutable if the vector is mutable.
 
 ~~~
-use std::strbuf::StrBuf;
+use std::string::String;
 
 // A dynamically sized vector (unique vector)
-let mut numbers = ~[1, 2, 3];
+let mut numbers = vec![1, 2, 3];
 numbers.push(4);
 numbers.push(5);
 
-// The type of a unique vector is written as `~[int]`
-let more_numbers: ~[int] = numbers;
+// The type of a unique vector is written as `Vec<int>`
+let more_numbers: Vec<int> = numbers.move_iter().map(|i| i+1).collect();
 
 // The original `numbers` value can no longer be used, due to move semantics.
 
-let mut string = StrBuf::from_str("fo");
+let mut string = String::from_str("fo");
 string.push_char('o');
 ~~~
 
@@ -1631,7 +1648,7 @@ view[0] = 5;
 let ys: &mut [int] = &mut [1, 2, 3];
 ~~~
 
-Square brackets denote indexing into a vector:
+Square brackets denote indexing into a slice or fixed-size vector:
 
 ~~~~
 # enum Crayon { Almond, AntiqueBrass, Apricot,
@@ -1645,7 +1662,7 @@ match crayons[0] {
 }
 ~~~~
 
-A vector can be destructured using pattern matching:
+A slice or fixed-size vector can be destructured using pattern matching:
 
 ~~~~
 let numbers: &[int] = &[1, 2, 3];
@@ -1658,9 +1675,10 @@ let score = match numbers {
 ~~~~
 
 Both vectors and strings support a number of useful [methods](#methods),
-defined in [`std::vec`] and [`std::str`].
+defined in [`std::vec`], [`std::slice`], and [`std::str`].
 
 [`std::vec`]: std/vec/index.html
+[`std::slice`]: std/slice/index.html
 [`std::str`]: std/str/index.html
 
 # Ownership escape hatches
@@ -1692,14 +1710,14 @@ having ownership of the box. It allows the creation of cycles, and the individua
 not have a destructor.
 
 ~~~
-use std::gc::Gc;
+use std::gc::GC;
 
 // A fixed-size array allocated in a garbage-collected box
-let x = Gc::new([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+let x = box(GC) [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 let y = x; // does not perform a move, unlike with `Rc`
 let z = x;
 
-assert!(*z.borrow() == [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+assert!(*z == [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
 ~~~
 
 With shared ownership, mutability cannot be inherited so the boxes are always immutable. However,
@@ -1707,7 +1725,7 @@ it's possible to use *dynamic* mutability via types like `std::cell::Cell` where
 via dynamic checks and can fail at runtime.
 
 The `Rc` and `Gc` types are not sendable, so they cannot be used to share memory between tasks. Safe
-immutable and mutable shared memory is provided by the `extra::arc` module.
+immutable and mutable shared memory is provided by the `sync::arc` module.
 
 # Closures
 
@@ -1717,38 +1735,103 @@ environment (sometimes referred to as "capturing" variables in their
 environment). For example, you couldn't write the following:
 
 ~~~~ {.ignore}
-let foo = 10;
+let x = 3;
 
-fn bar() -> int {
-   return foo; // `bar` cannot refer to `foo`
-}
+// `fun` cannot refer to `x`
+fn fun() -> () { println!("{}", x); }
 ~~~~
 
-Rust also supports _closures_, functions that can access variables in
-the enclosing scope.
+A _closure_ does support accessing the enclosing scope; below we will create
+2 _closures_ (nameless functions). Compare how `||` replaces `()` and how
+they try to access `x`:
 
-~~~~
-fn call_closure_with_ten(b: |int|) { b(10); }
+~~~~ {.ignore}
+let x = 3;
 
-let captured_var = 20;
-let closure = |arg| println!("captured_var={}, arg={}", captured_var, arg);
+// `fun` is an invalid definition
+fn  fun       () -> () { println!("{}", x) }  // cannot capture from enclosing scope
+let closure = || -> () { println!("{}", x) }; // can capture from enclosing scope
 
-call_closure_with_ten(closure);
+// `fun_arg` is an invalid definition
+fn  fun_arg       (arg: int) -> () { println!("{}", arg + x) }  // cannot capture
+let closure_arg = |arg: int| -> () { println!("{}", arg + x) }; // can capture
+//                      ^
+// Requires a type because the implementation needs to know which `+` to use.
+// In the future, the implementation may not need the help.
+
+fun();          // Still won't work
+closure();      // Prints: 3
+
+fun_arg(7);     // Still won't work
+closure_arg(7); // Prints: 10
 ~~~~
 
 Closures begin with the argument list between vertical bars and are followed by
 a single expression. Remember that a block, `{ <expr1>; <expr2>; ... }`, is
 considered a single expression: it evaluates to the result of the last
 expression it contains if that expression is not followed by a semicolon,
-otherwise the block evaluates to `()`.
+otherwise the block evaluates to `()`, the unit value.
 
-The types of the arguments are generally omitted, as is the return type,
-because the compiler can almost always infer them. In the rare case where the
-compiler needs assistance, though, the arguments and return types may be
-annotated.
+In general, return types and all argument types must be specified
+explicitly for function definitions.  (As previously mentioned in the
+[Functions section](#functions), omitting the return type from a
+function declaration is synonymous with an explicit declaration of
+return type unit, `()`.)
+
+~~~~ {.ignore}
+fn  fun   (x: int)         { println!("{}", x) } // this is same as saying `-> ()`
+fn  square(x: int) -> uint { (x * x) as uint }   // other return types are explicit
+
+// Error: mismatched types: expected `()` but found `uint`
+fn  badfun(x: int)         { (x * x) as uint }
+~~~~
+
+On the other hand, the compiler can usually infer both the argument
+and return types for a closure expression; therefore they are often
+omitted, since both a human reader and the compiler can deduce the
+types from the immediate context.  This is in contrast to function
+declarations, which require types to be specified and are not subject
+to type inference. Compare:
+
+~~~~ {.ignore}
+// `fun` as a function declaration cannot infer the type of `x`, so it must be provided
+fn  fun       (x: int) { println!("{}", x) }
+let closure = |x     | { println!("{}", x) }; // infers `x: int`, return type `()`
+
+// For closures, omitting a return type is *not* synonymous with `-> ()`
+let add_3   = |y     | { 3i + y }; // infers `y: int`, return type `int`.
+
+fun(10);            // Prints 10
+closure(20);        // Prints 20
+closure(add_3(30)); // Prints 33
+
+fun("String"); // Error: mismatched types
+
+// Error: mismatched types
+// inference already assigned `closure` the type `|int| -> ()`
+closure("String");
+~~~~
+
+In cases where the compiler needs assistance, the arguments and return
+types may be annotated on closures, using the same notation as shown
+earlier.  In the example below, since different types provide an
+implementation for the operator `*`, the argument type for the `x`
+parameter must be explicitly provided.
+
+~~~~{.ignore}
+// Error: the type of `x` must be known to be used with `x * x`
+let square = |x     | -> uint { (x * x) as uint };
+~~~~
+
+In the corrected version, the argument type is explicitly annotated,
+while the return type can still be inferred.
 
 ~~~~
-let square = |x: int| -> uint { (x * x) as uint };
+let square_explicit = |x: int| -> uint { (x * x) as uint };
+let square_infer    = |x: int|         { (x * x) as uint };
+
+println!("{}", square_explicit(20));  // 400
+println!("{}", square_infer(-20));    // 400
 ~~~~
 
 There are several forms of closure, each with its own role. The most
@@ -1794,11 +1877,6 @@ spawn(proc() {
 });
 ~~~~
 
-> ***Note:*** If you want to see the output of `debug!` statements, you will need to turn on
-> `debug!` logging.  To enable `debug!` logging, set the RUST_LOG environment
-> variable to the name of your crate, which, for a file named `foo.rs`, will be
-> `foo` (e.g., with bash, `export RUST_LOG=foo`).
-
 ## Closure compatibility
 
 Rust closures have a convenient subtyping property: you can pass any kind of
@@ -1816,7 +1894,7 @@ call_twice(closure);
 call_twice(function);
 ~~~~
 
-> ***Note:*** Both the syntax and the semantics will be changing
+> *Note:* Both the syntax and the semantics will be changing
 > in small ways. At the moment they can be unsound in some
 > scenarios, particularly with non-copyable types.
 
@@ -1883,8 +1961,8 @@ impl Shape {
 
 let s = Circle(Point { x: 1.0, y: 2.0 }, 3.0);
 
-(~s).draw_owned();
 (&s).draw_reference();
+(box s).draw_owned();
 s.draw_value();
 ~~~
 
@@ -1909,7 +1987,7 @@ to a reference.
 // As with typical function arguments, owned pointers
 // are automatically converted to references
 
-(~s).draw_reference();
+(box s).draw_reference();
 
 // Unlike typical function arguments, the self value will
 // automatically be referenced ...
@@ -1919,7 +1997,7 @@ s.draw_reference();
 (& &s).draw_reference();
 
 // ... and dereferenced and borrowed
-(&~s).draw_reference();
+(&box s).draw_reference();
 ~~~
 
 Implementations may also define standalone (sometimes called "static")
@@ -1955,8 +2033,8 @@ vector consisting of the result of applying `function` to each element
 of `vector`:
 
 ~~~~
-fn map<T, U>(vector: &[T], function: |v: &T| -> U) -> ~[U] {
-    let mut accumulator = ~[];
+fn map<T, U>(vector: &[T], function: |v: &T| -> U) -> Vec<U> {
+    let mut accumulator = Vec::new();
     for element in vector.iter() {
         accumulator.push(function(element));
     }
@@ -1982,11 +2060,10 @@ illegal to copy and pass by value.
 Generic `type`, `struct`, and `enum` declarations follow the same pattern:
 
 ~~~~
-extern crate collections;
-type Set<T> = collections::HashMap<T, ()>;
+type Set<T> = std::collections::HashMap<T, ()>;
 
 struct Stack<T> {
-    elements: ~[T]
+    elements: Vec<T>
 }
 
 enum Option<T> {
@@ -2011,7 +2088,7 @@ a function that returns `Option<T>` instead of `T`.
 fn radius(shape: Shape) -> Option<f64> {
     match shape {
         Circle(_, radius) => Some(radius),
-        Rectangle(..)      => None
+        Rectangle(..)     => None
     }
 }
 ~~~~
@@ -2092,7 +2169,7 @@ unless they contain references.
 
 * `Share` - Types that are *threadsafe*
 These are types that are safe to be used across several threads with access to
-a `&T` pointer. `MutexArc` is an example of a *sharable* type with internal mutable data.
+a `&T` pointer. `Mutex<T>` is an example of a *sharable* type with internal mutable data.
 
 * `'static` - Non-borrowed types.
 These are types that do not contain any data whose lifetime is bound to
@@ -2101,7 +2178,7 @@ references, or types where the only contained references
 have the `'static` lifetime. (For more on named lifetimes and their uses,
 see the [references and lifetimes guide][lifetimes].)
 
-> ***Note:*** These built-in traits were referred to as 'kinds' in earlier
+> *Note:* These built-in traits were referred to as 'kinds' in earlier
 > iterations of the language, and often still are.
 
 Additionally, the `Drop` trait is used to define destructors. This
@@ -2150,7 +2227,7 @@ don't provide any methods.
 Traits may be implemented for specific types with [impls]. An impl for
 a particular trait gives an implementation of the methods that
 trait provides.  For instance, the following impls of
-`Printable` for `int` and `~str` give implementations of the `print`
+`Printable` for `int` and `String` give implementations of the `print`
 method.
 
 [impls]: #methods
@@ -2158,15 +2235,15 @@ method.
 ~~~~
 # trait Printable { fn print(&self); }
 impl Printable for int {
-    fn print(&self) { println!("{:?}", *self) }
+    fn print(&self) { println!("{}", *self) }
 }
 
-impl Printable for ~str {
+impl Printable for String {
     fn print(&self) { println!("{}", *self) }
 }
 
 # 1.print();
-# (~"foo").print();
+# ("foo".to_string()).print();
 ~~~~
 
 Methods defined in an impl for a trait may be called just like
@@ -2183,11 +2260,11 @@ types to be exactly as it is for `int`, above:
 ~~~~
 # trait Printable { fn print(&self); }
 impl Printable for f32 {
-    fn print(&self) { println!("{:?}", *self) }
+    fn print(&self) { println!("{}", *self) }
 }
 
 impl Printable for bool {
-    fn print(&self) { println!("{:?}", *self) }
+    fn print(&self) { println!("{}", *self) }
 }
 
 # true.print();
@@ -2200,14 +2277,17 @@ definition of `print` right in the trait definition, instead of just
 giving its signature.  That is, we can write the following:
 
 ~~~~
+extern crate debug;
+
+# fn main() {
 trait Printable {
-	// Default method implementation
+    // Default method implementation
     fn print(&self) { println!("{:?}", *self) }
 }
 
 impl Printable for int {}
 
-impl Printable for ~str {
+impl Printable for String {
     fn print(&self) { println!("{}", *self) }
 }
 
@@ -2216,9 +2296,10 @@ impl Printable for bool {}
 impl Printable for f32 {}
 
 # 1.print();
-# (~"foo").print();
+# ("foo".to_string()).print();
 # true.print();
 # 3.14159.print();
+# }
 ~~~~
 
 Here, the impls of `Printable` for `int`, `bool`, and `f32` don't
@@ -2228,7 +2309,7 @@ provided in the trait definition.  Depending on the trait, default
 methods can save a great deal of boilerplate code from having to be
 written in impls.  Of course, individual impls can still override the
 default method for `print`, as is being done above in the impl for
-`~str`.
+`String`.
 
 ## Type-parameterized traits
 
@@ -2240,7 +2321,7 @@ trait Seq<T> {
     fn length(&self) -> uint;
 }
 
-impl<T> Seq<T> for ~[T] {
+impl<T> Seq<T> for Vec<T> {
     fn length(&self) -> uint { self.len() }
 }
 ~~~~
@@ -2254,7 +2335,7 @@ defining one.
 
 The type parameters bound by a trait are in scope in each of the
 method declarations. So, re-declaring the type parameter
-`T` as an explicit type parameter for `len`, in either the trait or
+`T` as an explicit type parameter for `length`, in either the trait or
 the impl, would be a compile-time error.
 
 Within a trait definition, `Self` is a special type that you can think
@@ -2265,12 +2346,12 @@ trait describes types that support an equality operation:
 ~~~~
 // In a trait, `self` refers to the self argument.
 // `Self` refers to the type implementing the trait.
-trait Eq {
+trait PartialEq {
     fn equals(&self, other: &Self) -> bool;
 }
 
 // In an impl, `self` refers just to the value of the receiver
-impl Eq for int {
+impl PartialEq for int {
     fn equals(&self, other: &int) -> bool { *other == *self }
 }
 ~~~~
@@ -2312,7 +2393,7 @@ generic types.
 
 ~~~~
 # trait Printable { fn print(&self); }
-fn print_all<T: Printable>(printable_things: ~[T]) {
+fn print_all<T: Printable>(printable_things: Vec<T>) {
     for thing in printable_things.iter() {
         thing.print();
     }
@@ -2322,7 +2403,7 @@ fn print_all<T: Printable>(printable_things: ~[T]) {
 Declaring `T` as conforming to the `Printable` trait (as we earlier
 did with `Clone`) makes it possible to call methods from that trait
 on values of type `T` inside the function. It will also cause a
-compile-time error when anyone tries to call `print_all` on an array
+compile-time error when anyone tries to call `print_all` on a vector
 whose element type does not have a `Printable` implementation.
 
 Type parameters can have multiple bounds by separating them with `+`,
@@ -2330,10 +2411,10 @@ as in this version of `print_all` that copies elements.
 
 ~~~
 # trait Printable { fn print(&self); }
-fn print_all<T: Printable + Clone>(printable_things: ~[T]) {
+fn print_all<T: Printable + Clone>(printable_things: Vec<T>) {
     let mut i = 0;
     while i < printable_things.len() {
-        let copy_of_thing = printable_things[i].clone();
+        let copy_of_thing = printable_things.get(i).clone();
         copy_of_thing.print();
         i += 1;
     }
@@ -2358,27 +2439,27 @@ However, consider this function:
 # fn new_circle() -> int { 1 }
 trait Drawable { fn draw(&self); }
 
-fn draw_all<T: Drawable>(shapes: ~[T]) {
+fn draw_all<T: Drawable>(shapes: Vec<T>) {
     for shape in shapes.iter() { shape.draw(); }
 }
 # let c: Circle = new_circle();
-# draw_all(~[c]);
+# draw_all(vec![c]);
 ~~~~
 
-You can call that on an array of circles, or an array of rectangles
+You can call that on a vector of circles, or a vector of rectangles
 (assuming those have suitable `Drawable` traits defined), but not on
-an array containing both circles and rectangles. When such behavior is
+a vector containing both circles and rectangles. When such behavior is
 needed, a trait name can alternately be used as a type, called
 an _object_.
 
 ~~~~
 # trait Drawable { fn draw(&self); }
-fn draw_all(shapes: &[~Drawable]) {
+fn draw_all(shapes: &[Box<Drawable>]) {
     for shape in shapes.iter() { shape.draw(); }
 }
 ~~~~
 
-In this example, there is no type parameter. Instead, the `~Drawable`
+In this example, there is no type parameter. Instead, the `Box<Drawable>`
 type denotes any owned box value that implements the `Drawable` trait.
 To construct such a value, you use the `as` operator to cast a value
 to an object:
@@ -2388,14 +2469,14 @@ to an object:
 # trait Drawable { fn draw(&self); }
 # fn new_circle() -> Circle { 1 }
 # fn new_rectangle() -> Rectangle { true }
-# fn draw_all(shapes: &[~Drawable]) {}
+# fn draw_all(shapes: &[Box<Drawable>]) {}
 
 impl Drawable for Circle { fn draw(&self) { /* ... */ } }
 impl Drawable for Rectangle { fn draw(&self) { /* ... */ } }
 
-let c: ~Circle = ~new_circle();
-let r: ~Rectangle = ~new_rectangle();
-draw_all([c as ~Drawable, r as ~Drawable]);
+let c: Box<Circle> = box new_circle();
+let r: Box<Rectangle> = box new_rectangle();
+draw_all([c as Box<Drawable>, r as Box<Drawable>]);
 ~~~~
 
 We omit the code for `new_circle` and `new_rectangle`; imagine that
@@ -2404,7 +2485,7 @@ that, like strings and vectors, objects have dynamic size and may
 only be referred to via one of the pointer types.
 Other pointer types work as well.
 Casts to traits may only be done with compatible pointers so,
-for example, an `&Circle` may not be cast to an `~Drawable`.
+for example, an `&Circle` may not be cast to a `Box<Drawable>`.
 
 ~~~
 # type Circle = int; type Rectangle = int;
@@ -2413,7 +2494,7 @@ for example, an `&Circle` may not be cast to an `~Drawable`.
 # fn new_circle() -> int { 1 }
 # fn new_rectangle() -> int { 2 }
 // An owned object
-let owny: ~Drawable = ~new_circle() as ~Drawable;
+let owny: Box<Drawable> = box new_circle() as Box<Drawable>;
 // A borrowed object
 let stacky: &Drawable = &new_circle() as &Drawable;
 ~~~
@@ -2437,8 +2518,8 @@ valid types:
 trait Foo {}
 trait Bar<T> {}
 
-fn sendable_foo(f: ~Foo:Send) { /* ... */ }
-fn shareable_bar<T: Share>(b: &Bar<T>: Share) { /* ... */ }
+fn sendable_foo(f: Box<Foo + Send>) { /* ... */ }
+fn shareable_bar<T: Share>(b: &Bar<T> + Share) { /* ... */ }
 ~~~
 
 When no colon is specified (such as the type `~Foo`), it is inferred that the
@@ -2512,7 +2593,7 @@ let mycircle: ~Circle = concrete as ~Circle;
 let nonsense = mycircle.radius() * mycircle.area();
 ~~~
 
-> ***Note:*** Trait inheritance does not actually work with objects yet
+> *Note:* Trait inheritance does not actually work with objects yet
 
 ## Deriving implementations for traits
 
@@ -2520,19 +2601,26 @@ A small number of traits in `std` and `extra` can have implementations
 that can be automatically derived. These instances are specified by
 placing the `deriving` attribute on a data type declaration. For
 example, the following will mean that `Circle` has an implementation
-for `Eq` and can be used with the equality operators, and that a value
+for `PartialEq` and can be used with the equality operators, and that a value
 of type `ABC` can be randomly generated and converted to a string:
 
 ~~~
-#[deriving(Eq)]
+extern crate rand;
+
+#[deriving(PartialEq)]
 struct Circle { radius: f64 }
 
-#[deriving(Clone, Show)]
+#[deriving(Rand, Show)]
 enum ABC { A, B, C }
+
+fn main() {
+    // Use the Show trait to print "A, B, C."
+    println!("{}, {}, {}", A, B, C);
+}
 ~~~
 
-The full list of derivable traits is `Eq`, `TotalEq`, `Ord`,
-`TotalOrd`, `Encodable` `Decodable`, `Clone`,
+The full list of derivable traits is `PartialEq`, `TotalEq`, `Ord`,
+`TotalOrd`, `Encodable`, `Decodable`, `Clone`,
 `Hash`, `Rand`, `Default`, `Zero`, `FromPrimitive` and `Show`.
 
 # Crates and the module system
@@ -2655,9 +2743,9 @@ mod farm {
 # pub type Chicken = int;
 # struct Human(int);
 # impl Human { pub fn rest(&self) { } }
-# pub fn make_me_a_farm() -> Farm { Farm { chickens: ~[], farmer: Human(0) } }
+# pub fn make_me_a_farm() -> Farm { Farm { chickens: vec![], farmer: Human(0) } }
     pub struct Farm {
-        chickens: ~[Chicken],
+        chickens: Vec<Chicken>,
         pub farmer: Human
     }
 
@@ -2754,7 +2842,7 @@ mod animals {
 
 The compiler will look for these files, in this order:
 
-~~~ {.notrust}
+~~~text
 src/plants.rs
 src/plants/mod.rs
 
@@ -2785,7 +2873,7 @@ mod mammals {
 
 ...then the source files of `mod animals`'s submodules can either be in the same directory as the animals source file or in a subdirectory of its directory. If the animals file is `src/animals.rs`, `rustc` will look for:
 
-~~~ {.notrust}
+~~~text
 src/animals.rs
     src/fish.rs
     src/fish/mod.rs
@@ -2796,7 +2884,7 @@ src/animals.rs
 
 If the animals file is `src/animals/mod.rs`, `rustc` will look for:
 
-~~~ {.notrust}
+~~~text
 src/animals/mod.rs
     src/animals/fish.rs
     src/animals/fish/mod.rs
@@ -2925,21 +3013,23 @@ And here an example with multiple files:
 ~~~{.ignore}
 // `a.rs` - crate root
 use b::foo;
+use b::c::bar;
 mod b;
-fn main() { foo(); }
+fn main() {
+    foo();
+    bar();
+}
 ~~~
 
 ~~~{.ignore}
-// `b.rs`
-use b::c::bar;
+// `b/mod.rs`
 pub mod c;
-pub fn foo() { bar(); }
+pub fn foo() { println!("Foo!"; }
 ~~~
 
-~~~
-// `c.rs`
-pub fn bar() { println!("Baz!"); }
-# fn main() {}
+~~~{.ignore}
+// `b/c.rs`
+pub fn bar() { println!("Bar!"); }
 ~~~
 
 There also exist two short forms for importing multiple names at once:
@@ -2958,6 +3048,7 @@ use farm::{chicken, cow};
 2. Import everything in a module with a wildcard:
 
 ~~~
+# #![feature(globs)]
 use farm::*;
 # mod farm {
 #     pub fn cow() { println!("Bat-chicken? What a stupid name!") }
@@ -2966,8 +3057,8 @@ use farm::*;
 # fn main() { cow(); chicken() }
 ~~~
 
-> ***Note:*** This feature of the compiler is currently gated behind the
-> `#[feature(globs)]` directive. More about these directives can be found in
+> *Note:* This feature of the compiler is currently gated behind the
+> `#![feature(globs)]` directive. More about these directives can be found in
 > the manual.
 
 However, that's not all. You can also rename an item while you're bringing it into scope:
@@ -2982,7 +3073,7 @@ fn main() {
 }
 ~~~
 
-In general, `use` creates an local alias:
+In general, `use` creates a local alias:
 An alternate path and a possibly different name to access the same item,
 without touching the original, and with both being interchangeable.
 
@@ -3094,10 +3185,11 @@ without conflict.
 Therefore, if you plan to compile your crate as a library, you should annotate it with that information:
 
 ~~~~
+# #![allow(unused_attribute)]
 // `lib.rs`
 
-# #[crate_type = "lib"];
-#[crate_id = "farm#2.5"];
+# #![crate_type = "lib"]
+#![crate_id = "farm#2.5"]
 
 // ...
 # fn farm() {}
@@ -3117,12 +3209,13 @@ Other crate settings and metadata include things like enabling/disabling certain
 or setting the crate type (library or executable) explicitly:
 
 ~~~~
+# #![allow(unused_attribute)]
 // `lib.rs`
 // ...
 
 // This crate is a library ("bin" is the default)
-#[crate_id = "farm#2.5"];
-#[crate_type = "lib"];
+#![crate_id = "farm#2.5"]
+#![crate_type = "lib"]
 
 // Turn on a warning
 #[warn(non_camel_case_types)]
@@ -3136,8 +3229,9 @@ Now for something that you can actually compile yourself.
 We define two crates, and use one of them as a library in the other.
 
 ~~~~
+# #![allow(unused_attribute)]
 // `world.rs`
-#[crate_id = "world#0.42"];
+#![crate_id = "world#0.42"]
 
 # mod secret_module_to_make_this_test_run {
 pub fn explore() -> &'static str { "world" }
@@ -3152,10 +3246,10 @@ fn main() { println!("hello {}", world::explore()); }
 
 Now compile and run like this (adjust to your platform if necessary):
 
-~~~~ {.notrust}
-> rustc --crate-type=lib world.rs  # compiles libworld-<HASH>-0.42.so
-> rustc main.rs -L .               # compiles main
-> ./main
+~~~~console
+$ rustc --crate-type=lib world.rs  # compiles libworld-<HASH>-0.42.so
+$ rustc main.rs -L .               # compiles main
+$ ./main
 "hello world"
 ~~~~
 
@@ -3210,13 +3304,15 @@ fn main() {
 Both auto-insertions can be disabled with an attribute if necessary:
 
 ~~~
+# #![allow(unused_attribute)]
 // In the crate root:
-#[no_std];
+#![no_std]
 ~~~
 
 ~~~
+# #![allow(unused_attribute)]
 // In any module:
-#[no_implicit_prelude];
+#![no_implicit_prelude]
 ~~~
 
 See the [API documentation][stddoc] for details.

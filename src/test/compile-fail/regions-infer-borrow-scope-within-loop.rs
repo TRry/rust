@@ -10,16 +10,18 @@
 
 #![feature(managed_boxes)]
 
+use std::gc::Gc;
+
 fn borrow<'r, T>(x: &'r T) -> &'r T {x}
 
-fn foo(cond: || -> bool, make_box: || -> @int) {
+fn foo(cond: || -> bool, make_box: || -> Gc<int>) {
     let mut y: &int;
     loop {
         let x = make_box();
 
         // Here we complain because the resulting region
         // of this borrow is the fn body as a whole.
-        y = borrow(x); //~ ERROR cannot root
+        y = borrow(x); //~ ERROR `*x` does not live long enough
 
         assert_eq!(*x, *y);
         if cond() { break; }

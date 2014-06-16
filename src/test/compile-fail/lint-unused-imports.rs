@@ -11,7 +11,6 @@
 #![feature(globs)]
 #![deny(unused_imports)]
 #![allow(dead_code)]
-#![allow(deprecated_owned_vector)]
 
 use cal = bar::c::cc;
 
@@ -29,7 +28,12 @@ use test::B;
 
 // Make sure this import is warned about when at least one of its imported names
 // is unused
-use std::slice::{from_fn, from_elem};   //~ ERROR unused import
+use test2::{foo, bar}; //~ ERROR unused import
+
+mod test2 {
+    pub fn foo() {}
+    pub fn bar() {}
+}
 
 mod test {
     pub trait A { fn a(&self) {} }
@@ -46,7 +50,7 @@ mod foo {
 
 mod bar {
     // Don't ignore on 'pub use' because we're not sure if it's used or not
-    pub use std::cmp::Eq;
+    pub use std::cmp::PartialEq;
 
     pub mod c {
         use foo::Point;
@@ -56,7 +60,7 @@ mod bar {
 
     #[allow(unused_imports)]
     mod foo {
-        use std::cmp::Eq;
+        use std::cmp::PartialEq;
     }
 }
 
@@ -66,5 +70,5 @@ fn main() {
     let mut b = 4;
     swap(&mut a, &mut b);
     test::C.b();
-    let _a = from_elem(0, 0);
+    let _a = foo();
 }

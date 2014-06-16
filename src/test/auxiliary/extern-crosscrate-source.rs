@@ -8,15 +8,15 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#[crate_id="externcallback#0.1"];
-#[crate_type = "lib"];
+#![crate_id="externcallback#0.1"]
+#![crate_type = "lib"]
 
 extern crate libc;
 
 pub mod rustrt {
     extern crate libc;
 
-    #[link(name = "rustrt")]
+    #[link(name = "rust_test_helpers")]
     extern {
         pub fn rust_dbg_call(cb: extern "C" fn(libc::uintptr_t) -> libc::uintptr_t,
                              data: libc::uintptr_t)

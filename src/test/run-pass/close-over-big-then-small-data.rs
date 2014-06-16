@@ -12,6 +12,8 @@
 // storing closure data (as we used to do), the u64 would
 // overwrite the u16.
 
+extern crate debug;
+
 struct Pair<A,B> {
     a: A, b: B
 }
@@ -31,11 +33,11 @@ impl<A:Clone> Invokable<A> for Invoker<A> {
     }
 }
 
-fn f<A:Clone + 'static>(a: A, b: u16) -> ~Invokable<A>: {
-    ~Invoker {
+fn f<A:Clone + 'static>(a: A, b: u16) -> Box<Invokable<A>+> {
+    box Invoker {
         a: a,
         b: b,
-    } as ~Invokable<A>:
+    } as (Box<Invokable<A>>+)
 }
 
 pub fn main() {

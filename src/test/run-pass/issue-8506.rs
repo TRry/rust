@@ -8,11 +8,11 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#[allow(dead_code)];
+#![allow(dead_code)]
 
 enum Either {
     One,
-    Other(~str,~str)
+    Other(String,String)
 }
 
 static one : Either = One;

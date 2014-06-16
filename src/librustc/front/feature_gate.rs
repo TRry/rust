@@ -16,7 +16,7 @@
 //! enabled.
 //!
 //! Features are enabled in programs via the crate-level attributes of
-//! #[feature(...)] with a comma-separated list of features.
+//! #![feature(...)] with a comma-separated list of features.
 
 use middle::lint;
 
@@ -46,7 +46,7 @@ static KNOWN_FEATURES: &'static [(&'static str, Status)] = &[
     ("thread_local", Active),
     ("link_args", Active),
     ("phase", Active),
-    ("macro_registrar", Active),
+    ("plugin_registrar", Active),
     ("log_syntax", Active),
     ("trace_macros", Active),
     ("concat_idents", Active),
@@ -55,6 +55,15 @@ static KNOWN_FEATURES: &'static [(&'static str, Status)] = &[
     ("default_type_params", Active),
     ("quote", Active),
     ("linkage", Active),
+    ("struct_inherit", Active),
+    ("overloaded_calls", Active),
+    ("unboxed_closure_sugar", Active),
+
+    ("quad_precision_float", Active),
+
+    // A temporary feature gate used to enable parser extensions needed
+    // to bootstrap fix for #5723.
+    ("issue_5723_bootstrap", Active),
 
     // These are used to test this portion of the compiler, they don't actually
     // mean anything
@@ -76,13 +85,19 @@ enum Status {
 
 /// A set of features to be used by later passes.
 pub struct Features {
-    pub default_type_params: Cell<bool>
+    pub default_type_params: Cell<bool>,
+    pub quad_precision_float: Cell<bool>,
+    pub issue_5723_bootstrap: Cell<bool>,
+    pub overloaded_calls: Cell<bool>,
 }
 
 impl Features {
     pub fn new() -> Features {
         Features {
-            default_type_params: Cell::new(false)
+            default_type_params: Cell::new(false),
+            quad_precision_float: Cell::new(false),
+            issue_5723_bootstrap: Cell::new(false),
+            overloaded_calls: Cell::new(false),
         }
     }
 }
@@ -96,9 +111,9 @@ impl<'a> Context<'a> {
     fn gate_feature(&self, feature: &str, span: Span, explain: &str) {
         if !self.has_feature(feature) {
             self.sess.span_err(span, explain);
-            self.sess.span_note(span, format!("add \\#[feature({})] to the \
-                                                  crate attributes to enable",
-                                                 feature));
+            self.sess.span_note(span, format!("add #![feature({})] to the \
+                                               crate attributes to enable",
+                                              feature).as_slice());
         }
     }
 
@@ -125,16 +140,14 @@ impl<'a> Visitor<()> for Context<'a> {
 
     fn visit_view_item(&mut self, i: &ast::ViewItem, _: ()) {
         match i.node {
-            ast::ViewItemUse(ref paths) => {
-                for path in paths.iter() {
-                    match path.node {
-                        ast::ViewPathGlob(..) => {
-                            self.gate_feature("globs", path.span,
-                                              "glob import statements are \
-                                               experimental and possibly buggy");
-                        }
-                        _ => {}
+            ast::ViewItemUse(ref path) => {
+                match path.node {
+                    ast::ViewPathGlob(..) => {
+                        self.gate_feature("globs", path.span,
+                                          "glob import statements are \
+                                           experimental and possibly buggy");
                     }
+                    _ => {}
                 }
             }
             ast::ViewItemExternCrate(..) => {
@@ -183,17 +196,27 @@ impl<'a> Visitor<()> for Context<'a> {
             }
 
             ast::ItemFn(..) => {
-                if attr::contains_name(i.attrs.as_slice(), "macro_registrar") {
-                    self.gate_feature("macro_registrar", i.span,
-                                      "cross-crate macro exports are \
-                                       experimental and possibly buggy");
+                if attr::contains_name(i.attrs.as_slice(), "plugin_registrar") {
+                    self.gate_feature("plugin_registrar", i.span,
+                                      "compiler plugins are experimental and possibly buggy");
                 }
             }
 
-            ast::ItemStruct(..) => {
+            ast::ItemStruct(struct_definition, _) => {
                 if attr::contains_name(i.attrs.as_slice(), "simd") {
                     self.gate_feature("simd", i.span,
                                       "SIMD types are experimental and possibly buggy");
+                }
+                match struct_definition.super_struct {
+                    Some(ref path) => self.gate_feature("struct_inherit", path.span,
+                                                        "struct inheritance is experimental \
+                                                         and possibly buggy"),
+                    None => {}
+                }
+                if struct_definition.is_virtual {
+                    self.gate_feature("struct_inherit", i.span,
+                                      "struct inheritance (`virtual` keyword) is \
+                                       experimental and possibly buggy");
                 }
             }
 
@@ -239,7 +262,9 @@ impl<'a> Visitor<()> for Context<'a> {
         else {
             for &quote in quotes.iter() {
                 if id == token::str_to_ident(quote) {
-                  self.gate_feature("quote", path.span, quote + msg);
+                  self.gate_feature("quote",
+                                    path.span,
+                                    format!("{}{}", quote, msg).as_slice());
                 }
             }
         }
@@ -260,14 +285,18 @@ impl<'a> Visitor<()> for Context<'a> {
 
     fn visit_ty(&mut self, t: &ast::Ty, _: ()) {
         match t.node {
-            ast::TyClosure(closure) if closure.onceness == ast::Once &&
-                    closure.sigil != ast::OwnedSigil => {
+            ast::TyClosure(closure, _) if closure.onceness == ast::Once => {
                 self.gate_feature("once_fns", t.span,
                                   "once functions are \
                                    experimental and likely to be removed");
 
             },
             ast::TyBox(_) => { self.gate_box(t.span); }
+            ast::TyUnboxedFn(_) => {
+                self.gate_feature("unboxed_closure_sugar",
+                                  t.span,
+                                  "unboxed closure trait sugar is experimental");
+            }
             _ => {}
         }
 
@@ -306,14 +335,14 @@ pub fn check_crate(sess: &Session, krate: &ast::Crate) {
     };
 
     for attr in krate.attrs.iter() {
-        if !attr.name().equiv(&("feature")) {
+        if !attr.check_name("feature") {
             continue
         }
 
         match attr.meta_item_list() {
             None => {
                 sess.span_err(attr.span, "malformed feature attribute, \
-                                          expected #[feature(...)]");
+                                          expected #![feature(...)]");
             }
             Some(list) => {
                 for &mi in list.iter() {
@@ -340,7 +369,7 @@ pub fn check_crate(sess: &Session, krate: &ast::Crate) {
                             sess.add_lint(lint::UnknownFeatures,
                                           ast::CRATE_NODE_ID,
                                           mi.span,
-                                          ~"unknown feature");
+                                          "unknown feature".to_string());
                         }
                     }
                 }
@@ -353,4 +382,7 @@ pub fn check_crate(sess: &Session, krate: &ast::Crate) {
     sess.abort_if_errors();
 
     sess.features.default_type_params.set(cx.has_feature("default_type_params"));
+    sess.features.quad_precision_float.set(cx.has_feature("quad_precision_float"));
+    sess.features.issue_5723_bootstrap.set(cx.has_feature("issue_5723_bootstrap"));
+    sess.features.overloaded_calls.set(cx.has_feature("overloaded_calls"));
 }

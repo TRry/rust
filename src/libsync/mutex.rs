@@ -57,14 +57,17 @@
 // times in order to manage a few flags about who's blocking where and whether
 // it's locked or not.
 
-use std::kinds::marker;
-use std::mem;
-use std::rt::local::Local;
-use std::rt::task::{BlockedTask, Task};
-use std::rt::thread::Thread;
-use std::sync::atomics;
-use std::ty::Unsafe;
-use std::unstable::mutex;
+use core::prelude::*;
+
+use alloc::owned::Box;
+use core::atomics;
+use core::kinds::marker;
+use core::mem;
+use core::ty::Unsafe;
+use rustrt::local::Local;
+use rustrt::mutex;
+use rustrt::task::{BlockedTask, Task};
+use rustrt::thread::Thread;
 
 use q = mpsc_intrusive;
 
@@ -94,10 +97,17 @@ pub static NATIVE_BLOCKED: uint = 1 << 2;
 /// drop(guard); // unlock the lock
 /// ```
 pub struct Mutex {
-    lock: StaticMutex,
+    // Note that this static mutex is in a *box*, not inlined into the struct
+    // itself. This is done for memory safety reasons with the usage of a
+    // StaticNativeMutex inside the static mutex above. Once a native mutex has
+    // been used once, its address can never change (it can't be moved). This
+    // mutex type can be safely moved at any time, so to ensure that the native
+    // mutex is used correctly we box the inner lock to give it a constant
+    // address.
+    lock: Box<StaticMutex>,
 }
 
-#[deriving(Eq, Show)]
+#[deriving(PartialEq, Show)]
 enum Flavor {
     Unlocked,
     TryLockAcquisition,
@@ -208,7 +218,7 @@ impl StaticMutex {
         // After we've failed the fast path, then we delegate to the differnet
         // locking protocols for green/native tasks. This will select two tasks
         // to continue further (one native, one green).
-        let t: ~Task = Local::take();
+        let t: Box<Task> = Local::take();
         let can_block = t.can_block();
         let native_bit;
         if can_block {
@@ -244,7 +254,7 @@ impl StaticMutex {
         // regularly in native/green contention. Due to try_lock and the header
         // of lock stealing the lock, it's also possible for native/native
         // contention to hit this location, but as less common.
-        let t: ~Task = Local::take();
+        let t: Box<Task> = Local::take();
         t.deschedule(1, |task| {
             let task = unsafe { task.cast_to_uint() };
 
@@ -308,7 +318,7 @@ impl StaticMutex {
 
     // Tasks which can block are super easy. These tasks just call the blocking
     // `lock()` function on an OS mutex
-    fn native_lock(&self, t: ~Task) {
+    fn native_lock(&self, t: Box<Task>) {
         Local::put(t);
         unsafe { self.lock.lock_noguard(); }
     }
@@ -317,7 +327,7 @@ impl StaticMutex {
         unsafe { self.lock.unlock_noguard(); }
     }
 
-    fn green_lock(&self, t: ~Task) {
+    fn green_lock(&self, t: Box<Task>) {
         // Green threads flag their presence with an atomic counter, and if they
         // fail to be the first to the mutex, they enqueue themselves on a
         // concurrent internal queue with a stack-allocated node.
@@ -402,7 +412,7 @@ impl StaticMutex {
                         GreenAcquisition => { self.green_unlock(); }
                         NativeAcquisition => { self.native_unlock(); }
                         TryLockAcquisition => {}
-                        Unlocked => unreachable!()
+                        Unlocked => unreachable!(),
                     }
                     unlocked = true;
                 }
@@ -417,7 +427,7 @@ impl StaticMutex {
                 GreenAcquisition => { self.green_unlock(); }
                 NativeAcquisition => { self.native_unlock(); }
                 TryLockAcquisition => {}
-                Unlocked => unreachable!()
+                Unlocked => unreachable!(),
             }
         }
 
@@ -455,7 +465,7 @@ impl Mutex {
     /// Creates a new mutex in an unlocked state ready for use.
     pub fn new() -> Mutex {
         Mutex {
-            lock: StaticMutex {
+            lock: box StaticMutex {
                 state: atomics::AtomicUint::new(0),
                 flavor: Unsafe::new(Unlocked),
                 green_blocker: Unsafe::new(0),
@@ -517,8 +527,9 @@ impl Drop for Mutex {
 
 #[cfg(test)]
 mod test {
-    extern crate native;
+    use std::prelude::*;
     use super::{Mutex, StaticMutex, MUTEX_INIT};
+    use native;
 
     #[test]
     fn smoke() {

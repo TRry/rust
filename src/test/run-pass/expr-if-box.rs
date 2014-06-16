@@ -8,17 +8,19 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#[feature(managed_boxes)];
+#![feature(managed_boxes)]
+
+use std::gc::{Gc, GC};
 
 // Tests for if as expressions returning boxed types
 fn test_box() {
-    let rs = if true { @100 } else { @101 };
+    let rs = if true { box(GC) 100 } else { box(GC) 101 };
     assert_eq!(*rs, 100);
 }
 
 fn test_str() {
-    let rs = if true { ~"happy" } else { ~"sad" };
-    assert_eq!(rs, ~"happy");
+    let rs = if true { "happy".to_string() } else { "sad".to_string() };
+    assert_eq!(rs, "happy".to_string());
 }
 
 pub fn main() { test_box(); test_str(); }

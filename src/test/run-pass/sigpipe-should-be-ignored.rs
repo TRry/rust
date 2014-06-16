@@ -12,7 +12,8 @@
 // doesn't die in a ball of fire, but rather it's gracefully handled.
 
 use std::os;
-use std::io::{PipeStream, Process};
+use std::io::PipeStream;
+use std::io::Command;
 
 fn test() {
     let os::Pipe { input, out } = os::pipe();
@@ -25,10 +26,12 @@ fn test() {
 
 fn main() {
     let args = os::args();
+    let args = args.as_slice();
     if args.len() > 1 && args[1].as_slice() == "test" {
         return test();
     }
 
-    let mut p = Process::new(args[0], [~"test"]).unwrap();
-    assert!(p.wait().success());
+    let mut p = Command::new(args[0].as_slice())
+                        .arg("test").spawn().unwrap();
+    assert!(p.wait().unwrap().success());
 }

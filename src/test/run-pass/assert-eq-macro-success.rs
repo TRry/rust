@@ -8,13 +8,17 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#[deriving(Eq, Show)]
+#![feature(managed_boxes)]
+
+use std::gc::GC;
+
+#[deriving(PartialEq, Show)]
 struct Point { x : int }
 
 pub fn main() {
     assert_eq!(14,14);
-    assert_eq!(~"abc",~"abc");
-    assert_eq!(~Point{x:34},~Point{x:34});
+    assert_eq!("abc".to_string(),"abc".to_string());
+    assert_eq!(box Point{x:34},box Point{x:34});
     assert_eq!(&Point{x:34},&Point{x:34});
-    assert_eq!(@Point{x:34},@Point{x:34});
+    assert_eq!(box(GC) Point{x:34},box(GC) Point{x:34});
 }

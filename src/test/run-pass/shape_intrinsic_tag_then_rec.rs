@@ -8,19 +8,22 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#[feature(managed_boxes)];
+#![feature(managed_boxes)]
+
+extern crate debug;
 
 // Exercises a bug in the shape code that was exposed
-// on x86_64: when there is a enum embedded in an
+// on x86_64: when there is an enum embedded in an
 // interior record which is then itself interior to
 // something else, shape calculations were off.
 
+use std::gc::{Gc, GC};
 
 #[deriving(Clone)]
 enum opt_span {
     //hack (as opposed to option), to make `span` compile
     os_none,
-    os_some(@Span),
+    os_some(Gc<Span>),
 }
 
 #[deriving(Clone)]
@@ -41,8 +44,8 @@ type ty_ = uint;
 #[deriving(Clone)]
 struct Path_ {
     global: bool,
-    idents: Vec<~str> ,
-    types: Vec<@ty>,
+    idents: Vec<String> ,
+    types: Vec<Gc<ty>>,
 }
 
 type path = Spanned<Path_>;
@@ -56,10 +59,10 @@ struct X {
 
 pub fn main() {
     let sp: Span = Span {lo: 57451u, hi: 57542u, expanded_from: os_none};
-    let t: @ty = @Spanned { data: 3u, span: sp };
+    let t: Gc<ty> = box(GC) Spanned { data: 3u, span: sp };
     let p_: Path_ = Path_ {
         global: true,
-        idents: vec!(~"hi"),
+        idents: vec!("hi".to_string()),
         types: vec!(t),
     };
     let p: path = Spanned { data: p_, span: sp };

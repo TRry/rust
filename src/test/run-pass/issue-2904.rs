@@ -9,7 +9,9 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#[feature(managed_boxes)];
+#![feature(managed_boxes)]
+
+extern crate debug;
 
 /// Map representation
 
@@ -29,15 +31,15 @@ enum square {
 
 impl fmt::Show for square {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f.buf, "{}", match *self {
-          bot => { ~"R" }
-          wall => { ~"#" }
-          rock => { ~"*" }
-          lambda => { ~"\\" }
-          closed_lift => { ~"L" }
-          open_lift => { ~"O" }
-          earth => { ~"." }
-          empty => { ~" " }
+        write!(f, "{}", match *self {
+          bot => { "R".to_string() }
+          wall => { "#".to_string() }
+          rock => { "*".to_string() }
+          lambda => { "\\".to_string() }
+          closed_lift => { "L".to_string() }
+          open_lift => { "O".to_string() }
+          earth => { ".".to_string() }
+          empty => { " ".to_string() }
         })
     }
 }

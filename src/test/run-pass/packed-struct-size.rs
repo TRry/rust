@@ -8,9 +8,10 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#[feature(managed_boxes)];
+#![feature(managed_boxes)]
 
 use std::mem;
+use std::gc::Gc;
 
 #[packed]
 struct S4 {
@@ -25,11 +26,10 @@ struct S5 {
 }
 
 #[packed]
-struct S13_str {
+struct S13 {
     a: i64,
     b: f32,
     c: u8,
-    d: ~str
 }
 
 enum Foo {
@@ -49,7 +49,7 @@ struct S7_Option {
     a: f32,
     b: u8,
     c: u16,
-    d: Option<@f64>
+    d: Option<Gc<f64>>
 }
 
 // Placing packed structs in statics should work
@@ -61,7 +61,7 @@ static TEST_S3_Foo: S3_Foo = S3_Foo { a: 1, b: 2, c: Baz };
 pub fn main() {
     assert_eq!(mem::size_of::<S4>(), 4);
     assert_eq!(mem::size_of::<S5>(), 5);
-    assert_eq!(mem::size_of::<S13_str>(), 13 + mem::size_of::<~str>());
+    assert_eq!(mem::size_of::<S13>(), 13);
     assert_eq!(mem::size_of::<S3_Foo>(), 3 + mem::size_of::<Foo>());
-    assert_eq!(mem::size_of::<S7_Option>(), 7 + mem::size_of::<Option<@f64>>());
+    assert_eq!(mem::size_of::<S7_Option>(), 7 + mem::size_of::<Option<Gc<f64>>>());
 }

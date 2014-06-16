@@ -10,7 +10,7 @@
 
 // A test of the macro system. Can we do HTML literals?
 
-#[feature(macro_rules)];
+#![feature(macro_rules)]
 
 
 /*
@@ -41,7 +41,7 @@ macro_rules! parse_node (
     ) => (
         parse_node!(
             [$(: $tags ($(:$tag_nodes),*))*];
-            [$(:$head_nodes,)* :tag(stringify!($head).to_owned(),
+            [$(:$head_nodes,)* :tag(stringify!($head).to_string(),
                                     vec!($($nodes),*))];
             $($rest)*
         )
@@ -66,7 +66,7 @@ macro_rules! parse_node (
     ) => (
         parse_node!(
             [$(: $tags ($(:$tag_nodes),*))*];
-            [$(:$nodes,)* :text(~".")];
+            [$(:$nodes,)* :text(".".to_string())];
             $($rest)*
         )
     );
@@ -78,7 +78,7 @@ macro_rules! parse_node (
     ) => (
         parse_node!(
             [$(: $tags ($(:$tag_nodes),*))*];
-            [$(:$nodes,)* :text(stringify!($word).to_owned())];
+            [$(:$nodes,)* :text(stringify!($word).to_string())];
             $($rest)*
         )
     );
@@ -98,6 +98,6 @@ pub fn main() {
 }
 
 enum HTMLFragment {
-    tag(~str, Vec<HTMLFragment> ),
-    text(~str),
+    tag(String, Vec<HTMLFragment> ),
+    text(String),
 }

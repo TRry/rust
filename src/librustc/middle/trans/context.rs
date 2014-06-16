@@ -8,20 +8,19 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-
-use driver::session::NoDebugInfo;
+use driver::config::NoDebugInfo;
 use driver::session::Session;
 use lib::llvm::{ContextRef, ModuleRef, ValueRef};
 use lib::llvm::{llvm, TargetData, TypeNames};
 use lib::llvm::mk_target_data;
 use metadata::common::LinkMeta;
-use middle::astencode;
 use middle::resolve;
 use middle::trans::adt;
 use middle::trans::base;
 use middle::trans::builder::Builder;
-use middle::trans::common::{mono_id,ExternMap,tydesc_info,BuilderRef_res,Stats};
+use middle::trans::common::{ExternMap,tydesc_info,BuilderRef_res};
 use middle::trans::debuginfo;
+use middle::trans::monomorphize::MonoId;
 use middle::trans::type_::Type;
 use middle::ty;
 use util::sha2::Sha256;
@@ -30,9 +29,26 @@ use util::nodemap::{NodeMap, NodeSet, DefIdMap};
 use std::cell::{Cell, RefCell};
 use std::c_str::ToCStr;
 use std::ptr;
-use collections::{HashMap, HashSet};
+use std::rc::Rc;
+use std::collections::{HashMap, HashSet};
+use syntax::abi;
 use syntax::ast;
 use syntax::parse::token::InternedString;
+
+pub struct Stats {
+    pub n_static_tydescs: Cell<uint>,
+    pub n_glues_created: Cell<uint>,
+    pub n_null_glues: Cell<uint>,
+    pub n_real_glues: Cell<uint>,
+    pub n_fns: Cell<uint>,
+    pub n_monos: Cell<uint>,
+    pub n_inlines: Cell<uint>,
+    pub n_closures: Cell<uint>,
+    pub n_llvm_insns: Cell<uint>,
+    pub llvm_insns: RefCell<HashMap<String, uint>>,
+    // (ident, time-in-ms, llvm-instructions)
+    pub fn_stats: RefCell<Vec<(String, uint, uint)> >,
+}
 
 pub struct CrateContext {
     pub llmod: ModuleRef,
@@ -44,10 +60,10 @@ pub struct CrateContext {
     pub item_vals: RefCell<NodeMap<ValueRef>>,
     pub exp_map2: resolve::ExportMap2,
     pub reachable: NodeSet,
-    pub item_symbols: RefCell<NodeMap<~str>>,
+    pub item_symbols: RefCell<NodeMap<String>>,
     pub link_meta: LinkMeta,
     pub drop_glues: RefCell<HashMap<ty::t, ValueRef>>,
-    pub tydescs: RefCell<HashMap<ty::t, @tydesc_info>>,
+    pub tydescs: RefCell<HashMap<ty::t, Rc<tydesc_info>>>,
     /// Set when running emit_tydescs to enforce that no more tydescs are
     /// created.
     pub finished_tydescs: Cell<bool>,
@@ -57,14 +73,14 @@ pub struct CrateContext {
     /// came from)
     pub external_srcs: RefCell<NodeMap<ast::DefId>>,
     /// A set of static items which cannot be inlined into other crates. This
-    /// will pevent in IIItem() structures from being encoded into the metadata
+    /// will prevent in IIItem() structures from being encoded into the metadata
     /// that is generated
     pub non_inlineable_statics: RefCell<NodeSet>,
     /// Cache instances of monomorphized functions
-    pub monomorphized: RefCell<HashMap<mono_id, ValueRef>>,
+    pub monomorphized: RefCell<HashMap<MonoId, ValueRef>>,
     pub monomorphizing: RefCell<DefIdMap<uint>>,
     /// Cache generated vtables
-    pub vtables: RefCell<HashMap<(ty::t, mono_id), ValueRef>>,
+    pub vtables: RefCell<HashMap<(ty::t, MonoId), ValueRef>>,
     /// Cache of constant strings,
     pub const_cstr_cache: RefCell<HashMap<InternedString, ValueRef>>,
 
@@ -91,13 +107,12 @@ pub struct CrateContext {
 
     pub lltypes: RefCell<HashMap<ty::t, Type>>,
     pub llsizingtypes: RefCell<HashMap<ty::t, Type>>,
-    pub adt_reprs: RefCell<HashMap<ty::t, @adt::Repr>>,
+    pub adt_reprs: RefCell<HashMap<ty::t, Rc<adt::Repr>>>,
     pub symbol_hasher: RefCell<Sha256>,
-    pub type_hashcodes: RefCell<HashMap<ty::t, ~str>>,
-    pub all_llvm_symbols: RefCell<HashSet<~str>>,
+    pub type_hashcodes: RefCell<HashMap<ty::t, String>>,
+    pub all_llvm_symbols: RefCell<HashSet<String>>,
     pub tcx: ty::ctxt,
-    pub maps: astencode::Maps,
-    pub stats: @Stats,
+    pub stats: Stats,
     pub int_type: Type,
     pub opaque_vec_type: Type,
     pub builder: BuilderRef_res,
@@ -107,6 +122,8 @@ pub struct CrateContext {
     pub uses_gc: bool,
     pub dbg_cx: Option<debuginfo::CrateDebugContext>,
 
+    pub eh_personality: RefCell<Option<ValueRef>>,
+
     intrinsics: RefCell<HashMap<&'static str, ValueRef>>,
 }
 
@@ -114,7 +131,6 @@ impl CrateContext {
     pub fn new(name: &str,
                tcx: ty::ctxt,
                emap2: resolve::ExportMap2,
-               maps: astencode::Maps,
                symbol_hasher: Sha256,
                link_meta: LinkMeta,
                reachable: NodeSet)
@@ -127,16 +143,30 @@ impl CrateContext {
             let metadata_llmod = format!("{}_metadata", name).with_c_str(|buf| {
                 llvm::LLVMModuleCreateWithNameInContext(buf, llcx)
             });
-            tcx.sess.targ_cfg.target_strs.data_layout.with_c_str(|buf| {
+            tcx.sess
+               .targ_cfg
+               .target_strs
+               .data_layout
+               .as_slice()
+               .with_c_str(|buf| {
                 llvm::LLVMSetDataLayout(llmod, buf);
                 llvm::LLVMSetDataLayout(metadata_llmod, buf);
             });
-            tcx.sess.targ_cfg.target_strs.target_triple.with_c_str(|buf| {
+            tcx.sess
+               .targ_cfg
+               .target_strs
+               .target_triple
+               .as_slice()
+               .with_c_str(|buf| {
                 llvm::LLVMRustSetNormalizedTarget(llmod, buf);
                 llvm::LLVMRustSetNormalizedTarget(metadata_llmod, buf);
             });
 
-            let td = mk_target_data(tcx.sess.targ_cfg.target_strs.data_layout);
+            let td = mk_target_data(tcx.sess
+                                       .targ_cfg
+                                       .target_strs
+                                       .data_layout
+                                       .as_slice());
 
             let dbg_cx = if tcx.sess.opts.debuginfo != NoDebugInfo {
                 Some(debuginfo::CrateDebugContext::new(llmod))
@@ -178,8 +208,7 @@ impl CrateContext {
                 type_hashcodes: RefCell::new(HashMap::new()),
                 all_llvm_symbols: RefCell::new(HashSet::new()),
                 tcx: tcx,
-                maps: maps,
-                stats: @Stats {
+                stats: Stats {
                     n_static_tydescs: Cell::new(0u),
                     n_glues_created: Cell::new(0u),
                     n_null_glues: Cell::new(0u),
@@ -197,17 +226,18 @@ impl CrateContext {
                 builder: BuilderRef_res(llvm::LLVMCreateBuilderInContext(llcx)),
                 uses_gc: false,
                 dbg_cx: dbg_cx,
+                eh_personality: RefCell::new(None),
                 intrinsics: RefCell::new(HashMap::new()),
             };
 
             ccx.int_type = Type::int(&ccx);
             ccx.opaque_vec_type = Type::opaque_vec(&ccx);
 
-            ccx.tn.associate_type("tydesc", &Type::tydesc(&ccx));
-
             let mut str_slice_ty = Type::named_struct(&ccx, "str_slice");
             str_slice_ty.set_struct_body([Type::i8p(&ccx), ccx.int_type], false);
             ccx.tn.associate_type("str_slice", &str_slice_ty);
+
+            ccx.tn.associate_type("tydesc", &Type::tydesc(&ccx, str_slice_ty));
 
             if ccx.sess().count_llvm_insns() {
                 base::init_insn_ctxt()
@@ -243,20 +273,32 @@ impl CrateContext {
             None => fail!()
         }
     }
+
+    // Although there is an experimental implementation of LLVM which
+    // supports SS on armv7 it wasn't approved by Apple, see:
+    // http://lists.cs.uiuc.edu/pipermail/llvm-commits/Week-of-Mon-20140505/216350.html
+    // It looks like it might be never accepted to upstream LLVM.
+    //
+    // So far the decision was to disable them in default builds
+    // but it could be enabled (with patched LLVM)
+    pub fn is_split_stack_supported(&self) -> bool {
+        let ref cfg = self.sess().targ_cfg;
+        cfg.os != abi::OsiOS || cfg.arch != abi::Arm
+    }
 }
 
 fn declare_intrinsic(ccx: &CrateContext, key: & &'static str) -> Option<ValueRef> {
     macro_rules! ifn (
         ($name:expr fn() -> $ret:expr) => (
             if *key == $name {
-                let f = base::decl_cdecl_fn(ccx.llmod, $name, Type::func([], &$ret), ty::mk_nil());
+                let f = base::decl_cdecl_fn(ccx, $name, Type::func([], &$ret), ty::mk_nil());
                 ccx.intrinsics.borrow_mut().insert($name, f.clone());
                 return Some(f);
             }
         );
         ($name:expr fn($($arg:expr),*) -> $ret:expr) => (
             if *key == $name {
-                let f = base::decl_cdecl_fn(ccx.llmod, $name,
+                let f = base::decl_cdecl_fn(ccx, $name,
                                   Type::func([$($arg),*], &$ret), ty::mk_nil());
                 ccx.intrinsics.borrow_mut().insert($name, f.clone());
                 return Some(f);
@@ -388,7 +430,7 @@ fn declare_intrinsic(ccx: &CrateContext, key: & &'static str) -> Option<ValueRef
                 // The `if key == $name` is already in ifn!
                 ifn!($name fn($($arg),*) -> $ret);
             } else if *key == $name {
-                let f = base::decl_cdecl_fn(ccx.llmod, stringify!($cname),
+                let f = base::decl_cdecl_fn(ccx, stringify!($cname),
                                       Type::func([$($arg),*], &$ret),
                                       ty::mk_nil());
                 ccx.intrinsics.borrow_mut().insert($name, f.clone());

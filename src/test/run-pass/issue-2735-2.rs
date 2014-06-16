@@ -8,13 +8,14 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#[feature(managed_boxes)];
+#![feature(managed_boxes)]
 
 use std::cell::Cell;
+use std::gc::{Gc, GC};
 
 // This test should behave exactly like issue-2735-3
 struct defer {
-    b: @Cell<bool>,
+    b: Gc<Cell<bool>>,
 }
 
 #[unsafe_destructor]
@@ -24,14 +25,14 @@ impl Drop for defer {
     }
 }
 
-fn defer(b: @Cell<bool>) -> defer {
+fn defer(b: Gc<Cell<bool>>) -> defer {
     defer {
         b: b
     }
 }
 
 pub fn main() {
-    let dtor_ran = @Cell::new(false);
+    let dtor_ran = box(GC) Cell::new(false);
     let _  = defer(dtor_ran);
     assert!(dtor_ran.get());
 }

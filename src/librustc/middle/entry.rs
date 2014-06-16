@@ -9,7 +9,7 @@
 // except according to those terms.
 
 
-use driver::session;
+use driver::config;
 use driver::session::Session;
 use syntax::ast::{Crate, Name, NodeId, Item, ItemFn};
 use syntax::ast_map;
@@ -48,14 +48,17 @@ impl<'a> Visitor<()> for EntryContext<'a> {
 }
 
 pub fn find_entry_point(session: &Session, krate: &Crate, ast_map: &ast_map::Map) {
-    if session.building_library.get() {
+    let any_exe = session.crate_types.borrow().iter().any(|ty| {
+        *ty == config::CrateTypeExecutable
+    });
+    if !any_exe {
         // No need to find a main function
-        return;
+        return
     }
 
     // If the user wants no main function at all, then stop here.
     if attr::contains_name(krate.attrs.as_slice(), "no_main") {
-        session.entry_type.set(Some(session::EntryNone));
+        session.entry_type.set(Some(config::EntryNone));
         return
     }
 
@@ -79,7 +82,7 @@ fn find_item(item: &Item, ctxt: &mut EntryContext) {
         ItemFn(..) => {
             if item.ident.name == ctxt.main_name {
                  ctxt.ast_map.with_path(item.id, |mut path| {
-                        if path.len() == 1 {
+                        if path.count() == 1 {
                             // This is a top-level function so can be 'main'
                             if ctxt.main_fn.is_none() {
                                 ctxt.main_fn = Some((item.id, item.span));
@@ -124,26 +127,24 @@ fn find_item(item: &Item, ctxt: &mut EntryContext) {
 fn configure_main(this: &mut EntryContext) {
     if this.start_fn.is_some() {
         *this.session.entry_fn.borrow_mut() = this.start_fn;
-        this.session.entry_type.set(Some(session::EntryStart));
+        this.session.entry_type.set(Some(config::EntryStart));
     } else if this.attr_main_fn.is_some() {
         *this.session.entry_fn.borrow_mut() = this.attr_main_fn;
-        this.session.entry_type.set(Some(session::EntryMain));
+        this.session.entry_type.set(Some(config::EntryMain));
     } else if this.main_fn.is_some() {
         *this.session.entry_fn.borrow_mut() = this.main_fn;
-        this.session.entry_type.set(Some(session::EntryMain));
+        this.session.entry_type.set(Some(config::EntryMain));
     } else {
-        if !this.session.building_library.get() {
-            // No main function
-            this.session.err("main function not found");
-            if !this.non_main_fns.is_empty() {
-                // There were some functions named 'main' though. Try to give the user a hint.
-                this.session.note("the main function must be defined at the crate level \
-                                   but you have one or more functions named 'main' that are not \
-                                   defined at the crate level. Either move the definition or \
-                                   attach the `#[main]` attribute to override this behavior.");
-                for &(_, span) in this.non_main_fns.iter() {
-                    this.session.span_note(span, "here is a function named 'main'");
-                }
+        // No main function
+        this.session.err("main function not found");
+        if !this.non_main_fns.is_empty() {
+            // There were some functions named 'main' though. Try to give the user a hint.
+            this.session.note("the main function must be defined at the crate level \
+                               but you have one or more functions named 'main' that are not \
+                               defined at the crate level. Either move the definition or \
+                               attach the `#[main]` attribute to override this behavior.");
+            for &(_, span) in this.non_main_fns.iter() {
+                this.session.span_note(span, "here is a function named 'main'");
             }
             this.session.abort_if_errors();
         }

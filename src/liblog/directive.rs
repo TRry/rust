@@ -8,21 +8,22 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+use std::ascii::StrAsciiExt;
 use std::cmp;
 
 #[deriving(Show, Clone)]
 pub struct LogDirective {
-    pub name: Option<~str>,
+    pub name: Option<String>,
     pub level: u32,
 }
 
-static LOG_LEVEL_NAMES: [&'static str, ..4] = ["error", "warn", "info",
-                                               "debug"];
+pub static LOG_LEVEL_NAMES: [&'static str, ..4] = ["ERROR", "WARN", "INFO",
+                                               "DEBUG"];
 
 /// Parse an individual log level that is either a number or a symbolic log level
 fn parse_log_level(level: &str) -> Option<u32> {
     from_str::<u32>(level).or_else(|| {
-        let pos = LOG_LEVEL_NAMES.iter().position(|&name| name == level);
+        let pos = LOG_LEVEL_NAMES.iter().position(|&name| name.eq_ignore_ascii_case(level));
         pos.map(|p| p as u32 + 1)
     }).map(|p| cmp::min(p, ::MAX_LOG_LEVEL))
 }
@@ -63,7 +64,7 @@ pub fn parse_logging_spec(spec: &str) -> Vec<LogDirective> {
             }
         };
         dirs.push(LogDirective {
-            name: name.map(|s| s.to_owned()),
+            name: name.map(|s| s.to_string()),
             level: log_level,
         });
     }
@@ -79,13 +80,13 @@ mod tests {
         let dirs = parse_logging_spec("crate1::mod1=1,crate1::mod2,crate2=4");
         let dirs = dirs.as_slice();
         assert_eq!(dirs.len(), 3);
-        assert_eq!(dirs[0].name, Some(~"crate1::mod1"));
+        assert_eq!(dirs[0].name, Some("crate1::mod1".to_string()));
         assert_eq!(dirs[0].level, 1);
 
-        assert_eq!(dirs[1].name, Some(~"crate1::mod2"));
+        assert_eq!(dirs[1].name, Some("crate1::mod2".to_string()));
         assert_eq!(dirs[1].level, ::MAX_LOG_LEVEL);
 
-        assert_eq!(dirs[2].name, Some(~"crate2"));
+        assert_eq!(dirs[2].name, Some("crate2".to_string()));
         assert_eq!(dirs[2].level, 4);
     }
 
@@ -95,7 +96,7 @@ mod tests {
         let dirs = parse_logging_spec("crate1::mod1=1=2,crate2=4");
         let dirs = dirs.as_slice();
         assert_eq!(dirs.len(), 1);
-        assert_eq!(dirs[0].name, Some(~"crate2"));
+        assert_eq!(dirs[0].name, Some("crate2".to_string()));
         assert_eq!(dirs[0].level, 4);
     }
 
@@ -105,7 +106,7 @@ mod tests {
         let dirs = parse_logging_spec("crate1::mod1=noNumber,crate2=4");
         let dirs = dirs.as_slice();
         assert_eq!(dirs.len(), 1);
-        assert_eq!(dirs[0].name, Some(~"crate2"));
+        assert_eq!(dirs[0].name, Some("crate2".to_string()));
         assert_eq!(dirs[0].level, 4);
     }
 
@@ -115,7 +116,7 @@ mod tests {
         let dirs = parse_logging_spec("crate1::mod1=wrong,crate2=warn");
         let dirs = dirs.as_slice();
         assert_eq!(dirs.len(), 1);
-        assert_eq!(dirs[0].name, Some(~"crate2"));
+        assert_eq!(dirs[0].name, Some("crate2".to_string()));
         assert_eq!(dirs[0].level, ::WARN);
     }
 
@@ -127,7 +128,7 @@ mod tests {
         assert_eq!(dirs.len(), 2);
         assert_eq!(dirs[0].name, None);
         assert_eq!(dirs[0].level, 2);
-        assert_eq!(dirs[1].name, Some(~"crate2"));
+        assert_eq!(dirs[1].name, Some("crate2".to_string()));
         assert_eq!(dirs[1].level, 4);
     }
 }

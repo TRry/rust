@@ -2,16 +2,16 @@
 
 # Introduction
 
-This guide will use the [snappy](https://code.google.com/p/snappy/)
+This guide will use the [snappy](https://github.com/google/snappy)
 compression/decompression library as an introduction to writing bindings for
 foreign code. Rust is currently unable to call directly into a C++ library, but
 snappy includes a C interface (documented in
-[`snappy-c.h`](https://code.google.com/p/snappy/source/browse/trunk/snappy-c.h)).
+[`snappy-c.h`](https://github.com/google/snappy/blob/master/snappy-c.h)).
 
 The following is a minimal example of calling a foreign function which will
 compile if snappy is installed:
 
-~~~~ {.ignore}
+~~~~no_run
 extern crate libc;
 use libc::size_t;
 
@@ -44,7 +44,7 @@ keeping the binding correct at runtime.
 
 The `extern` block can be extended to cover the entire snappy API:
 
-~~~~ {.ignore}
+~~~~no_run
 extern crate libc;
 use libc::{c_int, size_t};
 
@@ -65,6 +65,7 @@ extern {
     fn snappy_validate_compressed_buffer(compressed: *u8,
                                          compressed_length: size_t) -> c_int;
 }
+# fn main() {}
 ~~~~
 
 # Creating a safe interface
@@ -78,7 +79,11 @@ vectors as pointers to memory. Rust's vectors are guaranteed to be a contiguous 
 length is number of elements currently contained, and the capacity is the total size in elements of
 the allocated memory. The length is less than or equal to the capacity.
 
-~~~~ {.ignore}
+~~~~
+# extern crate libc;
+# use libc::{c_int, size_t};
+# unsafe fn snappy_validate_compressed_buffer(_: *u8, _: size_t) -> c_int { 0 }
+# fn main() {}
 pub fn validate_compressed_buffer(src: &[u8]) -> bool {
     unsafe {
         snappy_validate_compressed_buffer(src.as_ptr(), src.len() as size_t) == 0
@@ -98,14 +103,20 @@ required capacity to hold the compressed output. The vector can then be passed t
 `snappy_compress` function as an output parameter. An output parameter is also passed to retrieve
 the true length after compression for setting the length.
 
-~~~~ {.ignore}
-pub fn compress(src: &[u8]) -> ~[u8] {
+~~~~
+# extern crate libc;
+# use libc::{size_t, c_int};
+# unsafe fn snappy_compress(a: *u8, b: size_t, c: *mut u8,
+#                           d: *mut size_t) -> c_int { 0 }
+# unsafe fn snappy_max_compressed_length(a: size_t) -> size_t { a }
+# fn main() {}
+pub fn compress(src: &[u8]) -> Vec<u8> {
     unsafe {
         let srclen = src.len() as size_t;
         let psrc = src.as_ptr();
 
         let mut dstlen = snappy_max_compressed_length(srclen);
-        let mut dst = slice::with_capacity(dstlen as uint);
+        let mut dst = Vec::with_capacity(dstlen as uint);
         let pdst = dst.as_mut_ptr();
 
         snappy_compress(psrc, srclen, pdst, &mut dstlen);
@@ -118,8 +129,18 @@ pub fn compress(src: &[u8]) -> ~[u8] {
 Decompression is similar, because snappy stores the uncompressed size as part of the compression
 format and `snappy_uncompressed_length` will retrieve the exact buffer size required.
 
-~~~~ {.ignore}
-pub fn uncompress(src: &[u8]) -> Option<~[u8]> {
+~~~~
+# extern crate libc;
+# use libc::{size_t, c_int};
+# unsafe fn snappy_uncompress(compressed: *u8,
+#                             compressed_length: size_t,
+#                             uncompressed: *mut u8,
+#                             uncompressed_length: *mut size_t) -> c_int { 0 }
+# unsafe fn snappy_uncompressed_length(compressed: *u8,
+#                                      compressed_length: size_t,
+#                                      result: *mut size_t) -> c_int { 0 }
+# fn main() {}
+pub fn uncompress(src: &[u8]) -> Option<Vec<u8>> {
     unsafe {
         let srclen = src.len() as size_t;
         let psrc = src.as_ptr();
@@ -127,7 +148,7 @@ pub fn uncompress(src: &[u8]) -> Option<~[u8]> {
         let mut dstlen: size_t = 0;
         snappy_uncompressed_length(psrc, srclen, &mut dstlen);
 
-        let mut dst = slice::with_capacity(dstlen as uint);
+        let mut dst = Vec::with_capacity(dstlen as uint);
         let pdst = dst.as_mut_ptr();
 
         if snappy_uncompress(psrc, srclen, pdst, &mut dstlen) == 0 {
@@ -187,14 +208,14 @@ A basic example is:
 
 Rust code:
 
-~~~~ {.ignore}
+~~~~no_run
 extern fn callback(a:i32) {
     println!("I'm called from C with value {0}", a);
 }
 
 #[link(name = "extlib")]
 extern {
-   fn register_callback(cb: extern "C" fn(i32)) -> i32;
+   fn register_callback(cb: extern fn(i32)) -> i32;
    fn trigger_callback();
 }
 
@@ -208,7 +229,7 @@ fn main() {
 
 C code:
 
-~~~~ {.notrust}
+~~~~c
 typedef void (*rust_callback)(int32_t);
 rust_callback cb;
 
@@ -240,40 +261,42 @@ referenced Rust object.
 
 Rust code:
 
-~~~~ {.ignore}
+~~~~no_run
 
 struct RustObject {
     a: i32,
     // other members
 }
 
-extern fn callback(target: *RustObject, a:i32) {
+extern fn callback(target: *mut RustObject, a:i32) {
     println!("I'm called from C with value {0}", a);
-    (*target).a = a; // Update the value in RustObject with the value received from the callback
+    unsafe {
+        // Update the value in RustObject with the value received from the callback
+        (*target).a = a;
+    }
 }
 
 #[link(name = "extlib")]
 extern {
-   fn register_callback(target: *RustObject, cb: extern "C" fn(*RustObject, i32)) -> i32;
+   fn register_callback(target: *mut RustObject,
+                        cb: extern fn(*mut RustObject, i32)) -> i32;
    fn trigger_callback();
 }
 
 fn main() {
     // Create the object that will be referenced in the callback
-    let rust_object = ~RustObject{a: 5, ...};
+    let mut rust_object = box RustObject { a: 5 };
 
     unsafe {
-        // Gets a raw pointer to the object
-        let target_addr:*RustObject = ptr::to_unsafe_ptr(rust_object);
-        register_callback(target_addr, callback);
-        trigger_callback(); // Triggers the callback
+        register_callback(&mut *rust_object, callback);
+        trigger_callback();
     }
 }
 ~~~~
 
 C code:
 
-~~~~ {.notrust}
+~~~~c
 typedef void (*rust_callback)(int32_t);
 void* cb_target;
 rust_callback cb;
@@ -306,7 +329,7 @@ Besides classical synchronization mechanisms like mutexes, one possibility in
 Rust is to use channels (in `std::comm`) to forward data from the C thread
 that invoked the callback into a Rust task.
 
-If an asychronous callback targets a special object in the Rust address space
+If an asynchronous callback targets a special object in the Rust address space
 it is also absolutely necessary that no more callbacks are performed by the
 C library after the respective Rust object gets destroyed.
 This can be achieved by unregistering the callback in the object's
@@ -367,9 +390,12 @@ the `link_args` attribute. This attribute is applied to `extern` blocks and
 specifies raw flags which need to get passed to the linker when producing an
 artifact. An example usage would be:
 
-~~~ {.ignore}
+~~~ no_run
+#![feature(link_args)]
+
 #[link_args = "-foo -bar -baz"]
 extern {}
+# fn main() {}
 ~~~
 
 Note that this feature is currently hidden behind the `feature(link_args)` gate
@@ -403,7 +429,7 @@ Foreign APIs often export a global variable which could do something like track
 global state. In order to access these variables, you declare them in `extern`
 blocks with the `static` keyword:
 
-~~~{.ignore}
+~~~no_run
 extern crate libc;
 
 #[link(name = "readline")]
@@ -421,7 +447,7 @@ Alternatively, you may need to alter global state provided by a foreign
 interface. To do this, statics can be declared with `mut` so rust can mutate
 them.
 
-~~~{.ignore}
+~~~no_run
 extern crate libc;
 use std::ptr;
 
@@ -431,11 +457,11 @@ extern {
 }
 
 fn main() {
-    do "[my-awesome-shell] $".as_c_str |buf| {
+    "[my-awesome-shell] $".with_c_str(|buf| {
         unsafe { rl_prompt = buf; }
         // get a line, process it
         unsafe { rl_prompt = ptr::null(); }
-    }
+    });
 }
 ~~~
 
@@ -450,10 +476,10 @@ extern crate libc;
 
 #[cfg(target_os = "win32", target_arch = "x86")]
 #[link(name = "kernel32")]
+#[allow(non_snake_case_functions)]
 extern "stdcall" {
     fn SetEnvironmentVariableA(n: *u8, v: *u8) -> libc::c_int;
 }
-
 # fn main() { }
 ~~~~
 
@@ -468,6 +494,7 @@ are:
 * `rust-intrinsic`
 * `system`
 * `C`
+* `win64`
 
 Most of the abis in this list are self-explanatory, but the `system` abi may
 seem a little odd. This constraint selects whatever the appropriate ABI is for

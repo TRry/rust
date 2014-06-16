@@ -16,13 +16,14 @@
  * closure.
  */
 
-use std::slice;
-
 use back::abi;
 use driver::session;
-use lib::llvm::{ValueRef, NoAliasAttribute, StructRetAttribute, NoCaptureAttribute};
+use lib::llvm::ValueRef;
 use lib::llvm::llvm;
 use metadata::csearch;
+use middle::def;
+use middle::subst;
+use middle::subst::{Subst, VecPerParamSpace};
 use middle::trans::base;
 use middle::trans::base::*;
 use middle::trans::build::*;
@@ -41,7 +42,6 @@ use middle::trans::monomorphize;
 use middle::trans::type_of;
 use middle::trans::foreign;
 use middle::ty;
-use middle::subst::Subst;
 use middle::typeck;
 use middle::typeck::coherence::make_substs_for_receiver_types;
 use middle::typeck::MethodCall;
@@ -52,6 +52,8 @@ use middle::trans::type_::Type;
 use syntax::ast;
 use synabi = syntax::abi;
 use syntax::ast_map;
+
+use std::gc::Gc;
 
 pub struct MethodData {
     pub llfn: ValueRef,
@@ -104,8 +106,9 @@ fn trans<'a>(bcx: &'a Block<'a>, expr: &ast::Expr) -> Callee<'a> {
             _ => {
                 bcx.tcx().sess.span_bug(
                     expr.span,
-                    format!("type of callee is neither bare-fn nor closure: {}",
-                         bcx.ty_to_str(datum.ty)));
+                    format!("type of callee is neither bare-fn nor closure: \
+                             {}",
+                            bcx.ty_to_str(datum.ty)).as_slice());
             }
         }
     }
@@ -114,46 +117,46 @@ fn trans<'a>(bcx: &'a Block<'a>, expr: &ast::Expr) -> Callee<'a> {
         return Callee {bcx: bcx, data: Fn(llfn)};
     }
 
-    fn trans_def<'a>(bcx: &'a Block<'a>, def: ast::Def, ref_expr: &ast::Expr)
+    fn trans_def<'a>(bcx: &'a Block<'a>, def: def::Def, ref_expr: &ast::Expr)
                  -> Callee<'a> {
         match def {
-            ast::DefFn(did, _) |
-            ast::DefStaticMethod(did, ast::FromImpl(_), _) => {
+            def::DefFn(did, _) |
+            def::DefStaticMethod(did, def::FromImpl(_), _) => {
                 fn_callee(bcx, trans_fn_ref(bcx, did, ExprId(ref_expr.id)))
             }
-            ast::DefStaticMethod(impl_did,
-                                   ast::FromTrait(trait_did),
-                                   _) => {
+            def::DefStaticMethod(impl_did,
+                                 def::FromTrait(trait_did),
+                                 _) => {
                 fn_callee(bcx, meth::trans_static_method_callee(bcx, impl_did,
                                                                 trait_did,
                                                                 ref_expr.id))
             }
-            ast::DefVariant(tid, vid, _) => {
+            def::DefVariant(tid, vid, _) => {
                 // nullary variants are not callable
                 assert!(ty::enum_variant_with_id(bcx.tcx(),
                                                       tid,
                                                       vid).args.len() > 0u);
                 fn_callee(bcx, trans_fn_ref(bcx, vid, ExprId(ref_expr.id)))
             }
-            ast::DefStruct(def_id) => {
+            def::DefStruct(def_id) => {
                 fn_callee(bcx, trans_fn_ref(bcx, def_id, ExprId(ref_expr.id)))
             }
-            ast::DefStatic(..) |
-            ast::DefArg(..) |
-            ast::DefLocal(..) |
-            ast::DefBinding(..) |
-            ast::DefUpvar(..) => {
+            def::DefStatic(..) |
+            def::DefArg(..) |
+            def::DefLocal(..) |
+            def::DefBinding(..) |
+            def::DefUpvar(..) => {
                 datum_callee(bcx, ref_expr)
             }
-            ast::DefMod(..) | ast::DefForeignMod(..) | ast::DefTrait(..) |
-            ast::DefTy(..) | ast::DefPrimTy(..) |
-            ast::DefUse(..) | ast::DefTyParamBinder(..) |
-            ast::DefRegion(..) | ast::DefLabel(..) | ast::DefTyParam(..) |
-            ast::DefSelfTy(..) | ast::DefMethod(..) => {
+            def::DefMod(..) | def::DefForeignMod(..) | def::DefTrait(..) |
+            def::DefTy(..) | def::DefPrimTy(..) |
+            def::DefUse(..) | def::DefTyParamBinder(..) |
+            def::DefRegion(..) | def::DefLabel(..) | def::DefTyParam(..) |
+            def::DefSelfTy(..) | def::DefMethod(..) => {
                 bcx.tcx().sess.span_bug(
                     ref_expr.span,
                     format!("cannot translate def {:?} \
-                          to a callable thing!", def));
+                             to a callable thing!", def).as_slice());
             }
         }
     }
@@ -161,87 +164,75 @@ fn trans<'a>(bcx: &'a Block<'a>, expr: &ast::Expr) -> Callee<'a> {
 
 pub fn trans_fn_ref(bcx: &Block, def_id: ast::DefId, node: ExprOrMethodCall) -> ValueRef {
     /*!
-     *
      * Translates a reference (with id `ref_id`) to the fn/method
      * with id `def_id` into a function pointer.  This may require
-     * monomorphization or inlining. */
+     * monomorphization or inlining.
+     */
 
     let _icx = push_ctxt("trans_fn_ref");
 
-    let type_params = node_id_type_params(bcx, node);
+    let substs = node_id_substs(bcx, node);
     let vtable_key = match node {
         ExprId(id) => MethodCall::expr(id),
         MethodCall(method_call) => method_call
     };
     let vtables = node_vtables(bcx, vtable_key);
-    debug!("trans_fn_ref(def_id={}, node={:?}, type_params={}, vtables={})",
-           def_id.repr(bcx.tcx()), node, type_params.repr(bcx.tcx()),
+    debug!("trans_fn_ref(def_id={}, node={:?}, substs={}, vtables={})",
+           def_id.repr(bcx.tcx()),
+           node,
+           substs.repr(bcx.tcx()),
            vtables.repr(bcx.tcx()));
-    trans_fn_ref_with_vtables(bcx, def_id, node,
-                              type_params.as_slice(),
-                              vtables)
+    trans_fn_ref_with_vtables(bcx, def_id, node, substs, vtables)
 }
 
 fn trans_fn_ref_with_vtables_to_callee<'a>(bcx: &'a Block<'a>,
                                            def_id: ast::DefId,
                                            ref_id: ast::NodeId,
-                                           type_params: &[ty::t],
-                                           vtables: Option<typeck::vtable_res>)
+                                           substs: subst::Substs,
+                                           vtables: typeck::vtable_res)
                                            -> Callee<'a> {
     Callee {bcx: bcx,
             data: Fn(trans_fn_ref_with_vtables(bcx, def_id, ExprId(ref_id),
-                                               type_params, vtables))}
+                                               substs, vtables))}
 }
 
 fn resolve_default_method_vtables(bcx: &Block,
                                   impl_id: ast::DefId,
-                                  method: &ty::Method,
-                                  substs: &ty::substs,
-                                  impl_vtables: Option<typeck::vtable_res>)
-                          -> (typeck::vtable_res, typeck::vtable_param_res) {
-
+                                  substs: &subst::Substs,
+                                  impl_vtables: typeck::vtable_res)
+                                  -> typeck::vtable_res
+{
     // Get the vtables that the impl implements the trait at
     let impl_res = ty::lookup_impl_vtables(bcx.tcx(), impl_id);
 
     // Build up a param_substs that we are going to resolve the
     // trait_vtables under.
-    let param_substs = Some(@param_substs {
-        tys: substs.tps.clone(),
-        self_ty: substs.self_ty,
-        vtables: impl_vtables,
-        self_vtables: None
-    });
-
-    let trait_vtables_fixed = resolve_vtables_under_param_substs(
-        bcx.tcx(), param_substs, impl_res.trait_vtables);
-
-    // Now we pull any vtables for parameters on the actual method.
-    let num_method_vtables = method.generics.type_param_defs().len();
-    let method_vtables = match impl_vtables {
-        Some(vtables) => {
-            let num_impl_type_parameters =
-                vtables.len() - num_method_vtables;
-            vtables.tailn(num_impl_type_parameters).to_owned()
-        },
-        None => slice::from_elem(num_method_vtables, @Vec::new())
+    let param_substs = param_substs {
+        substs: (*substs).clone(),
+        vtables: impl_vtables.clone()
     };
 
-    let param_vtables = @((*trait_vtables_fixed).clone().append(method_vtables));
+    let mut param_vtables = resolve_vtables_under_param_substs(
+        bcx.tcx(), &param_substs, &impl_res);
 
-    let self_vtables = resolve_param_vtables_under_param_substs(
-        bcx.tcx(), param_substs, impl_res.self_vtables);
+    // Now we pull any vtables for parameters on the actual method.
+    param_vtables
+        .get_mut_vec(subst::FnSpace)
+        .push_all(
+            impl_vtables.get_vec(subst::FnSpace).as_slice());
 
-    (param_vtables, self_vtables)
+    param_vtables
 }
 
 
 pub fn trans_fn_ref_with_vtables(
-        bcx: &Block,       //
-        def_id: ast::DefId,   // def id of fn
-        node: ExprOrMethodCall,  // node id of use of fn; may be zero if N/A
-        type_params: &[ty::t], // values for fn's ty params
-        vtables: Option<typeck::vtable_res>) // vtables for the call
-     -> ValueRef {
+    bcx: &Block,                 //
+    def_id: ast::DefId,          // def id of fn
+    node: ExprOrMethodCall,      // node id of use of fn; may be zero if N/A
+    substs: subst::Substs,       // values for fn's ty params
+    vtables: typeck::vtable_res) // vtables for the call
+    -> ValueRef
+{
     /*!
      * Translates a reference to a fn/method item, monomorphizing and
      * inlining as it goes.
@@ -253,7 +244,7 @@ pub fn trans_fn_ref_with_vtables(
      * - `node`: node id of the reference to the fn/method, if applicable.
      *   This parameter may be zero; but, if so, the resulting value may not
      *   have the right type, so it must be cast before being used.
-     * - `type_params`: values for each of the fn/method's type parameters
+     * - `substs`: values for each of the fn/method's parameters
      * - `vtables`: values for each bound on each of the type parameters
      */
 
@@ -262,21 +253,17 @@ pub fn trans_fn_ref_with_vtables(
     let tcx = bcx.tcx();
 
     debug!("trans_fn_ref_with_vtables(bcx={}, def_id={}, node={:?}, \
-            type_params={}, vtables={})",
+            substs={}, vtables={})",
            bcx.to_str(),
            def_id.repr(tcx),
            node,
-           type_params.repr(tcx),
+           substs.repr(tcx),
            vtables.repr(tcx));
 
-    assert!(type_params.iter().all(|t| !ty::type_needs_infer(*t)));
+    assert!(substs.types.all(|t| !ty::type_needs_infer(*t)));
 
     // Polytype of the function item (may have type params)
     let fn_tpt = ty::lookup_item_type(tcx, def_id);
-
-    let substs = ty::substs { regions: ty::ErasedRegions,
-                              self_ty: None,
-                              tps: /*bad*/ Vec::from_slice(type_params) };
 
     // Load the info for the appropriate trait if necessary.
     match ty::trait_of_method(tcx, def_id) {
@@ -289,9 +276,9 @@ pub fn trans_fn_ref_with_vtables(
     // We need to do a bunch of special handling for default methods.
     // We need to modify the def_id and our substs in order to monomorphize
     // the function.
-    let (is_default, def_id, substs, self_vtables, vtables) =
+    let (is_default, def_id, substs, vtables) =
         match ty::provided_source(tcx, def_id) {
-        None => (false, def_id, substs, None, vtables),
+        None => (false, def_id, substs, vtables),
         Some(source_id) => {
             // There are two relevant substitutions when compiling
             // default methods. First, there is the substitution for
@@ -314,28 +301,27 @@ pub fn trans_fn_ref_with_vtables(
 
             // Compute the first substitution
             let first_subst = make_substs_for_receiver_types(
-                tcx, impl_id, trait_ref, method);
+                tcx, &*trait_ref, &*method);
 
             // And compose them
             let new_substs = first_subst.subst(tcx, &substs);
 
-
-            let (param_vtables, self_vtables) =
-                resolve_default_method_vtables(bcx, impl_id,
-                                               method, &substs, vtables);
-
             debug!("trans_fn_with_vtables - default method: \
                     substs = {}, trait_subst = {}, \
                     first_subst = {}, new_subst = {}, \
-                    vtables = {}, \
-                    self_vtable = {}, param_vtables = {}",
+                    vtables = {}",
                    substs.repr(tcx), trait_ref.substs.repr(tcx),
                    first_subst.repr(tcx), new_substs.repr(tcx),
-                   vtables.repr(tcx),
-                   self_vtables.repr(tcx), param_vtables.repr(tcx));
+                   vtables.repr(tcx));
 
-            (true, source_id,
-             new_substs, Some(self_vtables), Some(param_vtables))
+            let param_vtables =
+                resolve_default_method_vtables(bcx, impl_id, &substs, vtables);
+
+            debug!("trans_fn_with_vtables - default method: \
+                    param_vtables = {}",
+                   param_vtables.repr(tcx));
+
+            (true, source_id, new_substs, param_vtables)
         }
     };
 
@@ -353,13 +339,13 @@ pub fn trans_fn_ref_with_vtables(
     // intrinsic, or is a default method.  In particular, if we see an
     // intrinsic that is inlined from a different crate, we want to reemit the
     // intrinsic instead of trying to call it in the other crate.
-    let must_monomorphise = if type_params.len() > 0 || is_default {
+    let must_monomorphise = if !substs.types.is_empty() || is_default {
         true
     } else if def_id.krate == ast::LOCAL_CRATE {
         let map_node = session::expect(
             ccx.sess(),
             tcx.map.find(def_id.node),
-            || format!("local item should be in ast map"));
+            || "local item should be in ast map".to_string());
 
         match map_node {
             ast_map::NodeForeignItem(_) => {
@@ -371,7 +357,7 @@ pub fn trans_fn_ref_with_vtables(
         false
     };
 
-    // Create a monomorphic verison of generic functions
+    // Create a monomorphic version of generic functions
     if must_monomorphise {
         // Should be either intra-crate or inlined.
         assert_eq!(def_id.krate, ast::LOCAL_CRATE);
@@ -383,8 +369,7 @@ pub fn trans_fn_ref_with_vtables(
 
         let (val, must_cast) =
             monomorphize::monomorphic_fn(ccx, def_id, &substs,
-                                         vtables, self_vtables,
-                                         opt_ref_id);
+                                         vtables, opt_ref_id);
         let mut val = val;
         if must_cast && node != ExprId(0) {
             // Monotype of the REFERENCE to the function (type params
@@ -392,7 +377,7 @@ pub fn trans_fn_ref_with_vtables(
             let ref_ty = match node {
                 ExprId(id) => node_id_type(bcx, id),
                 MethodCall(method_call) => {
-                    let t = bcx.ccx().maps.method_map.borrow().get(&method_call).ty;
+                    let t = bcx.tcx().method_map.borrow().get(&method_call).ty;
                     monomorphize_type(bcx, t)
                 }
             };
@@ -475,7 +460,7 @@ pub fn trans_method_call<'a>(
     let _icx = push_ctxt("trans_method_call");
     debug!("trans_method_call(call_ex={})", call_ex.repr(bcx.tcx()));
     let method_call = MethodCall::expr(call_ex.id);
-    let method_ty = bcx.ccx().maps.method_map.borrow().get(&method_call).ty;
+    let method_ty = bcx.tcx().method_map.borrow().get(&method_call).ty;
     trans_call_inner(
         bcx,
         Some(common::expr_info(call_ex)),
@@ -505,8 +490,8 @@ pub fn trans_lang_call<'a>(
                                 trans_fn_ref_with_vtables_to_callee(bcx,
                                                                     did,
                                                                     0,
-                                                                    [],
-                                                                    None)
+                                                                    subst::Substs::empty(),
+                                                                    VecPerParamSpace::empty())
                              },
                              ArgVals(args),
                              dest)
@@ -615,13 +600,9 @@ pub fn trans_call_inner<'a>(
             llargs.push(opt_llretslot.unwrap());
         }
 
-        // start at 1, because index 0 is the return value of the llvm func
-        let mut first_arg_offset = 1;
-
         // Push the environment (or a trait object's self).
         match (llenv, llself) {
             (Some(llenv), None) => {
-                first_arg_offset += 1;
                 llargs.push(llenv)
             },
             (None, Some(llself)) => llargs.push(llself),
@@ -635,60 +616,11 @@ pub fn trans_call_inner<'a>(
 
         fcx.pop_custom_cleanup_scope(arg_cleanup_scope);
 
-        // A function pointer is called without the declaration
-        // available, so we have to apply any attributes with ABI
-        // implications directly to the call instruction. Right now,
-        // the only attribute we need to worry about is `sret`.
-        let mut attrs = Vec::new();
-        if type_of::return_uses_outptr(ccx, ret_ty) {
-            attrs.push((1, StructRetAttribute));
-            // The outptr can be noalias and nocapture because it's entirely
-            // invisible to the program.
-            attrs.push((1, NoAliasAttribute));
-            attrs.push((1, NoCaptureAttribute));
-            first_arg_offset += 1;
-        }
-
-        // The `noalias` attribute on the return value is useful to a
-        // function ptr caller.
-        match ty::get(ret_ty).sty {
-            // `~` pointer return values never alias because ownership
-            // is transferred
-            ty::ty_uniq(..) | ty::ty_vec(_, ty::VstoreUniq) => {
-                attrs.push((0, NoAliasAttribute));
-            }
-            _ => {}
-        }
-
-        debug!("trans_callee_inner: first_arg_offset={}", first_arg_offset);
-
-        for (idx, &t) in ty::ty_fn_args(callee_ty).iter().enumerate()
-                                                  .map(|(i, v)| (i+first_arg_offset, v)) {
-            use middle::ty::{BrAnon, ReLateBound};
-            if !type_is_immediate(ccx, t) {
-                // if it's not immediate, we have a program-invisible pointer,
-                // which it can't possibly capture
-                attrs.push((idx, NoCaptureAttribute));
-                debug!("trans_callee_inner: argument {} nocapture because it's non-immediate", idx);
-                continue;
-            }
-
-            let t_ = ty::get(t);
-            match t_.sty {
-                ty::ty_rptr(ReLateBound(_, BrAnon(_)), _) => {
-                    debug!("trans_callee_inner: argument {} nocapture because \
-                           of anonymous lifetime", idx);
-                    attrs.push((idx, NoCaptureAttribute));
-                },
-                _ => { }
-            }
-        }
-
         // Invoke the actual rust fn and update bcx/llresult.
         let (llret, b) = base::invoke(bcx,
                                       llfn,
                                       llargs,
-                                      attrs.as_slice(),
+                                      callee_ty,
                                       call_info);
         bcx = b;
         llresult = llret;
@@ -712,7 +644,7 @@ pub fn trans_call_inner<'a>(
 
         let mut llargs = Vec::new();
         let arg_tys = match args {
-            ArgExprs(a) => a.iter().map(|x| expr_ty(bcx, *x)).collect(),
+            ArgExprs(a) => a.iter().map(|x| expr_ty(bcx, &**x)).collect(),
             _ => fail!("expected arg exprs.")
         };
         bcx = trans_args(bcx, args, callee_ty, &mut llargs,
@@ -740,13 +672,13 @@ pub fn trans_call_inner<'a>(
         Unreachable(bcx);
     }
 
-    rslt(bcx, llresult)
+    Result::new(bcx, llresult)
 }
 
 pub enum CallArgs<'a> {
     // Supply value of arguments as a list of expressions that must be
     // translated. This is used in the common case of `foo(bar, qux)`.
-    ArgExprs(&'a [@ast::Expr]),
+    ArgExprs(&'a [Gc<ast::Expr>]),
 
     // Supply value of arguments as a list of LLVM value refs; frequently
     // used with lang items and so forth, when the argument is an internal
@@ -778,18 +710,18 @@ fn trans_args<'a>(cx: &'a Block<'a>,
     match args {
         ArgExprs(arg_exprs) => {
             let num_formal_args = arg_tys.len();
-            for (i, &arg_expr) in arg_exprs.iter().enumerate() {
+            for (i, arg_expr) in arg_exprs.iter().enumerate() {
                 if i == 0 && ignore_self {
                     continue;
                 }
                 let arg_ty = if i >= num_formal_args {
                     assert!(variadic);
-                    expr_ty_adjusted(cx, arg_expr)
+                    expr_ty_adjusted(cx, &**arg_expr)
                 } else {
                     *arg_tys.get(i)
                 };
 
-                let arg_datum = unpack_datum!(bcx, expr::trans(bcx, arg_expr));
+                let arg_datum = unpack_datum!(bcx, expr::trans(bcx, &**arg_expr));
                 llargs.push(unpack_result!(bcx, {
                     trans_arg_datum(bcx, arg_ty, arg_datum,
                                     arg_cleanup_scope,
@@ -856,7 +788,7 @@ pub fn trans_arg_datum<'a>(
         // "undef" value, as such a value should never
         // be inspected. It's important for the value
         // to have type lldestty (the callee's expected type).
-        let llformal_arg_ty = type_of::type_of(ccx, formal_arg_ty);
+        let llformal_arg_ty = type_of::type_of_explicit_arg(ccx, formal_arg_ty);
         unsafe {
             val = llvm::LLVMGetUndef(llformal_arg_ty.to_ref());
         }
@@ -898,5 +830,5 @@ pub fn trans_arg_datum<'a>(
     }
 
     debug!("--- trans_arg_datum passing {}", bcx.val_to_str(val));
-    rslt(bcx, val)
+    Result::new(bcx, val)
 }

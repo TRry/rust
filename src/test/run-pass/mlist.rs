@@ -8,8 +8,10 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#[feature(managed_boxes)];
+#![feature(managed_boxes)]
 
-enum mlist { cons(int, @mlist), nil, }
+use std::gc::{Gc, GC};
 
-pub fn main() { cons(10, @cons(11, @cons(12, @nil))); }
+enum mlist { cons(int, Gc<mlist>), nil, }
+
+pub fn main() { cons(10, box(GC) cons(11, box(GC) cons(12, box(GC) nil))); }

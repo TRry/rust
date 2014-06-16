@@ -8,10 +8,14 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+#![feature(managed_boxes)]
 
+use std::gc::GC;
 
 pub fn main() {
-    assert!((@1 < @3));
-    assert!((@@~"hello " > @@~"hello"));
-    assert!((@@@~"hello" != @@@~"there"));
+    assert!((box(GC) 1 < box(GC) 3));
+    assert!((box(GC) box(GC) "hello ".to_string() >
+             box(GC) box(GC) "hello".to_string()));
+    assert!((box(GC) box(GC) box(GC) "hello".to_string() !=
+             box(GC) box(GC) box(GC) "there".to_string()));
 }

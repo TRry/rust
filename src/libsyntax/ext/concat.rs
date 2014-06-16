@@ -14,17 +14,17 @@ use ext::base;
 use ext::build::AstBuilder;
 use parse::token;
 
-use std::char;
-use std::strbuf::StrBuf;
+use std::string::String;
 
 pub fn expand_syntax_ext(cx: &mut base::ExtCtxt,
                          sp: codemap::Span,
-                         tts: &[ast::TokenTree]) -> base::MacResult {
+                         tts: &[ast::TokenTree])
+                         -> Box<base::MacResult> {
     let es = match base::get_exprs_from_tts(cx, sp, tts) {
         Some(e) => e,
-        None => return base::MacResult::dummy_expr(sp)
+        None => return base::DummyResult::expr(sp)
     };
-    let mut accumulator = StrBuf::new();
+    let mut accumulator = String::new();
     for e in es.move_iter() {
         match e.node {
             ast::ExprLit(lit) => {
@@ -35,17 +35,17 @@ pub fn expand_syntax_ext(cx: &mut base::ExtCtxt,
                         accumulator.push_str(s.get());
                     }
                     ast::LitChar(c) => {
-                        accumulator.push_char(char::from_u32(c).unwrap());
+                        accumulator.push_char(c);
                     }
                     ast::LitInt(i, _) | ast::LitIntUnsuffixed(i) => {
-                        accumulator.push_str(format!("{}", i));
+                        accumulator.push_str(format!("{}", i).as_slice());
                     }
                     ast::LitUint(u, _) => {
-                        accumulator.push_str(format!("{}", u));
+                        accumulator.push_str(format!("{}", u).as_slice());
                     }
                     ast::LitNil => {}
                     ast::LitBool(b) => {
-                        accumulator.push_str(format!("{}", b));
+                        accumulator.push_str(format!("{}", b).as_slice());
                     }
                     ast::LitBinary(..) => {
                         cx.span_err(e.span, "cannot concatenate a binary literal");
@@ -57,7 +57,7 @@ pub fn expand_syntax_ext(cx: &mut base::ExtCtxt,
             }
         }
     }
-    base::MRExpr(cx.expr_str(
+    base::MacExpr::new(cx.expr_str(
             sp,
-            token::intern_and_get_ident(accumulator.into_owned())))
+            token::intern_and_get_ident(accumulator.as_slice())))
 }

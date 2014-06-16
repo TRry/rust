@@ -20,13 +20,7 @@
 #   PREPARE_TARGETS - the target triples, space separated
 #   PREPARE_DEST_DIR - the directory to put the image
 
-
-# On windows we install from stage3, but on unix only stage2
-ifdef CFG_WINDOWSY_$(CFG_BUILD)
-PREPARE_STAGE=3
-else
 PREPARE_STAGE=2
-endif
 
 DEFAULT_PREPARE_DIR_CMD = umask 022 && mkdir -p
 DEFAULT_PREPARE_BIN_CMD = install -m755
@@ -112,7 +106,8 @@ prepare-host-lib-$(1)-$(2)-$(3)-$(4): prepare-maybe-clean-$(4) \
                                  prepare-host-dirs-$(4)
 	$$(if $$(findstring $(2), $$(PREPARE_STAGE)),\
       $$(if $$(findstring $(3), $$(PREPARE_HOST)),\
-        $$(call PREPARE_LIB,$$(call CFG_LIB_GLOB_$$(PREPARE_HOST),$(1))),),)
+        $$(if $$(findstring 1,$$(ONLY_RLIB_$(1))),,\
+          $$(call PREPARE_LIB,$$(call CFG_LIB_GLOB_$$(PREPARE_HOST),$(1)))),),)
 endef
 
 
@@ -139,7 +134,8 @@ prepare-target-$(2)-host-$(3)-$(1)-$(4): prepare-maybe-clean-$(4) \
         $$(if $$(findstring $(3), $$(PREPARE_HOST)),\
           $$(call PREPARE_DIR,$$(PREPARE_WORKING_DEST_LIB_DIR))\
           $$(foreach crate,$$(TARGET_CRATES),\
-            $$(call PREPARE_LIB,$$(call CFG_LIB_GLOB_$(2),$$(crate)))\
+	    $$(if $$(findstring 1, $$(ONLY_RLIB_$$(crate))),,\
+              $$(call PREPARE_LIB,$$(call CFG_LIB_GLOB_$(2),$$(crate))))\
             $$(call PREPARE_LIB,$$(call CFG_RLIB_GLOB,$$(crate))))\
           $$(if $$(findstring $(2),$$(CFG_HOST)),\
             $$(foreach crate,$$(HOST_CRATES),\

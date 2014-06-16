@@ -20,23 +20,21 @@ use serialize::hex::ToHex;
 /// Write a u32 into a vector, which must be 4 bytes long. The value is written in big-endian
 /// format.
 fn write_u32_be(dst: &mut[u8], input: u32) {
-    use std::cast::transmute;
     use std::mem::to_be32;
     assert!(dst.len() == 4);
     unsafe {
-        let x: *mut i32 = transmute(dst.unsafe_mut_ref(0));
-        *x = to_be32(input as i32);
+        let x = dst.unsafe_mut_ref(0) as *mut _ as *mut u32;
+        *x = to_be32(input);
     }
 }
 
 /// Read a vector of bytes into a vector of u32s. The values are read in big-endian format.
 fn read_u32v_be(dst: &mut[u32], input: &[u8]) {
-    use std::cast::transmute;
     use std::mem::to_be32;
     assert!(dst.len() * 4 == input.len());
     unsafe {
-        let mut x: *mut i32 = transmute(dst.unsafe_mut_ref(0));
-        let mut y: *i32 = transmute(input.unsafe_ref(0));
+        let mut x = dst.unsafe_mut_ref(0) as *mut _ as *mut u32;
+        let mut y = input.unsafe_ref(0) as *_ as *u32;
         for _ in range(0, dst.len()) {
             *x = to_be32(*y);
             x = x.offset(1);
@@ -63,12 +61,12 @@ fn add_bytes_to_bits<T: Int + CheckedAdd + ToBits>(bits: T, bytes: T) -> T {
     let (new_high_bits, new_low_bits) = bytes.to_bits();
 
     if new_high_bits > Zero::zero() {
-        fail!("numeric overflow occured.")
+        fail!("numeric overflow occurred.")
     }
 
     match bits.checked_add(&new_low_bits) {
         Some(x) => return x,
-        None => fail!("numeric overflow occured.")
+        None => fail!("numeric overflow occurred.")
     }
 }
 
@@ -148,14 +146,14 @@ impl FixedBuffer for FixedBuffer64 {
             }
         }
 
-        // While we have at least a full buffer size chunks's worth of data, process that data
+        // While we have at least a full buffer size chunk's worth of data, process that data
         // without copying it into the buffer
         while input.len() - i >= size {
             func(input.slice(i, i + size));
             i += size;
         }
 
-        // Copy any input data into the buffer. At this point in the method, the ammount of
+        // Copy any input data into the buffer. At this point in the method, the amount of
         // data left in the input vector will be less than the buffer size and the buffer will
         // be empty.
         let input_remaining = input.len() - i;
@@ -259,9 +257,9 @@ pub trait Digest {
     }
 
     /// Convenience function that retrieves the result of a digest as a
-    /// ~str in hexadecimal format.
-    fn result_str(&mut self) -> ~str {
-        self.result_bytes().as_slice().to_hex()
+    /// String in hexadecimal format.
+    fn result_str(&mut self) -> String {
+        self.result_bytes().as_slice().to_hex().to_string()
     }
 }
 
@@ -527,7 +525,6 @@ mod tests {
 
     use super::{Digest, Sha256, FixedBuffer};
     use std::num::Bounded;
-    use std::slice;
     use self::rand::isaac::IsaacRng;
     use self::rand::Rng;
     use serialize::hex::FromHex;
@@ -546,15 +543,15 @@ mod tests {
     }
 
     struct Test {
-        input: ~str,
-        output_str: ~str,
+        input: String,
+        output_str: String,
     }
 
     fn test_hash<D: Digest>(sh: &mut D, tests: &[Test]) {
         // Test that it works when accepting the message all at once
         for t in tests.iter() {
             sh.reset();
-            sh.input_str(t.input);
+            sh.input_str(t.input.as_slice());
             let out_str = sh.result_str();
             assert!(out_str == t.output_str);
         }
@@ -566,7 +563,9 @@ mod tests {
             let mut left = len;
             while left > 0u {
                 let take = (left + 1u) / 2u;
-                sh.input_str(t.input.slice(len - left, take + len - left));
+                sh.input_str(t.input
+                              .as_slice()
+                              .slice(len - left, take + len - left));
                 left = left - take;
             }
             let out_str = sh.result_str();
@@ -579,21 +578,26 @@ mod tests {
         // Examples from wikipedia
         let wikipedia_tests = vec!(
             Test {
-                input: ~"",
-                output_str: ~"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+                input: "".to_string(),
+                output_str: "e3b0c44298fc1c149afb\
+            f4c8996fb92427ae41e4649b934ca495991b7852b855".to_string()
             },
             Test {
-                input: ~"The quick brown fox jumps over the lazy dog",
-                output_str: ~"d7a8fbb307d7809469ca9abcb0082e4f8d5651e46d3cdb762d02d0bf37c9e592"
+                input: "The quick brown fox jumps over the lazy \
+                        dog".to_string(),
+                output_str: "d7a8fbb307d7809469ca\
+            9abcb0082e4f8d5651e46d3cdb762d02d0bf37c9e592".to_string()
             },
             Test {
-                input: ~"The quick brown fox jumps over the lazy dog.",
-                output_str: ~"ef537f25c895bfa782526529a9b63d97aa631564d5d789c2b765448c8635fb6c"
+                input: "The quick brown fox jumps over the lazy \
+                        dog.".to_string(),
+                output_str: "ef537f25c895bfa78252\
+            6529a9b63d97aa631564d5d789c2b765448c8635fb6c".to_string()
             });
 
         let tests = wikipedia_tests;
 
-        let mut sh = ~Sha256::new();
+        let mut sh = box Sha256::new();
 
         test_hash(sh, tests.as_slice());
     }
@@ -602,7 +606,7 @@ mod tests {
     /// correct.
     fn test_digest_1million_random<D: Digest>(digest: &mut D, blocksize: uint, expected: &str) {
         let total_size = 1000000;
-        let buffer = slice::from_elem(blocksize * 2, 'a' as u8);
+        let buffer = Vec::from_elem(blocksize * 2, 'a' as u8);
         let mut rng = IsaacRng::new_unseeded();
         let mut count = 0;
 

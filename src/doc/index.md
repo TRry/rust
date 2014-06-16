@@ -7,6 +7,7 @@
 li {list-style-type: none; }
 </style>
 
+* [A 30-minute Intro to Rust](intro.html)
 * [The Rust tutorial](tutorial.html)  (* [PDF](tutorial.pdf))
 * [The Rust reference manual](rust.html) (* [PDF](rust.pdf))
 
@@ -21,6 +22,14 @@ li {list-style-type: none; }
 * [Macros](guide-macros.html)
 * [Testing](guide-testing.html)
 * [Rust's Runtime](guide-runtime.html)
+
+# FAQs
+
+* [Language Design FAQ](complement-design-faq.html)
+* [Language FAQ](complement-lang-faq.html)
+* [Project FAQ](complement-project-faq.html)
+* [Code cheatsheet](complement-cheatsheet.html) - "How do I do X?"
+* [How to submit a bug report](complement-bugreport.html)
 
 # Libraries
 
@@ -40,6 +49,7 @@ li {list-style-type: none; }
 * [The `native` 1:1 threading runtime](native/index.html)
 * [The `num` arbitrary precision numerics library](num/index.html)
 * [The `rand` library for random numbers and distributions](rand/index.html)
+* [The `regex` library for regular expressions](regex/index.html)
 * [The `rustc` compiler](rustc/index.html)
 * [The `rustuv` M:N I/O library](rustuv/index.html)
 * [The `semver` version collation library](semver/index.html)
@@ -51,19 +61,11 @@ li {list-style-type: none; }
 * [The `time` library](time/index.html)
 * [The `uuid` 128-bit universally unique identifier library](uuid/index.html)
 * [The `url` library](url/index.html)
-* [The `workcache` library](workcache/index.html)
 * [The `log` library](log/index.html)
 
 # Tooling
 
 * [The `rustdoc` manual](rustdoc.html)
-
-# FAQs
-
-* [Language FAQ](complement-lang-faq.html)
-* [Project FAQ](complement-project-faq.html)
-* [Code cheatsheet](complement-cheatsheet.html) - "How do I do X?"
-* [How to submit a bug report](complement-bugreport.html)
 
 # External resources
 

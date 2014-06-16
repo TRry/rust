@@ -35,7 +35,8 @@ LICENSE.txt: $(S)COPYRIGHT $(S)LICENSE-APACHE $(S)LICENSE-MIT
 
 PKG_TAR = dist/$(PKG_NAME).tar.gz
 
-PKG_GITMODULES := $(S)src/libuv $(S)src/llvm $(S)src/gyp $(S)src/compiler-rt
+PKG_GITMODULES := $(S)src/libuv $(S)src/llvm $(S)src/gyp $(S)src/compiler-rt \
+		  $(S)src/rt/hoedown $(S)src/jemalloc
 PKG_FILES := \
     $(S)COPYRIGHT                              \
     $(S)LICENSE-APACHE                         \
@@ -118,7 +119,7 @@ PKG_EXE = dist/$(PKG_NAME)-install.exe
 %.ico: $(S)src/etc/pkg/%.ico
 	cp $< $@
 
-$(PKG_EXE): rust.iss modpath.iss LICENSE.txt rust-logo.ico \
+$(PKG_EXE): rust.iss modpath.iss upgrade.iss LICENSE.txt rust-logo.ico \
             $(CSREQ3_T_$(CFG_BUILD)_H_$(CFG_BUILD)) \
             dist-prepare-win
 	$(CFG_PYTHON) $(S)src/etc/copy-runtime-deps.py tmp/dist/win/bin

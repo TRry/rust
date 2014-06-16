@@ -10,7 +10,7 @@
 
 #![feature(asm)]
 
-use std::io::Process;
+use std::io::process::Command;
 use std::os;
 use std::str;
 
@@ -34,17 +34,18 @@ fn loud_recurse() {
 
 fn main() {
     let args = os::args();
+    let args = args.as_slice();
     if args.len() > 1 && args[1].as_slice() == "silent" {
         silent_recurse();
     } else if args.len() > 1 && args[1].as_slice() == "loud" {
         loud_recurse();
     } else {
-        let silent = Process::output(args[0], [~"silent"]).unwrap();
+        let silent = Command::new(args[0].as_slice()).arg("silent").output().unwrap();
         assert!(!silent.status.success());
         let error = str::from_utf8_lossy(silent.error.as_slice());
         assert!(error.as_slice().contains("has overflowed its stack"));
 
-        let loud = Process::output(args[0], [~"loud"]).unwrap();
+        let loud = Command::new(args[0].as_slice()).arg("loud").output().unwrap();
         assert!(!loud.status.success());
         let error = str::from_utf8_lossy(silent.error.as_slice());
         assert!(error.as_slice().contains("has overflowed its stack"));

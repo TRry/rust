@@ -8,9 +8,10 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#[feature(managed_boxes)];
+#![feature(managed_boxes)]
 
 use std::cell::Cell;
+use std::gc::GC;
 
 enum newtype {
     newtype(int)
@@ -21,8 +22,8 @@ pub fn main() {
     // Test that borrowck treats enums with a single variant
     // specially.
 
-    let x = @Cell::new(5);
-    let y = @Cell::new(newtype(3));
+    let x = box(GC) Cell::new(5);
+    let y = box(GC) Cell::new(newtype(3));
     let z = match y.get() {
       newtype(b) => {
         x.set(x.get() + 1);

@@ -12,9 +12,9 @@
 
 
 pub fn main() {
-    let a: ~str = ~"hello";
-    let b: ~str = ~"world";
-    let s: ~str = a + b;
+    let a: String = "hello".to_string();
+    let b: String = "world".to_string();
+    let s: String = format!("{}{}", a, b);
     println!("{}", s.clone());
-    assert_eq!(s[9], 'd' as u8);
+    assert_eq!(s.as_slice()[9], 'd' as u8);
 }

@@ -8,13 +8,13 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// #[warn(deprecated_mode)];
+// #![warn(deprecated_mode)]
 
 use middle::ty;
 use middle::ty_fold;
 use middle::ty_fold::TypeFolder;
 
-use collections::HashMap;
+use std::collections::HashMap;
 use util::ppaux::Repr;
 use util::ppaux;
 
@@ -100,8 +100,7 @@ pub fn relate_nested_regions(tcx: &ty::ctxt,
 
         fn fold_ty(&mut self, ty: ty::t) -> ty::t {
             match ty::get(ty).sty {
-                ty::ty_rptr(r, ty::mt {ty, ..}) |
-                ty::ty_vec(ty, ty::VstoreSlice(r, _)) => {
+                ty::ty_rptr(r, ty::mt {ty, ..}) => {
                     self.relate(r);
                     self.stack.push(r);
                     ty_fold::super_fold_ty(self, ty);

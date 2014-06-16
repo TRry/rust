@@ -15,15 +15,18 @@
 // makes all other generics or inline functions that it references
 // reachable as well.
 
+use driver::config;
+use middle::def;
 use middle::ty;
 use middle::typeck;
 use middle::privacy;
 use util::nodemap::NodeSet;
 
-use collections::HashSet;
+use std::collections::HashSet;
+use syntax::abi;
 use syntax::ast;
 use syntax::ast_map;
-use syntax::ast_util::{def_id_of_def, is_local};
+use syntax::ast_util::{is_local};
 use syntax::attr;
 use syntax::visit::Visitor;
 use syntax::visit;
@@ -67,7 +70,7 @@ fn method_might_be_inlined(tcx: &ty::ctxt, method: &ast::Method,
         {
             match tcx.map.find(impl_src.node) {
                 Some(ast_map::NodeItem(item)) => {
-                    item_might_be_inlined(item)
+                    item_might_be_inlined(&*item)
                 }
                 Some(..) | None => {
                     tcx.sess.span_bug(method.span, "impl did is not an item")
@@ -84,14 +87,13 @@ fn method_might_be_inlined(tcx: &ty::ctxt, method: &ast::Method,
 struct ReachableContext<'a> {
     // The type context.
     tcx: &'a ty::ctxt,
-    // The method map, which links node IDs of method call expressions to the
-    // methods they've been resolved to.
-    method_map: typeck::MethodMap,
     // The set of items which must be exported in the linkage sense.
     reachable_symbols: NodeSet,
     // A worklist of item IDs. Each item ID in this worklist will be inlined
     // and will be scanned for further references.
     worklist: Vec<ast::NodeId>,
+    // Whether any output of this compilation is a library
+    any_library: bool,
 }
 
 impl<'a> Visitor<()> for ReachableContext<'a> {
@@ -108,7 +110,7 @@ impl<'a> Visitor<()> for ReachableContext<'a> {
                     }
                 };
 
-                let def_id = def_id_of_def(def);
+                let def_id = def.def_id();
                 if is_local(def_id) {
                     if self.def_id_represents_local_inlined_item(def_id) {
                         self.worklist.push(def_id.node)
@@ -118,7 +120,7 @@ impl<'a> Visitor<()> for ReachableContext<'a> {
                             // to do some work to figure out whether the static
                             // is indeed reachable (address_insignificant
                             // statics are *never* reachable).
-                            ast::DefStatic(..) => {
+                            def::DefStatic(..) => {
                                 self.worklist.push(def_id.node);
                             }
 
@@ -133,7 +135,7 @@ impl<'a> Visitor<()> for ReachableContext<'a> {
             }
             ast::ExprMethodCall(..) => {
                 let method_call = typeck::MethodCall::expr(expr.id);
-                match self.method_map.borrow().get(&method_call).origin {
+                match self.tcx.method_map.borrow().get(&method_call).origin {
                     typeck::MethodStatic(def_id) => {
                         if is_local(def_id) {
                             if self.def_id_represents_local_inlined_item(def_id) {
@@ -159,12 +161,15 @@ impl<'a> Visitor<()> for ReachableContext<'a> {
 
 impl<'a> ReachableContext<'a> {
     // Creates a new reachability computation context.
-    fn new(tcx: &'a ty::ctxt, method_map: typeck::MethodMap) -> ReachableContext<'a> {
+    fn new(tcx: &'a ty::ctxt) -> ReachableContext<'a> {
+        let any_library = tcx.sess.crate_types.borrow().iter().any(|ty| {
+            *ty != config::CrateTypeExecutable
+        });
         ReachableContext {
             tcx: tcx,
-            method_map: method_map,
             reachable_symbols: NodeSet::new(),
             worklist: Vec::new(),
+            any_library: any_library,
         }
     }
 
@@ -179,7 +184,7 @@ impl<'a> ReachableContext<'a> {
         match self.tcx.map.find(node_id) {
             Some(ast_map::NodeItem(item)) => {
                 match item.node {
-                    ast::ItemFn(..) => item_might_be_inlined(item),
+                    ast::ItemFn(..) => item_might_be_inlined(&*item),
                     _ => false,
                 }
             }
@@ -230,7 +235,7 @@ impl<'a> ReachableContext<'a> {
                 None => {
                     self.tcx.sess.bug(format!("found unmapped ID in worklist: \
                                                {}",
-                                              search_item))
+                                              search_item).as_slice())
                 }
             }
         }
@@ -238,7 +243,7 @@ impl<'a> ReachableContext<'a> {
 
     fn propagate_node(&mut self, node: &ast_map::Node,
                       search_item: ast::NodeId) {
-        if !self.tcx.sess.building_library.get() {
+        if !self.any_library {
             // If we are building an executable, then there's no need to flag
             // anything as external except for `extern fn` types. These
             // functions may still participate in some form of native interface,
@@ -247,8 +252,10 @@ impl<'a> ReachableContext<'a> {
             match *node {
                 ast_map::NodeItem(item) => {
                     match item.node {
-                        ast::ItemFn(_, ast::ExternFn, _, _, _) => {
-                            self.reachable_symbols.insert(search_item);
+                        ast::ItemFn(_, _, abi, _, _) => {
+                            if abi != abi::Rust {
+                                self.reachable_symbols.insert(search_item);
+                            }
                         }
                         _ => {}
                     }
@@ -266,19 +273,20 @@ impl<'a> ReachableContext<'a> {
         match *node {
             ast_map::NodeItem(item) => {
                 match item.node {
-                    ast::ItemFn(_, _, _, _, search_block) => {
-                        if item_might_be_inlined(item) {
-                            visit::walk_block(self, search_block, ())
+                    ast::ItemFn(_, _, _, _, ref search_block) => {
+                        if item_might_be_inlined(&*item) {
+                            visit::walk_block(self, &**search_block, ())
                         }
                     }
 
                     // Statics with insignificant addresses are not reachable
                     // because they're inlined specially into all other crates.
-                    ast::ItemStatic(..) => {
+                    ast::ItemStatic(_, _, ref init) => {
                         if attr::contains_name(item.attrs.as_slice(),
                                                "address_insignificant") {
                             self.reachable_symbols.remove(&search_item);
                         }
+                        visit::walk_expr(self, &**init, ());
                     }
 
                     // These are normal, nothing reachable about these
@@ -302,14 +310,14 @@ impl<'a> ReachableContext<'a> {
                         // Keep going, nothing to get exported
                     }
                     ast::Provided(ref method) => {
-                        visit::walk_block(self, method.body, ())
+                        visit::walk_block(self, &*method.body, ())
                     }
                 }
             }
             ast_map::NodeMethod(method) => {
                 let did = self.tcx.map.get_parent_did(search_item);
-                if method_might_be_inlined(self.tcx, method, did) {
-                    visit::walk_block(self, method.body, ())
+                if method_might_be_inlined(self.tcx, &*method, did) {
+                    visit::walk_block(self, &*method.body, ())
                 }
             }
             // Nothing to recurse on for these
@@ -317,9 +325,12 @@ impl<'a> ReachableContext<'a> {
             ast_map::NodeVariant(_) |
             ast_map::NodeStructCtor(_) => {}
             _ => {
-                self.tcx.sess.bug(format!("found unexpected thingy in \
-                                           worklist: {}",
-                                          self.tcx.map.node_to_str(search_item)))
+                self.tcx
+                    .sess
+                    .bug(format!("found unexpected thingy in worklist: {}",
+                                 self.tcx
+                                     .map
+                                     .node_to_str(search_item)).as_slice())
             }
         }
     }
@@ -339,10 +350,9 @@ impl<'a> ReachableContext<'a> {
 }
 
 pub fn find_reachable(tcx: &ty::ctxt,
-                      method_map: typeck::MethodMap,
                       exported_items: &privacy::ExportedItems)
                       -> NodeSet {
-    let mut reachable_context = ReachableContext::new(tcx, method_map);
+    let mut reachable_context = ReachableContext::new(tcx);
 
     // Step 1: Seed the worklist with all nodes which were found to be public as
     //         a result of the privacy pass along with all local lang items. If

@@ -11,11 +11,11 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
-use std::cast;
+use std::mem;
 use std::io::stdio::println;
 
-fn call_it(f: proc(~str) -> ~str) {
-    println!("{}", f(~"Fred"))
+fn call_it(f: proc(String) -> String) {
+    println!("{}", f("Fred".to_string()))
 }
 
 fn call_a_thunk(f: ||) {
@@ -48,17 +48,17 @@ fn call_bare_again(f: extern "Rust" fn(&str)) {
 pub fn main() {
     // Procs
 
-    let greeting = ~"Hello ";
+    let greeting = "Hello ".to_string();
     call_it(proc(s) {
-        greeting + s
+        format!("{}{}", greeting, s)
     });
 
-    let greeting = ~"Goodbye ";
-    call_it(proc(s) greeting + s);
+    let greeting = "Goodbye ".to_string();
+    call_it(proc(s) format!("{}{}", greeting, s));
 
-    let greeting = ~"How's life, ";
-    call_it(proc(s: ~str) -> ~str {
-        greeting + s
+    let greeting = "How's life, ".to_string();
+    call_it(proc(s: String) -> String {
+        format!("{}{}", greeting, s)
     });
 
     // Closures
@@ -74,7 +74,7 @@ pub fn main() {
 
     call_cramped(|| 1, || unsafe {
         static a: uint = 100;
-        cast::transmute(&a)
+        mem::transmute(&a)
     });
 
     // External functions

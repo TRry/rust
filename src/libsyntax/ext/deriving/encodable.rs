@@ -36,7 +36,7 @@ impl<D:Decoder> Decodable for node_id {
     fn decode(d: &D) -> Node {
         d.read_struct("Node", 1, || {
             Node {
-                id: d.read_field(~"x", 0, || decode(d))
+                id: d.read_field("x".to_string(), 0, || decode(d))
             }
         })
     }
@@ -73,8 +73,8 @@ would yield functions like:
         fn decode(d: &D) -> spanned<T> {
             d.read_rec(|| {
                 {
-                    node: d.read_field(~"node", 0, || decode(d)),
-                    span: d.read_field(~"span", 1, || decode(d)),
+                    node: d.read_field("node".to_string(), 0, || decode(d)),
+                    span: d.read_field("span".to_string(), 1, || decode(d)),
                 }
             })
         }
@@ -82,47 +82,53 @@ would yield functions like:
 ```
 */
 
+use ast;
 use ast::{MetaItem, Item, Expr, ExprRet, MutMutable, LitNil};
 use codemap::Span;
 use ext::base::ExtCtxt;
 use ext::build::AstBuilder;
 use ext::deriving::generic::*;
+use ext::deriving::generic::ty::*;
 use parse::token;
+
+use std::gc::Gc;
 
 pub fn expand_deriving_encodable(cx: &mut ExtCtxt,
                                  span: Span,
-                                 mitem: @MetaItem,
-                                 item: @Item,
-                                 push: |@Item|) {
+                                 mitem: Gc<MetaItem>,
+                                 item: Gc<Item>,
+                                 push: |Gc<Item>|) {
     let trait_def = TraitDef {
         span: span,
         attributes: Vec::new(),
         path: Path::new_(vec!("serialize", "Encodable"), None,
-                         vec!(~Literal(Path::new_local("__S")),
-                              ~Literal(Path::new_local("__E"))), true),
+                         vec!(box Literal(Path::new_local("__S")),
+                              box Literal(Path::new_local("__E"))), true),
         additional_bounds: Vec::new(),
         generics: LifetimeBounds {
             lifetimes: Vec::new(),
-            bounds: vec!(("__S", vec!(Path::new_(
+            bounds: vec!(("__S", ast::StaticSize, vec!(Path::new_(
                             vec!("serialize", "Encoder"), None,
-                            vec!(~Literal(Path::new_local("__E"))), true))),
-                         ("__E", vec!()))
+                            vec!(box Literal(Path::new_local("__E"))), true))),
+                         ("__E", ast::StaticSize, vec!()))
         },
         methods: vec!(
             MethodDef {
                 name: "encode",
                 generics: LifetimeBounds::empty(),
                 explicit_self: borrowed_explicit_self(),
-                args: vec!(Ptr(~Literal(Path::new_local("__S")),
+                args: vec!(Ptr(box Literal(Path::new_local("__S")),
                             Borrowed(None, MutMutable))),
                 ret_ty: Literal(Path::new_(vec!("std", "result", "Result"),
                                            None,
-                                           vec!(~Tuple(Vec::new()),
-                                                ~Literal(Path::new_local("__E"))),
+                                           vec!(box Tuple(Vec::new()),
+                                                box Literal(Path::new_local("__E"))),
                                            true)),
-                inline: false,
+                attributes: Vec::new(),
                 const_nonmatching: true,
-                combine_substructure: encodable_substructure,
+                combine_substructure: combine_substructure(|a, b, c| {
+                    encodable_substructure(a, b, c)
+                }),
             })
     };
 
@@ -130,7 +136,7 @@ pub fn expand_deriving_encodable(cx: &mut ExtCtxt,
 }
 
 fn encodable_substructure(cx: &mut ExtCtxt, trait_span: Span,
-                          substr: &Substructure) -> @Expr {
+                          substr: &Substructure) -> Gc<Expr> {
     let encoder = substr.nonself_args[0];
     // throw an underscore in front to suppress unused variable warnings
     let blkarg = cx.ident_of("_e");
@@ -151,7 +157,8 @@ fn encodable_substructure(cx: &mut ExtCtxt, trait_span: Span,
                 let name = match name {
                     Some(id) => token::get_ident(id),
                     None => {
-                        token::intern_and_get_ident(format!("_field{}", i))
+                        token::intern_and_get_ident(format!("_field{}",
+                                                            i).as_slice())
                     }
                 };
                 let enc = cx.expr_method_call(span, self_, encode, vec!(blkencoder));
@@ -169,6 +176,14 @@ fn encodable_substructure(cx: &mut ExtCtxt, trait_span: Span,
                     cx.expr(span, ExprRet(Some(call)))
                 };
                 stmts.push(cx.stmt_expr(call));
+            }
+
+            // unit structs have no fields and need to return Ok()
+            if stmts.is_empty() {
+                let ret_ok = cx.expr(trait_span,
+                                     ExprRet(Some(cx.expr_ok(trait_span,
+                                                             cx.expr_lit(trait_span, LitNil)))));
+                stmts.push(cx.stmt_expr(ret_ok));
             }
 
             let blk = cx.lambda_stmts_1(trait_span, stmts, blkarg);

@@ -17,7 +17,7 @@ use std::cell::{RefCell, Cell};
 use std::fmt;
 use std::io;
 use std::iter::range;
-use std::strbuf::StrBuf;
+use std::string::String;
 use term;
 
 // maximum number of lines we will print for each error; arbitrary.
@@ -47,6 +47,13 @@ impl RenderSpan {
             &FileLine(..) => false,
         }
     }
+}
+
+#[deriving(Clone)]
+pub enum ColorConfig {
+    Auto,
+    Always,
+    Never
 }
 
 pub trait Emitter {
@@ -99,7 +106,7 @@ impl SpanHandler {
         fail!(ExplicitBug);
     }
     pub fn span_unimpl(&self, sp: Span, msg: &str) -> ! {
-        self.span_bug(sp, ~"unimplemented " + msg);
+        self.span_bug(sp, format!("unimplemented {}", msg).as_slice());
     }
     pub fn handler<'a>(&'a self) -> &'a Handler {
         &self.handler
@@ -111,7 +118,7 @@ impl SpanHandler {
 // others log errors for later reporting.
 pub struct Handler {
     err_count: Cell<uint>,
-    emit: RefCell<~Emitter:Send>,
+    emit: RefCell<Box<Emitter + Send>>,
 }
 
 impl Handler {
@@ -136,13 +143,13 @@ impl Handler {
         let s;
         match self.err_count.get() {
           0u => return,
-          1u => s = ~"aborting due to previous error",
+          1u => s = "aborting due to previous error".to_string(),
           _  => {
             s = format!("aborting due to {} previous errors",
-                     self.err_count.get());
+                        self.err_count.get());
           }
         }
-        self.fatal(s);
+        self.fatal(s.as_slice());
     }
     pub fn warn(&self, msg: &str) {
         self.emit.borrow_mut().emit(None, msg, Warning);
@@ -155,7 +162,7 @@ impl Handler {
         fail!(ExplicitBug);
     }
     pub fn unimpl(&self, msg: &str) -> ! {
-        self.bug(~"unimplemented " + msg);
+        self.bug(format!("unimplemented {}", msg).as_slice());
     }
     pub fn emit(&self,
                 cmsp: Option<(&codemap::CodeMap, Span)>,
@@ -176,18 +183,18 @@ pub fn mk_span_handler(handler: Handler, cm: codemap::CodeMap) -> SpanHandler {
     }
 }
 
-pub fn default_handler() -> Handler {
-    mk_handler(~EmitterWriter::stderr())
+pub fn default_handler(color_config: ColorConfig) -> Handler {
+    mk_handler(box EmitterWriter::stderr(color_config))
 }
 
-pub fn mk_handler(e: ~Emitter:Send) -> Handler {
+pub fn mk_handler(e: Box<Emitter + Send>) -> Handler {
     Handler {
         err_count: Cell::new(0),
         emit: RefCell::new(e),
     }
 }
 
-#[deriving(Eq)]
+#[deriving(PartialEq)]
 pub enum Level {
     Bug,
     Fatal,
@@ -225,8 +232,27 @@ fn print_maybe_styled(w: &mut EmitterWriter,
     match w.dst {
         Terminal(ref mut t) => {
             try!(t.attr(color));
-            try!(t.write_str(msg));
-            try!(t.reset());
+            // If `msg` ends in a newline, we need to reset the color before
+            // the newline. We're making the assumption that we end up writing
+            // to a `LineBufferedWriter`, which means that emitting the reset
+            // after the newline ends up buffering the reset until we print
+            // another line or exit. Buffering the reset is a problem if we're
+            // sharing the terminal with any other programs (e.g. other rustc
+            // instances via `make -jN`).
+            //
+            // Note that if `msg` contains any internal newlines, this will
+            // result in the `LineBufferedWriter` flushing twice instead of
+            // once, which still leaves the opportunity for interleaved output
+            // to be miscolored. We assume this is rare enough that we don't
+            // have to worry about it.
+            if msg.ends_with("\n") {
+                try!(t.write_str(msg.slice_to(msg.len()-1)));
+                try!(t.reset());
+                try!(t.write_str("\n"));
+            } else {
+                try!(t.write_str(msg));
+                try!(t.reset());
+            }
             Ok(())
         }
         Raw(ref mut w) => {
@@ -241,9 +267,12 @@ fn print_diagnostic(dst: &mut EmitterWriter,
         try!(write!(&mut dst.dst, "{} ", topic));
     }
 
-    try!(print_maybe_styled(dst, format!("{}: ", lvl.to_str()),
+    try!(print_maybe_styled(dst,
+                            format!("{}: ", lvl.to_str()).as_slice(),
                             term::attr::ForegroundColor(lvl.color())));
-    try!(print_maybe_styled(dst, format!("{}\n", msg), term::attr::Bold));
+    try!(print_maybe_styled(dst,
+                            format!("{}\n", msg).as_slice(),
+                            term::attr::Bold));
     Ok(())
 }
 
@@ -252,25 +281,32 @@ pub struct EmitterWriter {
 }
 
 enum Destination {
-    Terminal(term::Terminal<io::stdio::StdWriter>),
-    Raw(~Writer:Send),
+    Terminal(Box<term::Terminal<Box<Writer + Send>> + Send>),
+    Raw(Box<Writer + Send>),
 }
 
 impl EmitterWriter {
-    pub fn stderr() -> EmitterWriter {
+    pub fn stderr(color_config: ColorConfig) -> EmitterWriter {
         let stderr = io::stderr();
-        if stderr.get_ref().isatty() {
-            let dst = match term::Terminal::new(stderr.unwrap()) {
-                Ok(t) => Terminal(t),
-                Err(..) => Raw(~io::stderr()),
+
+        let use_color = match color_config {
+            Always => true,
+            Never  => false,
+            Auto   => stderr.get_ref().isatty()
+        };
+
+        if use_color {
+            let dst = match term::stderr() {
+                Some(t) => Terminal(t),
+                None    => Raw(box stderr),
             };
             EmitterWriter { dst: dst }
         } else {
-            EmitterWriter { dst: Raw(~stderr) }
+            EmitterWriter { dst: Raw(box stderr) }
         }
     }
 
-    pub fn new(dst: ~Writer:Send) -> EmitterWriter {
+    pub fn new(dst: Box<Writer + Send>) -> EmitterWriter {
         EmitterWriter { dst: Raw(dst) }
     }
 }
@@ -320,12 +356,12 @@ fn emit(dst: &mut EmitterWriter, cm: &codemap::CodeMap, rsp: RenderSpan,
         // the span)
         let span_end = Span { lo: sp.hi, hi: sp.hi, expn_info: sp.expn_info};
         let ses = cm.span_to_str(span_end);
-        try!(print_diagnostic(dst, ses, lvl, msg));
+        try!(print_diagnostic(dst, ses.as_slice(), lvl, msg));
         if rsp.is_full_span() {
             try!(custom_highlight_lines(dst, cm, sp, lvl, lines));
         }
     } else {
-        try!(print_diagnostic(dst, ss, lvl, msg));
+        try!(print_diagnostic(dst, ss.as_slice(), lvl, msg));
         if rsp.is_full_span() {
             try!(highlight_lines(dst, cm, sp, lvl, lines));
         }
@@ -369,7 +405,7 @@ fn highlight_lines(err: &mut EmitterWriter,
 
         // indent past |name:## | and the 0-offset column location
         let left = fm.name.len() + digits + lo.col.to_uint() + 3u;
-        let mut s = StrBuf::new();
+        let mut s = String::new();
         // Skip is the number of characters we need to skip because they are
         // part of the 'filename:line ' part of the previous line.
         let skip = fm.name.len() + digits + 3u;
@@ -378,7 +414,7 @@ fn highlight_lines(err: &mut EmitterWriter,
         }
         let orig = fm.get_line(*lines.lines.get(0) as int);
         for pos in range(0u, left-skip) {
-            let cur_char = orig[pos] as char;
+            let cur_char = orig.as_slice()[pos] as char;
             // Whenever a tab occurs on the previous line, we insert one on
             // the error-point-squiggly-line as well (instead of a space).
             // That way the squiggly line will usually appear in the correct
@@ -389,7 +425,7 @@ fn highlight_lines(err: &mut EmitterWriter,
             };
         }
         try!(write!(&mut err.dst, "{}", s));
-        let mut s = StrBuf::from_str("^");
+        let mut s = String::from_str("^");
         let hi = cm.lookup_char_pos(sp.hi);
         if hi.col != lo.col {
             // the ^ already takes up one space
@@ -398,7 +434,8 @@ fn highlight_lines(err: &mut EmitterWriter,
                 s.push_char('~');
             }
         }
-        try!(print_maybe_styled(err, s.into_owned() + "\n",
+        try!(print_maybe_styled(err,
+                                format!("{}\n", s).as_slice(),
                                 term::attr::ForegroundColor(lvl.color())));
     }
     Ok(())
@@ -436,14 +473,14 @@ fn custom_highlight_lines(w: &mut EmitterWriter,
     let hi = cm.lookup_char_pos(sp.hi);
     // Span seems to use half-opened interval, so subtract 1
     let skip = last_line_start.len() + hi.col.to_uint() - 1;
-    let mut s = StrBuf::new();
+    let mut s = String::new();
     for _ in range(0, skip) {
         s.push_char(' ');
     }
     s.push_char('^');
     s.push_char('\n');
     print_maybe_styled(w,
-                       s.into_owned(),
+                       s.as_slice(),
                        term::attr::ForegroundColor(lvl.color()))
 }
 
@@ -452,24 +489,29 @@ fn print_macro_backtrace(w: &mut EmitterWriter,
                          sp: Span)
                          -> io::IoResult<()> {
     for ei in sp.expn_info.iter() {
-        let ss = ei.callee.span.as_ref().map_or(~"", |span| cm.span_to_str(*span));
+        let ss = ei.callee
+                   .span
+                   .as_ref()
+                   .map_or("".to_string(), |span| cm.span_to_str(*span));
         let (pre, post) = match ei.callee.format {
             codemap::MacroAttribute => ("#[", "]"),
             codemap::MacroBang => ("", "!")
         };
-        try!(print_diagnostic(w, ss, Note,
+        try!(print_diagnostic(w, ss.as_slice(), Note,
                               format!("in expansion of {}{}{}", pre,
-                                      ei.callee.name, post)));
+                                      ei.callee.name,
+                                      post).as_slice()));
         let ss = cm.span_to_str(ei.call_site);
-        try!(print_diagnostic(w, ss, Note, "expansion site"));
+        try!(print_diagnostic(w, ss.as_slice(), Note, "expansion site"));
         try!(print_macro_backtrace(w, cm, ei.call_site));
     }
     Ok(())
 }
 
-pub fn expect<T:Clone>(diag: &SpanHandler, opt: Option<T>, msg: || -> ~str) -> T {
+pub fn expect<T:Clone>(diag: &SpanHandler, opt: Option<T>, msg: || -> String)
+              -> T {
     match opt {
        Some(ref t) => (*t).clone(),
-       None => diag.handler().bug(msg()),
+       None => diag.handler().bug(msg().as_slice()),
     }
 }

@@ -17,7 +17,7 @@ use std::os::getenv;
 use std::{os, str};
 
 /// Return path to database entry for `term`
-pub fn get_dbpath_for_term(term: &str) -> Option<~Path> {
+pub fn get_dbpath_for_term(term: &str) -> Option<Box<Path>> {
     if term.len() == 0 {
         return None;
     }
@@ -32,15 +32,15 @@ pub fn get_dbpath_for_term(term: &str) -> Option<~Path> {
         Some(dir) => dirs_to_search.push(Path::new(dir)),
         None => {
             if homedir.is_some() {
-                // ncurses compatability;
+                // ncurses compatibility;
                 dirs_to_search.push(homedir.unwrap().join(".terminfo"))
             }
             match getenv("TERMINFO_DIRS") {
-                Some(dirs) => for i in dirs.split(':') {
+                Some(dirs) => for i in dirs.as_slice().split(':') {
                     if i == "" {
                         dirs_to_search.push(Path::new("/usr/share/terminfo"));
                     } else {
-                        dirs_to_search.push(Path::new(i.to_owned()));
+                        dirs_to_search.push(Path::new(i.to_string()));
                     }
                 },
                 // Found nothing in TERMINFO_DIRS, use the default paths:
@@ -62,13 +62,13 @@ pub fn get_dbpath_for_term(term: &str) -> Option<~Path> {
             let f = str::from_char(first_char);
             let newp = p.join_many([f.as_slice(), term]);
             if newp.exists() {
-                return Some(~newp);
+                return Some(box newp);
             }
             // on some installations the dir is named after the hex of the char (e.g. OS X)
             let f = format!("{:x}", first_char as uint);
             let newp = p.join_many([f.as_slice(), term]);
             if newp.exists() {
-                return Some(~newp);
+                return Some(box newp);
             }
         }
     }
@@ -76,7 +76,7 @@ pub fn get_dbpath_for_term(term: &str) -> Option<~Path> {
 }
 
 /// Return open file for `term`
-pub fn open(term: &str) -> Result<File, ~str> {
+pub fn open(term: &str) -> Result<File, String> {
     match get_dbpath_for_term(term) {
         Some(x) => {
             match File::open(x) {
@@ -84,7 +84,9 @@ pub fn open(term: &str) -> Result<File, ~str> {
                 Err(e) => Err(format!("error opening file: {}", e)),
             }
         }
-        None => Err(format!("could not find terminfo entry for {}", term))
+        None => {
+            Err(format!("could not find terminfo entry for {}", term))
+        }
     }
 }
 
@@ -95,14 +97,14 @@ fn test_get_dbpath_for_term() {
     // note: current tests won't work with non-standard terminfo hierarchies (e.g. OS X's)
     use std::os::{setenv, unsetenv};
     // FIXME (#9639): This needs to handle non-utf8 paths
-    fn x(t: &str) -> ~str {
+    fn x(t: &str) -> String {
         let p = get_dbpath_for_term(t).expect("no terminfo entry found");
-        p.as_str().unwrap().to_owned()
+        p.as_str().unwrap().to_string()
     };
-    assert!(x("screen") == ~"/usr/share/terminfo/s/screen");
+    assert!(x("screen") == "/usr/share/terminfo/s/screen".to_string());
     assert!(get_dbpath_for_term("") == None);
     setenv("TERMINFO_DIRS", ":");
-    assert!(x("screen") == ~"/usr/share/terminfo/s/screen");
+    assert!(x("screen") == "/usr/share/terminfo/s/screen".to_string());
     unsetenv("TERMINFO_DIRS");
 }
 

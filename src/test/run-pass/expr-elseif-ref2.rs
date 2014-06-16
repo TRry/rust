@@ -8,15 +8,17 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#[feature(managed_boxes)];
+#![feature(managed_boxes)]
+
+use std::gc::{GC};
 
 // Regression test for issue #388
 pub fn main() {
     let _x = if false {
-        @0u
+        box(GC) 0u
     } else if true {
-        @10u
+        box(GC) 10u
     } else {
-        @0u
+        box(GC) 0u
     };
 }

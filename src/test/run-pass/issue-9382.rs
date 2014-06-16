@@ -8,8 +8,8 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#[feature(managed_boxes)];
-#[allow(unnecessary_allocation)];
+#![feature(managed_boxes)]
+#![allow(unnecessary_allocation)]
 
 // Tests for a previous bug that occured due to an interaction
 // between struct field initialization and the auto-coercion
@@ -18,23 +18,23 @@
 
 
 struct Thing1<'a> {
-    baz: &'a [~int],
-    bar: ~u64,
+    baz: &'a [Box<int>],
+    bar: Box<u64>,
 }
 
 struct Thing2<'a> {
-    baz: &'a [~int],
+    baz: &'a [Box<int>],
     bar: u64,
 }
 
 pub fn main() {
     let _t1_fixed = Thing1 {
         baz: &[],
-        bar: ~32,
+        bar: box 32,
     };
     Thing1 {
         baz: Vec::new().as_slice(),
-        bar: ~32,
+        bar: box 32,
     };
     let _t2_fixed = Thing2 {
         baz: &[],

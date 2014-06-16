@@ -88,10 +88,11 @@ fn pidigits(n: int) {
 
 fn main() {
     let args = std::os::args();
+    let args = args.as_slice();
     let n = if args.len() < 2 {
         512
     } else {
-        FromStr::from_str(args[1]).unwrap()
+        FromStr::from_str(args[1].as_slice()).unwrap()
     };
     pidigits(n);
 }

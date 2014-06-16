@@ -15,7 +15,7 @@ use Integer;
 use std::cmp;
 use std::fmt;
 use std::from_str::FromStr;
-use std::num::{Zero,One,ToStrRadix,FromStrRadix,Round};
+use std::num::{Zero, One, ToStrRadix, FromStrRadix};
 use bigint::{BigInt, BigUint, Sign, Plus, Minus};
 
 /// Represents the ratio between 2 numbers.
@@ -34,7 +34,7 @@ pub type Rational64 = Ratio<i64>;
 /// Alias for arbitrary precision rationals.
 pub type BigRational = Ratio<BigInt>;
 
-impl<T: Clone + Integer + Ord>
+impl<T: Clone + Integer + PartialOrd>
     Ratio<T> {
     /// Create a ratio representing the integer `t`.
     #[inline]
@@ -113,6 +113,40 @@ impl<T: Clone + Integer + Ord>
     pub fn recip(&self) -> Ratio<T> {
         Ratio::new_raw(self.denom.clone(), self.numer.clone())
     }
+
+    pub fn floor(&self) -> Ratio<T> {
+        if *self < Zero::zero() {
+            Ratio::from_integer((self.numer - self.denom + One::one()) / self.denom)
+        } else {
+            Ratio::from_integer(self.numer / self.denom)
+        }
+    }
+
+    pub fn ceil(&self) -> Ratio<T> {
+        if *self < Zero::zero() {
+            Ratio::from_integer(self.numer / self.denom)
+        } else {
+            Ratio::from_integer((self.numer + self.denom - One::one()) / self.denom)
+        }
+    }
+
+    #[inline]
+    pub fn round(&self) -> Ratio<T> {
+        if *self < Zero::zero() {
+            Ratio::from_integer((self.numer - self.denom + One::one()) / self.denom)
+        } else {
+            Ratio::from_integer((self.numer + self.denom - One::one()) / self.denom)
+        }
+    }
+
+    #[inline]
+    pub fn trunc(&self) -> Ratio<T> {
+        Ratio::from_integer(self.numer / self.denom)
+    }
+
+    pub fn fract(&self) -> Ratio<T> {
+        Ratio::new_raw(self.numer % self.denom, self.denom.clone())
+    }
 }
 
 impl Ratio<BigInt> {
@@ -158,14 +192,14 @@ macro_rules! cmp_impl {
         }
     };
 }
-cmp_impl!(impl Eq, eq, ne)
-cmp_impl!(impl Ord, lt, gt, le, ge)
-cmp_impl!(impl TotalEq, )
-cmp_impl!(impl TotalOrd, cmp -> cmp::Ordering)
+cmp_impl!(impl PartialEq, eq, ne)
+cmp_impl!(impl PartialOrd, lt, gt, le, ge)
+cmp_impl!(impl Eq, )
+cmp_impl!(impl Ord, cmp -> cmp::Ordering)
 
 /* Arithmetic */
 // a/b * c/d = (a*c)/(b*d)
-impl<T: Clone + Integer + Ord>
+impl<T: Clone + Integer + PartialOrd>
     Mul<Ratio<T>,Ratio<T>> for Ratio<T> {
     #[inline]
     fn mul(&self, rhs: &Ratio<T>) -> Ratio<T> {
@@ -174,7 +208,7 @@ impl<T: Clone + Integer + Ord>
 }
 
 // (a/b) / (c/d) = (a*d)/(b*c)
-impl<T: Clone + Integer + Ord>
+impl<T: Clone + Integer + PartialOrd>
     Div<Ratio<T>,Ratio<T>> for Ratio<T> {
     #[inline]
     fn div(&self, rhs: &Ratio<T>) -> Ratio<T> {
@@ -185,7 +219,7 @@ impl<T: Clone + Integer + Ord>
 // Abstracts the a/b `op` c/d = (a*d `op` b*d) / (b*d) pattern
 macro_rules! arith_impl {
     (impl $imp:ident, $method:ident) => {
-        impl<T: Clone + Integer + Ord>
+        impl<T: Clone + Integer + PartialOrd>
             $imp<Ratio<T>,Ratio<T>> for Ratio<T> {
             #[inline]
             fn $method(&self, rhs: &Ratio<T>) -> Ratio<T> {
@@ -205,7 +239,7 @@ arith_impl!(impl Sub, sub)
 // a/b % c/d = (a*d % b*c)/(b*d)
 arith_impl!(impl Rem, rem)
 
-impl<T: Clone + Integer + Ord>
+impl<T: Clone + Integer + PartialOrd>
     Neg<Ratio<T>> for Ratio<T> {
     #[inline]
     fn neg(&self) -> Ratio<T> {
@@ -214,7 +248,7 @@ impl<T: Clone + Integer + Ord>
 }
 
 /* Constants */
-impl<T: Clone + Integer + Ord>
+impl<T: Clone + Integer + PartialOrd>
     Zero for Ratio<T> {
     #[inline]
     fn zero() -> Ratio<T> {
@@ -227,7 +261,7 @@ impl<T: Clone + Integer + Ord>
     }
 }
 
-impl<T: Clone + Integer + Ord>
+impl<T: Clone + Integer + PartialOrd>
     One for Ratio<T> {
     #[inline]
     fn one() -> Ratio<T> {
@@ -235,63 +269,26 @@ impl<T: Clone + Integer + Ord>
     }
 }
 
-impl<T: Clone + Integer + Ord>
+impl<T: Clone + Integer + PartialOrd>
     Num for Ratio<T> {}
-
-/* Utils */
-impl<T: Clone + Integer + Ord>
-    Round for Ratio<T> {
-
-    fn floor(&self) -> Ratio<T> {
-        if *self < Zero::zero() {
-            Ratio::from_integer((self.numer - self.denom + One::one()) / self.denom)
-        } else {
-            Ratio::from_integer(self.numer / self.denom)
-        }
-    }
-
-    fn ceil(&self) -> Ratio<T> {
-        if *self < Zero::zero() {
-            Ratio::from_integer(self.numer / self.denom)
-        } else {
-            Ratio::from_integer((self.numer + self.denom - One::one()) / self.denom)
-        }
-    }
-
-    #[inline]
-    fn round(&self) -> Ratio<T> {
-        if *self < Zero::zero() {
-            Ratio::from_integer((self.numer - self.denom + One::one()) / self.denom)
-        } else {
-            Ratio::from_integer((self.numer + self.denom - One::one()) / self.denom)
-        }
-    }
-
-    #[inline]
-    fn trunc(&self) -> Ratio<T> {
-        Ratio::from_integer(self.numer / self.denom)
-    }
-
-    fn fract(&self) -> Ratio<T> {
-        Ratio::new_raw(self.numer % self.denom, self.denom.clone())
-    }
-}
 
 /* String conversions */
 impl<T: fmt::Show> fmt::Show for Ratio<T> {
     /// Renders as `numer/denom`.
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f.buf, "{}/{}", self.numer, self.denom)
+        write!(f, "{}/{}", self.numer, self.denom)
     }
 }
 impl<T: ToStrRadix> ToStrRadix for Ratio<T> {
     /// Renders as `numer/denom` where the numbers are in base `radix`.
-    fn to_str_radix(&self, radix: uint) -> ~str {
-        format!("{}/{}", self.numer.to_str_radix(radix), self.denom.to_str_radix(radix))
+    fn to_str_radix(&self, radix: uint) -> String {
+        format!("{}/{}",
+                self.numer.to_str_radix(radix),
+                self.denom.to_str_radix(radix))
     }
 }
 
-impl<T: FromStr + Clone + Integer + Ord>
+impl<T: FromStr + Clone + Integer + PartialOrd>
     FromStr for Ratio<T> {
     /// Parses `numer/denom`.
     fn from_str(s: &str) -> Option<Ratio<T>> {
@@ -308,7 +305,7 @@ impl<T: FromStr + Clone + Integer + Ord>
         })
     }
 }
-impl<T: FromStrRadix + Clone + Integer + Ord>
+impl<T: FromStrRadix + Clone + Integer + PartialOrd>
     FromStrRadix for Ratio<T> {
     /// Parses `numer/denom` where the numbers are in base `radix`.
     fn from_str_radix(s: &str, radix: uint) -> Option<Ratio<T>> {
@@ -560,16 +557,16 @@ mod test {
 
     #[test]
     fn test_to_from_str() {
-        fn test(r: Rational, s: ~str) {
-            assert_eq!(FromStr::from_str(s), Some(r));
+        fn test(r: Rational, s: String) {
+            assert_eq!(FromStr::from_str(s.as_slice()), Some(r));
             assert_eq!(r.to_str(), s);
         }
-        test(_1, ~"1/1");
-        test(_0, ~"0/1");
-        test(_1_2, ~"1/2");
-        test(_3_2, ~"3/2");
-        test(_2, ~"2/1");
-        test(_neg1_2, ~"-1/2");
+        test(_1, "1/1".to_string());
+        test(_0, "0/1".to_string());
+        test(_1_2, "1/2".to_string());
+        test(_3_2, "3/2".to_string());
+        test(_2, "2/1".to_string());
+        test(_neg1_2, "-1/2".to_string());
     }
     #[test]
     fn test_from_str_fail() {
@@ -586,30 +583,31 @@ mod test {
 
     #[test]
     fn test_to_from_str_radix() {
-        fn test(r: Rational, s: ~str, n: uint) {
-            assert_eq!(FromStrRadix::from_str_radix(s, n), Some(r));
-            assert_eq!(r.to_str_radix(n), s);
+        fn test(r: Rational, s: String, n: uint) {
+            assert_eq!(FromStrRadix::from_str_radix(s.as_slice(), n),
+                       Some(r));
+            assert_eq!(r.to_str_radix(n).to_string(), s);
         }
-        fn test3(r: Rational, s: ~str) { test(r, s, 3) }
-        fn test16(r: Rational, s: ~str) { test(r, s, 16) }
+        fn test3(r: Rational, s: String) { test(r, s, 3) }
+        fn test16(r: Rational, s: String) { test(r, s, 16) }
 
-        test3(_1, ~"1/1");
-        test3(_0, ~"0/1");
-        test3(_1_2, ~"1/2");
-        test3(_3_2, ~"10/2");
-        test3(_2, ~"2/1");
-        test3(_neg1_2, ~"-1/2");
-        test3(_neg1_2 / _2, ~"-1/11");
+        test3(_1, "1/1".to_string());
+        test3(_0, "0/1".to_string());
+        test3(_1_2, "1/2".to_string());
+        test3(_3_2, "10/2".to_string());
+        test3(_2, "2/1".to_string());
+        test3(_neg1_2, "-1/2".to_string());
+        test3(_neg1_2 / _2, "-1/11".to_string());
 
-        test16(_1, ~"1/1");
-        test16(_0, ~"0/1");
-        test16(_1_2, ~"1/2");
-        test16(_3_2, ~"3/2");
-        test16(_2, ~"2/1");
-        test16(_neg1_2, ~"-1/2");
-        test16(_neg1_2 / _2, ~"-1/4");
-        test16(Ratio::new(13,15), ~"d/f");
-        test16(_1_2*_1_2*_1_2*_1_2, ~"1/10");
+        test16(_1, "1/1".to_string());
+        test16(_0, "0/1".to_string());
+        test16(_1_2, "1/2".to_string());
+        test16(_3_2, "3/2".to_string());
+        test16(_2, "2/1".to_string());
+        test16(_neg1_2, "-1/2".to_string());
+        test16(_neg1_2 / _2, "-1/4".to_string());
+        test16(Ratio::new(13,15), "d/f".to_string());
+        test16(_1_2*_1_2*_1_2*_1_2, "1/10".to_string());
     }
 
     #[test]
@@ -636,19 +634,19 @@ mod test {
 
         // f32
         test(3.14159265359f32, ("13176795", "4194304"));
-        test(2f32.powf(&100.), ("1267650600228229401496703205376", "1"));
-        test(-2f32.powf(&100.), ("-1267650600228229401496703205376", "1"));
-        test(1.0 / 2f32.powf(&100.), ("1", "1267650600228229401496703205376"));
+        test(2f32.powf(100.), ("1267650600228229401496703205376", "1"));
+        test(-2f32.powf(100.), ("-1267650600228229401496703205376", "1"));
+        test(1.0 / 2f32.powf(100.), ("1", "1267650600228229401496703205376"));
         test(684729.48391f32, ("1369459", "2"));
         test(-8573.5918555f32, ("-4389679", "512"));
 
         // f64
         test(3.14159265359f64, ("3537118876014453", "1125899906842624"));
-        test(2f64.powf(&100.), ("1267650600228229401496703205376", "1"));
-        test(-2f64.powf(&100.), ("-1267650600228229401496703205376", "1"));
+        test(2f64.powf(100.), ("1267650600228229401496703205376", "1"));
+        test(-2f64.powf(100.), ("-1267650600228229401496703205376", "1"));
         test(684729.48391f64, ("367611342500051", "536870912"));
         test(-8573.5918555, ("-4713381968463931", "549755813888"));
-        test(1.0 / 2f64.powf(&100.), ("1", "1267650600228229401496703205376"));
+        test(1.0 / 2f64.powf(100.), ("1", "1267650600228229401496703205376"));
     }
 
     #[test]

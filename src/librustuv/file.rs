@@ -8,16 +8,15 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+use libc::{c_int, c_char, c_void, ssize_t};
+use libc;
 use std::c_str::CString;
 use std::c_str;
-use std::cast::transmute;
-use std::cast;
-use libc::{c_int, c_char, c_void, size_t, ssize_t};
-use libc;
-use std::rt::task::BlockedTask;
-use std::io::{FileStat, IoError};
-use std::io;
+use std::mem;
+use std::os;
+use std::rt::rtio::{IoResult, IoError};
 use std::rt::rtio;
+use std::rt::task::BlockedTask;
 
 use homing::{HomingIO, HomeHandle};
 use super::{Loop, UvError, uv_error_to_io_error, wait_until_woken_after, wakeup};
@@ -57,17 +56,25 @@ impl FsRequest {
         })
     }
 
-    pub fn lstat(loop_: &Loop, path: &CString) -> Result<FileStat, UvError> {
+    pub fn lstat(loop_: &Loop, path: &CString)
+        -> Result<rtio::FileStat, UvError>
+    {
         execute(|req, cb| unsafe {
             uvll::uv_fs_lstat(loop_.handle, req, path.with_ref(|p| p),
                               cb)
         }).map(|req| req.mkstat())
     }
 
-    pub fn stat(loop_: &Loop, path: &CString) -> Result<FileStat, UvError> {
+    pub fn stat(loop_: &Loop, path: &CString) -> Result<rtio::FileStat, UvError> {
         execute(|req, cb| unsafe {
             uvll::uv_fs_stat(loop_.handle, req, path.with_ref(|p| p),
                              cb)
+        }).map(|req| req.mkstat())
+    }
+
+    pub fn fstat(loop_: &Loop, fd: c_int) -> Result<rtio::FileStat, UvError> {
+        execute(|req, cb| unsafe {
+            uvll::uv_fs_fstat(loop_.handle, req, fd, cb)
         }).map(|req| req.mkstat())
     }
 
@@ -86,14 +93,12 @@ impl FsRequest {
             } else {
                 offset + written as i64
             };
+            let uvbuf = uvll::uv_buf_t {
+                base: buf.slice_from(written as uint).as_ptr(),
+                len: (buf.len() - written) as uvll::uv_buf_len_t,
+            };
             match execute(|req, cb| unsafe {
-                uvll::uv_fs_write(loop_.handle,
-                                  req,
-                                  fd,
-                                  buf.as_ptr().offset(written as int) as *c_void,
-                                  (buf.len() - written) as size_t,
-                                  offset,
-                                  cb)
+                uvll::uv_fs_write(loop_.handle, req, fd, &uvbuf, 1, offset, cb)
             }).map(|req| req.get_result()) {
                 Err(e) => return Err(e),
                 Ok(n) => { written += n as uint; }
@@ -106,9 +111,11 @@ impl FsRequest {
         -> Result<int, UvError>
     {
         execute(|req, cb| unsafe {
-            uvll::uv_fs_read(loop_.handle, req,
-                             fd, buf.as_ptr() as *c_void,
-                             buf.len() as size_t, offset, cb)
+            let uvbuf = uvll::uv_buf_t {
+                base: buf.as_ptr(),
+                len: buf.len() as uvll::uv_buf_len_t,
+            };
+            uvll::uv_fs_read(loop_.handle, req, fd, &uvbuf, 1, offset, cb)
         }).map(|req| {
             req.get_result() as int
         })
@@ -152,7 +159,7 @@ impl FsRequest {
     }
 
     pub fn readdir(loop_: &Loop, path: &CString, flags: c_int)
-        -> Result<Vec<Path>, UvError>
+        -> Result<Vec<CString>, UvError>
     {
         execute(|req, cb| unsafe {
             uvll::uv_fs_readdir(loop_.handle,
@@ -165,20 +172,22 @@ impl FsRequest {
                                               Some(req.get_result() as uint),
                                               |rel| {
                 let p = rel.as_bytes();
-                paths.push(parent.join(p.slice_to(rel.len())));
+                paths.push(parent.join(p.slice_to(rel.len())).to_c_str());
             });
             paths
         })
     }
 
-    pub fn readlink(loop_: &Loop, path: &CString) -> Result<Path, UvError> {
+    pub fn readlink(loop_: &Loop, path: &CString) -> Result<CString, UvError> {
         execute(|req, cb| unsafe {
             uvll::uv_fs_readlink(loop_.handle, req,
                                  path.with_ref(|p| p), cb)
         }).map(|req| {
-            Path::new(unsafe {
-                CString::new(req.get_ptr() as *libc::c_char, false)
-            })
+            // Be sure to clone the cstring so we get an independently owned
+            // allocation to work with and return.
+            unsafe {
+                CString::new(req.get_ptr() as *libc::c_char, false).clone()
+            }
         })
     }
 
@@ -262,43 +271,30 @@ impl FsRequest {
         unsafe { uvll::get_ptr_from_fs_req(self.req) }
     }
 
-    pub fn mkstat(&self) -> FileStat {
-        let path = unsafe { uvll::get_path_from_fs_req(self.req) };
-        let path = unsafe { Path::new(CString::new(path, false)) };
+    pub fn mkstat(&self) -> rtio::FileStat {
         let stat = self.get_stat();
         fn to_msec(stat: uvll::uv_timespec_t) -> u64 {
             // Be sure to cast to u64 first to prevent overflowing if the tv_sec
             // field is a 32-bit integer.
             (stat.tv_sec as u64) * 1000 + (stat.tv_nsec as u64) / 1000000
         }
-        let kind = match (stat.st_mode as c_int) & libc::S_IFMT {
-            libc::S_IFREG => io::TypeFile,
-            libc::S_IFDIR => io::TypeDirectory,
-            libc::S_IFIFO => io::TypeNamedPipe,
-            libc::S_IFBLK => io::TypeBlockSpecial,
-            libc::S_IFLNK => io::TypeSymlink,
-            _ => io::TypeUnknown,
-        };
-        FileStat {
-            path: path,
+        rtio::FileStat {
             size: stat.st_size as u64,
-            kind: kind,
-            perm: (stat.st_mode as io::FilePermission) & io::AllPermissions,
+            kind: stat.st_mode as u64,
+            perm: stat.st_mode as u64,
             created: to_msec(stat.st_birthtim),
             modified: to_msec(stat.st_mtim),
             accessed: to_msec(stat.st_atim),
-            unstable: io::UnstableFileStat {
-                device: stat.st_dev as u64,
-                inode: stat.st_ino as u64,
-                rdev: stat.st_rdev as u64,
-                nlink: stat.st_nlink as u64,
-                uid: stat.st_uid as u64,
-                gid: stat.st_gid as u64,
-                blksize: stat.st_blksize as u64,
-                blocks: stat.st_blocks as u64,
-                flags: stat.st_flags as u64,
-                gen: stat.st_gen as u64,
-            }
+            device: stat.st_dev as u64,
+            inode: stat.st_ino as u64,
+            rdev: stat.st_rdev as u64,
+            nlink: stat.st_nlink as u64,
+            uid: stat.st_uid as u64,
+            gid: stat.st_gid as u64,
+            blksize: stat.st_blksize as u64,
+            blocks: stat.st_blocks as u64,
+            flags: stat.st_flags as u64,
+            gen: stat.st_gen as u64,
         }
     }
 }
@@ -339,7 +335,7 @@ fn execute(f: |*uvll::uv_fs_t, uvll::uv_fs_cb| -> c_int)
 
     extern fn fs_cb(req: *uvll::uv_fs_t) {
         let slot: &mut Option<BlockedTask> = unsafe {
-            cast::transmute(uvll::get_data_for_req(req))
+            mem::transmute(uvll::get_data_for_req(req))
         };
         wakeup(slot);
     }
@@ -365,29 +361,26 @@ impl FileWatcher {
         }
     }
 
-    fn base_read(&mut self, buf: &mut [u8], offset: i64) -> Result<int, IoError> {
+    fn base_read(&mut self, buf: &mut [u8], offset: i64) -> IoResult<int> {
         let _m = self.fire_homing_missile();
         let r = FsRequest::read(&self.loop_, self.fd, buf, offset);
         r.map_err(uv_error_to_io_error)
     }
-    fn base_write(&mut self, buf: &[u8], offset: i64) -> Result<(), IoError> {
+    fn base_write(&mut self, buf: &[u8], offset: i64) -> IoResult<()> {
         let _m = self.fire_homing_missile();
         let r = FsRequest::write(&self.loop_, self.fd, buf, offset);
         r.map_err(uv_error_to_io_error)
     }
-    fn seek_common(&mut self, pos: i64, whence: c_int) ->
-        Result<u64, IoError>{
-        unsafe {
-            match libc::lseek(self.fd, pos as libc::off_t, whence) {
-                -1 => {
-                    Err(IoError {
-                        kind: io::OtherIoError,
-                        desc: "Failed to lseek.",
-                        detail: None
-                    })
-                },
-                n => Ok(n as u64)
-            }
+    fn seek_common(&self, pos: i64, whence: c_int) -> IoResult<u64>{
+        match unsafe { libc::lseek(self.fd, pos as libc::off_t, whence) } {
+            -1 => {
+                Err(IoError {
+                    code: os::errno() as uint,
+                    extra: 0,
+                    detail: None,
+                })
+            },
+            n => Ok(n as u64)
         }
     }
 }
@@ -421,45 +414,49 @@ impl Drop for FileWatcher {
 }
 
 impl rtio::RtioFileStream for FileWatcher {
-    fn read(&mut self, buf: &mut [u8]) -> Result<int, IoError> {
+    fn read(&mut self, buf: &mut [u8]) -> IoResult<int> {
         self.base_read(buf, -1)
     }
-    fn write(&mut self, buf: &[u8]) -> Result<(), IoError> {
+    fn write(&mut self, buf: &[u8]) -> IoResult<()> {
         self.base_write(buf, -1)
     }
-    fn pread(&mut self, buf: &mut [u8], offset: u64) -> Result<int, IoError> {
+    fn pread(&mut self, buf: &mut [u8], offset: u64) -> IoResult<int> {
         self.base_read(buf, offset as i64)
     }
-    fn pwrite(&mut self, buf: &[u8], offset: u64) -> Result<(), IoError> {
+    fn pwrite(&mut self, buf: &[u8], offset: u64) -> IoResult<()> {
         self.base_write(buf, offset as i64)
     }
-    fn seek(&mut self, pos: i64, whence: io::SeekStyle) -> Result<u64, IoError> {
+    fn seek(&mut self, pos: i64, whence: rtio::SeekStyle) -> IoResult<u64> {
         use libc::{SEEK_SET, SEEK_CUR, SEEK_END};
         let whence = match whence {
-            io::SeekSet => SEEK_SET,
-            io::SeekCur => SEEK_CUR,
-            io::SeekEnd => SEEK_END
+            rtio::SeekSet => SEEK_SET,
+            rtio::SeekCur => SEEK_CUR,
+            rtio::SeekEnd => SEEK_END
         };
         self.seek_common(pos, whence)
     }
-    fn tell(&self) -> Result<u64, IoError> {
+    fn tell(&self) -> IoResult<u64> {
         use libc::SEEK_CUR;
-        // this is temporary
-        let self_ = unsafe { cast::transmute_mut(self) };
-        self_.seek_common(0, SEEK_CUR)
+
+        self.seek_common(0, SEEK_CUR)
     }
-    fn fsync(&mut self) -> Result<(), IoError> {
+    fn fsync(&mut self) -> IoResult<()> {
         let _m = self.fire_homing_missile();
         FsRequest::fsync(&self.loop_, self.fd).map_err(uv_error_to_io_error)
     }
-    fn datasync(&mut self) -> Result<(), IoError> {
+    fn datasync(&mut self) -> IoResult<()> {
         let _m = self.fire_homing_missile();
         FsRequest::datasync(&self.loop_, self.fd).map_err(uv_error_to_io_error)
     }
-    fn truncate(&mut self, offset: i64) -> Result<(), IoError> {
+    fn truncate(&mut self, offset: i64) -> IoResult<()> {
         let _m = self.fire_homing_missile();
         let r = FsRequest::truncate(&self.loop_, self.fd, offset);
         r.map_err(uv_error_to_io_error)
+    }
+
+    fn fstat(&mut self) -> IoResult<rtio::FileStat> {
+        let _m = self.fire_homing_missile();
+        FsRequest::fstat(&self.loop_, self.fd).map_err(uv_error_to_io_error)
     }
 }
 
@@ -467,9 +464,7 @@ impl rtio::RtioFileStream for FileWatcher {
 mod test {
     use libc::c_int;
     use libc::{O_CREAT, O_RDWR, O_RDONLY, S_IWUSR, S_IRUSR};
-    use std::io;
     use std::str;
-    use std::slice;
     use super::FsRequest;
     use super::super::Loop;
     use super::super::local_loop;
@@ -505,8 +500,8 @@ mod test {
             let fd = result.fd;
 
             // read
-            let mut read_mem = slice::from_elem(1000, 0u8);
-            let result = FsRequest::read(l(), fd, read_mem, 0);
+            let mut read_mem = Vec::from_elem(1000, 0u8);
+            let result = FsRequest::read(l(), fd, read_mem.as_mut_slice(), 0);
             assert!(result.is_ok());
 
             let nread = result.unwrap();
@@ -536,6 +531,10 @@ mod test {
         assert!(result.is_ok());
         assert_eq!(result.unwrap().size, 5);
 
+        let result = FsRequest::fstat(l(), file.fd);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().size, 5);
+
         fn free<T>(_: T) {}
         free(file);
 
@@ -550,10 +549,6 @@ mod test {
 
         let result = FsRequest::mkdir(l(), path, mode);
         assert!(result.is_ok());
-
-        let result = FsRequest::stat(l(), path);
-        assert!(result.is_ok());
-        assert!(result.unwrap().kind == io::TypeDirectory);
 
         let result = FsRequest::rmdir(l(), path);
         assert!(result.is_ok());

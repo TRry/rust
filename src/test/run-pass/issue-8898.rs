@@ -8,9 +8,13 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#[feature(managed_boxes)];
+#![feature(managed_boxes)]
 
-fn assert_repr_eq<T>(obj : T, expected : ~str) {
+extern crate debug;
+
+use std::gc::GC;
+
+fn assert_repr_eq<T>(obj : T, expected : String) {
     assert_eq!(expected, format!("{:?}", obj));
 }
 
@@ -19,12 +23,12 @@ pub fn main() {
     let tf = [true, false];
     let x  = [(), ()];
     let slice = x.slice(0,1);
-    let z = @x;
+    let z = box(GC) x;
 
-    assert_repr_eq(abc, ~"[1, 2, 3]");
-    assert_repr_eq(tf, ~"[true, false]");
-    assert_repr_eq(x, ~"[(), ()]");
-    assert_repr_eq(slice, ~"&[()]");
-    assert_repr_eq(&x, ~"&[(), ()]");
-    assert_repr_eq(z, ~"@[(), ()]");
+    assert_repr_eq(abc, "[1, 2, 3]".to_string());
+    assert_repr_eq(tf, "[true, false]".to_string());
+    assert_repr_eq(x, "[(), ()]".to_string());
+    assert_repr_eq(slice, "&[()]".to_string());
+    assert_repr_eq(&x, "&[(), ()]".to_string());
+    assert_repr_eq(z, "box(GC) [(), ()]".to_string());
 }

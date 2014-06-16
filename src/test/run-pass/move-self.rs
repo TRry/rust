@@ -9,7 +9,7 @@
 // except according to those terms.
 
 struct S {
-    x: ~str
+    x: String
 }
 
 impl S {
@@ -23,6 +23,6 @@ impl S {
 }
 
 pub fn main() {
-    let x = S { x: ~"Hello!" };
+    let x = S { x: "Hello!".to_string() };
     x.foo();
 }

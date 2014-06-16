@@ -8,8 +8,9 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#[feature(managed_boxes)];
+#![feature(managed_boxes)]
 
+use std::gc::Gc;
 use std::mem;
 
 #[packed]
@@ -19,7 +20,7 @@ struct S4(u8,[u8, .. 3]);
 struct S5(u8, u32);
 
 #[packed]
-struct S13_str(i64, f32, u8, ~str);
+struct S13(i64, f32, u8);
 
 enum Foo {
     Bar = 1,
@@ -30,19 +31,18 @@ enum Foo {
 struct S3_Foo(u8, u16, Foo);
 
 #[packed]
-struct S7_Option(f32, u8, u16, Option<@f64>);
+struct S7_Option(f32, u8, u16, Option<Gc<f64>>);
 
 pub fn main() {
     assert_eq!(mem::size_of::<S4>(), 4);
 
     assert_eq!(mem::size_of::<S5>(), 5);
 
-    assert_eq!(mem::size_of::<S13_str>(),
-               13 + mem::size_of::<~str>());
+    assert_eq!(mem::size_of::<S13>(), 13);
 
     assert_eq!(mem::size_of::<S3_Foo>(),
                3 + mem::size_of::<Foo>());
 
     assert_eq!(mem::size_of::<S7_Option>(),
-              7 + mem::size_of::<Option<@f64>>());
+              7 + mem::size_of::<Option<Gc<f64>>>());
 }

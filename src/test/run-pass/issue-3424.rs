@@ -15,11 +15,13 @@ use std::path::{Path};
 use std::path;
 use std::result;
 
-type rsrc_loader = proc(path: &Path) -> result::Result<~str, ~str>;
+type rsrc_loader = proc(path: &Path) -> result::Result<String, String>;
 
 fn tester()
 {
-    let loader: rsrc_loader = proc(_path) {result::Ok(~"more blah")};
+    let loader: rsrc_loader = proc(_path) {
+        result::Ok("more blah".to_string())
+    };
 
     let path = path::Path::new("blah");
     assert!(loader(&path).is_ok());

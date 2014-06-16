@@ -9,8 +9,8 @@
 // except according to those terms.
 
 use std::default::Default;
-use std::hash::Hash;
-use std::{cast, mem, raw, ptr, slice};
+use std::hash;
+use std::{mem, raw, ptr, slice};
 use serialize::{Encodable, Decodable, Encoder, Decoder};
 
 /// A non-growable owned slice. This would preferably become `~[T]`
@@ -48,7 +48,7 @@ impl<T> OwnedSlice<T> {
         } else {
             let p = v.as_mut_ptr();
             // we own the allocation now
-            unsafe {cast::forget(v)}
+            unsafe {mem::forget(v)}
 
             OwnedSlice { data: p, len: len }
         }
@@ -60,7 +60,7 @@ impl<T> OwnedSlice<T> {
         unsafe {
             let ret = Vec::from_raw_parts(self.len, self.len, self.data);
             // the vector owns the allocation now
-            cast::forget(self);
+            mem::forget(self);
             ret
         }
     }
@@ -74,7 +74,7 @@ impl<T> OwnedSlice<T> {
             self.data as *T
         };
 
-        let slice: &[T] = unsafe {cast::transmute(raw::Slice {
+        let slice: &[T] = unsafe {mem::transmute(raw::Slice {
             data: ptr,
             len: self.len
         })};
@@ -107,21 +107,21 @@ impl<T: Clone> Clone for OwnedSlice<T> {
     }
 }
 
-impl<S: Writer, T: Hash<S>> Hash<S> for OwnedSlice<T> {
+impl<S: hash::Writer, T: hash::Hash<S>> hash::Hash<S> for OwnedSlice<T> {
     fn hash(&self, state: &mut S) {
         self.as_slice().hash(state)
     }
 }
 
-impl<T: Eq> Eq for OwnedSlice<T> {
+impl<T: PartialEq> PartialEq for OwnedSlice<T> {
     fn eq(&self, other: &OwnedSlice<T>) -> bool {
         self.as_slice() == other.as_slice()
     }
 }
 
-impl<T: TotalEq> TotalEq for OwnedSlice<T> {}
+impl<T: Eq> Eq for OwnedSlice<T> {}
 
-impl<T> Container for OwnedSlice<T> {
+impl<T> Collection for OwnedSlice<T> {
     fn len(&self) -> uint { self.len }
 }
 

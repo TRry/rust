@@ -10,16 +10,17 @@
 
 // aux-build:cci_class_cast.rs
 extern crate cci_class_cast;
+
 use std::to_str::ToStr;
 use cci_class_cast::kitty::cat;
 
-fn print_out(thing: ~ToStr, expected: ~str) {
+fn print_out(thing: Box<ToStr>, expected: String) {
   let actual = thing.to_str();
   println!("{}", actual);
-  assert_eq!(actual, expected);
+  assert_eq!(actual.to_string(), expected);
 }
 
 pub fn main() {
-  let nyan: ~ToStr = ~cat(0u, 2, ~"nyan") as ~ToStr;
-  print_out(nyan, ~"nyan");
+  let nyan: Box<ToStr> = box cat(0u, 2, "nyan".to_string()) as Box<ToStr>;
+  print_out(nyan, "nyan".to_string());
 }

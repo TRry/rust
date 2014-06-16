@@ -18,7 +18,7 @@ use parse::token;
 use parse::lexer::TokenAndSpan;
 
 use std::rc::Rc;
-use collections::HashMap;
+use std::collections::HashMap;
 
 ///an unzipping of `TokenTree`s
 #[deriving(Clone)]
@@ -58,7 +58,7 @@ pub fn new_tt_reader<'a>(sp_diag: &'a SpanHandler,
             dotdotdoted: false,
             sep: None,
         }),
-        interpolations: match interp { /* just a convienience */
+        interpolations: match interp { /* just a convenience */
             None => HashMap::new(),
             Some(x) => x,
         },
@@ -89,9 +89,10 @@ fn lookup_cur_matched(r: &TtReader, name: Ident) -> Rc<NamedMatch> {
     match matched_opt {
         Some(s) => lookup_cur_matched_by_matched(r, s),
         None => {
-            r.sp_diag.span_fatal(r.cur_span,
-                                 format!("unknown macro variable `{}`",
-                                         token::get_ident(name)));
+            r.sp_diag
+             .span_fatal(r.cur_span,
+                         format!("unknown macro variable `{}`",
+                                 token::get_ident(name)).as_slice());
         }
     }
 }
@@ -100,7 +101,7 @@ fn lookup_cur_matched(r: &TtReader, name: Ident) -> Rc<NamedMatch> {
 enum LockstepIterSize {
     LisUnconstrained,
     LisConstraint(uint, Ident),
-    LisContradiction(~str),
+    LisContradiction(String),
 }
 
 fn lis_merge(lhs: LockstepIterSize, rhs: LockstepIterSize) -> LockstepIterSize {
@@ -116,7 +117,7 @@ fn lis_merge(lhs: LockstepIterSize, rhs: LockstepIterSize) -> LockstepIterSize {
                 let r_n = token::get_ident(r_id);
                 LisContradiction(format!("inconsistent lockstep iteration: \
                                           '{}' has {} items, but '{}' has {}",
-                                          l_n, l_len, r_n, r_len))
+                                          l_n, l_len, r_n, r_len).to_string())
             }
         }
     }
@@ -223,7 +224,7 @@ pub fn tt_next_token(r: &mut TtReader) -> TokenAndSpan {
                         }
                         LisContradiction(ref msg) => {
                             // FIXME #2887 blame macro invoker instead
-                            r.sp_diag.span_fatal(sp.clone(), *msg);
+                            r.sp_diag.span_fatal(sp.clone(), msg.as_slice());
                         }
                     LisConstraint(len, _) => {
                         if len == 0 {
@@ -254,7 +255,7 @@ pub fn tt_next_token(r: &mut TtReader) -> TokenAndSpan {
                     /* sidestep the interpolation tricks for ident because
                        (a) idents can be in lots of places, so it'd be a pain
                        (b) we actually can, since it's a token. */
-                    MatchedNonterminal(NtIdent(~sn,b)) => {
+                    MatchedNonterminal(NtIdent(box sn, b)) => {
                         r.cur_span = sp;
                         r.cur_tok = IDENT(sn,b);
                         return ret_val;
@@ -269,7 +270,7 @@ pub fn tt_next_token(r: &mut TtReader) -> TokenAndSpan {
                         r.sp_diag.span_fatal(
                             r.cur_span, /* blame the macro writer */
                             format!("variable '{}' is still repeating at this depth",
-                                    token::get_ident(ident)));
+                                    token::get_ident(ident)).as_slice());
                     }
                 }
             }

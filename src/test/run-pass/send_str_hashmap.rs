@@ -10,43 +10,43 @@
 
 extern crate collections;
 
-use std::container::{Map, MutableMap};
+use std::collections::{Map, MutableMap};
 use std::str::{SendStr, Owned, Slice};
-use collections::HashMap;
+use std::collections::HashMap;
 use std::option::Some;
 
 pub fn main() {
     let mut map: HashMap<SendStr, uint> = HashMap::new();
     assert!(map.insert(Slice("foo"), 42));
-    assert!(!map.insert(Owned(~"foo"), 42));
+    assert!(!map.insert(Owned("foo".to_string()), 42));
     assert!(!map.insert(Slice("foo"), 42));
-    assert!(!map.insert(Owned(~"foo"), 42));
+    assert!(!map.insert(Owned("foo".to_string()), 42));
 
     assert!(!map.insert(Slice("foo"), 43));
-    assert!(!map.insert(Owned(~"foo"), 44));
+    assert!(!map.insert(Owned("foo".to_string()), 44));
     assert!(!map.insert(Slice("foo"), 45));
-    assert!(!map.insert(Owned(~"foo"), 46));
+    assert!(!map.insert(Owned("foo".to_string()), 46));
 
     let v = 46;
 
-    assert_eq!(map.find(&Owned(~"foo")), Some(&v));
+    assert_eq!(map.find(&Owned("foo".to_string())), Some(&v));
     assert_eq!(map.find(&Slice("foo")), Some(&v));
 
     let (a, b, c, d) = (50, 51, 52, 53);
 
     assert!(map.insert(Slice("abc"), a));
-    assert!(map.insert(Owned(~"bcd"), b));
+    assert!(map.insert(Owned("bcd".to_string()), b));
     assert!(map.insert(Slice("cde"), c));
-    assert!(map.insert(Owned(~"def"), d));
+    assert!(map.insert(Owned("def".to_string()), d));
 
     assert!(!map.insert(Slice("abc"), a));
-    assert!(!map.insert(Owned(~"bcd"), b));
+    assert!(!map.insert(Owned("bcd".to_string()), b));
     assert!(!map.insert(Slice("cde"), c));
-    assert!(!map.insert(Owned(~"def"), d));
+    assert!(!map.insert(Owned("def".to_string()), d));
 
-    assert!(!map.insert(Owned(~"abc"), a));
+    assert!(!map.insert(Owned("abc".to_string()), a));
     assert!(!map.insert(Slice("bcd"), b));
-    assert!(!map.insert(Owned(~"cde"), c));
+    assert!(!map.insert(Owned("cde".to_string()), c));
     assert!(!map.insert(Slice("def"), d));
 
     assert_eq!(map.find_equiv(&("abc")), Some(&a));
@@ -54,18 +54,8 @@ pub fn main() {
     assert_eq!(map.find_equiv(&("cde")), Some(&c));
     assert_eq!(map.find_equiv(&("def")), Some(&d));
 
-    assert_eq!(map.find_equiv(&(~"abc")), Some(&a));
-    assert_eq!(map.find_equiv(&(~"bcd")), Some(&b));
-    assert_eq!(map.find_equiv(&(~"cde")), Some(&c));
-    assert_eq!(map.find_equiv(&(~"def")), Some(&d));
-
     assert_eq!(map.find_equiv(&Slice("abc")), Some(&a));
     assert_eq!(map.find_equiv(&Slice("bcd")), Some(&b));
     assert_eq!(map.find_equiv(&Slice("cde")), Some(&c));
     assert_eq!(map.find_equiv(&Slice("def")), Some(&d));
-
-    assert_eq!(map.find_equiv(&Owned(~"abc")), Some(&a));
-    assert_eq!(map.find_equiv(&Owned(~"bcd")), Some(&b));
-    assert_eq!(map.find_equiv(&Owned(~"cde")), Some(&c));
-    assert_eq!(map.find_equiv(&Owned(~"def")), Some(&d));
 }

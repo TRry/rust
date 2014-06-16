@@ -16,15 +16,16 @@ use ext::base::*;
 use ext::base;
 use ext::build::AstBuilder;
 
-use std::char;
 
-pub fn expand_syntax_ext(cx: &mut ExtCtxt, sp: Span, tts: &[ast::TokenTree]) -> base::MacResult {
+pub fn expand_syntax_ext(cx: &mut ExtCtxt, sp: Span, tts: &[ast::TokenTree])
+                         -> Box<base::MacResult> {
     // Gather all argument expressions
     let exprs = match get_exprs_from_tts(cx, sp, tts) {
-        None => return MacResult::dummy_expr(sp),
+        None => return DummyResult::expr(sp),
         Some(e) => e,
     };
     let mut bytes = Vec::new();
+    let mut err = false;
 
     for expr in exprs.iter() {
         match expr.node {
@@ -40,7 +41,8 @@ pub fn expand_syntax_ext(cx: &mut ExtCtxt, sp: Span, tts: &[ast::TokenTree]) -> 
                 // u8 literal, push to vector expression
                 ast::LitUint(v, ast::TyU8) => {
                     if v > 0xFF {
-                        cx.span_err(expr.span, "too large u8 literal in bytes!")
+                        cx.span_err(expr.span, "too large u8 literal in bytes!");
+                        err = true;
                     } else {
                         bytes.push(cx.expr_u8(expr.span, v as u8));
                     }
@@ -49,9 +51,11 @@ pub fn expand_syntax_ext(cx: &mut ExtCtxt, sp: Span, tts: &[ast::TokenTree]) -> 
                 // integer literal, push to vector expression
                 ast::LitIntUnsuffixed(v) => {
                     if v > 0xFF {
-                        cx.span_err(expr.span, "too large integer literal in bytes!")
+                        cx.span_err(expr.span, "too large integer literal in bytes!");
+                        err = true;
                     } else if v < 0 {
-                        cx.span_err(expr.span, "negative integer literal in bytes!")
+                        cx.span_err(expr.span, "negative integer literal in bytes!");
+                        err = true;
                     } else {
                         bytes.push(cx.expr_u8(expr.span, v as u8));
                     }
@@ -59,20 +63,49 @@ pub fn expand_syntax_ext(cx: &mut ExtCtxt, sp: Span, tts: &[ast::TokenTree]) -> 
 
                 // char literal, push to vector expression
                 ast::LitChar(v) => {
-                    if char::from_u32(v).unwrap().is_ascii() {
+                    if v.is_ascii() {
                         bytes.push(cx.expr_u8(expr.span, v as u8));
                     } else {
-                        cx.span_err(expr.span, "non-ascii char literal in bytes!")
+                        cx.span_err(expr.span, "non-ascii char literal in bytes!");
+                        err = true;
                     }
                 }
 
-                _ => cx.span_err(expr.span, "unsupported literal in bytes!")
+                _ => {
+                    cx.span_err(expr.span, "unsupported literal in bytes!");
+                    err = true;
+                }
             },
 
-            _ => cx.span_err(expr.span, "non-literal in bytes!")
+            _ => {
+                cx.span_err(expr.span, "non-literal in bytes!");
+                err = true;
+            }
         }
     }
 
+    // For some reason using quote_expr!() here aborts if we threw an error.
+    // I'm assuming that the end of the recursive parse tricks the compiler
+    // into thinking this is a good time to stop. But we'd rather keep going.
+    if err {
+        // Since the compiler will stop after the macro expansion phase anyway, we
+        // don't need type info, so we can just return a DummyResult
+        return DummyResult::expr(sp);
+    }
+
     let e = cx.expr_vec_slice(sp, bytes);
-    MRExpr(e)
+    let ty = cx.ty(sp, ast::TyVec(cx.ty_ident(sp, cx.ident_of("u8"))));
+    let lifetime = cx.lifetime(sp, cx.ident_of("'static").name);
+    let item = cx.item_static(sp,
+                              cx.ident_of("BYTES"),
+                              cx.ty_rptr(sp,
+                                         ty,
+                                         Some(lifetime),
+                                         ast::MutImmutable),
+                              ast::MutImmutable,
+                              e);
+    let e = cx.expr_block(cx.block(sp,
+                                   vec!(cx.stmt_item(sp, item)),
+                                   Some(cx.expr_ident(sp, cx.ident_of("BYTES")))));
+    MacExpr::new(e)
 }

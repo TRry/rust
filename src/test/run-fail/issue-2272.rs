@@ -8,21 +8,23 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#[feature(managed_boxes)];
+#![feature(managed_boxes)]
 
 // error-pattern:explicit failure
 // Issue #2272 - unwind this without leaking the unique pointer
 
-struct X { y: Y, a: ~int }
+use std::gc::{Gc, GC};
 
-struct Y { z: @int }
+struct X { y: Y, a: Box<int> }
+
+struct Y { z: Gc<int> }
 
 fn main() {
     let _x = X {
         y: Y {
-            z: @0
+            z: box(GC) 0
         },
-        a: ~0
+        a: box 0
     };
     fail!();
 }

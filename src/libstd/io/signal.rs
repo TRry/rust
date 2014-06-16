@@ -26,14 +26,15 @@ use iter::Iterator;
 use kinds::Send;
 use mem::drop;
 use option::{Some, None};
+use owned::Box;
 use result::{Ok, Err};
-use rt::rtio::{IoFactory, LocalIo, RtioSignal};
-use slice::{ImmutableVector, OwnedVector};
+use rt::rtio::{IoFactory, LocalIo, RtioSignal, Callback};
+use slice::ImmutableVector;
 use vec::Vec;
 
 /// Signals that can be sent and received
 #[repr(int)]
-#[deriving(Eq, Hash, Show)]
+#[deriving(PartialEq, Hash, Show)]
 pub enum Signum {
     /// Equivalent to SIGBREAK, delivered when the user presses Ctrl-Break.
     Break = 21i,
@@ -81,7 +82,7 @@ pub enum Signum {
 /// ```
 pub struct Listener {
     /// A map from signums to handles to keep the handles in memory
-    handles: Vec<(Signum, ~RtioSignal:Send)>,
+    handles: Vec<(Signum, Box<RtioSignal + Send>)>,
     /// This is where all the handles send signums, which are received by
     /// the clients from the receiver.
     tx: Sender<Signum>,
@@ -121,17 +122,28 @@ impl Listener {
     /// If this function fails to register a signal handler, then an error will
     /// be returned.
     pub fn register(&mut self, signum: Signum) -> io::IoResult<()> {
+        struct SignalCallback {
+            signum: Signum,
+            tx: Sender<Signum>,
+        }
+        impl Callback for SignalCallback {
+            fn call(&mut self) { self.tx.send(self.signum) }
+        }
+
         if self.handles.iter().any(|&(sig, _)| sig == signum) {
             return Ok(()); // self is already listening to signum, so succeed
         }
         match LocalIo::maybe_raise(|io| {
-            io.signal(signum, self.tx.clone())
+            io.signal(signum as int, box SignalCallback {
+                signum: signum,
+                tx: self.tx.clone(),
+            })
         }) {
             Ok(handle) => {
                 self.handles.push((signum, handle));
                 Ok(())
             }
-            Err(e) => Err(e)
+            Err(e) => Err(io::IoError::from_rtio_error(e))
         }
     }
 
@@ -149,6 +161,7 @@ impl Listener {
 
 #[cfg(test, unix)]
 mod test_unix {
+    use prelude::*;
     use libc;
     use comm::Empty;
     use io::timer;
@@ -199,7 +212,7 @@ mod test_unix {
         s2.unregister(Interrupt);
         sigint();
         timer::sleep(10);
-        assert_eq!(s2.rx.try_recv(), Empty);
+        assert_eq!(s2.rx.try_recv(), Err(Empty));
     }
 }
 

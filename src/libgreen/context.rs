@@ -8,21 +8,21 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use std::uint;
-use std::cast::{transmute, transmute_mut_unsafe};
 use stack::Stack;
+use std::uint;
+use std::mem::transmute;
 use std::rt::stack;
 use std::raw;
 
 // FIXME #7761: Registers is boxed so that it is 16-byte aligned, for storing
 // SSE regs.  It would be marginally better not to do this. In C++ we
 // use an attribute on a struct.
-// FIXME #7761: It would be nice to define regs as `~Option<Registers>` since
-// the registers are sometimes empty, but the discriminant would
+// FIXME #7761: It would be nice to define regs as `Box<Option<Registers>>`
+// since the registers are sometimes empty, but the discriminant would
 // then misalign the regs again.
 pub struct Context {
     /// Hold the registers while the task or scheduler is suspended
-    regs: ~Registers,
+    regs: Box<Registers>,
     /// Lower bound and upper bound for the stack
     stack_bounds: Option<(uint, uint)>,
 }
@@ -46,11 +46,11 @@ impl Context {
     /// FIXME: this is basically an awful the interface. The main reason for
     ///        this is to reduce the number of allocations made when a green
     ///        task is spawned as much as possible
-    pub fn new(init: InitFn, arg: uint, start: proc(),
+    pub fn new(init: InitFn, arg: uint, start: proc():Send,
                stack: &mut Stack) -> Context {
 
         let sp: *uint = stack.end();
-        let sp: *mut uint = unsafe { transmute_mut_unsafe(sp) };
+        let sp: *mut uint = sp as *mut uint;
         // Save and then immediately load the current context,
         // which we will then modify to call the given function when restored
         let mut regs = new_regs();
@@ -87,10 +87,10 @@ impl Context {
     pub fn swap(out_context: &mut Context, in_context: &Context) {
         rtdebug!("swapping contexts");
         let out_regs: &mut Registers = match out_context {
-            &Context { regs: ~ref mut r, .. } => r
+            &Context { regs: box ref mut r, .. } => r
         };
         let in_regs: &Registers = match in_context {
-            &Context { regs: ~ref r, .. } => r
+            &Context { regs: box ref r, .. } => r
         };
 
         rtdebug!("noting the stack limit and doing raw swap");
@@ -143,6 +143,7 @@ extern {
 // stacks are disabled.
 
 #[cfg(target_arch = "x86")]
+#[repr(C)]
 struct Registers {
     eax: u32, ebx: u32, ecx: u32, edx: u32,
     ebp: u32, esi: u32, edi: u32, esp: u32,
@@ -151,8 +152,8 @@ struct Registers {
 }
 
 #[cfg(target_arch = "x86")]
-fn new_regs() -> ~Registers {
-    ~Registers {
+fn new_regs() -> Box<Registers> {
+    box Registers {
         eax: 0, ebx: 0, ecx: 0, edx: 0,
         ebp: 0, esi: 0, edi: 0, esp: 0,
         cs: 0, ds: 0, ss: 0, es: 0, fs: 0, gs: 0,
@@ -190,9 +191,9 @@ type Registers = [uint, ..34];
 type Registers = [uint, ..22];
 
 #[cfg(windows, target_arch = "x86_64")]
-fn new_regs() -> ~Registers { ~([0, .. 34]) }
+fn new_regs() -> Box<Registers> { box() ([0, .. 34]) }
 #[cfg(not(windows), target_arch = "x86_64")]
-fn new_regs() -> ~Registers { ~([0, .. 22]) }
+fn new_regs() -> Box<Registers> { box() ([0, .. 22]) }
 
 #[cfg(target_arch = "x86_64")]
 fn initialize_call_frame(regs: &mut Registers, fptr: InitFn, arg: uint,
@@ -226,7 +227,7 @@ fn initialize_call_frame(regs: &mut Registers, fptr: InitFn, arg: uint,
     regs[RUSTRT_R14] = procedure.env as uint;
     regs[RUSTRT_R15] = fptr as uint;
 
-    // These registers are picked up by the regulard context switch paths. These
+    // These registers are picked up by the regular context switch paths. These
     // will put us in "mostly the right context" except for frobbing all the
     // arguments to the right place. We have the small trampoline code inside of
     // rust_bootstrap_green_task to do that.
@@ -241,7 +242,7 @@ fn initialize_call_frame(regs: &mut Registers, fptr: InitFn, arg: uint,
 type Registers = [uint, ..32];
 
 #[cfg(target_arch = "arm")]
-fn new_regs() -> ~Registers { ~([0, .. 32]) }
+fn new_regs() -> Box<Registers> { box {[0, .. 32]} }
 
 #[cfg(target_arch = "arm")]
 fn initialize_call_frame(regs: &mut Registers, fptr: InitFn, arg: uint,
@@ -270,7 +271,7 @@ fn initialize_call_frame(regs: &mut Registers, fptr: InitFn, arg: uint,
 type Registers = [uint, ..32];
 
 #[cfg(target_arch = "mips")]
-fn new_regs() -> ~Registers { ~([0, .. 32]) }
+fn new_regs() -> Box<Registers> { box {[0, .. 32]} }
 
 #[cfg(target_arch = "mips")]
 fn initialize_call_frame(regs: &mut Registers, fptr: InitFn, arg: uint,

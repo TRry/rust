@@ -8,16 +8,20 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#[feature(managed_boxes)];
+#![feature(managed_boxes)]
+
+extern crate debug;
+
+use std::gc::{GC, Gc};
 
 fn magic(x: A) { println!("{:?}", x); }
-fn magic2(x: @int) { println!("{:?}", x); }
+fn magic2(x: Gc<int>) { println!("{:?}", x); }
 
-struct A { a: @int }
+struct A { a: Gc<int> }
 
 pub fn main() {
-    let a = A {a: @10};
-    let b = @10;
-    magic(a); magic(A {a: @20});
-    magic2(b); magic2(@20);
+    let a = A {a: box(GC) 10};
+    let b = box(GC) 10;
+    magic(a); magic(A {a: box(GC) 20});
+    magic2(b); magic2(box(GC) 20);
 }

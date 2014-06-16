@@ -74,7 +74,7 @@ $$(TLIB$(1)_T_$(2)_H_$(3))/stamp.$(4):				    \
 		$$(CRATE_FULLDEPS_$(1)_T_$(2)_H_$(3)_$(4))	    \
 		$$(TSREQ$(1)_T_$(2)_H_$(3))			    \
 		| $$(TLIB$(1)_T_$(2)_H_$(3))/
-	@$$(call E, oxidize: $$(@D)/lib$(4))
+	@$$(call E, rustc: $$(@D)/lib$(4))
 	$$(call REMOVE_ALL_OLD_GLOB_MATCHES,\
 	    $$(dir $$@)$$(call CFG_LIB_GLOB_$(2),$(4)))
 	$$(call REMOVE_ALL_OLD_GLOB_MATCHES,\
@@ -83,6 +83,7 @@ $$(TLIB$(1)_T_$(2)_H_$(3))/stamp.$(4):				    \
 		$$(WFLAGS_ST$(1)) \
 		-L "$$(RT_OUTPUT_DIR_$(2))" \
 		-L "$$(LLVM_LIBDIR_$(2))" \
+		-L "$$(dir $$(LLVM_STDCPP_LOCATION_$(2)))" \
 		--out-dir $$(@D) $$<
 	@touch $$@
 	$$(call LIST_ALL_OLD_GLOB_MATCHES,\
@@ -113,7 +114,7 @@ $$(TBIN$(1)_T_$(2)_H_$(3))/$(4)$$(X_$(2)):			\
 		    $$(TLIB$(1)_T_$(2)_H_$(3))/stamp.$$(dep))	\
 		$$(TSREQ$(1)_T_$(2)_H_$(3))			\
 		| $$(TBIN$(1)_T_$(4)_H_$(3))/
-	@$$(call E, oxidize: $$@)
+	@$$(call E, rustc: $$@)
 	$$(STAGE$(1)_T_$(2)_H_$(3)) -o $$@ $$< --cfg $(4)
 
 endef

@@ -8,17 +8,23 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+extern crate debug;
+
 use std::task;
 
-fn x(s: ~str, n: int) {
+fn x(s: String, n: int) {
     println!("{:?}", s);
     println!("{:?}", n);
 }
 
 pub fn main() {
-    task::spawn(proc() x(~"hello from first spawned fn", 65) );
-    task::spawn(proc() x(~"hello from second spawned fn", 66) );
-    task::spawn(proc() x(~"hello from third spawned fn", 67) );
+    task::spawn(proc() x("hello from first spawned fn".to_string(), 65) );
+    task::spawn(proc() x("hello from second spawned fn".to_string(), 66) );
+    task::spawn(proc() x("hello from third spawned fn".to_string(), 67) );
     let mut i: int = 30;
-    while i > 0 { i = i - 1; println!("parent sleeping"); task::deschedule(); }
+    while i > 0 {
+        i = i - 1;
+        println!("parent sleeping");
+        task::deschedule();
+    }
 }

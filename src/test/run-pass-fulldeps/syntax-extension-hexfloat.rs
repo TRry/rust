@@ -10,10 +10,9 @@
 
 // ignore-stage1
 // ignore-pretty
-// ignore-cross-compile #12102
 
 #![feature(phase)]
-#[phase(syntax)]
+#[phase(plugin)]
 extern crate hexfloat;
 
 pub fn main() {

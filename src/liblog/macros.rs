@@ -22,7 +22,7 @@
 ///
 /// ```
 /// #![feature(phase)]
-/// #[phase(syntax, link)] extern crate log;
+/// #[phase(plugin, link)] extern crate log;
 ///
 /// # fn main() {
 /// log!(log::DEBUG, "this is a debug message");
@@ -33,9 +33,14 @@
 #[macro_export]
 macro_rules! log(
     ($lvl:expr, $($arg:tt)+) => ({
+        static LOC: ::log::LogLocation = ::log::LogLocation {
+            line: line!(),
+            file: file!(),
+            module_path: module_path!(),
+        };
         let lvl = $lvl;
         if log_enabled!(lvl) {
-            format_args!(|args| { ::log::log(lvl, args) }, $($arg)+)
+            format_args!(|args| { ::log::log(lvl, &LOC, args) }, $($arg)+)
         }
     })
 )
@@ -46,7 +51,7 @@ macro_rules! log(
 ///
 /// ```
 /// #![feature(phase)]
-/// #[phase(syntax, link)] extern crate log;
+/// #[phase(plugin, link)] extern crate log;
 ///
 /// # fn main() {
 /// # let error = 3;
@@ -64,7 +69,7 @@ macro_rules! error(
 ///
 /// ```
 /// #![feature(phase)]
-/// #[phase(syntax, link)] extern crate log;
+/// #[phase(plugin, link)] extern crate log;
 ///
 /// # fn main() {
 /// # let code = 3;
@@ -82,7 +87,7 @@ macro_rules! warn(
 ///
 /// ```
 /// #![feature(phase)]
-/// #[phase(syntax, link)] extern crate log;
+/// #[phase(plugin, link)] extern crate log;
 ///
 /// # fn main() {
 /// # let ret = 3;
@@ -102,7 +107,7 @@ macro_rules! info(
 ///
 /// ```
 /// #![feature(phase)]
-/// #[phase(syntax, link)] extern crate log;
+/// #[phase(plugin, link)] extern crate log;
 ///
 /// # fn main() {
 /// debug!("x = {x}, y = {y}", x=10, y=20);
@@ -119,7 +124,7 @@ macro_rules! debug(
 ///
 /// ```
 /// #![feature(phase)]
-/// #[phase(syntax, link)] extern crate log;
+/// #[phase(plugin, link)] extern crate log;
 ///
 /// # fn main() {
 /// # struct Point { x: int, y: int }

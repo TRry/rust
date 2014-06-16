@@ -13,12 +13,14 @@
 // Test that a class with an unsendable field can't be
 // sent
 
+use std::gc::{Gc, GC};
+
 struct foo {
   i: int,
-  j: @~str,
+  j: Gc<String>,
 }
 
-fn foo(i:int, j: @~str) -> foo {
+fn foo(i:int, j: Gc<String>) -> foo {
     foo {
         i: i,
         j: j
@@ -26,7 +28,7 @@ fn foo(i:int, j: @~str) -> foo {
 }
 
 fn main() {
-  let cat = ~"kitty";
+  let cat = "kitty".to_string();
   let (tx, _) = channel(); //~ ERROR does not fulfill `Send`
-  tx.send(foo(42, @(cat))); //~ ERROR does not fulfill `Send`
+  tx.send(foo(42, box(GC) (cat))); //~ ERROR does not fulfill `Send`
 }

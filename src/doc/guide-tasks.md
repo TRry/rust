@@ -48,13 +48,7 @@ concurrency at this writing:
 * [`std::task`] - All code relating to tasks and task scheduling,
 * [`std::comm`] - The message passing interface,
 * [`sync::DuplexStream`] - An extension of `pipes::stream` that allows both sending and receiving,
-* [`sync::SyncSender`] - An extension of `pipes::stream` that provides synchronous message sending,
-* [`sync::SyncReceiver`] - An extension of `pipes::stream` that acknowledges each message received,
-* [`sync::rendezvous`] - Creates a stream whose channel, upon sending a message, blocks until the
-    message is received.
 * [`sync::Arc`] - The Arc (atomically reference counted) type, for safely sharing immutable data,
-* [`sync::RWArc`] - A dual-mode Arc protected by a reader-writer lock,
-* [`sync::MutexArc`] - An Arc with mutable data protected by a blocking mutex,
 * [`sync::Semaphore`] - A counting, blocking, bounded-waiting semaphore,
 * [`sync::Mutex`] - A blocking, bounded-waiting, mutual exclusion lock with an associated
     FIFO condition variable,
@@ -70,13 +64,8 @@ concurrency at this writing:
 [`std::task`]: std/task/index.html
 [`std::comm`]: std/comm/index.html
 [`sync::DuplexStream`]: sync/struct.DuplexStream.html
-[`sync::SyncSender`]: sync/struct.SyncSender.html
-[`sync::SyncReceiver`]: sync/struct.SyncReceiver.html
-[`sync::rendezvous`]: sync/fn.rendezvous.html
 [`sync::Arc`]: sync/struct.Arc.html
-[`sync::RWArc`]: sync/struct.RWArc.html
-[`sync::MutexArc`]: sync/struct.MutexArc.html
-[`sync::Semaphore`]: sync/struct.Semaphore.html
+[`sync::Semaphore`]: sync/raw/struct.Semaphore.html
 [`sync::Mutex`]: sync/struct.Mutex.html
 [`sync::RWLock`]: sync/struct.RWLock.html
 [`sync::Barrier`]: sync/struct.Barrier.html
@@ -100,7 +89,10 @@ closure in the new task.
 fn print_message() { println!("I am running in a different task!"); }
 spawn(print_message);
 
-// Print something more profound in a different task using a lambda expression
+// Print something profound in a different task using a `proc` expression
+// The `proc` expression evaluates to an (unnamed) owned closure.
+// That closure will call `println!(...)` when the spawned task runs.
+
 spawn(proc() println!("I am also running in a different task!") );
 ~~~~
 
@@ -255,10 +247,9 @@ might look like the example below.
 
 ~~~
 # use std::task::spawn;
-# use std::slice;
 
 // Create a vector of ports, one for each child task
-let rxs = slice::from_fn(3, |init_val| {
+let rxs = Vec::from_fn(3, |init_val| {
     let (tx, rx) = channel();
     spawn(proc() {
         tx.send(some_expensive_computation(init_val));
@@ -278,7 +269,7 @@ later.
 The basic example below illustrates this.
 
 ~~~
-extern crate sync;
+use std::sync::Future;
 
 # fn main() {
 # fn make_a_sandwich() {};
@@ -287,9 +278,9 @@ fn fib(n: u64) -> u64 {
     12586269025
 }
 
-let mut delayed_fib = sync::Future::spawn(proc() fib(50));
+let mut delayed_fib = Future::spawn(proc() fib(50));
 make_a_sandwich();
-println!("fib(50) = {:?}", delayed_fib.get())
+println!("fib(50) = {}", delayed_fib.get())
 # }
 ~~~
 
@@ -303,18 +294,17 @@ Here is another example showing how futures allow you to background computations
 be distributed on the available cores.
 
 ~~~
-# extern crate sync;
-# use std::slice;
+# use std::sync::Future;
 fn partial_sum(start: uint) -> f64 {
     let mut local_sum = 0f64;
     for num in range(start*100000, (start+1)*100000) {
-        local_sum += (num as f64 + 1.0).powf(&-2.0);
+        local_sum += (num as f64 + 1.0).powf(-2.0);
     }
     local_sum
 }
 
 fn main() {
-    let mut futures = slice::from_fn(1000, |ind| sync::Future::spawn( proc() { partial_sum(ind) }));
+    let mut futures = Vec::from_fn(1000, |ind| Future::spawn( proc() { partial_sum(ind) }));
 
     let mut final_res = 0f64;
     for ft in futures.mut_iter()  {
@@ -339,28 +329,22 @@ Here is a small example showing how to use Arcs. We wish to run concurrently sev
 a single large vector of floats. Each task needs the full vector to perform its duty.
 
 ~~~
-extern crate rand;
-extern crate sync;
+use std::rand;
+use std::sync::Arc;
 
-use std::slice;
-use sync::Arc;
-
-fn pnorm(nums: &~[f64], p: uint) -> f64 {
-    nums.iter().fold(0.0, |a,b| a+(*b).powf(&(p as f64)) ).powf(&(1.0 / (p as f64)))
+fn pnorm(nums: &[f64], p: uint) -> f64 {
+    nums.iter().fold(0.0, |a, b| a + b.powf(p as f64)).powf(1.0 / (p as f64))
 }
 
 fn main() {
-    let numbers = slice::from_fn(1000000, |_| rand::random::<f64>());
+    let numbers = Vec::from_fn(1000000, |_| rand::random::<f64>());
     let numbers_arc = Arc::new(numbers);
 
     for num in range(1u, 10) {
-        let (tx, rx) = channel();
-        tx.send(numbers_arc.clone());
+        let task_numbers = numbers_arc.clone();
 
         spawn(proc() {
-            let local_arc : Arc<~[f64]> = rx.recv();
-            let task_numbers = &*local_arc;
-            println!("{}-norm = {}", num, pnorm(task_numbers, num));
+            println!("{}-norm = {}", num, pnorm(task_numbers.as_slice(), num));
         });
     }
 }
@@ -371,51 +355,33 @@ at the power given as argument and takes the inverse power of this value). The A
 created by the line
 
 ~~~
-# extern crate sync;
-# extern crate rand;
-# use sync::Arc;
-# use std::slice;
+# use std::rand;
+# use std::sync::Arc;
 # fn main() {
-# let numbers = slice::from_fn(1000000, |_| rand::random::<f64>());
+# let numbers = Vec::from_fn(1000000, |_| rand::random::<f64>());
 let numbers_arc=Arc::new(numbers);
 # }
 ~~~
 
-and a clone of it is sent to each task
+and a unique clone is captured for each task via a procedure. This only copies the wrapper and not
+it's contents. Within the task's procedure, the captured Arc reference can be used as an immutable
+reference to the underlying vector as if it were local.
 
 ~~~
-# extern crate sync;
-# extern crate rand;
-# use sync::Arc;
-# use std::slice;
+# use std::rand;
+# use std::sync::Arc;
+# fn pnorm(nums: &[f64], p: uint) -> f64 { 4.0 }
 # fn main() {
-# let numbers=slice::from_fn(1000000, |_| rand::random::<f64>());
+# let numbers=Vec::from_fn(1000000, |_| rand::random::<f64>());
 # let numbers_arc = Arc::new(numbers);
-# let (tx, rx) = channel();
-tx.send(numbers_arc.clone());
+# let num = 4;
+let task_numbers = numbers_arc.clone();
+spawn(proc() {
+    // Capture task_numbers and use it as if it was the underlying vector
+    println!("{}-norm = {}", num, pnorm(task_numbers.as_slice(), num));
+});
 # }
 ~~~
-
-copying only the wrapper and not its contents.
-
-Each task recovers the underlying data by
-
-~~~
-# extern crate sync;
-# extern crate rand;
-# use sync::Arc;
-# use std::slice;
-# fn main() {
-# let numbers=slice::from_fn(1000000, |_| rand::random::<f64>());
-# let numbers_arc=Arc::new(numbers);
-# let (tx, rx) = channel();
-# tx.send(numbers_arc.clone());
-# let local_arc : Arc<~[f64]> = rx.recv();
-let task_numbers = &*local_arc;
-# }
-~~~
-
-and can use it as if it were local.
 
 The `arc` module also implements Arcs around mutable data that are not covered here.
 
@@ -462,7 +428,7 @@ an `Error` result.
 
 [`Result`]: std/result/index.html
 
-> ***Note:*** A failed task does not currently produce a useful error
+> *Note:* A failed task does not currently produce a useful error
 > value (`try` always returns `Err(())`). In the
 > future, it may be possible for tasks to intercept the value passed to
 > `fail!()`.
@@ -491,9 +457,9 @@ the string in response.  The child terminates when it receives `0`.
 Here is the function that implements the child task:
 
 ~~~
-extern crate sync;
+use std::comm::DuplexStream;
 # fn main() {
-fn stringifier(channel: &sync::DuplexStream<~str, uint>) {
+fn stringifier(channel: &DuplexStream<String, uint>) {
     let mut value: uint;
     loop {
         value = channel.recv();
@@ -502,7 +468,7 @@ fn stringifier(channel: &sync::DuplexStream<~str, uint>) {
     }
 }
 # }
-~~~~
+~~~
 
 The implementation of `DuplexStream` supports both sending and
 receiving. The `stringifier` function takes a `DuplexStream` that can
@@ -515,10 +481,10 @@ response itself is simply the stringified version of the received value,
 Here is the code for the parent task:
 
 ~~~
-extern crate sync;
+use std::comm::duplex;
 # use std::task::spawn;
-# use sync::DuplexStream;
-# fn stringifier(channel: &sync::DuplexStream<~str, uint>) {
+# use std::comm::DuplexStream;
+# fn stringifier(channel: &DuplexStream<String, uint>) {
 #     let mut value: uint;
 #     loop {
 #         value = channel.recv();
@@ -528,23 +494,23 @@ extern crate sync;
 # }
 # fn main() {
 
-let (from_child, to_child) = sync::duplex();
+let (from_child, to_child) = duplex();
 
 spawn(proc() {
     stringifier(&to_child);
 });
 
 from_child.send(22);
-assert!(from_child.recv() == ~"22");
+assert!(from_child.recv().as_slice() == "22");
 
 from_child.send(23);
 from_child.send(0);
 
-assert!(from_child.recv() == ~"23");
-assert!(from_child.recv() == ~"0");
+assert!(from_child.recv().as_slice() == "23");
+assert!(from_child.recv().as_slice() == "0");
 
 # }
-~~~~
+~~~
 
 The parent task first calls `DuplexStream` to create a pair of bidirectional
 endpoints. It then uses `task::spawn` to create the child task, which captures

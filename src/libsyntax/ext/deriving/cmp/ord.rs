@@ -14,31 +14,39 @@ use codemap::Span;
 use ext::base::ExtCtxt;
 use ext::build::AstBuilder;
 use ext::deriving::generic::*;
+use ext::deriving::generic::ty::*;
+use parse::token::InternedString;
+
+use std::gc::Gc;
 
 pub fn expand_deriving_ord(cx: &mut ExtCtxt,
                            span: Span,
-                           mitem: @MetaItem,
-                           item: @Item,
-                           push: |@Item|) {
+                           mitem: Gc<MetaItem>,
+                           item: Gc<Item>,
+                           push: |Gc<Item>|) {
     macro_rules! md (
-        ($name:expr, $op:expr, $equal:expr) => {
+        ($name:expr, $op:expr, $equal:expr) => { {
+            let inline = cx.meta_word(span, InternedString::new("inline"));
+            let attrs = vec!(cx.attribute(span, inline));
             MethodDef {
                 name: $name,
                 generics: LifetimeBounds::empty(),
                 explicit_self: borrowed_explicit_self(),
                 args: vec!(borrowed_self()),
                 ret_ty: Literal(Path::new(vec!("bool"))),
-                inline: true,
+                attributes: attrs,
                 const_nonmatching: false,
-                combine_substructure: |cx, span, substr| cs_op($op, $equal, cx, span, substr)
+                combine_substructure: combine_substructure(|cx, span, substr| {
+                    cs_op($op, $equal, cx, span, substr)
+                })
             }
-        }
+        } }
     );
 
     let trait_def = TraitDef {
         span: span,
         attributes: Vec::new(),
-        path: Path::new(vec!("std", "cmp", "Ord")),
+        path: Path::new(vec!("std", "cmp", "PartialOrd")),
         additional_bounds: Vec::new(),
         generics: LifetimeBounds::empty(),
         methods: vec!(
@@ -52,7 +60,8 @@ pub fn expand_deriving_ord(cx: &mut ExtCtxt,
 }
 
 /// Strict inequality.
-fn cs_op(less: bool, equal: bool, cx: &mut ExtCtxt, span: Span, substr: &Substructure) -> @Expr {
+fn cs_op(less: bool, equal: bool, cx: &mut ExtCtxt, span: Span,
+         substr: &Substructure) -> Gc<Expr> {
     let op = if less {ast::BiLt} else {ast::BiGt};
     cs_fold(
         false, // need foldr,
@@ -71,7 +80,7 @@ fn cs_op(less: bool, equal: bool, cx: &mut ExtCtxt, span: Span, substr: &Substru
             ```
 
             The optimiser should remove the redundancy. We explicitly
-            get use the binops to avoid auto-deref derefencing too many
+            get use the binops to avoid auto-deref dereferencing too many
             layers of pointers, if the type includes pointers.
             */
             let other_f = match other_fs {

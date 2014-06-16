@@ -30,12 +30,16 @@
 //! This module implements an intrusive MPSC queue. This queue is incredibly
 //! unsafe (due to use of unsafe pointers for nodes), and hence is not public.
 
+#![experimental]
+
 // http://www.1024cores.net/home/lock-free-algorithms
 //                         /queues/intrusive-mpsc-node-based-queue
 
-use std::cast;
-use std::sync::atomics;
-use std::ty::Unsafe;
+use core::prelude::*;
+
+use core::atomics;
+use core::mem;
+use core::ty::Unsafe;
 
 // NB: all links are done as AtomicUint instead of AtomicPtr to allow for static
 // initialization.
@@ -97,7 +101,7 @@ impl<T: Send> Queue<T> {
     pub unsafe fn pop(&self) -> Option<*mut Node<T>> {
         let tail = *self.tail.get();
         let mut tail = if !tail.is_null() {tail} else {
-            cast::transmute(&self.stub)
+            mem::transmute(&self.stub)
         };
         let mut next = (*tail).next(atomics::Relaxed);
         if tail as uint == &self.stub as *DummyNode as uint {
@@ -116,7 +120,7 @@ impl<T: Send> Queue<T> {
         if tail != head {
             return None;
         }
-        let stub = cast::transmute(&self.stub);
+        let stub = mem::transmute(&self.stub);
         self.push(stub);
         next = (*tail).next(atomics::Relaxed);
         if !next.is_null() {
@@ -135,6 +139,6 @@ impl<T: Send> Node<T> {
         }
     }
     pub unsafe fn next(&self, ord: atomics::Ordering) -> *mut Node<T> {
-        cast::transmute::<uint, *mut Node<T>>(self.next.load(ord))
+        mem::transmute::<uint, *mut Node<T>>(self.next.load(ord))
     }
 }

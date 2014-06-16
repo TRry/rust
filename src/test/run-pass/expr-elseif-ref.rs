@@ -8,12 +8,14 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#[feature(managed_boxes)];
+#![feature(managed_boxes)]
+
+use std::gc::{Gc, GC};
 
 // Make sure we drop the refs of the temporaries needed to return the
 // values from the else if branch
 pub fn main() {
-    let y: @uint = @10u;
+    let y: Gc<uint> = box(GC) 10u;
     let _x = if false { y } else if true { y } else { y };
     assert_eq!(*y, 10u);
 }

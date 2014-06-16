@@ -9,11 +9,8 @@
 // except according to those terms.
 
 pub fn main() {
-    assert!(Some(~()).is_some());
+    assert!(Some(box() ()).is_some());
 
     struct Foo;
-    assert!(Some(~Foo).is_some());
-
-    let xs: ~[()] = ~[];
-    assert!(Some(xs).is_some());
+    assert!(Some(box Foo).is_some());
 }

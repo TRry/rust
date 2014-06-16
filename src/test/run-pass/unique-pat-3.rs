@@ -8,11 +8,12 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+extern crate debug;
 
-enum bar { u(~int), w(int), }
+enum bar { u(Box<int>), w(int), }
 
 pub fn main() {
-    assert!(match u(~10) {
+    assert!(match u(box 10) {
       u(a) => {
         println!("{:?}", a);
         *a

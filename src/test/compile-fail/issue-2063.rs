@@ -11,17 +11,19 @@
 // test that autoderef of a type like this does not
 // cause compiler to loop.  Note that no instances
 // of such a type could ever be constructed.
-struct t(~t); //~ ERROR this type cannot be instantiated
+
+
+struct t(Box<t>); //~ ERROR this type cannot be instantiated
 
 trait to_str_2 {
-    fn my_to_str() -> ~str;
+    fn my_to_str() -> String;
 }
 
 // I use an impl here because it will cause
 // the compiler to attempt autoderef and then
 // try to resolve the method.
 impl to_str_2 for t {
-    fn my_to_str() -> ~str { ~"t" }
+    fn my_to_str() -> String { "t".to_string() }
 }
 
 fn new_t(x: t) {

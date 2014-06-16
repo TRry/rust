@@ -10,13 +10,14 @@
 
 // aux-build:cci_borrow_lib.rs
 
-#[feature(managed_boxes)];
+#![feature(managed_boxes)]
 
 extern crate cci_borrow_lib;
 use cci_borrow_lib::foo;
+use std::gc::GC;
 
 pub fn main() {
-    let p = @22u;
+    let p = box(GC) 22u;
     let r = foo(p);
     println!("r={}", r);
     assert_eq!(r, 22u);

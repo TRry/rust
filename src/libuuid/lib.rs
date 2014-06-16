@@ -1,4 +1,4 @@
-// Copyright 2013 The Rust Project Developers. See the COPYRIGHT
+// Copyright 2013-2014 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
 //
@@ -35,7 +35,7 @@ fn main() {
     let uuid1 = Uuid::new_v4();
     println!("{}", uuid1.to_str());
 }
- ```
+```
 
 # Strings
 
@@ -54,34 +54,33 @@ Examples of string representations:
 
 */
 
-#![crate_id = "uuid#0.11-pre"]
+#![crate_id = "uuid#0.11.0-pre"]
 #![crate_type = "rlib"]
 #![crate_type = "dylib"]
 #![license = "MIT/ASL2"]
 #![doc(html_logo_url = "http://www.rust-lang.org/logos/rust-logo-128x128-blk-v2.png",
        html_favicon_url = "http://www.rust-lang.org/favicon.ico",
-       html_root_url = "http://static.rust-lang.org/doc/master")]
+       html_root_url = "http://doc.rust-lang.org/",
+       html_playground_url = "http://play.rust-lang.org/")]
 
 #![feature(default_type_params)]
 
 // test harness access
 #[cfg(test)]
 extern crate test;
-
-extern crate rand;
 extern crate serialize;
 
-use std::cast::{transmute,transmute_copy};
 use std::char::Char;
 use std::default::Default;
 use std::fmt;
 use std::from_str::FromStr;
-use std::hash::Hash;
+use std::hash;
+use std::mem::{transmute,transmute_copy};
 use std::num::FromStrRadix;
-use std::str;
+use std::rand;
+use std::rand::Rng;
 use std::slice;
-
-use rand::Rng;
+use std::str;
 
 use serialize::{Encoder, Encodable, Decoder, Decodable};
 
@@ -89,7 +88,7 @@ use serialize::{Encoder, Encodable, Decoder, Decodable};
 pub type UuidBytes = [u8, ..16];
 
 /// The version of the UUID, denoting the generating algorithm
-#[deriving(Eq)]
+#[deriving(PartialEq)]
 pub enum UuidVersion {
     /// Version 1: MAC address
     Version1Mac    = 1,
@@ -104,7 +103,7 @@ pub enum UuidVersion {
 }
 
 /// The reserved variants of UUIDs
-#[deriving(Eq)]
+#[deriving(PartialEq)]
 pub enum UuidVariant {
     /// Reserved by the NCS for backward compatibility
     VariantNCS,
@@ -122,7 +121,7 @@ pub struct Uuid {
     bytes: UuidBytes
 }
 
-impl<S: Writer> Hash<S> for Uuid {
+impl<S: hash::Writer> hash::Hash<S> for Uuid {
     fn hash(&self, state: &mut S) {
         self.bytes.hash(state)
     }
@@ -154,17 +153,17 @@ impl fmt::Show for ParseError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
             ErrorInvalidLength(found) =>
-                write!(f.buf, "Invalid length; expecting 32, 36 or 45 chars, \
-                               found {}", found),
+                write!(f, "Invalid length; expecting 32, 36 or 45 chars, \
+                           found {}", found),
             ErrorInvalidCharacter(found, pos) =>
-                write!(f.buf, "Invalid character; found `{}` (0x{:02x}) at \
-                               offset {}", found, found as uint, pos),
+                write!(f, "Invalid character; found `{}` (0x{:02x}) at \
+                           offset {}", found, found as uint, pos),
             ErrorInvalidGroups(found) =>
-                write!(f.buf, "Malformed; wrong number of groups: expected 1 \
-                               or 5, found {}", found),
+                write!(f, "Malformed; wrong number of groups: expected 1 \
+                           or 5, found {}", found),
             ErrorInvalidGroupLength(group, found, expecting) =>
-                write!(f.buf, "Malformed; length of group {} was {}, \
-                               expecting {}", group, found, expecting),
+                write!(f, "Malformed; length of group {} was {}, \
+                           expecting {}", group, found, expecting),
         }
     }
 }
@@ -194,7 +193,7 @@ impl Uuid {
     /// of random numbers. Use the rand::Rand trait to supply
     /// a custom generator if required.
     pub fn new_v4() -> Uuid {
-        let ub = rand::task_rng().gen_vec(16);
+        let ub = rand::task_rng().gen_iter::<u8>().take(16).collect::<Vec<_>>();
         let mut uuid = Uuid{ bytes: [0, .. 16] };
         slice::bytes::copy_memory(uuid.bytes, ub.as_slice());
         uuid.set_variant(VariantRFC4122);
@@ -220,9 +219,9 @@ impl Uuid {
                 data4: [0, ..8]
         };
 
-        fields.data1 = to_be32(d1 as i32) as u32;
-        fields.data2 = to_be16(d2 as i16) as u16;
-        fields.data3 = to_be16(d3 as i16) as u16;
+        fields.data1 = to_be32(d1);
+        fields.data2 = to_be16(d2);
+        fields.data3 = to_be16(d3);
         slice::bytes::copy_memory(fields.data4, d4);
 
         unsafe {
@@ -322,20 +321,20 @@ impl Uuid {
     /// Returns the UUID as a string of 16 hexadecimal digits
     ///
     /// Example: `936DA01F9ABD4d9d80C702AF85C822A8`
-    pub fn to_simple_str(&self) -> ~str {
+    pub fn to_simple_str(&self) -> String {
         let mut s: Vec<u8> = Vec::from_elem(32, 0u8);
         for i in range(0u, 16u) {
             let digit = format!("{:02x}", self.bytes[i] as uint);
-            *s.get_mut(i*2+0) = digit[0];
-            *s.get_mut(i*2+1) = digit[1];
+            *s.get_mut(i*2+0) = digit.as_slice()[0];
+            *s.get_mut(i*2+1) = digit.as_slice()[1];
         }
-        str::from_utf8(s.as_slice()).unwrap().to_str()
+        str::from_utf8(s.as_slice()).unwrap().to_string()
     }
 
     /// Returns a string of hexadecimal digits, separated into groups with a hyphen.
     ///
     /// Example: `550e8400-e29b-41d4-a716-446655440000`
-    pub fn to_hyphenated_str(&self) -> ~str {
+    pub fn to_hyphenated_str(&self) -> String {
         use std::mem::{to_be16, to_be32};
         // Convert to field-based struct as it matches groups in output.
         // Ensure fields are in network byte order, as per RFC.
@@ -343,9 +342,9 @@ impl Uuid {
         unsafe {
             uf = transmute_copy(&self.bytes);
         }
-        uf.data1 = to_be32(uf.data1 as i32) as u32;
-        uf.data2 = to_be16(uf.data2 as i16) as u16;
-        uf.data3 = to_be16(uf.data3 as i16) as u16;
+        uf.data1 = to_be32(uf.data1);
+        uf.data2 = to_be16(uf.data2);
+        uf.data3 = to_be16(uf.data3);
         let s = format!("{:08x}-{:04x}-{:04x}-{:02x}{:02x}-\
                          {:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
             uf.data1,
@@ -361,8 +360,8 @@ impl Uuid {
     /// This is the same as the hyphenated format, but with the "urn:uuid:" prefix.
     ///
     /// Example: `urn:uuid:F9168C5E-CEB2-4faa-B6BF-329BF39FA1E4`
-    pub fn to_urn_str(&self) -> ~str {
-        "urn:uuid:" + self.to_hyphenated_str()
+    pub fn to_urn_str(&self) -> String {
+        format!("urn:uuid:{}", self.to_hyphenated_str())
     }
 
     /// Parses a UUID from a string of hexadecimal digits with optional hyphens
@@ -426,14 +425,16 @@ impl Uuid {
 
         // At this point, we know we have a valid hex string, without hyphens
         assert!(vs.len() == 32);
-        assert!(vs.chars().all(|c| c.is_digit_radix(16)));
+        assert!(vs.as_slice().chars().all(|c| c.is_digit_radix(16)));
 
         // Allocate output UUID buffer
         let mut ub = [0u8, ..16];
 
         // Extract each hex digit from the string
         for i in range(0u, 16u) {
-            ub[i] = FromStrRadix::from_str_radix(vs.slice(i*2, (i+1)*2), 16).unwrap();
+            ub[i] = FromStrRadix::from_str_radix(vs.as_slice()
+                                                   .slice(i*2, (i+1)*2),
+                                                 16).unwrap();
         }
 
         Ok(Uuid::from_bytes(ub).unwrap())
@@ -461,7 +462,7 @@ impl FromStr for Uuid {
     /// Parse a hex string and interpret as a UUID
     ///
     /// Accepted formats are a sequence of 32 hexadecimal characters,
-    /// with or without hypens (grouped as 8, 4, 4, 4, 12).
+    /// with or without hyphens (grouped as 8, 4, 4, 4, 12).
     fn from_str(us: &str) -> Option<Uuid> {
         let result = Uuid::parse_string(us);
         match result {
@@ -474,33 +475,33 @@ impl FromStr for Uuid {
 /// Convert the UUID to a hexadecimal-based string representation
 impl fmt::Show for Uuid {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f.buf, "{}", self.to_simple_str())
+        write!(f, "{}", self.to_simple_str())
     }
 }
 
 /// Test two UUIDs for equality
 ///
 /// UUIDs are equal only when they are byte-for-byte identical
-impl Eq for Uuid {
+impl PartialEq for Uuid {
     fn eq(&self, other: &Uuid) -> bool {
         self.bytes == other.bytes
     }
 }
 
-impl TotalEq for Uuid {}
+impl Eq for Uuid {}
 
 // FIXME #9845: Test these more thoroughly
 impl<T: Encoder<E>, E> Encodable<T, E> for Uuid {
-    /// Encode a UUID as a hypenated string
+    /// Encode a UUID as a hyphenated string
     fn encode(&self, e: &mut T) -> Result<(), E> {
-        e.emit_str(self.to_hyphenated_str())
+        e.emit_str(self.to_hyphenated_str().as_slice())
     }
 }
 
 impl<T: Decoder<E>, E> Decodable<T, E> for Uuid {
     /// Decode a UUID from a string
     fn decode(d: &mut T) -> Result<Uuid, E> {
-        Ok(from_str(try!(d.read_str())).unwrap())
+        Ok(from_str(try!(d.read_str()).as_slice()).unwrap())
     }
 }
 
@@ -508,7 +509,7 @@ impl<T: Decoder<E>, E> Decodable<T, E> for Uuid {
 impl rand::Rand for Uuid {
     #[inline]
     fn rand<R: rand::Rng>(rng: &mut R) -> Uuid {
-        let ub = rng.gen_vec(16);
+        let ub = rng.gen_iter::<u8>().take(16).collect::<Vec<_>>();
         let mut uuid = Uuid{ bytes: [0, .. 16] };
         slice::bytes::copy_memory(uuid.bytes, ub.as_slice());
         uuid.set_variant(VariantRFC4122);
@@ -519,14 +520,12 @@ impl rand::Rand for Uuid {
 
 #[cfg(test)]
 mod test {
-    extern crate collections;
-    extern crate rand;
-
     use super::{Uuid, VariantMicrosoft, VariantNCS, VariantRFC4122,
                 Version1Mac, Version2Dce, Version3Md5, Version4Random,
                 Version5Sha1};
     use std::str;
     use std::io::MemWriter;
+    use std::rand;
 
     #[test]
     fn test_nil() {
@@ -624,7 +623,7 @@ mod test {
         // Round-trip
         let uuid_orig = Uuid::new_v4();
         let orig_str = uuid_orig.to_str();
-        let uuid_out = Uuid::parse_string(orig_str).unwrap();
+        let uuid_out = Uuid::parse_string(orig_str.as_slice()).unwrap();
         assert!(uuid_orig == uuid_out);
 
         // Test error reporting
@@ -647,7 +646,7 @@ mod test {
         let s = uuid1.to_simple_str();
 
         assert!(s.len() == 32);
-        assert!(s.chars().all(|c| c.is_digit_radix(16)));
+        assert!(s.as_slice().chars().all(|c| c.is_digit_radix(16)));
     }
 
     #[test]
@@ -656,7 +655,7 @@ mod test {
         let s = uuid1.to_str();
 
         assert!(s.len() == 32);
-        assert!(s.chars().all(|c| c.is_digit_radix(16)));
+        assert!(s.as_slice().chars().all(|c| c.is_digit_radix(16)));
     }
 
     #[test]
@@ -665,18 +664,20 @@ mod test {
         let s = uuid1.to_hyphenated_str();
 
         assert!(s.len() == 36);
-        assert!(s.chars().all(|c| c.is_digit_radix(16) || c == '-'));
+        assert!(s.as_slice().chars().all(|c| c.is_digit_radix(16) || c == '-'));
     }
 
     #[test]
     fn test_to_urn_str() {
         let uuid1 = Uuid::new_v4();
         let ss = uuid1.to_urn_str();
-        let s = ss.slice(9, ss.len());
+        let s = ss.as_slice().slice(9, ss.len());
 
-        assert!(ss.starts_with("urn:uuid:"));
+        assert!(ss.as_slice().starts_with("urn:uuid:"));
         assert!(s.len() == 36);
-        assert!(s.chars().all(|c| c.is_digit_radix(16) || c == '-'));
+        assert!(s.as_slice()
+                 .chars()
+                 .all(|c| c.is_digit_radix(16) || c == '-'));
     }
 
     #[test]
@@ -686,7 +687,8 @@ mod test {
         let hs = uuid1.to_hyphenated_str();
         let ss = uuid1.to_str();
 
-        let hsn = str::from_chars(hs.chars()
+        let hsn = str::from_chars(hs.as_slice()
+                                    .chars()
                                     .filter(|&c| c != '-')
                                     .collect::<Vec<char>>()
                                     .as_slice());
@@ -699,11 +701,11 @@ mod test {
         let uuid = Uuid::new_v4();
 
         let hs = uuid.to_hyphenated_str();
-        let uuid_hs = Uuid::parse_string(hs).unwrap();
+        let uuid_hs = Uuid::parse_string(hs.as_slice()).unwrap();
         assert!(uuid_hs == uuid);
 
         let ss = uuid.to_str();
-        let uuid_ss = Uuid::parse_string(ss).unwrap();
+        let uuid_ss = Uuid::parse_string(ss.as_slice()).unwrap();
         assert!(uuid_ss == uuid);
     }
 
@@ -727,7 +729,7 @@ mod test {
 
         let u = Uuid::from_fields(d1, d2, d3, d4.as_slice());
 
-        let expected = ~"a1a2a3a4b1b2c1c2d1d2d3d4d5d6d7d8";
+        let expected = "a1a2a3a4b1b2c1c2d1d2d3d4d5d6d7d8".to_string();
         let result = u.to_simple_str();
         assert!(result == expected);
     }
@@ -738,7 +740,7 @@ mod test {
                    0xd1, 0xd2, 0xd3, 0xd4, 0xd5, 0xd6, 0xd7, 0xd8 );
 
         let u = Uuid::from_bytes(b.as_slice()).unwrap();
-        let expected = ~"a1a2a3a4b1b2c1c2d1d2d3d4d5d6d7d8";
+        let expected = "a1a2a3a4b1b2c1c2d1d2d3d4d5d6d7d8".to_string();
 
         assert!(u.to_simple_str() == expected);
     }
@@ -783,7 +785,7 @@ mod test {
     #[test]
     fn test_rand_rand() {
         let mut rng = rand::task_rng();
-        let u: ~Uuid = rand::Rand::rand(&mut rng);
+        let u: Uuid = rand::Rand::rand(&mut rng);
         let ub = u.as_bytes();
 
         assert!(ub.len() == 16);
@@ -792,20 +794,22 @@ mod test {
 
     #[test]
     fn test_serialize_round_trip() {
-        use serialize::ebml;
+        use serialize::ebml::Doc;
+        use serialize::ebml::writer::Encoder;
+        use serialize::ebml::reader::Decoder;
         use serialize::{Encodable, Decodable};
 
         let u = Uuid::new_v4();
         let mut wr = MemWriter::new();
-        let _ = u.encode(&mut ebml::writer::Encoder(&mut wr));
-        let doc = ebml::reader::Doc(wr.get_ref());
-        let u2 = Decodable::decode(&mut ebml::reader::Decoder(doc)).unwrap();
+        let _ = u.encode(&mut Encoder::new(&mut wr));
+        let doc = Doc::new(wr.get_ref());
+        let u2 = Decodable::decode(&mut Decoder::new(doc)).unwrap();
         assert_eq!(u, u2);
     }
 
     #[test]
     fn test_iterbytes_impl_for_uuid() {
-        use self::collections::HashSet;
+        use std::collections::HashSet;
         let mut set = HashSet::new();
         let id1 = Uuid::new_v4();
         let id2 = Uuid::new_v4();

@@ -19,7 +19,7 @@
  * The code in here is defined quite generically so that it can be
  * applied both to type variables, which represent types being inferred,
  * and fn variables, which represent function types being inferred.
- * It may eventually be applied to ther types as well, who knows.
+ * It may eventually be applied to their types as well, who knows.
  * In some cases, the functions are also generic with respect to the
  * operation on the lattice (GLB vs LUB).
  *
@@ -45,46 +45,46 @@ use middle::typeck::infer::sub::Sub;
 use middle::typeck::infer::to_str::InferStr;
 use util::common::indenter;
 
-use collections::HashMap;
+use std::collections::HashMap;
 
-pub trait LatticeValue {
-    fn sub(cf: &CombineFields, a: &Self, b: &Self) -> ures;
-    fn lub(cf: &CombineFields, a: &Self, b: &Self) -> cres<Self>;
-    fn glb(cf: &CombineFields, a: &Self, b: &Self) -> cres<Self>;
+trait LatticeValue {
+    fn sub(cf: CombineFields, a: &Self, b: &Self) -> ures;
+    fn lub(cf: CombineFields, a: &Self, b: &Self) -> cres<Self>;
+    fn glb(cf: CombineFields, a: &Self, b: &Self) -> cres<Self>;
 }
 
 pub type LatticeOp<'a, T> =
-    |cf: &CombineFields, a: &T, b: &T|: 'a -> cres<T>;
+    |cf: CombineFields, a: &T, b: &T|: 'a -> cres<T>;
 
 impl LatticeValue for ty::t {
-    fn sub(cf: &CombineFields, a: &ty::t, b: &ty::t) -> ures {
-        Sub(*cf).tys(*a, *b).to_ures()
+    fn sub(cf: CombineFields, a: &ty::t, b: &ty::t) -> ures {
+        Sub(cf).tys(*a, *b).to_ures()
     }
 
-    fn lub(cf: &CombineFields, a: &ty::t, b: &ty::t) -> cres<ty::t> {
-        Lub(*cf).tys(*a, *b)
+    fn lub(cf: CombineFields, a: &ty::t, b: &ty::t) -> cres<ty::t> {
+        Lub(cf).tys(*a, *b)
     }
 
-    fn glb(cf: &CombineFields, a: &ty::t, b: &ty::t) -> cres<ty::t> {
-        Glb(*cf).tys(*a, *b)
+    fn glb(cf: CombineFields, a: &ty::t, b: &ty::t) -> cres<ty::t> {
+        Glb(cf).tys(*a, *b)
     }
 }
 
 pub trait CombineFieldsLatticeMethods {
     fn var_sub_var<T:Clone + InferStr + LatticeValue,
-                   V:Clone + Eq + ToStr + Vid + UnifyVid<Bounds<T>>>(&self,
+                   V:Clone + PartialEq + ToStr + Vid + UnifyVid<Bounds<T>>>(&self,
                                                                      a_id: V,
                                                                      b_id: V)
                                                                      -> ures;
     /// make variable a subtype of T
     fn var_sub_t<T:Clone + InferStr + LatticeValue,
-                 V:Clone + Eq + ToStr + Vid + UnifyVid<Bounds<T>>>(
+                 V:Clone + PartialEq + ToStr + Vid + UnifyVid<Bounds<T>>>(
                  &self,
                  a_id: V,
                  b: T)
                  -> ures;
     fn t_sub_var<T:Clone + InferStr + LatticeValue,
-                 V:Clone + Eq + ToStr + Vid + UnifyVid<Bounds<T>>>(
+                 V:Clone + PartialEq + ToStr + Vid + UnifyVid<Bounds<T>>>(
                  &self,
                  a: T,
                  b_id: V)
@@ -96,7 +96,7 @@ pub trait CombineFieldsLatticeMethods {
                  lattice_op: LatticeOp<T>)
                  -> cres<Bound<T>>;
     fn set_var_to_merged_bounds<T:Clone + InferStr + LatticeValue,
-                                V:Clone+Eq+ToStr+Vid+UnifyVid<Bounds<T>>>(
+                                V:Clone+PartialEq+ToStr+Vid+UnifyVid<Bounds<T>>>(
                                 &self,
                                 v_id: V,
                                 a: &Bounds<T>,
@@ -112,7 +112,7 @@ pub trait CombineFieldsLatticeMethods {
 
 impl<'f> CombineFieldsLatticeMethods for CombineFields<'f> {
     fn var_sub_var<T:Clone + InferStr + LatticeValue,
-                   V:Clone + Eq + ToStr + Vid + UnifyVid<Bounds<T>>>(
+                   V:Clone + PartialEq + ToStr + Vid + UnifyVid<Bounds<T>>>(
                    &self,
                    a_id: V,
                    b_id: V)
@@ -142,7 +142,7 @@ impl<'f> CombineFieldsLatticeMethods for CombineFields<'f> {
         match (&a_bounds.ub, &b_bounds.lb) {
             (&Some(ref a_ub), &Some(ref b_lb)) => {
                 let r = self.infcx.try(
-                    || LatticeValue::sub(self, a_ub, b_lb));
+                    || LatticeValue::sub(self.clone(), a_ub, b_lb));
                 match r {
                     Ok(()) => {
                         return Ok(());
@@ -165,7 +165,7 @@ impl<'f> CombineFieldsLatticeMethods for CombineFields<'f> {
 
     /// make variable a subtype of T
     fn var_sub_t<T:Clone + InferStr + LatticeValue,
-                 V:Clone + Eq + ToStr + Vid + UnifyVid<Bounds<T>>>(
+                 V:Clone + PartialEq + ToStr + Vid + UnifyVid<Bounds<T>>>(
                  &self,
                  a_id: V,
                  b: T)
@@ -189,7 +189,7 @@ impl<'f> CombineFieldsLatticeMethods for CombineFields<'f> {
     }
 
     fn t_sub_var<T:Clone + InferStr + LatticeValue,
-                 V:Clone + Eq + ToStr + Vid + UnifyVid<Bounds<T>>>(
+                 V:Clone + PartialEq + ToStr + Vid + UnifyVid<Bounds<T>>>(
                  &self,
                  a: T,
                  b_id: V)
@@ -232,13 +232,13 @@ impl<'f> CombineFieldsLatticeMethods for CombineFields<'f> {
             (&Some(_),       &None) => Ok((*a).clone()),
             (&None,          &Some(_)) => Ok((*b).clone()),
             (&Some(ref v_a), &Some(ref v_b)) => {
-                lattice_op(self, v_a, v_b).and_then(|v| Ok(Some(v)))
+                lattice_op(self.clone(), v_a, v_b).and_then(|v| Ok(Some(v)))
             }
         }
     }
 
     fn set_var_to_merged_bounds<T:Clone + InferStr + LatticeValue,
-                                V:Clone+Eq+ToStr+Vid+UnifyVid<Bounds<T>>>(
+                                V:Clone+PartialEq+ToStr+Vid+UnifyVid<Bounds<T>>>(
                                 &self,
                                 v_id: V,
                                 a: &Bounds<T>,
@@ -314,7 +314,7 @@ impl<'f> CombineFieldsLatticeMethods for CombineFields<'f> {
                 uok()
             }
             (&Some(ref t_a), &Some(ref t_b)) => {
-                LatticeValue::sub(self, t_a, t_b)
+                LatticeValue::sub(self.clone(), t_a, t_b)
             }
         }
     }
@@ -337,7 +337,7 @@ pub trait TyLatticeDir {
 }
 
 impl<'f> LatticeDir for Lub<'f> {
-    fn combine_fields<'a>(&'a self) -> CombineFields<'a> { *self.get_ref() }
+    fn combine_fields<'a>(&'a self) -> CombineFields<'a> { self.get_ref().clone() }
     fn bnd<T:Clone>(&self, b: &Bounds<T>) -> Option<T> { b.ub.clone() }
     fn with_bnd<T:Clone>(&self, b: &Bounds<T>, t: T) -> Bounds<T> {
         Bounds { ub: Some(t), ..(*b).clone() }
@@ -351,7 +351,7 @@ impl<'f> TyLatticeDir for Lub<'f> {
 }
 
 impl<'f> LatticeDir for Glb<'f> {
-    fn combine_fields<'a>(&'a self) -> CombineFields<'a> { *self.get_ref() }
+    fn combine_fields<'a>(&'a self) -> CombineFields<'a> { self.get_ref().clone() }
     fn bnd<T:Clone>(&self, b: &Bounds<T>) -> Option<T> { b.lb.clone() }
     fn with_bnd<T:Clone>(&self, b: &Bounds<T>, t: T) -> Bounds<T> {
         Bounds { lb: Some(t), ..(*b).clone() }
@@ -432,7 +432,7 @@ pub enum LatticeVarResult<V,T> {
  *   return. */
 pub fn lattice_vars<L:LatticeDir + Combine,
                     T:Clone + InferStr + LatticeValue,
-                    V:Clone + Eq + ToStr + Vid + UnifyVid<Bounds<T>>>(
+                    V:Clone + PartialEq + ToStr + Vid + UnifyVid<Bounds<T>>>(
     this: &L,                           // defines whether we want LUB or GLB
     a_vid: V,                          // first variable
     b_vid: V,                          // second variable
@@ -478,7 +478,7 @@ pub fn lattice_vars<L:LatticeDir + Combine,
 
 pub fn lattice_var_and_t<L:LatticeDir + Combine,
                          T:Clone + InferStr + LatticeValue,
-                         V:Clone + Eq + ToStr + Vid + UnifyVid<Bounds<T>>>(
+                         V:Clone + PartialEq + ToStr + Vid + UnifyVid<Bounds<T>>>(
     this: &L,
     a_id: V,
     b: &T,
@@ -529,7 +529,7 @@ pub fn var_ids<T:Combine>(this: &T,
             r => {
                 this.infcx().tcx.sess.span_bug(
                     this.trace().origin.span(),
-                    format!("found non-region-vid: {:?}", r));
+                    format!("found non-region-vid: {:?}", r).as_slice());
             }
         }).collect()
 }

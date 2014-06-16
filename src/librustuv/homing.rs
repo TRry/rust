@@ -1,4 +1,4 @@
-// Copyright 2013 The Rust Project Developers. See the COPYRIGHT
+// Copyright 2013-2014 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
 //
@@ -33,7 +33,7 @@
 
 #![allow(dead_code)]
 
-use std::cast;
+use std::mem;
 use std::rt::local::Local;
 use std::rt::rtio::LocalIo;
 use std::rt::task::{Task, BlockedTask};
@@ -77,18 +77,19 @@ pub fn local_id() -> uint {
     };
     let io = io.get();
     unsafe {
-        let (_vtable, ptr): (uint, uint) = cast::transmute(io);
+        let (_vtable, ptr): (uint, uint) = mem::transmute(io);
         return ptr;
     }
 }
 
+#[doc(hidden)]
 pub trait HomingIO {
     fn home<'r>(&'r mut self) -> &'r mut HomeHandle;
 
     /// This function will move tasks to run on their home I/O scheduler. Note
     /// that this function does *not* pin the task to the I/O scheduler, but
     /// rather it simply moves it to running on the I/O scheduler.
-    fn go_to_IO_home(&mut self) -> uint {
+    fn go_to_io_home(&mut self) -> uint {
         let _f = ForbidUnwind::new("going home");
 
         let cur_loop_id = local_id();
@@ -100,7 +101,7 @@ pub trait HomingIO {
         // to go (remember we have no preemption, so we're guaranteed to stay on
         // this event loop as long as we avoid the scheduler).
         if cur_loop_id != destination {
-            let cur_task: ~Task = Local::take();
+            let cur_task: Box<Task> = Local::take();
             cur_task.deschedule(1, |task| {
                 self.home().send(task);
                 Ok(())
@@ -118,7 +119,7 @@ pub trait HomingIO {
     /// move the local task to its I/O scheduler and then return an RAII wrapper
     /// which will return the task home.
     fn fire_homing_missile(&mut self) -> HomingMissile {
-        HomingMissile { io_home: self.go_to_IO_home() }
+        HomingMissile { io_home: self.go_to_io_home() }
     }
 }
 
@@ -152,8 +153,7 @@ mod test {
     use green::sched;
     use green::{SchedPool, PoolConfig};
     use std::rt::rtio::RtioUdpSocket;
-    use std::io::test::next_test_ip4;
-    use std::task::TaskOpts;
+    use std::rt::task::TaskOpts;
 
     use net::UdpWatcher;
     use super::super::local_loop;
@@ -171,7 +171,7 @@ mod test {
         });
 
         pool.spawn(TaskOpts::new(), proc() {
-            let listener = UdpWatcher::bind(local_loop(), next_test_ip4());
+            let listener = UdpWatcher::bind(local_loop(), ::next_test_ip4());
             tx.send(listener.unwrap());
         });
 
@@ -192,18 +192,18 @@ mod test {
         });
 
         pool.spawn(TaskOpts::new(), proc() {
-            let addr1 = next_test_ip4();
-            let addr2 = next_test_ip4();
+            let addr1 = ::next_test_ip4();
+            let addr2 = ::next_test_ip4();
             let listener = UdpWatcher::bind(local_loop(), addr2);
             tx.send((listener.unwrap(), addr1));
             let mut listener = UdpWatcher::bind(local_loop(), addr1).unwrap();
-            listener.sendto([1, 2, 3, 4], addr2).unwrap();
+            listener.sendto([1, 2, 3, 4], addr2).ok().unwrap();
         });
 
         let task = pool.task(TaskOpts::new(), proc() {
             let (mut watcher, addr) = rx.recv();
             let mut buf = [0, ..10];
-            assert_eq!(watcher.recvfrom(buf).unwrap(), (4, addr));
+            assert!(watcher.recvfrom(buf).ok().unwrap() == (4, addr));
         });
         pool.spawn_sched().send(sched::TaskFromFriend(task));
 

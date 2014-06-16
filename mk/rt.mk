@@ -35,26 +35,29 @@
 # that's per-target so you're allowed to conditionally add files based on the
 # target.
 ################################################################################
-NATIVE_LIBS := rustrt sundown uv_support morestack miniz context_switch
+NATIVE_LIBS := rust_builtin hoedown uv_support morestack miniz context_switch \
+		rustrt_native rust_test_helpers
 
 # $(1) is the target triple
 define NATIVE_LIBRARIES
 
-NATIVE_DEPS_sundown_$(1) := sundown/src/autolink.c \
-			sundown/src/buffer.c \
-			sundown/src/stack.c \
-			sundown/src/markdown.c \
-			sundown/html/houdini_href_e.c \
-			sundown/html/houdini_html_e.c \
-			sundown/html/html_smartypants.c \
-			sundown/html/html.c
+NATIVE_DEPS_hoedown_$(1) := hoedown/src/autolink.c \
+			hoedown/src/buffer.c \
+			hoedown/src/document.c \
+			hoedown/src/escape.c \
+			hoedown/src/html.c \
+			hoedown/src/html_blocks.c \
+			hoedown/src/html_smartypants.c \
+			hoedown/src/stack.c \
+			hoedown/src/version.c
 NATIVE_DEPS_uv_support_$(1) := rust_uv.c
 NATIVE_DEPS_miniz_$(1) = miniz.c
-NATIVE_DEPS_rustrt_$(1) := rust_builtin.c \
-			rust_android_dummy.c \
-			rust_test_helpers.c \
+NATIVE_DEPS_rust_builtin_$(1) := rust_builtin.c \
+			rust_android_dummy.c
+NATIVE_DEPS_rustrt_native_$(1) := \
 			rust_try.ll \
 			arch/$$(HOST_$(1))/record_sp.S
+NATIVE_DEPS_rust_test_helpers_$(1) := rust_test_helpers.c
 NATIVE_DEPS_morestack_$(1) := arch/$$(HOST_$(1))/morestack.S
 NATIVE_DEPS_context_switch_$(1) := \
 			arch/$$(HOST_$(1))/_context.S
@@ -79,7 +82,7 @@ $$(RT_OUTPUT_DIR_$(1))/%.o: $(S)src/rt/%.c $$(MKFILE_DEPS)
 	@mkdir -p $$(@D)
 	@$$(call E, compile: $$@)
 	$$(Q)$$(call CFG_COMPILE_C_$(1), $$@, \
-		-I $$(S)src/rt/sundown/src -I $$(S)src/rt/sundown/html \
+		-I $$(S)src/rt/hoedown/src \
 		-I $$(S)src/libuv/include -I $$(S)src/rt \
                  $$(RUNTIME_CFLAGS_$(1))) $$<
 
@@ -121,10 +124,13 @@ $(foreach lib,$(NATIVE_LIBS),					    \
 ################################################################################
 # Building third-party targets with external build systems
 #
-# The only current member of this section is libuv, but long ago this used to
-# also be occupied by jemalloc. This location is meant for dependencies which
-# have external build systems. It is still assumed that the output of each of
-# these steps is a static library in the correct location.
+# This location is meant for dependencies which have external build systems. It
+# is still assumed that the output of each of these steps is a static library
+# in the correct location.
+################################################################################
+
+################################################################################
+# libuv
 ################################################################################
 
 define DEF_LIBUV_ARCH_VAR
@@ -153,13 +159,22 @@ define DEF_THIRD_PARTY_TARGETS
 
 ifeq ($$(CFG_WINDOWSY_$(1)), 1)
   LIBUV_OSTYPE_$(1) := win
+  # This isn't necessarily a desired option, but it's harmless and works around
+  # what appears to be a mingw-w64 bug.
+  #
+  # https://sourceforge.net/p/mingw-w64/bugs/395/
+  JEMALLOC_ARGS_$(1) := --enable-lazy-lock
 else ifeq ($(OSTYPE_$(1)), apple-darwin)
   LIBUV_OSTYPE_$(1) := mac
+else ifeq ($(OSTYPE_$(1)), apple-ios)
+  LIBUV_OSTYPE_$(1) := ios
+  JEMALLOC_ARGS_$(1) := --disable-tls
 else ifeq ($(OSTYPE_$(1)), unknown-freebsd)
   LIBUV_OSTYPE_$(1) := freebsd
 else ifeq ($(OSTYPE_$(1)), linux-androideabi)
   LIBUV_OSTYPE_$(1) := android
   LIBUV_ARGS_$(1) := PLATFORM=android host=android OS=linux
+  JEMALLOC_ARGS_$(1) := --disable-tls
 else
   LIBUV_OSTYPE_$(1) := linux
 endif
@@ -169,6 +184,8 @@ LIBUV_DIR_$(1) := $$(RT_OUTPUT_DIR_$(1))/libuv
 LIBUV_LIB_$(1) := $$(RT_OUTPUT_DIR_$(1))/$$(LIBUV_NAME_$(1))
 
 LIBUV_MAKEFILE_$(1) := $$(CFG_BUILD_DIR)$$(RT_OUTPUT_DIR_$(1))/libuv/Makefile
+LIBUV_BUILD_DIR_$(1) := $$(CFG_BUILD_DIR)$$(RT_OUTPUT_DIR_$(1))/libuv
+LIBUV_XCODEPROJ_$(1) := $$(LIBUV_BUILD_DIR_$(1))/uv.xcodeproj
 
 LIBUV_STAMP_$(1) = $$(LIBUV_DIR_$(1))/libuv-auto-clean-stamp
 
@@ -192,19 +209,41 @@ $$(LIBUV_MAKEFILE_$(1)): $$(LIBUV_DEPS) $$(MKFILE_DEPS) $$(LIBUV_STAMP_$(1))
 # theory when we support msvc then we should be using gyp's msvc output instead
 # of mingw's makefile for windows
 ifdef CFG_WINDOWSY_$(1)
-$$(LIBUV_LIB_$(1)): $$(LIBUV_DEPS) $$(MKFILE_DEPS)
+LIBUV_LOCAL_$(1) := $$(S)src/libuv/libuv.a
+$$(LIBUV_LOCAL_$(1)): $$(LIBUV_DEPS) $$(MKFILE_DEPS)
 	$$(Q)$$(MAKE) -C $$(S)src/libuv -f Makefile.mingw \
 		LDFLAGS="$$(CFG_GCCISH_LINK_FLAGS_$(1))" \
 		CC="$$(CC_$(1)) $$(LIBUV_CFLAGS_$(1)) $$(SNAP_DEFINES)" \
 		CXX="$$(CXX_$(1))" \
 		AR="$$(AR_$(1))" \
 		V=$$(VERBOSE)
-	$$(Q)cp $$(S)src/libuv/libuv.a $$@
-else
-$$(LIBUV_LIB_$(1)): $$(LIBUV_DIR_$(1))/Release/libuv.a $$(MKFILE_DEPS)
+else ifeq ($(OSTYPE_$(1)), apple-ios) # iOS
+$$(LIBUV_XCODEPROJ_$(1)): $$(LIBUV_DEPS) $$(MKFILE_DEPS) $$(LIBUV_STAMP_$(1))
+	cp -rf $(S)src/libuv/ $$(LIBUV_BUILD_DIR_$(1))
+	(cd $$(LIBUV_BUILD_DIR_$(1)) && \
+	 $$(CFG_PYTHON) ./gyp_uv.py -f xcode \
+	   -D ninja \
+	   -R libuv)
+	touch $$@
+
+LIBUV_XCODE_OUT_LIB_$(1) := $$(LIBUV_BUILD_DIR_$(1))/build/Release-$$(CFG_SDK_NAME_$(1))/libuv.a
+
+$$(LIBUV_LIB_$(1)): $$(LIBUV_XCODE_OUT_LIB_$(1)) $$(MKFILE_DEPS)
 	$$(Q)cp $$< $$@
-$$(LIBUV_DIR_$(1))/Release/libuv.a: $$(LIBUV_DEPS) $$(LIBUV_MAKEFILE_$(1)) \
+$$(LIBUV_XCODE_OUT_LIB_$(1)): $$(LIBUV_DEPS) $$(LIBUV_XCODEPROJ_$(1)) \
 				    $$(MKFILE_DEPS)
+	$$(Q)xcodebuild -project $$(LIBUV_BUILD_DIR_$(1))/uv.xcodeproj \
+		CFLAGS="$$(LIBUV_CFLAGS_$(1)) $$(SNAP_DEFINES)" \
+		LDFLAGS="$$(CFG_GCCISH_LINK_FLAGS_$(1))" \
+		$$(LIBUV_ARGS_$(1)) \
+		V=$$(VERBOSE) \
+		-configuration Release \
+		-sdk "$$(CFG_SDK_NAME_$(1))" \
+		ARCHS="$$(CFG_SDK_ARCHS_$(1))"
+	$$(Q)touch $$@
+else
+LIBUV_LOCAL_$(1) := $$(LIBUV_DIR_$(1))/Release/libuv.a
+$$(LIBUV_LOCAL_$(1)): $$(LIBUV_DEPS) $$(LIBUV_MAKEFILE_$(1)) $$(MKFILE_DEPS)
 	$$(Q)$$(MAKE) -C $$(LIBUV_DIR_$(1)) \
 		CFLAGS="$$(LIBUV_CFLAGS_$(1)) $$(SNAP_DEFINES)" \
 		LDFLAGS="$$(CFG_GCCISH_LINK_FLAGS_$(1))" \
@@ -216,7 +255,69 @@ $$(LIBUV_DIR_$(1))/Release/libuv.a: $$(LIBUV_DEPS) $$(LIBUV_MAKEFILE_$(1)) \
 		NO_LOAD="$$(LIBUV_NO_LOAD)" \
 		V=$$(VERBOSE)
 	$$(Q)touch $$@
+endif
 
+ifeq ($(1),$$(CFG_BUILD))
+ifneq ($$(CFG_LIBUV_ROOT),)
+$$(LIBUV_LIB_$(1)): $$(CFG_LIBUV_ROOT)/libuv.a
+	$$(Q)cp $$< $$@
+else
+$$(LIBUV_LIB_$(1)): $$(LIBUV_LOCAL_$(1))
+	$$(Q)cp $$< $$@
+endif
+else
+$$(LIBUV_LIB_$(1)): $$(LIBUV_LOCAL_$(1))
+	$$(Q)cp $$< $$@
+endif
+
+################################################################################
+# jemalloc
+################################################################################
+
+ifdef CFG_ENABLE_FAST_MAKE
+JEMALLOC_DEPS := $(S)/.gitmodules
+else
+JEMALLOC_DEPS := $(wildcard \
+		   $(S)src/jemalloc/* \
+		   $(S)src/jemalloc/*/* \
+		   $(S)src/jemalloc/*/*/* \
+		   $(S)src/jemalloc/*/*/*/*)
+endif
+
+JEMALLOC_NAME_$(1) := $$(call CFG_STATIC_LIB_NAME_$(1),jemalloc)
+ifeq ($$(CFG_WINDOWSY_$(1)),1)
+  JEMALLOC_REAL_NAME_$(1) := $$(call CFG_STATIC_LIB_NAME_$(1),jemalloc_s)
+else
+  JEMALLOC_REAL_NAME_$(1) := $$(call CFG_STATIC_LIB_NAME_$(1),jemalloc_pic)
+endif
+JEMALLOC_LIB_$(1) := $$(RT_OUTPUT_DIR_$(1))/$$(JEMALLOC_NAME_$(1))
+JEMALLOC_BUILD_DIR_$(1) := $$(RT_OUTPUT_DIR_$(1))/jemalloc
+JEMALLOC_LOCAL_$(1) := $$(JEMALLOC_BUILD_DIR_$(1))/lib/$$(JEMALLOC_REAL_NAME_$(1))
+
+$$(JEMALLOC_LOCAL_$(1)): $$(JEMALLOC_DEPS) $$(MKFILE_DEPS)
+	@$$(call E, make: jemalloc)
+	cd "$$(JEMALLOC_BUILD_DIR_$(1))"; "$(S)src/jemalloc/configure" \
+		$$(JEMALLOC_ARGS_$(1)) --with-jemalloc-prefix=je_ \
+		--build=$(CFG_BUILD) --host=$(1) \
+		CC="$$(CC_$(1))" \
+		AR="$$(AR_$(1))" \
+		RANLIB="$$(AR_$(1)) s" \
+		CPPFLAGS="-I $(S)src/rt/" \
+		EXTRA_CFLAGS="$$(CFG_CFLAGS_$(1)) $$(CFG_JEMALLOC_CFLAGS_$(1)) -g1"
+	$$(Q)$$(MAKE) -C "$$(JEMALLOC_BUILD_DIR_$(1))" build_lib_static
+
+ifeq ($(1),$$(CFG_BUILD))
+ifneq ($$(CFG_JEMALLOC_ROOT),)
+$$(JEMALLOC_LIB_$(1)): $$(CFG_JEMALLOC_ROOT)/libjemalloc_pic.a
+	@$$(call E, copy: jemalloc)
+	$$(Q)cp $$< $$@
+else
+$$(JEMALLOC_LIB_$(1)): $$(JEMALLOC_LOCAL_$(1))
+	$$(Q)cp $$< $$@
+endif
+else
+$$(JEMALLOC_LIB_$(1)): $$(JEMALLOC_LOCAL_$(1))
+	$$(Q)cp $$< $$@
 endif
 
 ################################################################################
@@ -247,8 +348,8 @@ $$(COMPRT_LIB_$(1)): $$(COMPRT_DEPS) $$(MKFILE_DEPS)
 		RANLIB="$$(AR_$(1)) s" \
 		CFLAGS="$$(CFG_GCCISH_CFLAGS_$(1))" \
 		TargetTriple=$(1) \
-		triple-runtime
-	$$(Q)cp $$(COMPRT_BUILD_DIR_$(1))/triple/runtime/libcompiler_rt.a $$(COMPRT_LIB_$(1))
+		triple-builtins
+	$$(Q)cp $$(COMPRT_BUILD_DIR_$(1))/triple/builtins/libcompiler_rt.a $$(COMPRT_LIB_$(1))
 
 ################################################################################
 # libbacktrace
@@ -262,20 +363,22 @@ BACKTRACE_NAME_$(1) := $$(call CFG_STATIC_LIB_NAME_$(1),backtrace)
 BACKTRACE_LIB_$(1) := $$(RT_OUTPUT_DIR_$(1))/$$(BACKTRACE_NAME_$(1))
 BACKTRACE_BUILD_DIR_$(1) := $$(RT_OUTPUT_DIR_$(1))/libbacktrace
 
-ifeq ($$(findstring darwin,$$(OSTYPE_$(1))),darwin)
-
 # We don't use this on platforms that aren't linux-based, so just make the file
 # available, the compilation of libstd won't actually build it.
+ifeq ($$(findstring darwin,$$(OSTYPE_$(1))),darwin)
+# See comment above
 $$(BACKTRACE_LIB_$(1)):
 	touch $$@
 
 else
 ifeq ($$(findstring ios,$$(OSTYPE_$(1))),ios)
+# See comment above
 $$(BACKTRACE_LIB_$(1)):
 	touch $$@
 else
 
 ifeq ($$(CFG_WINDOWSY_$(1)),1)
+# See comment above
 $$(BACKTRACE_LIB_$(1)):
 	touch $$@
 else

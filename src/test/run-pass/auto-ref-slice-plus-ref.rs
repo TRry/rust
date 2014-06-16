@@ -11,7 +11,7 @@
 // Testing that method lookup automatically both borrows vectors to slices
 // and also references them to create the &self pointer
 
-#[feature(managed_boxes)];
+#![feature(managed_boxes)]
 
 trait MyIter {
     fn test_imm(&self);
@@ -26,14 +26,11 @@ impl<'a> MyIter for &'a str {
 }
 
 pub fn main() {
-    // NB: Associativity of ~, etc. in this context is surprising. These must be parenthesized
-
     ([1]).test_imm();
     (vec!(1)).as_slice().test_imm();
     (&[1]).test_imm();
     ("test").test_imm();
-    (~"test").test_imm();
-    (&"test").test_imm();
+    ("test").test_imm();
 
     // FIXME: Other types of mutable vecs don't currently exist
 

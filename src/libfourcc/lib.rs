@@ -22,7 +22,7 @@ to be `big`, i.e. left-to-right order. It returns a u32.
 To load the extension and use it:
 
 ```rust,ignore
-#[phase(syntax)]
+#[phase(plugin)]
 extern crate fourcc;
 
 fn main() {
@@ -31,7 +31,7 @@ fn main() {
     let little_val = fourcc!("foo ", little);
     assert_eq!(little_val, 0x21EEFFC0u32);
 }
- ```
+```
 
 # References
 
@@ -39,41 +39,39 @@ fn main() {
 
 */
 
-#![crate_id = "fourcc#0.11-pre"]
+#![crate_id = "fourcc#0.11.0-pre"]
 #![crate_type = "rlib"]
 #![crate_type = "dylib"]
 #![license = "MIT/ASL2"]
 #![doc(html_logo_url = "http://www.rust-lang.org/logos/rust-logo-128x128-blk-v2.png",
        html_favicon_url = "http://www.rust-lang.org/favicon.ico",
-       html_root_url = "http://static.rust-lang.org/doc/master")]
+       html_root_url = "http://doc.rust-lang.org/")]
 
-#![deny(deprecated_owned_vector)]
-#![feature(macro_registrar, managed_boxes)]
+#![feature(plugin_registrar, managed_boxes)]
 
 extern crate syntax;
+extern crate rustc;
 
 use syntax::ast;
-use syntax::ast::Name;
 use syntax::attr::contains;
 use syntax::codemap::{Span, mk_sp};
 use syntax::ext::base;
-use syntax::ext::base::{SyntaxExtension, BasicMacroExpander, NormalTT, ExtCtxt, MRExpr};
+use syntax::ext::base::{ExtCtxt, MacExpr};
 use syntax::ext::build::AstBuilder;
 use syntax::parse;
 use syntax::parse::token;
 use syntax::parse::token::InternedString;
+use rustc::plugin::Registry;
 
-#[macro_registrar]
-pub fn macro_registrar(register: |Name, SyntaxExtension|) {
-    register(token::intern("fourcc"),
-        NormalTT(~BasicMacroExpander {
-            expander: expand_syntax_ext,
-            span: None,
-        },
-        None));
+use std::gc::Gc;
+
+#[plugin_registrar]
+pub fn plugin_registrar(reg: &mut Registry) {
+    reg.register_macro("fourcc", expand_syntax_ext);
 }
 
-pub fn expand_syntax_ext(cx: &mut ExtCtxt, sp: Span, tts: &[ast::TokenTree]) -> base::MacResult {
+pub fn expand_syntax_ext(cx: &mut ExtCtxt, sp: Span, tts: &[ast::TokenTree])
+                         -> Box<base::MacResult> {
     let (expr, endian) = parse_tts(cx, tts);
 
     let little = match endian {
@@ -91,7 +89,7 @@ pub fn expand_syntax_ext(cx: &mut ExtCtxt, sp: Span, tts: &[ast::TokenTree]) -> 
 
     let s = match expr.node {
         // expression is a literal
-        ast::ExprLit(lit) => match lit.node {
+        ast::ExprLit(ref lit) => match lit.node {
             // string literal
             ast::LitStr(ref s, _) => {
                 if s.get().char_len() != 4 {
@@ -101,12 +99,12 @@ pub fn expand_syntax_ext(cx: &mut ExtCtxt, sp: Span, tts: &[ast::TokenTree]) -> 
             }
             _ => {
                 cx.span_err(expr.span, "unsupported literal in fourcc!");
-                return MRExpr(cx.expr_lit(sp, ast::LitUint(0u64, ast::TyU32)));
+                return base::DummyResult::expr(sp)
             }
         },
         _ => {
             cx.span_err(expr.span, "non-literal in fourcc!");
-            return MRExpr(cx.expr_lit(sp, ast::LitUint(0u64, ast::TyU32)));
+            return base::DummyResult::expr(sp)
         }
     };
 
@@ -126,7 +124,7 @@ pub fn expand_syntax_ext(cx: &mut ExtCtxt, sp: Span, tts: &[ast::TokenTree]) -> 
         };
     }
     let e = cx.expr_lit(sp, ast::LitUint(val as u64, ast::TyU32));
-    MRExpr(e)
+    MacExpr::new(e)
 }
 
 struct Ident {
@@ -134,7 +132,8 @@ struct Ident {
     span: Span
 }
 
-fn parse_tts(cx: &ExtCtxt, tts: &[ast::TokenTree]) -> (@ast::Expr, Option<Ident>) {
+fn parse_tts(cx: &ExtCtxt,
+             tts: &[ast::TokenTree]) -> (Gc<ast::Expr>, Option<Ident>) {
     let p = &mut parse::new_parser_from_tts(cx.parse_sess(),
                                             cx.cfg(),
                                             tts.iter()

@@ -8,8 +8,8 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use std::cast;
-use libc::{c_int, c_void};
+use libc::c_void;
+use std::mem;
 
 use uvll;
 use super::{Loop, UvHandle};
@@ -18,20 +18,18 @@ use std::rt::rtio::{Callback, PausableIdleCallback};
 pub struct IdleWatcher {
     handle: *uvll::uv_idle_t,
     idle_flag: bool,
-    closed: bool,
-    callback: ~Callback:Send,
+    callback: Box<Callback + Send>,
 }
 
 impl IdleWatcher {
-    pub fn new(loop_: &mut Loop, cb: ~Callback:Send) -> ~IdleWatcher {
+    pub fn new(loop_: &mut Loop, cb: Box<Callback + Send>) -> Box<IdleWatcher> {
         let handle = UvHandle::alloc(None::<IdleWatcher>, uvll::UV_IDLE);
         assert_eq!(unsafe {
             uvll::uv_idle_init(loop_.handle, handle)
         }, 0);
-        let me = ~IdleWatcher {
+        let me = box IdleWatcher {
             handle: handle,
             idle_flag: false,
-            closed: false,
             callback: cb,
         };
         return me.install();
@@ -41,16 +39,15 @@ impl IdleWatcher {
         let handle = UvHandle::alloc(None::<IdleWatcher>, uvll::UV_IDLE);
         unsafe {
             assert_eq!(uvll::uv_idle_init(loop_.handle, handle), 0);
-            let data: *c_void = cast::transmute(~f);
+            let data: *c_void = mem::transmute(box f);
             uvll::set_data_for_uv_handle(handle, data);
             assert_eq!(uvll::uv_idle_start(handle, onetime_cb), 0)
         }
 
-        extern fn onetime_cb(handle: *uvll::uv_idle_t, status: c_int) {
-            assert_eq!(status, 0);
+        extern fn onetime_cb(handle: *uvll::uv_idle_t) {
             unsafe {
                 let data = uvll::get_data_for_uv_handle(handle);
-                let f: ~proc() = cast::transmute(data);
+                let f: Box<proc()> = mem::transmute(data);
                 (*f)();
                 assert_eq!(uvll::uv_idle_stop(handle), 0);
                 uvll::uv_close(handle, close_cb);
@@ -82,8 +79,7 @@ impl UvHandle<uvll::uv_idle_t> for IdleWatcher {
     fn uv_handle(&self) -> *uvll::uv_idle_t { self.handle }
 }
 
-extern fn idle_cb(handle: *uvll::uv_idle_t, status: c_int) {
-    assert_eq!(status, 0);
+extern fn idle_cb(handle: *uvll::uv_idle_t) {
     let idle: &mut IdleWatcher = unsafe { UvHandle::from_uv_handle(&handle) };
     idle.callback.call();
 }
@@ -97,7 +93,7 @@ impl Drop for IdleWatcher {
 
 #[cfg(test)]
 mod test {
-    use std::cast;
+    use std::mem;
     use std::cell::RefCell;
     use std::rc::Rc;
     use std::rt::rtio::{Callback, PausableIdleCallback};
@@ -128,16 +124,16 @@ mod test {
         }
     }
 
-    fn mk(v: uint) -> (~IdleWatcher, Chan) {
+    fn mk(v: uint) -> (Box<IdleWatcher>, Chan) {
         let rc = Rc::new(RefCell::new((None, 0)));
-        let cb = ~MyCallback(rc.clone(), v);
-        let cb = cb as ~Callback:;
-        let cb = unsafe { cast::transmute(cb) };
+        let cb = box MyCallback(rc.clone(), v);
+        let cb = cb as Box<Callback>;
+        let cb = unsafe { mem::transmute(cb) };
         (IdleWatcher::new(&mut local_loop().loop_, cb), rc)
     }
 
     fn sleep(chan: &Chan) -> uint {
-        let task: ~Task = Local::take();
+        let task: Box<Task> = Local::take();
         task.deschedule(1, |task| {
             match *chan.borrow_mut().deref_mut() {
                 (ref mut slot, _) => {
@@ -175,7 +171,7 @@ mod test {
         // never reschedule us, so we're guaranteed to stay on the same
         // task/event loop.
         use std::io;
-        drop(io::stdio::set_stderr(~io::util::NullWriter));
+        drop(io::stdio::set_stderr(box io::util::NullWriter));
 
         let (mut idle, _chan) = mk(1);
         idle.resume();

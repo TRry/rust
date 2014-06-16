@@ -14,18 +14,23 @@ use codemap::Span;
 use ext::base::ExtCtxt;
 use ext::build::AstBuilder;
 use ext::deriving::generic::*;
+use ext::deriving::generic::ty::*;
+use parse::token::InternedString;
 
 use std::cmp::{Ordering, Equal, Less, Greater};
+use std::gc::Gc;
 
 pub fn expand_deriving_totalord(cx: &mut ExtCtxt,
                                 span: Span,
-                                mitem: @MetaItem,
-                                item: @Item,
-                                push: |@Item|) {
+                                mitem: Gc<MetaItem>,
+                                item: Gc<Item>,
+                                push: |Gc<Item>|) {
+    let inline = cx.meta_word(span, InternedString::new("inline"));
+    let attrs = vec!(cx.attribute(span, inline));
     let trait_def = TraitDef {
         span: span,
         attributes: Vec::new(),
-        path: Path::new(vec!("std", "cmp", "TotalOrd")),
+        path: Path::new(vec!("std", "cmp", "Ord")),
         additional_bounds: Vec::new(),
         generics: LifetimeBounds::empty(),
         methods: vec!(
@@ -35,9 +40,11 @@ pub fn expand_deriving_totalord(cx: &mut ExtCtxt,
                 explicit_self: borrowed_explicit_self(),
                 args: vec!(borrowed_self()),
                 ret_ty: Literal(Path::new(vec!("std", "cmp", "Ordering"))),
-                inline: true,
+                attributes: attrs,
                 const_nonmatching: false,
-                combine_substructure: cs_cmp
+                combine_substructure: combine_substructure(|a, b, c| {
+                    cs_cmp(a, b, c)
+                }),
             }
         )
     };
@@ -59,7 +66,7 @@ pub fn ordering_const(cx: &mut ExtCtxt, span: Span, cnst: Ordering) -> ast::Path
 }
 
 pub fn cs_cmp(cx: &mut ExtCtxt, span: Span,
-              substr: &Substructure) -> @Expr {
+              substr: &Substructure) -> Gc<Expr> {
     let test_id = cx.ident_of("__test");
     let equals_path = ordering_const(cx, span, Equal);
 
@@ -112,7 +119,7 @@ pub fn cs_cmp(cx: &mut ExtCtxt, span: Span,
                     let order = ordering_const(cx, span, self_var.cmp(&other_var));
                     cx.expr_path(order)
                 }
-                _ => cx.span_bug(span, "not exactly 2 arguments in `deriving(TotalOrd)`")
+                _ => cx.span_bug(span, "not exactly 2 arguments in `deriving(Ord)`")
             }
         },
         cx, span, substr)

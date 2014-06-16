@@ -10,23 +10,25 @@
 
 
 pub struct CrateId {
-    local_path: ~str,
-    junk: ~str
+    local_path: String,
+    junk: String
 }
 
 impl CrateId {
     fn new(s: &str) -> CrateId {
         CrateId {
-            local_path: s.to_owned(),
-            junk: ~"wutevs"
+            local_path: s.to_string(),
+            junk: "wutevs".to_string()
         }
     }
 }
 
 pub fn remove_package_from_database() {
-    let mut lines_to_use: Vec<&CrateId> = Vec::new(); //~ ERROR cannot infer an appropriate lifetime
+    let mut lines_to_use: Vec<&CrateId> = Vec::new();
     let push_id = |installed_id: &CrateId| {
         lines_to_use.push(installed_id);
+        //~^ ERROR cannot infer an appropriate lifetime for automatic coercion due to
+        // conflicting requirements
     };
     list_database(push_id);
 

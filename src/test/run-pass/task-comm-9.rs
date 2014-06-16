@@ -8,8 +8,9 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+extern crate debug;
 
-use std::task;
+use std::task::TaskBuilder;
 
 pub fn main() { test00(); }
 
@@ -24,7 +25,7 @@ fn test00() {
     let (tx, rx) = channel();
     let number_of_messages: int = 10;
 
-    let mut builder = task::task();
+    let mut builder = TaskBuilder::new();
     let result = builder.future_result();
     builder.spawn(proc() {
         test00_start(&tx, number_of_messages);

@@ -19,11 +19,11 @@ use syntax::ast;
 use syntax::abi::{X86, X86_64, Arm, Mips};
 
 use std::c_str::ToCStr;
-use std::cast;
+use std::mem;
 
 use libc::{c_uint};
 
-#[deriving(Clone, Eq, Show)]
+#[deriving(Clone, PartialEq, Show)]
 pub struct Type {
     rf: TypeRef
 }
@@ -88,6 +88,10 @@ impl Type {
         ty!(llvm::LLVMDoubleTypeInContext(ccx.llcx))
     }
 
+    pub fn f128(ccx: &CrateContext) -> Type {
+        ty!(llvm::LLVMFP128TypeInContext(ccx.llcx))
+    }
+
     pub fn bool(ccx: &CrateContext) -> Type {
         Type::i8(ccx)
     }
@@ -130,24 +134,25 @@ impl Type {
     pub fn float_from_ty(ccx: &CrateContext, t: ast::FloatTy) -> Type {
         match t {
             ast::TyF32 => Type::f32(ccx),
-            ast::TyF64 => Type::f64(ccx)
+            ast::TyF64 => Type::f64(ccx),
+            ast::TyF128 => Type::f128(ccx)
         }
     }
 
     pub fn func(args: &[Type], ret: &Type) -> Type {
-        let vec : &[TypeRef] = unsafe { cast::transmute(args) };
+        let vec : &[TypeRef] = unsafe { mem::transmute(args) };
         ty!(llvm::LLVMFunctionType(ret.to_ref(), vec.as_ptr(),
                                    args.len() as c_uint, False))
     }
 
     pub fn variadic_func(args: &[Type], ret: &Type) -> Type {
-        let vec : &[TypeRef] = unsafe { cast::transmute(args) };
+        let vec : &[TypeRef] = unsafe { mem::transmute(args) };
         ty!(llvm::LLVMFunctionType(ret.to_ref(), vec.as_ptr(),
                                    args.len() as c_uint, True))
     }
 
     pub fn struct_(ccx: &CrateContext, els: &[Type], packed: bool) -> Type {
-        let els : &[TypeRef] = unsafe { cast::transmute(els) };
+        let els : &[TypeRef] = unsafe { mem::transmute(els) };
         ty!(llvm::LLVMStructTypeInContext(ccx.llcx, els.as_ptr(),
                                           els.len() as c_uint,
                                           packed as Bool))
@@ -181,7 +186,7 @@ impl Type {
         Type::func([t], &Type::void(ccx))
     }
 
-    pub fn tydesc(ccx: &CrateContext) -> Type {
+    pub fn tydesc(ccx: &CrateContext, str_slice_ty: Type) -> Type {
         let mut tydesc = Type::named_struct(ccx, "tydesc");
         let glue_fn_ty = Type::glue_fn(ccx, Type::i8p(ccx)).ptr_to();
 
@@ -195,14 +200,14 @@ impl Type {
                      int_ty,     // align
                      glue_fn_ty, // drop
                      glue_fn_ty, // visit
-                     Type::struct_(ccx, [Type::i8p(ccx), Type::int(ccx)], false)]; // name
+                     str_slice_ty]; // name
         tydesc.set_struct_body(elems, false);
 
         tydesc
     }
 
     pub fn array(ty: &Type, len: u64) -> Type {
-        ty!(llvm::LLVMArrayType(ty.to_ref(), len as c_uint))
+        ty!(llvm::LLVMRustArrayType(ty.to_ref(), len))
     }
 
     pub fn vector(ty: &Type, len: u64) -> Type {
@@ -240,7 +245,7 @@ impl Type {
 
     pub fn set_struct_body(&mut self, els: &[Type], packed: bool) {
         unsafe {
-            let vec : &[TypeRef] = cast::transmute(els);
+            let vec : &[TypeRef] = mem::transmute(els);
             llvm::LLVMStructSetBody(self.to_ref(), vec.as_ptr(),
                                     els.len() as c_uint, packed as Bool)
         }
@@ -276,7 +281,7 @@ impl Type {
             }
             let mut elts = Vec::from_elem(n_elts, 0 as TypeRef);
             llvm::LLVMGetStructElementTypes(self.to_ref(), elts.get_mut(0));
-            cast::transmute(elts)
+            mem::transmute(elts)
         }
     }
 
@@ -289,7 +294,7 @@ impl Type {
             let n_args = llvm::LLVMCountParamTypes(self.to_ref()) as uint;
             let args = Vec::from_elem(n_args, 0 as TypeRef);
             llvm::LLVMGetParamTypes(self.to_ref(), args.as_ptr());
-            cast::transmute(args)
+            mem::transmute(args)
         }
     }
 

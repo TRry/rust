@@ -11,20 +11,20 @@
 // exec-env:RUST_NEWRT=1
 // error-pattern:fail
 
-#[feature(managed_boxes)];
-
-extern crate collections;
+#![feature(managed_boxes)]
 
 use std::vec;
+use std::collections;
+use std::gc::GC;
 
 fn main() {
-    let _count = @0u;
+    let _count = box(GC) 0u;
     let mut map = collections::HashMap::new();
     let mut arr = Vec::new();
     for _i in range(0u, 10u) {
-        arr.push(@~"key stuff");
+        arr.push(box(GC) "key stuff".to_string());
         map.insert(arr.clone(),
-                   arr.clone().append([@~"value stuff"]));
+                   arr.clone().append([box(GC) "value stuff".to_string()]));
         if arr.len() == 5 {
             fail!();
         }

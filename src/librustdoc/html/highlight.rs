@@ -25,16 +25,20 @@ use html::escape::Escape;
 use t = syntax::parse::token;
 
 /// Highlights some source code, returning the HTML output.
-pub fn highlight(src: &str, class: Option<&str>) -> ~str {
+pub fn highlight(src: &str, class: Option<&str>, id: Option<&str>) -> String {
+    debug!("highlighting: ================\n{}\n==============", src);
     let sess = parse::new_parse_sess();
-    let fm = parse::string_to_filemap(&sess, src.to_owned(), ~"<stdin>");
+    let fm = parse::string_to_filemap(&sess,
+                                      src.to_string(),
+                                      "<stdin>".to_string());
 
     let mut out = io::MemWriter::new();
     doit(&sess,
-         lexer::new_string_reader(&sess.span_diagnostic, fm),
+         lexer::StringReader::new(&sess.span_diagnostic, fm),
          class,
+         id,
          &mut out).unwrap();
-    str::from_utf8_lossy(out.unwrap().as_slice()).into_owned()
+    str::from_utf8_lossy(out.unwrap().as_slice()).to_string()
 }
 
 /// Exhausts the `lexer` writing the output into `out`.
@@ -44,11 +48,17 @@ pub fn highlight(src: &str, class: Option<&str>) -> ~str {
 /// it's used. All source code emission is done as slices from the source map,
 /// not from the tokens themselves, in order to stay true to the original
 /// source.
-fn doit(sess: &parse::ParseSess, mut lexer: lexer::StringReader, class: Option<&str>,
+fn doit(sess: &parse::ParseSess, mut lexer: lexer::StringReader,
+        class: Option<&str>, id: Option<&str>,
         out: &mut Writer) -> io::IoResult<()> {
     use syntax::parse::lexer::Reader;
 
-    try!(write!(out, "<pre class='rust {}'>\n", class.unwrap_or("")));
+    try!(write!(out, "<pre "));
+    match id {
+        Some(id) => try!(write!(out, "id='{}' ", id)),
+        None => {}
+    }
+    try!(write!(out, "class='rust {}'>\n", class.unwrap_or("")));
     let mut last = BytePos(0);
     let mut is_attribute = false;
     let mut is_macro = false;
@@ -70,11 +80,11 @@ fn doit(sess: &parse::ParseSess, mut lexer: lexer::StringReader, class: Option<&
                 hi: test,
                 expn_info: None,
             }).unwrap();
-            if snip.contains("/") {
+            if snip.as_slice().contains("/") {
                 try!(write!(out, "<span class='comment'>{}</span>",
-                              Escape(snip)));
+                              Escape(snip.as_slice())));
             } else {
-                try!(write!(out, "{}", Escape(snip)));
+                try!(write!(out, "{}", Escape(snip.as_slice())));
             }
         }
         last = next.sp.hi;
@@ -83,8 +93,8 @@ fn doit(sess: &parse::ParseSess, mut lexer: lexer::StringReader, class: Option<&
         let klass = match next.tok {
             // If this '&' token is directly adjacent to another token, assume
             // that it's the address-of operator instead of the and-operator.
-            // This allows us to give all pointers their own class (~ and @ are
-            // below).
+            // This allows us to give all pointers their own class (`Box` and
+            // `@` are below).
             t::BINOP(t::AND) if lexer.peek().sp.lo == next.sp.hi => "kw-2",
             t::AT | t::TILDE => "kw-2",
 
@@ -99,7 +109,7 @@ fn doit(sess: &parse::ParseSess, mut lexer: lexer::StringReader, class: Option<&
 
             // miscellaneous, no highlighting
             t::DOT | t::DOTDOT | t::DOTDOTDOT | t::COMMA | t::SEMI |
-                t::COLON | t::MOD_SEP | t::LARROW | t::DARROW | t::LPAREN |
+                t::COLON | t::MOD_SEP | t::LARROW | t::LPAREN |
                 t::RPAREN | t::LBRACKET | t::LBRACE | t::RBRACE => "",
             t::DOLLAR => {
                 if t::is_ident(&lexer.peek().tok) {
@@ -116,7 +126,7 @@ fn doit(sess: &parse::ParseSess, mut lexer: lexer::StringReader, class: Option<&
             // span when we see the ']'.
             t::POUND => {
                 is_attribute = true;
-                try!(write!(out, r"<span class='attribute'>\#"));
+                try!(write!(out, r"<span class='attribute'>#"));
                 continue
             }
             t::RBRACKET => {
@@ -171,10 +181,10 @@ fn doit(sess: &parse::ParseSess, mut lexer: lexer::StringReader, class: Option<&
         // stringifying this token
         let snip = sess.span_diagnostic.cm.span_to_snippet(next.sp).unwrap();
         if klass == "" {
-            try!(write!(out, "{}", Escape(snip)));
+            try!(write!(out, "{}", Escape(snip.as_slice())));
         } else {
             try!(write!(out, "<span class='{}'>{}</span>", klass,
-                          Escape(snip)));
+                          Escape(snip.as_slice())));
         }
     }
 

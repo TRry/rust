@@ -8,13 +8,16 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#[feature(managed_boxes)];
+// ignore-pretty FIXME(#14193)
+
+#![feature(managed_boxes)]
 
 use std::cell::RefCell;
+use std::gc::{Gc, GC};
 
 enum maybe_pointy {
     none,
-    p(@RefCell<Pointy>),
+    p(Gc<RefCell<Pointy>>),
 }
 
 struct Pointy {
@@ -26,10 +29,10 @@ fn make_uniq_closure<A:Send>(a: A) -> proc():Send -> uint {
     proc() { &a as *A as uint }
 }
 
-fn empty_pointy() -> @RefCell<Pointy> {
-    return @RefCell::new(Pointy {
+fn empty_pointy() -> Gc<RefCell<Pointy>> {
+    return box(GC) RefCell::new(Pointy {
         a : none,
-        d : make_uniq_closure(~"hi")
+        d : make_uniq_closure("hi".to_string())
     })
 }
 

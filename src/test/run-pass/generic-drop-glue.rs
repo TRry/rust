@@ -8,10 +8,12 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#[feature(managed_boxes)];
+#![feature(managed_boxes)]
 
-struct Pair { x: @int, y: @int }
+use std::gc::{Gc, GC};
+
+struct Pair { x: Gc<int>, y: Gc<int> }
 
 fn f<T>(t: T) { let _t1: T = t; }
 
-pub fn main() { let x = Pair {x: @10, y: @12}; f(x); }
+pub fn main() { let x = Pair {x: box(GC) 10, y: box(GC) 12}; f(x); }

@@ -10,9 +10,9 @@
 
 // Testing that we can't store a reference it task-local storage
 
-use std::local_data;
+use std::gc::{GC, Gc};
 
-local_data_key!(key: @&int)
+local_data_key!(key: Gc<&int>)
 //~^ ERROR missing lifetime specifier
 
 fn main() {}

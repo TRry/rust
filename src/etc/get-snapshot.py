@@ -1,4 +1,6 @@
-# Copyright 2011-2013 The Rust Project Developers. See the COPYRIGHT
+#!/usr/bin/env python
+#
+# Copyright 2011-2014 The Rust Project Developers. See the COPYRIGHT
 # file at the top-level directory of this distribution and at
 # http://rust-lang.org/COPYRIGHT.
 #
@@ -50,7 +52,9 @@ triple = sys.argv[1]
 if len(sys.argv) == 3:
   dl_path = sys.argv[2]
 else:
-  snap = determine_curr_snapshot(triple)
+  # There are no 64-bit Windows snapshots yet, so we'll use 32-bit ones instead, for now
+  snap_triple = triple if triple != "x86_64-w64-mingw32" else "i686-pc-mingw32"
+  snap = determine_curr_snapshot(snap_triple)
   dl = os.path.join(download_dir_base, snap)
   url = download_url_base + "/" + snap
   print("determined most recent snapshot: " + snap)

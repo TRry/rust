@@ -11,9 +11,8 @@
 // Testing guarantees provided by once functions.
 
 
-#[feature(once_fns)];
-extern crate sync;
-use sync::Arc;
+#![feature(once_fns)]
+use std::sync::Arc;
 
 fn foo(blk: proc()) {
     blk();

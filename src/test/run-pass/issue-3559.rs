@@ -10,7 +10,7 @@
 
 extern crate collections;
 
-use collections::HashMap;
+use std::collections::HashMap;
 
 fn check_strs(actual: &str, expected: &str) -> bool {
     if actual != expected {
@@ -22,8 +22,8 @@ fn check_strs(actual: &str, expected: &str) -> bool {
 
 pub fn main() {
     let mut table = HashMap::new();
-    table.insert(~"one", 1);
-    table.insert(~"two", 2);
-    assert!(check_strs(table.to_str(), "{one: 1, two: 2}") ||
-            check_strs(table.to_str(), "{two: 2, one: 1}"));
+    table.insert("one".to_string(), 1);
+    table.insert("two".to_string(), 2);
+    assert!(check_strs(table.to_str().as_slice(), "{one: 1, two: 2}") ||
+            check_strs(table.to_str().as_slice(), "{two: 2, one: 1}"));
 }

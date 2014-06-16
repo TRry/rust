@@ -223,6 +223,30 @@ opt() {
      fi
 }
 
+envopt() {
+    local NAME=$1
+    local V="CFG_${NAME}"
+    eval VV=\$$V
+
+    # If configure didn't set a value already, then check environment.
+    #
+    # (It is recommended that the configure script always check the
+    # environment before setting any values to envopt variables; see
+    # e.g.  how CFG_CC is handled, where it first checks `-z "$CC"`,
+    # and issues msg if it ends up employing that provided value.)
+    if [ -z "$VV" ]
+    then
+        eval $V=\$$NAME
+        eval VV=\$$V
+    fi
+
+    # If script or environment provided a value, save it.
+    if [ ! -z "$VV" ]
+    then
+        putvar $V
+    fi
+}
+
 msg "looking for configure programs"
 need_cmd cmp
 need_cmd mkdir
@@ -324,6 +348,11 @@ case $CFG_CPUTYPE in
         CFG_CPUTYPE=arm
         ;;
 
+    armv7l)
+        CFG_CPUTYPE=arm
+        CFG_OSTYPE="${CFG_OSTYPE}eabihf"
+        ;;
+
     x86_64 | x86-64 | x64 | amd64)
         CFG_CPUTYPE=x86_64
         ;;
@@ -377,6 +406,7 @@ opt optimize 1 "build optimized rust code"
 opt optimize-cxx 1 "build optimized C++ code"
 opt optimize-llvm 1 "build optimized LLVM"
 opt optimize-tests 1 "build tests with optimizations"
+opt libcpp 1 "build with llvm with libc++ instead of libstdc++ when using clang"
 opt llvm-assertions 1 "build LLVM with assertions"
 opt debug 1 "build with extra debug fun"
 opt ratchet-bench 0 "ratchet benchmarks"
@@ -386,14 +416,16 @@ opt mingw-cross 0 "cross-compile for win32 using mingw"
 opt clang 0 "prefer clang to gcc for building the runtime"
 opt ccache 0 "invoke gcc/clang via ccache to reuse object files between builds"
 opt local-rust 0 "use an installed rustc rather than downloading a snapshot"
-opt pax-flags 0 "apply PaX flags to rustc binaries (required for GRSecurity/PaX-patched kernels)"
 opt inject-std-version 1 "inject the current compiler version of libstd into programs"
+opt llvm-static-stdcpp 0 "statically link to libstdc++ for LLVM"
 opt rpath 1 "build rpaths into rustc itself"
 opt nightly 0 "build nightly packages"
 opt verify-install 1 "verify installed binaries work"
 valopt prefix "/usr/local" "set installation prefix"
 valopt local-rust-root "/usr/local" "set prefix for local rust binary"
 valopt llvm-root "" "set LLVM root"
+valopt jemalloc-root "" "set directory where libjemalloc_pic.a is located"
+valopt libuv-root "" "set directory where libuv.a is located"
 valopt android-cross-path "/opt/ndk_standalone" "Android NDK standalone path"
 valopt mingw32-cross-path "" "MinGW32 cross compiler path"
 
@@ -465,10 +497,24 @@ probe CFG_PDFLATEX         pdflatex
 probe CFG_XELATEX          xelatex
 probe CFG_LUALATEX         lualatex
 probe CFG_GDB              gdb
-if [ "$CFG_OSTYPE" = "unknown-linux-gnu" ]
+probe CFG_LLDB             lldb
+
+if [ ! -z "$CFG_LLDB" ]
 then
-    probe CFG_PAXCTL           paxctl /sbin/paxctl
-    probe CFG_ZCAT             zcat
+    # If CFG_LLDB_PYTHON_DIR is not already set from the outside and valid, try to read it from
+    # LLDB via the -P commandline options.
+    if [ -z "$CFG_LLDB_PYTHON_DIR" ] || [ ! -d "$CFG_LLDB_PYTHON_DIR" ]
+    then
+        CFG_LLDB_PYTHON_DIR=$($CFG_LLDB -P)
+
+        # If CFG_LLDB_PYTHON_DIR is not a valid directory, set it to something more readable
+        if [ ! -d "$CFG_LLDB_PYTHON_DIR" ]
+        then
+            CFG_LLDB_PYTHON_DIR="LLDB_PYTHON_DIRECTORY_NOT_FOUND"
+        fi
+
+        putvar CFG_LLDB_PYTHON_DIR
+    fi
 fi
 
 step_msg "looking for target specific programs"
@@ -490,51 +536,6 @@ then
     then
         step_msg "pandoc $PV_MAJOR.$PV_MINOR is too old. Need at least $MIN_PV_MAJOR.$MIN_PV_MINOR. Disabling"
         BAD_PANDOC=1
-    fi
-fi
-
-if [ "$CFG_OSTYPE" = "unknown-linux-gnu" ]
-then
-    if [ ! -z "$CFG_ENABLE_PAX_FLAGS" -a -z "$CFG_PAXCTL" ]
-    then
-        err "enabled PaX markings but no paxctl binary found"
-    fi
-
-    if [ -z "$CFG_DISABLE_PAX_FLAGS" ]
-    then
-        # GRSecurity/PaX detection. This can be very flaky.
-        GRSEC_DETECTED=
-
-        # /dev/grsec only exists if CONFIG_GRKERNSEC_NO_RBAC is not set.
-        # /proc/sys/kernel/grsecurity is not available if ÇONFIG_GRKERNSEC_SYSCTL is not set.
-        if [ -e /dev/grsec -o -d /proc/sys/kernel/grsecurity ]
-        then
-            GRSEC_DETECTED=1
-        # /proc/config.gz is normally only available to root, and only if CONFIG_IKCONFIG_PROC has been set.
-        elif [ -r /proc/config.gz -a ! -z "$CFG_ZCAT" ]
-        then
-            if "$CFG_ZCAT" /proc/config.gz | grep --quiet "CONFIG_GRKERNSEC=y"
-            then
-                GRSEC_DETECTED=1
-            fi
-        # Flaky.
-        elif grep --quiet grsec /proc/version
-        then
-            GRSEC_DETECTED=1
-        fi
-
-        if [ ! -z "$GRSEC_DETECTED" ]
-        then
-            step_msg "GRSecurity: yes"
-            if [ ! -z "$CFG_PAXCTL" ]
-            then
-                CFG_ENABLE_PAX_FLAGS=1
-            else
-                warn "GRSecurity kernel detected but no paxctl binary found: not setting CFG_ENABLE_PAX_FLAGS"
-            fi
-        else
-            step_msg "GRSecurity: no"
-        fi
     fi
 fi
 
@@ -579,26 +580,32 @@ then
         CFG_ENABLE_CLANG=1
         putvar CFG_ENABLE_CLANG
     else
-        # on OS X, with xcode 5 and newer, certain developers may have
-        # cc, gcc and g++ point to a  mixture of clang and gcc
-        # if so, this will create very strange build errors
-        # this last stanza is to detect some such problems and save the future rust
-        # contributor some time solving that issue.
-        # this detection could be generalized to other OSes aside from OS X
-        # but the issue seems most likely to happen on OS X
+        if [ $("$CFG_GCC" --version 2>&1 | grep -c ' 4\.[0-6]') -ne 0 ]; then
+            step_msg "older GCC found, using clang instead"
+            CFG_ENABLE_CLANG=1
+            putvar CFG_ENABLE_CLANG
+        else
+            # on OS X, with xcode 5 and newer, certain developers may have
+            # cc, gcc and g++ point to a  mixture of clang and gcc
+            # if so, this will create very strange build errors
+            # this last stanza is to detect some such problems and save the future rust
+            # contributor some time solving that issue.
+            # this detection could be generalized to other OSes aside from OS X
+            # but the issue seems most likely to happen on OS X
 
-        chk_cc () {
-            $1 --version 2> /dev/null | grep -q $2
-        }
-        # check that gcc, cc and g++ all point to the same compiler.
-        # note that for xcode 5, g++ points to clang, not clang++
-        if !((chk_cc gcc clang  && chk_cc g++ clang) ||
-            (chk_cc gcc gcc  &&( chk_cc g++ g++ || chk g++ gcc))) then
-            err "the gcc and g++ in your path point to different compilers.
-Check which versions are in your path with  cc --version and g++ --version.
-To resolve this problem, either fix your PATH  or run configure with --enable-clang"
+            chk_cc () {
+                $1 --version 2> /dev/null | grep -q $2
+            }
+            # check that gcc, cc and g++ all point to the same compiler.
+            # note that for xcode 5, g++ points to clang, not clang++
+            if !((chk_cc gcc clang  && chk_cc g++ clang) ||
+                (chk_cc gcc gcc  &&( chk_cc g++ g++ || chk g++ gcc))) then
+                err "the gcc and g++ in your path point to different compilers.
+    Check which versions are in your path with gcc --version and g++ --version.
+    To resolve this problem, either fix your PATH  or run configure with --enable-clang"
+            fi
+
         fi
-
     fi
 fi
 
@@ -619,40 +626,101 @@ then
     esac
 fi
 
+# Even when the user overrides the choice of CC, still try to detect
+# clang to disable some clang-specific warnings.  We here draw a
+# distinction between:
+#
+#  CFG_ENABLE_CLANG : passed --enable-clang, or host "requires" clang,
+#  CFG_USING_CLANG : compiler (clang / gcc / $CC) looks like clang.
+#
+# This distinction is important because there are some safeguards we
+# would prefer to skip when merely CFG_USING_CLANG is set; but when
+# CFG_ENABLE_CLANG is set, that indicates that we are opting into
+# running such safeguards.
+
+if [ ! -z "$CC" ]
+then
+    msg "skipping compiler inference steps; using provided CC=$CC"
+    CFG_CC="$CC"
+
+    CFG_OSX_CC_VERSION=$("$CFG_CC" --version 2>&1 | grep "clang")
+    if [ $? -eq 0 ]
+    then
+        step_msg "note, user-provided CC looks like clang; CC=$CC."
+        CFG_USING_CLANG=1
+        putvar CFG_USING_CLANG
+    fi
+else
+    if [ ! -z "$CFG_ENABLE_CLANG" ]
+    then
+        if [ -z "$CFG_CLANG" ]
+        then
+            err "clang requested but not found"
+        fi
+        CFG_CC="$CFG_CLANG"
+        CFG_USING_CLANG=1
+        putvar CFG_USING_CLANG
+    else
+        CFG_CC="gcc"
+    fi
+fi
+
 if [ ! -z "$CFG_ENABLE_CLANG" ]
 then
-    if [ -z "$CFG_CLANG" ]
+    if [ -z "$CC" ] || [[ $CC == *clang ]]
     then
-        err "clang requested but not found"
-    fi
-    CFG_CLANG_VERSION=$("$CFG_CLANG" \
-                      --version \
-                      | grep version \
-                      | sed 's/.*\(version .*\)/\1/; s/.*based on \(LLVM .*\))/\1/' \
-                      | cut -d ' ' -f 2)
+        CFG_CLANG_VERSION=$($CFG_CC \
+            --version \
+            | grep version \
+            | sed 's/.*\(version .*\)/\1/; s/.*based on \(LLVM .*\))/\1/' \
+            | cut -d ' ' -f 2)
 
-    case $CFG_CLANG_VERSION in
-        (3.0svn | 3.0 | 3.1* | 3.2* | 3.3* | 3.4* | 3.5* )
-        step_msg "found ok version of CLANG: $CFG_CLANG_VERSION"
-        CFG_C_COMPILER="clang"
-        ;;
-        (*)
-        err "bad CLANG version: $CFG_CLANG_VERSION, need >=3.0svn"
-        ;;
-    esac
-else
-    CFG_C_COMPILER="gcc"
+        case $CFG_CLANG_VERSION in
+            (3.0svn | 3.0 | 3.1* | 3.2* | 3.3* | 3.4* | 3.5* )
+            step_msg "found ok version of CLANG: $CFG_CLANG_VERSION"
+            if [ -z "$CC" ]
+            then
+                CFG_CC="clang"
+                CFG_CXX="clang++"
+            fi
+            ;;
+            (*)
+            err "bad CLANG version: $CFG_CLANG_VERSION, need >=3.0svn"
+            ;;
+        esac
+    else
+        msg "skipping CFG_ENABLE_CLANG version check; provided CC=$CC"
+    fi
 fi
 
 if [ ! -z "$CFG_ENABLE_CCACHE" ]
 then
-    if [ -z "$CFG_CCACHE" ]
+    if [ -z "$CC" ]
     then
-        err "ccache requested but not found"
-    fi
+        if [ -z "$CFG_CCACHE" ]
+        then
+            err "ccache requested but not found"
+        fi
 
-    CFG_C_COMPILER="ccache $CFG_C_COMPILER"
+        CFG_CC="ccache $CFG_CC"
+    fi
 fi
+
+if [ -z "$CC" -a -z "$CFG_ENABLE_CLANG" -a -z "$CFG_GCC" ]
+then
+    err "either clang or gcc is required"
+fi
+
+# All safeguards based on $CFG_ENABLE_CLANG should occur before this
+# point in the script; after this point, script logic should inspect
+# $CFG_USING_CLANG rather than $CFG_ENABLE_CLANG.
+
+# Set CFG_{CC,CXX,CPP,CFLAGS,CXXFLAGS}
+envopt CC
+envopt CXX
+envopt CPP
+envopt CFLAGS
+envopt CXXFLAGS
 
 # a little post-processing of various config values
 CFG_PREFIX=${CFG_PREFIX%/}
@@ -715,11 +783,6 @@ do
     esac
 done
 
-if [ -z "$CFG_ENABLE_CLANG" -a -z "$CFG_GCC" ]
-then
-    err "either clang or gcc is required"
-fi
-
 if [ ! -z "$CFG_PERF" ]
 then
     HAVE_PERF_LOGFD=`$CFG_PERF stat --log-fd 2>&1 | grep 'unknown option'`
@@ -755,6 +818,7 @@ do
   for s in 0 1 2 3
   do
     make_dir $t/rt/stage$s
+    make_dir $t/rt/jemalloc
     make_dir $t/rt/libuv
     make_dir $t/rt/libuv/src/ares
     make_dir $t/rt/libuv/src/eio
@@ -796,10 +860,12 @@ do
     make_dir $h/test/run-pass-fulldeps
     make_dir $h/test/run-fail
     make_dir $h/test/compile-fail
+    make_dir $h/test/compile-fail-fulldeps
     make_dir $h/test/bench
     make_dir $h/test/perf
     make_dir $h/test/pretty
-    make_dir $h/test/debug-info
+    make_dir $h/test/debuginfo-gdb
+    make_dir $h/test/debuginfo-lldb
     make_dir $h/test/codegen
     make_dir $h/test/doc-tutorial
     make_dir $h/test/doc-guide-ffi
@@ -824,8 +890,25 @@ then
     msg "git: submodule sync"
     "${CFG_GIT}" submodule sync
 
+    msg "git: submodule init"
+    "${CFG_GIT}" submodule init
+
+    # Disable submodules that we're not using
+    if [ ! -z "${CFG_LLVM_ROOT}" ]; then
+        msg "git: submodule deinit src/llvm"
+        "${CFG_GIT}" submodule deinit src/llvm
+    fi
+    if [ ! -z "${CFG_JEMALLOC_ROOT}" ]; then
+        msg "git: submodule deinit src/jemalloc"
+        "${CFG_GIT}" submodule deinit src/jemalloc
+    fi
+    if [ ! -z "${CFG_LIBUV_ROOT}" ]; then
+        msg "git: submodule deinit src/libuv"
+        "${CFG_GIT}" submodule deinit src/libuv
+    fi
+
     msg "git: submodule update"
-    "${CFG_GIT}" submodule update --init
+    "${CFG_GIT}" submodule update
     need_ok "git failed"
 
     msg "git: submodule foreach sync"
@@ -833,7 +916,7 @@ then
     need_ok "git failed"
 
     msg "git: submodule foreach update"
-    "${CFG_GIT}" submodule update --init --recursive
+    "${CFG_GIT}" submodule update --recursive
     need_ok "git failed"
 
     # NB: this is just for the sake of getting the submodule SHA1 values
@@ -921,10 +1004,6 @@ do
         LLVM_OPTS="$LLVM_OPTS --disable-terminfo"
         # Try to have LLVM pull in as few dependencies as possible (#9397)
         LLVM_OPTS="$LLVM_OPTS --disable-zlib --disable-libffi"
-        # LLVM says it needs a "new" clang/gcc, but we seem to get by ok with
-        # older versions on the bots. Get by for a little longer by asking it to
-        # not do version detection
-        LLVM_OPTS="$LLVM_OPTS --disable-compiler-version-checks"
 
         # Use win32 native thread/lock apis instead of pthread wrapper.
         # (llvm's configure tries to find pthread first, so we have to disable it explicitly.)
@@ -935,43 +1014,73 @@ do
             ;;
         esac
 
-        case "$CFG_C_COMPILER" in
+        case "$CFG_CC" in
             ("ccache clang")
-            LLVM_CXX_32="ccache clang++ -m32 -Qunused-arguments"
-            LLVM_CC_32="ccache clang -m32 -Qunused-arguments"
+            LLVM_CXX_32="ccache clang++ -Qunused-arguments"
+            LLVM_CC_32="ccache clang -Qunused-arguments"
 
             LLVM_CXX_64="ccache clang++ -Qunused-arguments"
             LLVM_CC_64="ccache clang -Qunused-arguments"
             ;;
             ("clang")
-            LLVM_CXX_32="clang++ -m32 -Qunused-arguments"
-            LLVM_CC_32="clang -m32 -Qunused-arguments"
+            LLVM_CXX_32="clang++ -Qunused-arguments"
+            LLVM_CC_32="clang -Qunused-arguments"
 
             LLVM_CXX_64="clang++ -Qunused-arguments"
             LLVM_CC_64="clang -Qunused-arguments"
             ;;
             ("ccache gcc")
-            LLVM_CXX_32="ccache g++ -m32"
-            LLVM_CC_32="ccache gcc -m32"
+            LLVM_CXX_32="ccache g++"
+            LLVM_CC_32="ccache gcc"
 
             LLVM_CXX_64="ccache g++"
             LLVM_CC_64="ccache gcc"
             ;;
             ("gcc")
-            LLVM_CXX_32="g++ -m32"
-            LLVM_CC_32="gcc -m32"
+            LLVM_CXX_32="g++"
+            LLVM_CC_32="gcc"
 
             LLVM_CXX_64="g++"
             LLVM_CC_64="gcc"
+            ;;
+
+            (*)
+            msg "inferring LLVM_CXX/CC from CXX/CC = $CXX/$CC"
+            LLVM_CXX_32="$CXX"
+            LLVM_CC_32="$CC"
+
+            LLVM_CXX_64="$CXX"
+            LLVM_CC_64="$CC"
+            ;;
         esac
 
-        LLVM_CFLAGS_32="-m32"
-        LLVM_CXXFLAGS_32="-m32"
-        LLVM_LDFLAGS_32="-m32"
+        case "$CFG_CPUTYPE" in
+            (x86*)
+                LLVM_CXX_32="$LLVM_CXX_32 -m32"
+                LLVM_CC_32="$LLVM_CC_32 -m32"
 
-        LLVM_CFLAGS_64=""
-        LLVM_CXXFLAGS_64=""
-        LLVM_LDFLAGS_64=""
+                LLVM_CFLAGS_32="-m32"
+                LLVM_CXXFLAGS_32="-m32"
+                LLVM_LDFLAGS_32="-m32"
+
+                LLVM_CFLAGS_64=""
+                LLVM_CXXFLAGS_64=""
+                LLVM_LDFLAGS_64=""
+
+                LLVM_CXX_32="$LLVM_CXX_32 -m32"
+                LLVM_CC_32="$LLVM_CC_32 -m32"
+                ;;
+
+            (*)
+                LLVM_CFLAGS_32=""
+                LLVM_CXXFLAGS_32=""
+                LLVM_LDFLAGS_32=""
+
+                LLVM_CFLAGS_64=""
+                LLVM_CXXFLAGS_64=""
+                LLVM_LDFLAGS_64=""
+                ;;
+        esac
 
         if echo $t | grep -q x86_64
         then
@@ -993,6 +1102,10 @@ do
         CFLAGS=$LLVM_CFLAGS
         CXXFLAGS=$LLVM_CXXFLAGS
         LDFLAGS=$LLVM_LDFLAGS
+
+        if [ -z "$CFG_DISABLE_LIBCPP" ] && [ -n "$CFG_USING_CLANG" ]; then
+            LLVM_OPTS="$LLVM_OPTS --enable-libcpp"
+        fi
 
         LLVM_FLAGS="$LLVM_TARGETS $LLVM_OPTS $LLVM_BUILD \
                         $LLVM_HOST $LLVM_TARGET --with-python=$CFG_PYTHON"
@@ -1045,7 +1158,6 @@ putvar CFG_PREFIX
 putvar CFG_BUILD
 putvar CFG_HOST
 putvar CFG_TARGET
-putvar CFG_C_COMPILER
 putvar CFG_LIBDIR
 putvar CFG_LIBDIR_RELATIVE
 putvar CFG_DISABLE_MANAGE_SUBMODULES
@@ -1053,10 +1165,12 @@ putvar CFG_ANDROID_CROSS_PATH
 putvar CFG_MINGW32_CROSS_PATH
 putvar CFG_MANDIR
 putvar CFG_DISABLE_INJECT_STD_VERSION
+putvar CFG_JEMALLOC_ROOT
+putvar CFG_LIBUV_ROOT
 
 # Avoid spurious warnings from clang by feeding it original source on
 # ccache-miss rather than preprocessed input.
-if [ ! -z "$CFG_ENABLE_CCACHE" ] && [ ! -z "$CFG_ENABLE_CLANG" ]
+if [ ! -z "$CFG_ENABLE_CCACHE" ] && [ ! -z "$CFG_USING_CLANG" ]
 then
     CFG_CCACHE_CPP2=1
     putvar CFG_CCACHE_CPP2

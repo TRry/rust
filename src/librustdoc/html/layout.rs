@@ -13,9 +13,10 @@ use std::io;
 
 #[deriving(Clone)]
 pub struct Layout {
-    pub logo: ~str,
-    pub favicon: ~str,
-    pub krate: ~str,
+    pub logo: String,
+    pub favicon: String,
+    pub krate: String,
+    pub playground_url: String,
 }
 
 pub struct Page<'a> {
@@ -26,20 +27,23 @@ pub struct Page<'a> {
 
 pub fn render<T: fmt::Show, S: fmt::Show>(
     dst: &mut io::Writer, layout: &Layout, page: &Page, sidebar: &S, t: &T)
-    -> fmt::Result
+    -> io::IoResult<()>
 {
     write!(dst,
 r##"<!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="utf-8" />
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="The {krate} library documentation.">
+
     <title>{title}</title>
 
-    <link href='http://fonts.googleapis.com/css?family=Oswald:700|Inconsolata:400,700'
+    <link href='http://fonts.googleapis.com/css?family=Source+Code+Pro:400,600'
           rel='stylesheet' type='text/css'>
     <link rel="stylesheet" type="text/css" href="{root_path}main.css">
 
-    {favicon, select, none{} other{<link rel="shortcut icon" href="#" />}}
+    {favicon}
 </head>
 <body>
     <!--[if lte IE 8]>
@@ -50,21 +54,17 @@ r##"<!DOCTYPE html>
     <![endif]-->
 
     <section class="sidebar">
-        {logo, select, none{} other{
-            <a href='{root_path}{krate}/index.html'><img src='#' alt=''/></a>
-        }}
-
+        {logo}
         {sidebar}
     </section>
 
     <nav class="sub">
         <form class="search-form js-only">
-            <button class="do-search">Search</button>
             <div class="search-container">
                 <input class="search-input" name="search"
                        autocomplete="off"
                        placeholder="Search documentation..."
-                       type="search" />
+                       type="search">
             </div>
         </form>
     </nav>
@@ -86,7 +86,7 @@ r##"<!DOCTYPE html>
                 <dd>Move up in search results</dd>
                 <dt>&darr;</dt>
                 <dd>Move down in search results</dd>
-                <dt>&\#9166;</dt>
+                <dt>&#9166;</dt>
                 <dd>Go to active search result</dd>
             </dl>
         </div>
@@ -106,26 +106,54 @@ r##"<!DOCTYPE html>
     </div>
 
     <script>
-        var rootPath = "{root_path}";
-        var currentCrate = "{krate}";
+        window.rootPath = "{root_path}";
+        window.currentCrate = "{krate}";
+        window.playgroundUrl = "{play_url}";
     </script>
     <script src="{root_path}jquery.js"></script>
     <script src="{root_path}main.js"></script>
+    {play_js}
     <script async src="{root_path}search-index.js"></script>
 </body>
-</html>
-"##,
+</html>"##,
     content   = *t,
     root_path = page.root_path,
     ty        = page.ty,
-    logo      = nonestr(layout.logo),
+    logo      = if layout.logo.len() == 0 {
+        "".to_string()
+    } else {
+        format!("<a href='{}{}/index.html'>\
+                 <img src='{}' alt='' width='100'></a>",
+                page.root_path, layout.krate,
+                layout.logo)
+    },
     title     = page.title,
-    favicon   = nonestr(layout.favicon),
+    favicon   = if layout.favicon.len() == 0 {
+        "".to_string()
+    } else {
+        format!(r#"<link rel="shortcut icon" href="{}">"#, layout.favicon)
+    },
     sidebar   = *sidebar,
     krate     = layout.krate,
+    play_url  = layout.playground_url,
+    play_js   = if layout.playground_url.len() == 0 {
+        "".to_string()
+    } else {
+        format!(r#"<script src="{}playpen.js"></script>"#, page.root_path)
+    },
     )
 }
 
-fn nonestr<'a>(s: &'a str) -> &'a str {
-    if s == "" { "none" } else { s }
+pub fn redirect(dst: &mut io::Writer, url: &str) -> io::IoResult<()> {
+    write!(dst,
+r##"<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta http-equiv="refresh" content="0;URL={url}">
+</head>
+<body>
+</body>
+</html>"##,
+    url = url,
+    )
 }

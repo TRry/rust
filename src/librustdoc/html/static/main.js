@@ -9,7 +9,7 @@
 // except according to those terms.
 
 /*jslint browser: true, es5: true */
-/*globals $: true, rootPath: true, allPaths: true */
+/*globals $: true, rootPath: true */
 
 (function() {
     "use strict";
@@ -135,7 +135,7 @@
         function execQuery(query, max, searchWords) {
             var valLower = query.query.toLowerCase(),
                 val = valLower,
-                typeFilter = query.type,
+                typeFilter = itemTypeFromName(query.type),
                 results = [],
                 split = valLower.split("::");
 
@@ -156,7 +156,7 @@
                 for (var i = 0; i < nSearchWords; i += 1) {
                     if (searchWords[i] === val) {
                         // filter type: ... queries
-                        if (!typeFilter || typeFilter === searchIndex[i].ty) {
+                        if (typeFilter < 0 || typeFilter === searchIndex[i].ty) {
                             results.push({id: i, index: -1});
                         }
                     }
@@ -174,7 +174,7 @@
                             searchWords[j].replace(/_/g, "").indexOf(val) > -1)
                         {
                             // filter type: ... queries
-                            if (!typeFilter || typeFilter === searchIndex[j].ty) {
+                            if (typeFilter < 0 || typeFilter === searchIndex[j].ty) {
                                 results.push({id: j, index: searchWords[j].replace(/_/g, "").indexOf(val)});
                             }
                         }
@@ -189,67 +189,68 @@
             for (var i = 0; i < nresults; i += 1) {
                 results[i].word = searchWords[results[i].id];
                 results[i].item = searchIndex[results[i].id] || {};
-                results[i].ty = results[i].item.ty;
-                results[i].path = results[i].item.path;
             }
             // if there are no results then return to default and fail
             if (results.length === 0) {
                 return [];
             }
 
-            // sort by exact match
-            results.sort(function search_complete_sort0(aaa, bbb) {
-                if (aaa.word === valLower &&
-                    bbb.word !== valLower) {
-                    return 1;
-                }
+            results.sort(function(aaa, bbb) {
+                var a, b;
+
+                // sort by crate (non-current crate goes later)
+                a = (aaa.item.crate !== window.currentCrate);
+                b = (bbb.item.crate !== window.currentCrate);
+                if (a !== b) return a - b;
+
+                // sort by exact match (mismatch goes later)
+                a = (aaa.word !== valLower);
+                b = (bbb.word !== valLower);
+                if (a !== b) return a - b;
+
+                // sort by item name length (longer goes later)
+                a = aaa.word.length;
+                b = bbb.word.length;
+                if (a !== b) return a - b;
+
+                // sort by item name (lexicographically larger goes later)
+                a = aaa.word;
+                b = bbb.word;
+                if (a !== b) return (a > b ? +1 : -1);
+
+                // sort by index of keyword in item name (no literal occurrence goes later)
+                a = (aaa.index < 0);
+                b = (bbb.index < 0);
+                if (a !== b) return a - b;
+                // (later literal occurrence, if any, goes later)
+                a = aaa.index;
+                b = bbb.index;
+                if (a !== b) return a - b;
+
+                // sort by description (no description goes later)
+                a = (aaa.item.desc === '');
+                b = (bbb.item.desc === '');
+                if (a !== b) return a - b;
+
+                // sort by type (later occurrence in `itemTypes` goes later)
+                a = aaa.item.ty;
+                b = bbb.item.ty;
+                if (a !== b) return a - b;
+
+                // sort by path (lexicographically larger goes later)
+                a = aaa.item.path;
+                b = bbb.item.path;
+                if (a !== b) return (a > b ? +1 : -1);
+
+                // que sera, sera
+                return 0;
             });
-            // first sorting attempt
-            // sort by item name length
-            results.sort(function search_complete_sort1(aaa, bbb) {
-                if (aaa.word.length > bbb.word.length) {
-                    return 1;
-                }
-            });
-            // second sorting attempt
-            // sort by item name
-            results.sort(function search_complete_sort1(aaa, bbb) {
-                if (aaa.word.length === bbb.word.length &&
-                    aaa.word > bbb.word) {
-                    return 1;
-                }
-            });
-            // third sorting attempt
-            // sort by index of keyword in item name
-            if (results[0].index !== -1) {
-                results.sort(function search_complete_sort1(aaa, bbb) {
-                    if (aaa.index > bbb.index && bbb.index === 0) {
-                        return 1;
-                    }
-                });
-            }
-            // fourth sorting attempt
-            // sort by type
-            results.sort(function search_complete_sort3(aaa, bbb) {
-                if (aaa.word === bbb.word &&
-                    aaa.ty > bbb.ty) {
-                    return 1;
-                }
-            });
-            // fifth sorting attempt
-            // sort by path
-            results.sort(function search_complete_sort4(aaa, bbb) {
-                if (aaa.word === bbb.word &&
-                    aaa.ty === bbb.ty && aaa.path > bbb.path) {
-                    return 1;
-                }
-            });
-            // sixth sorting attempt
+
             // remove duplicates, according to the data provided
             for (var i = results.length - 1; i > 0; i -= 1) {
                 if (results[i].word === results[i - 1].word &&
-                    results[i].ty === results[i - 1].ty &&
-                    results[i].path === results[i - 1].path)
+                    results[i].item.ty === results[i - 1].item.ty &&
+                    results[i].item.path === results[i - 1].item.path)
                 {
                     results[i].id = -1;
                 }
@@ -258,7 +259,7 @@
                 var result = results[i],
                     name = result.item.name.toLowerCase(),
                     path = result.item.path.toLowerCase(),
-                    parent = allPaths[result.item.crate][result.item.parent];
+                    parent = result.item.parent;
 
                 var valid = validateResult(name, path, split, parent);
                 if (!valid) {
@@ -385,12 +386,16 @@
             });
         }
 
+        function escape(content) {
+            return $('<h1/>').text(content).html();
+        }
+
         function showResults(results) {
             var output, shown, query = getQuery();
 
             currentResults = query.id;
-            output = '<h1>Results for ' + query.query +
-                    (query.type ? ' (type: ' + query.type + ')' : '') + '</h1>';
+            output = '<h1>Results for ' + escape(query.query) +
+                (query.type ? ' (type: ' + escape(query.type) + ')' : '') + '</h1>';
             output += '<table class="search-results">';
 
             if (results.length > 0) {
@@ -405,7 +410,7 @@
 
                     shown.push(item);
                     name = item.name;
-                    type = item.ty;
+                    type = itemTypes[item.ty];
 
                     output += '<tr class="' + type + ' result"><td>';
 
@@ -422,12 +427,12 @@
                             '/index.html" class="' + type +
                             '">' + name + '</a>';
                     } else if (item.parent !== undefined) {
-                        var myparent = allPaths[item.crate][item.parent];
+                        var myparent = item.parent;
                         var anchor = '#' + type + '.' + name;
                         output += item.path + '::' + myparent.name +
                             '::<a href="' + rootPath +
                             item.path.replace(/::/g, '/') +
-                            '/' + myparent.type +
+                            '/' + itemTypes[myparent.ty] +
                             '.' + myparent.name +
                             '.html' + anchor +
                             '" class="' + type +
@@ -505,28 +510,77 @@
             showResults(results);
         }
 
+        // This mapping table should match the discriminants of
+        // `rustdoc::html::item_type::ItemType` type in Rust.
+        var itemTypes = ["mod",
+                         "struct",
+                         "type",
+                         "fn",
+                         "type",
+                         "static",
+                         "trait",
+                         "impl",
+                         "viewitem",
+                         "tymethod",
+                         "method",
+                         "structfield",
+                         "variant",
+                         "ffi",
+                         "ffs",
+                         "macro",
+                         "primitive"];
+
+        function itemTypeFromName(typename) {
+            for (var i = 0; i < itemTypes.length; ++i) {
+                if (itemTypes[i] === typename) return i;
+            }
+            return -1;
+        }
+
         function buildIndex(rawSearchIndex) {
             searchIndex = [];
             var searchWords = [];
             for (var crate in rawSearchIndex) {
                 if (!rawSearchIndex.hasOwnProperty(crate)) { continue }
-                var len = rawSearchIndex[crate].length;
-                var i = 0;
 
+                // an array of [(Number) item type,
+                //              (String) name,
+                //              (String) full path or empty string for previous path,
+                //              (String) description,
+                //              (optional Number) the parent path index to `paths`]
+                var items = rawSearchIndex[crate].items;
+                // an array of [(Number) item type,
+                //              (String) name]
+                var paths = rawSearchIndex[crate].paths;
+
+                // convert `paths` into an object form
+                var len = paths.length;
+                for (var i = 0; i < len; ++i) {
+                    paths[i] = {ty: paths[i][0], name: paths[i][1]};
+                }
+
+                // convert `items` into an object form, and construct word indices.
+                //
                 // before any analysis is performed lets gather the search terms to
                 // search against apart from the rest of the data.  This is a quick
                 // operation that is cached for the life of the page state so that
                 // all other search operations have access to this cached data for
                 // faster analysis operations
-                for (i = 0; i < len; i += 1) {
-                    rawSearchIndex[crate][i].crate = crate;
-                    searchIndex.push(rawSearchIndex[crate][i]);
-                    if (typeof rawSearchIndex[crate][i].name === "string") {
-                        var word = rawSearchIndex[crate][i].name.toLowerCase();
+                var len = items.length;
+                var lastPath = "";
+                for (var i = 0; i < len; i += 1) {
+                    var rawRow = items[i];
+                    var row = {crate: crate, ty: rawRow[0], name: rawRow[1],
+                               path: rawRow[2] || lastPath, desc: rawRow[3],
+                               parent: paths[rawRow[4]]};
+                    searchIndex.push(row);
+                    if (typeof row.name === "string") {
+                        var word = row.name.toLowerCase();
                         searchWords.push(word);
                     } else {
                         searchWords.push("");
                     }
+                    lastPath = row.path;
                 }
             }
             return searchWords;
@@ -556,11 +610,10 @@
                     // cleared to ensure the search is successful.
                     currentResults = null;
                     // Synchronize search bar with query string state and
-                    // perform the search, but don't empty the bar if there's
-                    // nothing there.
-                    if (params.search !== undefined) {
-                        $('.search-input').val(params.search);
-                    }
+                    // perform the search. This will empty the bar if there's
+                    // nothing there, which lets you really go back to a
+                    // previous state with nothing in the bar.
+                    $('.search-input').val(params.search);
                     // Some browsers fire 'onpopstate' for every page load
                     // (Chrome), while others fire the event only when actually
                     // popping a state (Firefox), which is why search() is
@@ -594,12 +647,39 @@
                 }
                 div.append($('<a>', {'href': '../' + crates[i] + '/index.html',
                                     'class': klass}).text(crates[i]));
-                div.append($('<br>'));
             }
             sidebar.append(div);
         }
     }
 
     window.initSearch = initSearch;
-}());
 
+    window.register_implementors = function(imp) {
+        var list = $('#implementors-list');
+        var libs = Object.getOwnPropertyNames(imp);
+        for (var i = 0; i < libs.length; i++) {
+            if (libs[i] == currentCrate) continue;
+            var structs = imp[libs[i]];
+            for (var j = 0; j < structs.length; j++) {
+                var code = $('<code>').append(structs[j]);
+                $.each(code.find('a'), function(idx, a) {
+                    var href = $(a).attr('href');
+                    if (!href.startsWith('http')) {
+                        $(a).attr('href', rootPath + $(a).attr('href'));
+                    }
+                });
+                var li = $('<li>').append(code);
+                list.append(li);
+            }
+        }
+    };
+    if (window.pending_implementors) {
+        window.register_implementors(window.pending_implementors);
+    }
+
+    // See documentation in html/render.rs for what this is doing.
+    var query = getQueryStringParams();
+    if (query['gotosrc']) {
+        window.location = $('#src-' + query['gotosrc']).attr('href');
+    }
+}());

@@ -8,15 +8,13 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// ignore-win32 #9205
-
 pub struct Quad { a: u64, b: u64, c: u64, d: u64 }
 pub struct Floats { a: f64, b: u8, c: f64 }
 
 mod rustrt {
     use super::{Floats, Quad};
 
-    #[link(name = "rustrt")]
+    #[link(name = "rust_test_helpers")]
     extern {
         pub fn rust_dbg_abi_1(q: Quad) -> Quad;
         pub fn rust_dbg_abi_2(f: Floats) -> Floats;

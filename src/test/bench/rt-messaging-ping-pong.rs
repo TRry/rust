@@ -61,14 +61,15 @@ fn ping_pong_bench(n: uint, m: uint) {
 fn main() {
 
     let args = os::args();
+    let args = args.as_slice();
     let n = if args.len() == 3 {
-        from_str::<uint>(args[1]).unwrap()
+        from_str::<uint>(args[1].as_slice()).unwrap()
     } else {
         10000
     };
 
     let m = if args.len() == 3 {
-        from_str::<uint>(args[2]).unwrap()
+        from_str::<uint>(args[2].as_slice()).unwrap()
     } else {
         4
     };

@@ -18,10 +18,8 @@
 use ast::{Ident, Mrk, Name, SyntaxContext};
 
 use std::cell::RefCell;
-use std::local_data;
 use std::rc::Rc;
-
-use collections::HashMap;
+use std::collections::HashMap;
 
 // the SCTable contains a table of SyntaxContext_'s. It
 // represents a flattened tree structure, to avoid having
@@ -38,7 +36,7 @@ pub struct SCTable {
     rename_memo: RefCell<HashMap<(SyntaxContext,Ident,Name),SyntaxContext>>,
 }
 
-#[deriving(Eq, Encodable, Decodable, Hash)]
+#[deriving(PartialEq, Encodable, Decodable, Hash)]
 pub enum SyntaxContext_ {
     EmptyCtxt,
     Mark (Mrk,SyntaxContext),
@@ -91,17 +89,14 @@ fn new_rename_internal(id: Ident,
 pub fn with_sctable<T>(op: |&SCTable| -> T) -> T {
     local_data_key!(sctable_key: Rc<SCTable>)
 
-    local_data::get(sctable_key, |opt_ts| {
-        let table = match opt_ts {
-            None => {
-                let ts = Rc::new(new_sctable_internal());
-                local_data::set(sctable_key, ts.clone());
-                ts
-            }
-            Some(ts) => ts.clone()
-        };
-        op(&*table)
-    })
+    match sctable_key.get() {
+        Some(ts) => op(&**ts),
+        None => {
+            let ts = Rc::new(new_sctable_internal());
+            sctable_key.replace(Some(ts.clone()));
+            op(&*ts)
+        }
+    }
 }
 
 // Make a fresh syntax context table with EmptyCtxt in slot zero
@@ -154,17 +149,14 @@ type ResolveTable = HashMap<(Name,SyntaxContext),Name>;
 fn with_resolve_table_mut<T>(op: |&mut ResolveTable| -> T) -> T {
     local_data_key!(resolve_table_key: Rc<RefCell<ResolveTable>>)
 
-    local_data::get(resolve_table_key, |opt_ts| {
-        let table = match opt_ts {
-            None => {
-                let ts = Rc::new(RefCell::new(HashMap::new()));
-                local_data::set(resolve_table_key, ts.clone());
-                ts
-            }
-            Some(ts) => ts.clone()
-        };
-        op(&mut *table.borrow_mut())
-    })
+    match resolve_table_key.get() {
+        Some(ts) => op(&mut *ts.borrow_mut()),
+        None => {
+            let ts = Rc::new(RefCell::new(HashMap::new()));
+            resolve_table_key.replace(Some(ts.clone()));
+            op(&mut *ts.borrow_mut())
+        }
+    }
 }
 
 // Resolve a syntax object to a name, per MTWT.
@@ -230,7 +222,7 @@ fn marksof_internal(ctxt: SyntaxContext,
                 return result;
             },
             Mark(mark, tl) => {
-                xorPush(&mut result, mark);
+                xor_push(&mut result, mark);
                 loopvar = tl;
             },
             Rename(_,name,tl) => {
@@ -260,7 +252,7 @@ pub fn outer_mark(ctxt: SyntaxContext) -> Mrk {
 
 // Push a name... unless it matches the one on top, in which
 // case pop and discard (so two of the same marks cancel)
-fn xorPush(marks: &mut Vec<Mrk>, mark: Mrk) {
+fn xor_push(marks: &mut Vec<Mrk>, mark: Mrk) {
     if (marks.len() > 0) && (*marks.last().unwrap() == mark) {
         marks.pop().unwrap();
     } else {
@@ -271,26 +263,27 @@ fn xorPush(marks: &mut Vec<Mrk>, mark: Mrk) {
 #[cfg(test)]
 mod tests {
     use ast::*;
-    use super::{resolve, xorPush, new_mark_internal, new_sctable_internal};
+    use super::{resolve, xor_push, new_mark_internal, new_sctable_internal};
     use super::{new_rename_internal, marksof_internal, resolve_internal};
     use super::{SCTable, EmptyCtxt, Mark, Rename, IllegalCtxt};
-    use collections::HashMap;
+    use std::collections::HashMap;
 
-    #[test] fn xorpush_test () {
+    #[test]
+    fn xorpush_test () {
         let mut s = Vec::new();
-        xorPush(&mut s, 14);
+        xor_push(&mut s, 14);
         assert_eq!(s.clone(), vec!(14));
-        xorPush(&mut s, 14);
+        xor_push(&mut s, 14);
         assert_eq!(s.clone(), Vec::new());
-        xorPush(&mut s, 14);
+        xor_push(&mut s, 14);
         assert_eq!(s.clone(), vec!(14));
-        xorPush(&mut s, 15);
+        xor_push(&mut s, 15);
         assert_eq!(s.clone(), vec!(14, 15));
-        xorPush(&mut s, 16);
+        xor_push(&mut s, 16);
         assert_eq!(s.clone(), vec!(14, 15, 16));
-        xorPush(&mut s, 16);
+        xor_push(&mut s, 16);
         assert_eq!(s.clone(), vec!(14, 15));
-        xorPush(&mut s, 15);
+        xor_push(&mut s, 15);
         assert_eq!(s.clone(), vec!(14));
     }
 
@@ -300,7 +293,7 @@ mod tests {
 
     // because of the SCTable, I now need a tidy way of
     // creating syntax objects. Sigh.
-    #[deriving(Clone, Eq, Show)]
+    #[deriving(Clone, PartialEq, Show)]
     enum TestSC {
         M(Mrk),
         R(Ident,Name)
@@ -338,7 +331,8 @@ mod tests {
         }
     }
 
-    #[test] fn test_unfold_refold(){
+    #[test]
+    fn test_unfold_refold(){
         let mut t = new_sctable_internal();
 
         let test_sc = vec!(M(3),R(id(101,0),14),M(9));
@@ -371,7 +365,8 @@ mod tests {
         }
     }
 
-    #[test] fn test_marksof () {
+    #[test]
+    fn test_marksof () {
         let stopname = 242;
         let name1 = 243;
         let mut t = new_sctable_internal();
@@ -404,7 +399,8 @@ mod tests {
     }
 
 
-    #[test] fn resolve_tests () {
+    #[test]
+    fn resolve_tests () {
         let a = 40;
         let mut t = new_sctable_internal();
         let mut rt = HashMap::new();
@@ -454,13 +450,15 @@ mod tests {
          assert_eq!(resolve_internal(id(a,a50_to_a51_b),&mut t, &mut rt),50);}
     }
 
-    #[test] fn mtwt_resolve_test(){
+    #[test]
+    fn mtwt_resolve_test(){
         let a = 40;
         assert_eq!(resolve(id(a,EMPTY_CTXT)),a);
     }
 
 
-    #[test] fn hashing_tests () {
+    #[test]
+    fn hashing_tests () {
         let mut t = new_sctable_internal();
         assert_eq!(new_mark_internal(12,EMPTY_CTXT,&mut t),2);
         assert_eq!(new_mark_internal(13,EMPTY_CTXT,&mut t),3);
@@ -469,7 +467,8 @@ mod tests {
         // I'm assuming that the rename table will behave the same....
     }
 
-    #[test] fn resolve_table_hashing_tests() {
+    #[test]
+    fn resolve_table_hashing_tests() {
         let mut t = new_sctable_internal();
         let mut rt = HashMap::new();
         assert_eq!(rt.len(),0);

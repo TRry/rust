@@ -8,7 +8,9 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#[feature(managed_boxes)];
+#![feature(managed_boxes)]
 
-fn f<T>(_v: @T) { }
-pub fn main() { f(@vec!(1, 2, 3, 4, 5)); }
+use std::gc::{Gc, GC};
+
+fn f<T>(_v: Gc<T>) { }
+pub fn main() { f(box(GC) vec!(1, 2, 3, 4, 5)); }

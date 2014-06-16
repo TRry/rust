@@ -18,13 +18,13 @@ This API is completely unstable and subject to change.
 
 */
 
-#![crate_id = "syntax#0.11-pre"]
+#![crate_id = "syntax#0.11.0-pre"]
 #![license = "MIT/ASL2"]
 #![crate_type = "dylib"]
 #![crate_type = "rlib"]
 #![doc(html_logo_url = "http://www.rust-lang.org/logos/rust-logo-128x128-blk-v2.png",
        html_favicon_url = "http://www.rust-lang.org/favicon.ico",
-       html_root_url = "http://static.rust-lang.org/doc/master")]
+       html_root_url = "http://doc.rust-lang.org/")]
 
 #![feature(macro_rules, globs, managed_boxes, default_type_params, phase,
            quote)]
@@ -32,9 +32,10 @@ This API is completely unstable and subject to change.
 
 extern crate serialize;
 extern crate term;
-extern crate collections;
-#[phase(syntax, link)]
-extern crate log;
+#[phase(plugin, link)] extern crate log;
+
+extern crate fmt_macros;
+extern crate debug;
 
 pub mod util {
     pub mod interner;
@@ -46,6 +47,7 @@ pub mod util {
 pub mod syntax {
     pub use ext;
     pub use parse;
+    pub use ast;
 }
 
 pub mod owned_slice;
@@ -72,7 +74,6 @@ pub mod ext {
     pub mod asm;
     pub mod base;
     pub mod expand;
-    pub mod registrar;
 
     pub mod quote;
 

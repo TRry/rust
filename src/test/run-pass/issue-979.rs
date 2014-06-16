@@ -8,12 +8,13 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#[feature(managed_boxes)];
+#![feature(managed_boxes)]
 
 use std::cell::Cell;
+use std::gc::{GC, Gc};
 
 struct r {
-    b: @Cell<int>,
+    b: Gc<Cell<int>>,
 }
 
 #[unsafe_destructor]
@@ -23,14 +24,14 @@ impl Drop for r {
     }
 }
 
-fn r(b: @Cell<int>) -> r {
+fn r(b: Gc<Cell<int>>) -> r {
     r {
         b: b
     }
 }
 
 pub fn main() {
-    let b = @Cell::new(0);
+    let b = box(GC) Cell::new(0);
     {
         let _p = Some(r(b));
     }

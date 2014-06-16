@@ -8,13 +8,15 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#[feature(managed_boxes)];
+#![feature(managed_boxes)]
+
+use std::gc::{Gc, GC};
 
 enum side { mayo, catsup, vinegar }
 enum order { hamburger, fries(side), shake }
 enum meal { to_go(order), for_here(order) }
 
-fn foo(m: @meal, cond: bool) {
+fn foo(m: Gc<meal>, cond: bool) {
     match *m {
       to_go(_) => { }
       for_here(_) if cond => {}
@@ -25,5 +27,5 @@ fn foo(m: @meal, cond: bool) {
 }
 
 pub fn main() {
-    foo(@for_here(hamburger), true)
+    foo(box(GC) for_here(hamburger), true)
 }

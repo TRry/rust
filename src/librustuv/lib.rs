@@ -34,7 +34,7 @@ via `close` and `delete` methods.
 
 */
 
-#![crate_id = "rustuv#0.11-pre"]
+#![crate_id = "rustuv#0.11.0-pre"]
 #![license = "MIT/ASL2"]
 #![crate_type = "rlib"]
 #![crate_type = "dylib"]
@@ -44,21 +44,21 @@ via `close` and `delete` methods.
 #![allow(visible_private_types)]
 
 #[cfg(test)] extern crate green;
+#[cfg(test)] extern crate debug;
 #[cfg(test)] extern crate realrustuv = "rustuv";
 extern crate libc;
+extern crate alloc;
 
-use std::cast;
-use std::fmt;
-use std::io::IoError;
-use std::io;
 use libc::{c_int, c_void};
+use std::fmt;
+use std::mem;
 use std::ptr::null;
 use std::ptr;
 use std::rt::local::Local;
 use std::rt::rtio;
+use std::rt::rtio::{IoResult, IoError};
 use std::rt::task::{BlockedTask, Task};
 use std::str::raw::from_c_str;
-use std::str;
 use std::task;
 
 pub use self::async::AsyncWatcher;
@@ -84,14 +84,12 @@ fn start(argc: int, argv: **u8) -> int {
 mod macros;
 
 mod access;
+mod timeout;
 mod homing;
 mod queue;
 mod rc;
 
-/// The implementation of `rtio` for libuv
 pub mod uvio;
-
-/// C bindings to libuv
 pub mod uvll;
 
 pub mod file;
@@ -127,8 +125,8 @@ pub mod stream;
 ///     // this code is running inside of a green task powered by libuv
 /// }
 /// ```
-pub fn event_loop() -> ~rtio::EventLoop:Send {
-    ~uvio::UvEventLoop::new() as ~rtio::EventLoop:Send
+pub fn event_loop() -> Box<rtio::EventLoop + Send> {
+    box uvio::UvEventLoop::new() as Box<rtio::EventLoop + Send>
 }
 
 /// A type that wraps a uv handle
@@ -149,12 +147,12 @@ pub trait UvHandle<T> {
     }
 
     unsafe fn from_uv_handle<'a>(h: &'a *T) -> &'a mut Self {
-        cast::transmute(uvll::get_data_for_uv_handle(*h))
+        mem::transmute(uvll::get_data_for_uv_handle(*h))
     }
 
-    fn install(~self) -> ~Self {
+    fn install(~self) -> Box<Self> {
         unsafe {
-            let myptr = cast::transmute::<&~Self, &*u8>(&self);
+            let myptr = mem::transmute::<&Box<Self>, &*u8>(&self);
             uvll::set_data_for_uv_handle(self.uv_handle(), *myptr);
         }
         self
@@ -190,7 +188,7 @@ pub trait UvHandle<T> {
                 let data = uvll::get_data_for_uv_handle(handle);
                 uvll::free_handle(handle);
                 if data == ptr::null() { return }
-                let slot: &mut Option<BlockedTask> = cast::transmute(data);
+                let slot: &mut Option<BlockedTask> = mem::transmute(data);
                 wakeup(slot);
             }
         }
@@ -214,7 +212,7 @@ impl ForbidSwitch {
 impl Drop for ForbidSwitch {
     fn drop(&mut self) {
         assert!(self.io == homing::local_id(),
-                "didnt want a scheduler switch: {}",
+                "didn't want a scheduler switch: {}",
                 self.msg);
     }
 }
@@ -245,7 +243,7 @@ fn wait_until_woken_after(slot: *mut Option<BlockedTask>,
     let _f = ForbidUnwind::new("wait_until_woken_after");
     unsafe {
         assert!((*slot).is_none());
-        let task: ~Task = Local::take();
+        let task: Box<Task> = Local::take();
         loop_.modify_blockers(1);
         task.deschedule(1, |task| {
             *slot = Some(task);
@@ -286,7 +284,7 @@ impl Request {
     pub unsafe fn get_data<T>(&self) -> &'static mut T {
         let data = uvll::get_data_for_req(self.handle);
         assert!(data != null());
-        cast::transmute(data)
+        mem::transmute(data)
     }
 
     // This function should be used when the request handle has been given to an
@@ -355,21 +353,21 @@ impl Loop {
 pub struct UvError(c_int);
 
 impl UvError {
-    pub fn name(&self) -> ~str {
+    pub fn name(&self) -> String {
         unsafe {
             let inner = match self { &UvError(a) => a };
             let name_str = uvll::uv_err_name(inner);
             assert!(name_str.is_not_null());
-            from_c_str(name_str)
+            from_c_str(name_str).to_string()
         }
     }
 
-    pub fn desc(&self) -> ~str {
+    pub fn desc(&self) -> String {
         unsafe {
             let inner = match self { &UvError(a) => a };
             let desc_str = uvll::uv_strerror(inner);
             assert!(desc_str.is_not_null());
-            from_c_str(desc_str)
+            from_c_str(desc_str).to_string()
         }
     }
 
@@ -381,49 +379,50 @@ impl UvError {
 
 impl fmt::Show for UvError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f.buf, "{}: {}", self.name(), self.desc())
+        write!(f, "{}: {}", self.name(), self.desc())
     }
 }
 
 #[test]
 fn error_smoke_test() {
     let err: UvError = UvError(uvll::EOF);
-    assert_eq!(err.to_str(), ~"EOF: end of file");
+    assert_eq!(err.to_str(), "EOF: end of file".to_string());
 }
 
+#[cfg(unix)]
 pub fn uv_error_to_io_error(uverr: UvError) -> IoError {
-    unsafe {
-        // Importing error constants
+    let UvError(errcode) = uverr;
+    IoError {
+        code: if errcode == uvll::EOF {libc::EOF as uint} else {-errcode as uint},
+        extra: 0,
+        detail: Some(uverr.desc()),
+    }
+}
 
-        // uv error descriptions are static
-        let UvError(errcode) = uverr;
-        let c_desc = uvll::uv_strerror(errcode);
-        let desc = str::raw::c_str_to_static_slice(c_desc);
-
-        let kind = match errcode {
-            uvll::UNKNOWN => io::OtherIoError,
-            uvll::OK => io::OtherIoError,
-            uvll::EOF => io::EndOfFile,
-            uvll::EACCES => io::PermissionDenied,
-            uvll::ECONNREFUSED => io::ConnectionRefused,
-            uvll::ECONNRESET => io::ConnectionReset,
-            uvll::ENOTCONN => io::NotConnected,
-            uvll::ENOENT => io::FileNotFound,
-            uvll::EPIPE => io::BrokenPipe,
-            uvll::ECONNABORTED => io::ConnectionAborted,
-            uvll::EADDRNOTAVAIL => io::ConnectionRefused,
+#[cfg(windows)]
+pub fn uv_error_to_io_error(uverr: UvError) -> IoError {
+    let UvError(errcode) = uverr;
+    IoError {
+        code: match errcode {
+            uvll::EOF => libc::EOF,
+            uvll::EACCES => libc::ERROR_ACCESS_DENIED,
+            uvll::ECONNREFUSED => libc::WSAECONNREFUSED,
+            uvll::ECONNRESET => libc::WSAECONNRESET,
+            uvll::ENOTCONN => libc::WSAENOTCONN,
+            uvll::ENOENT => libc::ERROR_FILE_NOT_FOUND,
+            uvll::EPIPE => libc::ERROR_NO_DATA,
+            uvll::ECONNABORTED => libc::WSAECONNABORTED,
+            uvll::EADDRNOTAVAIL => libc::WSAEADDRNOTAVAIL,
+            uvll::ECANCELED => libc::ERROR_OPERATION_ABORTED,
+            uvll::EADDRINUSE => libc::WSAEADDRINUSE,
             err => {
                 uvdebug!("uverr.code {}", err as int);
                 // FIXME: Need to map remaining uv error types
-                io::OtherIoError
+                -1
             }
-        };
-
-        IoError {
-            kind: kind,
-            desc: desc,
-            detail: None
-        }
+        } as uint,
+        extra: 0,
+        detail: Some(uverr.desc()),
     }
 }
 
@@ -436,7 +435,7 @@ pub fn status_to_maybe_uv_error(status: c_int) -> Option<UvError> {
     }
 }
 
-pub fn status_to_io_result(status: c_int) -> Result<(), IoError> {
+pub fn status_to_io_result(status: c_int) -> IoResult<()> {
     if status >= 0 {Ok(())} else {Err(uv_error_to_io_error(UvError(status)))}
 }
 
@@ -460,20 +459,47 @@ pub fn slice_to_uv_buf(v: &[u8]) -> Buf {
 #[cfg(test)]
 fn local_loop() -> &'static mut uvio::UvIoFactory {
     unsafe {
-        cast::transmute({
+        mem::transmute({
             let mut task = Local::borrow(None::<Task>);
-            let mut io = task.get().local_io().unwrap();
+            let mut io = task.local_io().unwrap();
             let (_vtable, uvio): (uint, &'static mut uvio::UvIoFactory) =
-                cast::transmute(io.get());
+                mem::transmute(io.get());
             uvio
         })
     }
 }
 
 #[cfg(test)]
+fn next_test_ip4() -> std::rt::rtio::SocketAddr {
+    use std::io;
+    use std::rt::rtio;
+
+    let io::net::ip::SocketAddr { ip, port } = io::test::next_test_ip4();
+    let ip = match ip {
+        io::net::ip::Ipv4Addr(a, b, c, d) => rtio::Ipv4Addr(a, b, c, d),
+        _ => unreachable!(),
+    };
+    rtio::SocketAddr { ip: ip, port: port }
+}
+
+#[cfg(test)]
+fn next_test_ip6() -> std::rt::rtio::SocketAddr {
+    use std::io;
+    use std::rt::rtio;
+
+    let io::net::ip::SocketAddr { ip, port } = io::test::next_test_ip6();
+    let ip = match ip {
+        io::net::ip::Ipv6Addr(a, b, c, d, e, f, g, h) =>
+            rtio::Ipv6Addr(a, b, c, d, e, f, g, h),
+        _ => unreachable!(),
+    };
+    rtio::SocketAddr { ip: ip, port: port }
+}
+
+#[cfg(test)]
 mod test {
-    use std::cast::transmute;
-    use std::unstable::run_in_bare_thread;
+    use std::mem::transmute;
+    use std::rt::thread::Thread;
 
     use super::{slice_to_uv_buf, Loop};
 
@@ -497,10 +523,10 @@ mod test {
 
     #[test]
     fn loop_smoke_test() {
-        run_in_bare_thread(proc() {
+        Thread::start(proc() {
             let mut loop_ = Loop::new();
             loop_.run();
             loop_.close();
-        });
+        }).join();
     }
 }

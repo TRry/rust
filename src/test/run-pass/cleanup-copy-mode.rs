@@ -8,14 +8,15 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#[feature(managed_boxes)];
+#![feature(managed_boxes)]
 
 use std::task;
+use std::gc::{GC, Gc};
 
-fn adder(x: @int, y: @int) -> int { return *x + *y; }
-fn failer() -> @int { fail!(); }
+fn adder(x: Gc<int>, y: Gc<int>) -> int { return *x + *y; }
+fn failer() -> Gc<int> { fail!(); }
 pub fn main() {
     assert!(task::try(proc() {
-        adder(@2, failer()); ()
+        adder(box(GC) 2, failer()); ()
     }).is_err());
 }

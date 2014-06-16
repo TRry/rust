@@ -13,20 +13,20 @@
 
 #![feature(phase)]
 
-#[phase(syntax, link)]
+#[phase(plugin, link)]
 extern crate log;
 extern crate native;
 
+use log::{set_logger, Logger, LogRecord};
 use std::fmt;
 use std::io::{ChanReader, ChanWriter};
-use log::{set_logger, Logger};
 
 struct MyWriter(ChanWriter);
 
 impl Logger for MyWriter {
-    fn log(&mut self, _level: u32, args: &fmt::Arguments) {
+    fn log(&mut self, record: &LogRecord) {
         let MyWriter(ref mut inner) = *self;
-        fmt::writeln(inner as &mut Writer, args);
+        write!(inner, "{}", record.args);
     }
 }
 
@@ -41,9 +41,11 @@ fn main() {
     let (tx, rx) = channel();
     let (mut r, w) = (ChanReader::new(rx), ChanWriter::new(tx));
     spawn(proc() {
-        set_logger(~MyWriter(w) as ~Logger:Send);
+        set_logger(box MyWriter(w) as Box<Logger+Send>);
         debug!("debug");
         info!("info");
     });
-    assert_eq!(r.read_to_str().unwrap(), ~"info\n");
+    let s = r.read_to_str().unwrap();
+    assert!(s.as_slice().contains("info"));
+    assert!(!s.as_slice().contains("debug"));
 }

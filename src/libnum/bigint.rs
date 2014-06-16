@@ -17,71 +17,63 @@ A `BigInt` is a combination of `BigUint` and `Sign`.
 */
 
 use Integer;
+use rand::Rng;
 
-use std::cmp;
-use std::fmt;
+use std::{cmp, fmt};
+use std::default::Default;
 use std::from_str::FromStr;
 use std::num::CheckedDiv;
 use std::num::{Bitwise, ToPrimitive, FromPrimitive};
 use std::num::{Zero, One, ToStrRadix, FromStrRadix};
-use rand::Rng;
-use std::strbuf::StrBuf;
-use std::uint;
-use std::{i64, u64};
+use std::string::String;
+use std::{uint, i64, u64};
 
 /**
 A `BigDigit` is a `BigUint`'s composing element.
-
-A `BigDigit` is half the size of machine word size.
 */
-#[cfg(target_word_size = "32")]
-pub type BigDigit = u16;
-
-/**
-A `BigDigit` is a `BigUint`'s composing element.
-
-A `BigDigit` is half the size of machine word size.
-*/
-#[cfg(target_word_size = "64")]
 pub type BigDigit = u32;
+
+/**
+A `DoubleBigDigit` is the internal type used to do the computations.  Its
+size is the double of the size of `BigDigit`.
+*/
+pub type DoubleBigDigit = u64;
 
 pub static ZERO_BIG_DIGIT: BigDigit = 0;
 static ZERO_VEC: [BigDigit, ..1] = [ZERO_BIG_DIGIT];
 
 pub mod BigDigit {
     use super::BigDigit;
+    use super::DoubleBigDigit;
 
-    #[cfg(target_word_size = "32")]
-    pub static bits: uint = 16;
-
-    #[cfg(target_word_size = "64")]
+    // `DoubleBigDigit` size dependent
     pub static bits: uint = 32;
 
-    pub static base: uint = 1 << bits;
-    static lo_mask: uint = (-1 as uint) >> bits;
+    pub static base: DoubleBigDigit = 1 << bits;
+    static lo_mask: DoubleBigDigit = (-1 as DoubleBigDigit) >> bits;
 
     #[inline]
-    fn get_hi(n: uint) -> BigDigit { (n >> bits) as BigDigit }
+    fn get_hi(n: DoubleBigDigit) -> BigDigit { (n >> bits) as BigDigit }
     #[inline]
-    fn get_lo(n: uint) -> BigDigit { (n & lo_mask) as BigDigit }
+    fn get_lo(n: DoubleBigDigit) -> BigDigit { (n & lo_mask) as BigDigit }
 
-    /// Split one machine sized unsigned integer into two `BigDigit`s.
+    /// Split one `DoubleBigDigit` into two `BigDigit`s.
     #[inline]
-    pub fn from_uint(n: uint) -> (BigDigit, BigDigit) {
+    pub fn from_doublebigdigit(n: DoubleBigDigit) -> (BigDigit, BigDigit) {
         (get_hi(n), get_lo(n))
     }
 
-    /// Join two `BigDigit`s into one machine sized unsigned integer
+    /// Join two `BigDigit`s into one `DoubleBigDigit`
     #[inline]
-    pub fn to_uint(hi: BigDigit, lo: BigDigit) -> uint {
-        (lo as uint) | ((hi as uint) << bits)
+    pub fn to_doublebigdigit(hi: BigDigit, lo: BigDigit) -> DoubleBigDigit {
+        (lo as DoubleBigDigit) | ((hi as DoubleBigDigit) << bits)
     }
 }
 
 /**
 A big unsigned integer type.
 
-A `BigUint`-typed value `BigUint { data: ~[a, b, c] }` represents a number
+A `BigUint`-typed value `BigUint { data: vec!(a, b, c) }` represents a number
 `(a + b * BigDigit::base + c * BigDigit::base^2)`.
 */
 #[deriving(Clone)]
@@ -89,22 +81,22 @@ pub struct BigUint {
     data: Vec<BigDigit>
 }
 
-impl Eq for BigUint {
+impl PartialEq for BigUint {
     #[inline]
     fn eq(&self, other: &BigUint) -> bool {
         match self.cmp(other) { Equal => true, _ => false }
     }
 }
-impl TotalEq for BigUint {}
+impl Eq for BigUint {}
 
-impl Ord for BigUint {
+impl PartialOrd for BigUint {
     #[inline]
     fn lt(&self, other: &BigUint) -> bool {
-        match self.cmp(other) { Less => true, _ => false}
+        self.cmp(other) == Less
     }
 }
 
-impl TotalOrd for BigUint {
+impl Ord for BigUint {
     #[inline]
     fn cmp(&self, other: &BigUint) -> Ordering {
         let (s_len, o_len) = (self.data.len(), other.data.len());
@@ -119,9 +111,14 @@ impl TotalOrd for BigUint {
     }
 }
 
+impl Default for BigUint {
+    #[inline]
+    fn default() -> BigUint { Zero::zero() }
+}
+
 impl fmt::Show for BigUint {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f.buf, "{}", self.to_str_radix(10))
+        write!(f, "{}", self.to_str_radix(10))
     }
 }
 
@@ -202,7 +199,8 @@ impl Add<BigUint, BigUint> for BigUint {
 
         let mut carry = 0;
         let mut sum: Vec<BigDigit> =  a.data.iter().zip(b.data.iter().chain(zeros)).map(|(ai, bi)| {
-            let (hi, lo) = BigDigit::from_uint((*ai as uint) + (*bi as uint) + (carry as uint));
+            let (hi, lo) = BigDigit::from_doublebigdigit(
+                (*ai as DoubleBigDigit) + (*bi as DoubleBigDigit) + (carry as DoubleBigDigit));
             carry = hi;
             lo
         }).collect();
@@ -219,8 +217,11 @@ impl Sub<BigUint, BigUint> for BigUint {
 
         let mut borrow = 0;
         let diff: Vec<BigDigit> =  a.take(new_len).zip(b).map(|(ai, bi)| {
-            let (hi, lo) = BigDigit::from_uint(
-                BigDigit::base + (*ai as uint) - (*bi as uint) - (borrow as uint)
+            let (hi, lo) = BigDigit::from_doublebigdigit(
+                BigDigit::base
+                    + (*ai as DoubleBigDigit)
+                    - (*bi as DoubleBigDigit)
+                    - (borrow as DoubleBigDigit)
             );
             /*
             hi * (base) + lo == 1*(base) + ai - bi - borrow
@@ -230,7 +231,8 @@ impl Sub<BigUint, BigUint> for BigUint {
             lo
         }).collect();
 
-        assert_eq!(borrow, 0);     // <=> assert!((self >= other));
+        assert!(borrow == 0,
+                "Cannot subtract other from self because other is larger than self.");
         return BigUint::new(diff);
     }
 }
@@ -273,8 +275,8 @@ impl Mul<BigUint, BigUint> for BigUint {
 
             let mut carry = 0;
             let mut prod: Vec<BigDigit> = a.data.iter().map(|ai| {
-                let (hi, lo) = BigDigit::from_uint(
-                    (*ai as uint) * (n as uint) + (carry as uint)
+                let (hi, lo) = BigDigit::from_doublebigdigit(
+                    (*ai as DoubleBigDigit) * (n as DoubleBigDigit) + (carry as DoubleBigDigit)
                 );
                 carry = hi;
                 lo
@@ -438,11 +440,11 @@ impl Integer for BigUint {
             let bn = *b.data.last().unwrap();
             let mut d = Vec::with_capacity(an.len());
             let mut carry = 0;
-            for elt in an.rev_iter() {
-                let ai = BigDigit::to_uint(carry, *elt);
-                let di = ai / (bn as uint);
+            for elt in an.iter().rev() {
+                let ai = BigDigit::to_doublebigdigit(carry, *elt);
+                let di = ai / (bn as DoubleBigDigit);
                 assert!(di < BigDigit::base);
-                carry = (ai % (bn as uint)) as BigDigit;
+                carry = (ai % (bn as DoubleBigDigit)) as BigDigit;
                 d.push(di as BigDigit)
             }
             d.reverse();
@@ -514,39 +516,14 @@ impl ToPrimitive for BigUint {
         })
     }
 
-    #[cfg(target_word_size = "32")]
+    // `DoubleBigDigit` size dependent
     #[inline]
     fn to_u64(&self) -> Option<u64> {
         match self.data.len() {
             0 => Some(0),
             1 => Some(self.data.as_slice()[0] as u64),
-            2 => {
-                Some(BigDigit::to_uint(self.data.as_slice()[1], self.data.as_slice()[0]) as u64)
-            }
-            3 => {
-                let n_lo = BigDigit::to_uint(self.data.as_slice()[1], self.data.as_slice()[0]) as
-                    u64;
-                let n_hi = self.data.as_slice()[2] as u64;
-                Some((n_hi << 32) + n_lo)
-            }
-            4 => {
-                let n_lo = BigDigit::to_uint(self.data.as_slice()[1], self.data.as_slice()[0])
-                    as u64;
-                let n_hi = BigDigit::to_uint(self.data.as_slice()[3], self.data.as_slice()[2])
-                    as u64;
-                Some((n_hi << 32) + n_lo)
-            }
-            _ => None
-        }
-    }
-
-    #[cfg(target_word_size = "64")]
-    #[inline]
-    fn to_u64(&self) -> Option<u64> {
-        match self.data.len() {
-            0 => Some(0),
-            1 => Some(self.data.as_slice()[0] as u64),
-            2 => Some(BigDigit::to_uint(self.data.as_slice()[1], self.data.as_slice()[0]) as u64),
+            2 => Some(BigDigit::to_doublebigdigit(self.data.as_slice()[1], self.data.as_slice()[0])
+                      as u64),
             _ => None
         }
     }
@@ -564,26 +541,10 @@ impl FromPrimitive for BigUint {
         }
     }
 
-    #[cfg(target_word_size = "32")]
+    // `DoubleBigDigit` size dependent
     #[inline]
     fn from_u64(n: u64) -> Option<BigUint> {
-        let n_lo = (n & 0x0000_0000_FFFF_FFFF) as uint;
-        let n_hi = (n >> 32) as uint;
-
-        let n = match (BigDigit::from_uint(n_hi), BigDigit::from_uint(n_lo)) {
-            ((0,  0),  (0,  0))  => Zero::zero(),
-            ((0,  0),  (0,  n0)) => BigUint::new(vec!(n0)),
-            ((0,  0),  (n1, n0)) => BigUint::new(vec!(n0, n1)),
-            ((0,  n2), (n1, n0)) => BigUint::new(vec!(n0, n1, n2)),
-            ((n3, n2), (n1, n0)) => BigUint::new(vec!(n0, n1, n2, n3)),
-        };
-        Some(n)
-    }
-
-    #[cfg(target_word_size = "64")]
-    #[inline]
-    fn from_u64(n: u64) -> Option<BigUint> {
-        let n = match BigDigit::from_uint(n as uint) {
+        let n = match BigDigit::from_doublebigdigit(n) {
             (0,  0)  => Zero::zero(),
             (0,  n0) => BigUint::new(vec!(n0)),
             (n1, n0) => BigUint::new(vec!(n0, n1))
@@ -641,16 +602,16 @@ impl_to_biguint!(u32,  FromPrimitive::from_u32)
 impl_to_biguint!(u64,  FromPrimitive::from_u64)
 
 impl ToStrRadix for BigUint {
-    fn to_str_radix(&self, radix: uint) -> ~str {
-        assert!(1 < radix && radix <= 16);
+    fn to_str_radix(&self, radix: uint) -> String {
+        assert!(1 < radix && radix <= 16, "The radix must be within (1, 16]");
         let (base, max_len) = get_radix_base(radix);
         if base == BigDigit::base {
             return fill_concat(self.data.as_slice(), radix, max_len)
         }
         return fill_concat(convert_base(self, base).as_slice(), radix, max_len);
 
-        fn convert_base(n: &BigUint, base: uint) -> Vec<BigDigit> {
-            let divider    = FromPrimitive::from_uint(base).unwrap();
+        fn convert_base(n: &BigUint, base: DoubleBigDigit) -> Vec<BigDigit> {
+            let divider    = base.to_biguint().unwrap();
             let mut result = Vec::new();
             let mut m      = n.clone();
             while m >= divider {
@@ -664,15 +625,17 @@ impl ToStrRadix for BigUint {
             return result;
         }
 
-        fn fill_concat(v: &[BigDigit], radix: uint, l: uint) -> ~str {
-            if v.is_empty() { return ~"0" }
-            let mut s = StrBuf::with_capacity(v.len() * l);
-            for n in v.rev_iter() {
-                let ss = (*n as uint).to_str_radix(radix);
-                s.push_str("0".repeat(l - ss.len()));
-                s.push_str(ss);
+        fn fill_concat(v: &[BigDigit], radix: uint, l: uint) -> String {
+            if v.is_empty() {
+                return "0".to_string()
             }
-            s.as_slice().trim_left_chars(&'0').to_owned()
+            let mut s = String::with_capacity(v.len() * l);
+            for n in v.iter().rev() {
+                let ss = (*n as uint).to_str_radix(radix);
+                s.push_str("0".repeat(l - ss.len()).as_slice());
+                s.push_str(ss.as_slice());
+            }
+            s.as_slice().trim_left_chars('0').to_string()
         }
     }
 }
@@ -680,35 +643,35 @@ impl ToStrRadix for BigUint {
 impl FromStrRadix for BigUint {
     /// Creates and initializes a `BigUint`.
     #[inline]
-    fn from_str_radix(s: &str, radix: uint)
-        -> Option<BigUint> {
+    fn from_str_radix(s: &str, radix: uint) -> Option<BigUint> {
         BigUint::parse_bytes(s.as_bytes(), radix)
     }
 }
 
 impl BigUint {
     /// Creates and initializes a `BigUint`.
+    ///
+    /// The digits are be in base 2^32.
     #[inline]
-    pub fn new(v: Vec<BigDigit>) -> BigUint {
+    pub fn new(mut digits: Vec<BigDigit>) -> BigUint {
         // omit trailing zeros
-        let new_len = v.iter().rposition(|n| *n != 0).map_or(0, |p| p + 1);
-
-        if new_len == v.len() { return BigUint { data: v }; }
-        let mut v = v;
-        v.truncate(new_len);
-        return BigUint { data: v };
+        let new_len = digits.iter().rposition(|n| *n != 0).map_or(0, |p| p + 1);
+        digits.truncate(new_len);
+        BigUint { data: digits }
     }
 
     /// Creates and initializes a `BigUint`.
+    ///
+    /// The digits are be in base 2^32.
     #[inline]
     pub fn from_slice(slice: &[BigDigit]) -> BigUint {
-        return BigUint::new(Vec::from_slice(slice));
+        BigUint::new(Vec::from_slice(slice))
     }
 
     /// Creates and initializes a `BigUint`.
     pub fn parse_bytes(buf: &[u8], radix: uint) -> Option<BigUint> {
         let (base, unit_len) = get_radix_base(radix);
-        let base_num = match FromPrimitive::from_uint(base) {
+        let base_num = match base.to_biguint() {
             Some(base_num) => base_num,
             None => { return None; }
         };
@@ -755,8 +718,8 @@ impl BigUint {
 
         let mut carry = 0;
         let mut shifted: Vec<BigDigit> = self.data.iter().map(|elem| {
-            let (hi, lo) = BigDigit::from_uint(
-                (*elem as uint) << n_bits | (carry as uint)
+            let (hi, lo) = BigDigit::from_doublebigdigit(
+                (*elem as DoubleBigDigit) << n_bits | (carry as DoubleBigDigit)
             );
             carry = hi;
             lo
@@ -796,34 +759,9 @@ impl BigUint {
     }
 }
 
-#[cfg(target_word_size = "32")]
+// `DoubleBigDigit` size dependent
 #[inline]
-fn get_radix_base(radix: uint) -> (uint, uint) {
-    assert!(1 < radix && radix <= 16);
-    match radix {
-        2  => (65536, 16),
-        3  => (59049, 10),
-        4  => (65536, 8),
-        5  => (15625, 6),
-        6  => (46656, 6),
-        7  => (16807, 5),
-        8  => (32768, 5),
-        9  => (59049, 5),
-        10 => (10000, 4),
-        11 => (14641, 4),
-        12 => (20736, 4),
-        13 => (28561, 4),
-        14 => (38416, 4),
-        15 => (50625, 4),
-        16 => (65536, 4),
-        _  => fail!()
-    }
-}
-
-#[cfg(target_word_size = "64")]
-#[inline]
-fn get_radix_base(radix: uint) -> (uint, uint) {
-    assert!(1 < radix && radix <= 16);
+fn get_radix_base(radix: uint) -> (DoubleBigDigit, uint) {
     match radix {
         2  => (4294967296, 32),
         3  => (3486784401, 20),
@@ -840,12 +778,12 @@ fn get_radix_base(radix: uint) -> (uint, uint) {
         14 => (1475789056, 8),
         15 => (2562890625, 8),
         16 => (4294967296, 8),
-        _  => fail!()
+        _  => fail!("The radix must be within (1, 16]")
     }
 }
 
 /// A Sign is a `BigInt`'s composing element.
-#[deriving(Eq, Ord, TotalEq, TotalOrd, Clone, Show)]
+#[deriving(PartialEq, PartialOrd, Eq, Ord, Clone, Show)]
 pub enum Sign { Minus, Zero, Plus }
 
 impl Neg<Sign> for Sign {
@@ -867,23 +805,23 @@ pub struct BigInt {
     data: BigUint
 }
 
-impl Eq for BigInt {
+impl PartialEq for BigInt {
     #[inline]
     fn eq(&self, other: &BigInt) -> bool {
-        match self.cmp(other) { Equal => true, _ => false }
+        self.cmp(other) == Equal
     }
 }
 
-impl TotalEq for BigInt {}
+impl Eq for BigInt {}
 
-impl Ord for BigInt {
+impl PartialOrd for BigInt {
     #[inline]
     fn lt(&self, other: &BigInt) -> bool {
-        match self.cmp(other) { Less => true, _ => false}
+        self.cmp(other) == Less
     }
 }
 
-impl TotalOrd for BigInt {
+impl Ord for BigInt {
     #[inline]
     fn cmp(&self, other: &BigInt) -> Ordering {
         let scmp = self.sign.cmp(&other.sign);
@@ -897,9 +835,14 @@ impl TotalOrd for BigInt {
     }
 }
 
+impl Default for BigInt {
+    #[inline]
+    fn default() -> BigInt { Zero::zero() }
+}
+
 impl fmt::Show for BigInt {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f.buf, "{}", self.to_str_radix(10))
+        write!(f, "{}", self.to_str_radix(10))
     }
 }
 
@@ -979,8 +922,7 @@ impl Add<BigInt, BigInt> for BigInt {
         match (self.sign, other.sign) {
             (Zero, _)      => other.clone(),
             (_,    Zero)   => self.clone(),
-            (Plus, Plus)   => BigInt::from_biguint(Plus,
-                                                   self.data + other.data),
+            (Plus, Plus)   => BigInt::from_biguint(Plus, self.data + other.data),
             (Plus, Minus)  => self - (-*other),
             (Minus, Plus)  => other - (-*self),
             (Minus, Minus) => -((-self) + (-*other))
@@ -1025,7 +967,7 @@ impl Div<BigInt, BigInt> for BigInt {
     #[inline]
     fn div(&self, other: &BigInt) -> BigInt {
         let (q, _) = self.div_rem(other);
-        return q;
+        q
     }
 }
 
@@ -1033,7 +975,7 @@ impl Rem<BigInt, BigInt> for BigInt {
     #[inline]
     fn rem(&self, other: &BigInt) -> BigInt {
         let (_, r) = self.div_rem(other);
-        return r;
+        r
     }
 }
 
@@ -1095,13 +1037,13 @@ impl Integer for BigInt {
     #[inline]
     fn div_floor(&self, other: &BigInt) -> BigInt {
         let (d, _) = self.div_mod_floor(other);
-        return d;
+        d
     }
 
     #[inline]
     fn mod_floor(&self, other: &BigInt) -> BigInt {
         let (_, m) = self.div_mod_floor(other);
-        return m;
+        m
     }
 
     fn div_mod_floor(&self, other: &BigInt) -> (BigInt, BigInt) {
@@ -1265,11 +1207,11 @@ impl_to_bigint!(u64,  FromPrimitive::from_u64)
 
 impl ToStrRadix for BigInt {
     #[inline]
-    fn to_str_radix(&self, radix: uint) -> ~str {
+    fn to_str_radix(&self, radix: uint) -> String {
         match self.sign {
             Plus  => self.data.to_str_radix(radix),
-            Zero  => ~"0",
-            Minus => ~"-" + self.data.to_str_radix(radix)
+            Zero  => "0".to_string(),
+            Minus => format!("-{}", self.data.to_str_radix(radix)),
         }
     }
 }
@@ -1315,7 +1257,7 @@ impl<R: Rng> RandBigInt for R {
             let final_digit: BigDigit = self.gen();
             data.push(final_digit >> (BigDigit::bits - rem));
         }
-        return BigUint::new(data);
+        BigUint::new(data)
     }
 
     fn gen_bigint(&mut self, bit_size: uint) -> BigInt {
@@ -1337,7 +1279,7 @@ impl<R: Rng> RandBigInt for R {
         } else {
             Minus
         };
-        return BigInt::from_biguint(sign, biguint);
+        BigInt::from_biguint(sign, biguint)
     }
 
     fn gen_biguint_below(&mut self, bound: &BigUint) -> BigUint {
@@ -1369,18 +1311,22 @@ impl<R: Rng> RandBigInt for R {
 
 impl BigInt {
     /// Creates and initializes a BigInt.
+    ///
+    /// The digits are be in base 2^32.
     #[inline]
-    pub fn new(sign: Sign, v: Vec<BigDigit>) -> BigInt {
-        BigInt::from_biguint(sign, BigUint::new(v))
+    pub fn new(sign: Sign, digits: Vec<BigDigit>) -> BigInt {
+        BigInt::from_biguint(sign, BigUint::new(digits))
     }
 
     /// Creates and initializes a `BigInt`.
+    ///
+    /// The digits are be in base 2^32.
     #[inline]
     pub fn from_biguint(sign: Sign, data: BigUint) -> BigInt {
         if sign == Zero || data.is_zero() {
             return BigInt { sign: Zero, data: Zero::zero() };
         }
-        return BigInt { sign: sign, data: data };
+        BigInt { sign: sign, data: data }
     }
 
     /// Creates and initializes a `BigInt`.
@@ -1390,8 +1336,7 @@ impl BigInt {
     }
 
     /// Creates and initializes a `BigInt`.
-    pub fn parse_bytes(buf: &[u8], radix: uint)
-        -> Option<BigInt> {
+    pub fn parse_bytes(buf: &[u8], radix: uint) -> Option<BigInt> {
         if buf.is_empty() { return None; }
         let mut sign  = Plus;
         let mut start = 0;
@@ -1426,7 +1371,7 @@ mod biguint_tests {
     use std::num::{Zero, One, FromStrRadix, ToStrRadix};
     use std::num::{ToPrimitive, FromPrimitive};
     use std::num::CheckedDiv;
-    use rand::{task_rng};
+    use std::rand::task_rng;
     use std::u64;
 
     #[test]
@@ -1532,29 +1477,112 @@ mod biguint_tests {
         check("0", 3, "0");
         check("1", 3, "8");
 
-        check("1" + "0000" + "0000" + "0000" + "0001" + "0000" + "0000" + "0000" + "0001", 3,
-              "8" + "0000" + "0000" + "0000" + "0008" + "0000" + "0000" + "0000" + "0008");
-        check("1" + "0000" + "0001" + "0000" + "0001", 2,
-              "4" + "0000" + "0004" + "0000" + "0004");
-        check("1" + "0001" + "0001", 1,
-              "2" + "0002" + "0002");
+        check("1\
+               0000\
+               0000\
+               0000\
+               0001\
+               0000\
+               0000\
+               0000\
+               0001",
+              3,
+              "8\
+               0000\
+               0000\
+               0000\
+               0008\
+               0000\
+               0000\
+               0000\
+               0008");
+        check("1\
+               0000\
+               0001\
+               0000\
+               0001",
+              2,
+              "4\
+               0000\
+               0004\
+               0000\
+               0004");
+        check("1\
+               0001\
+               0001",
+              1,
+              "2\
+               0002\
+               0002");
 
-        check(""  + "4000" + "0000" + "0000" + "0000", 3,
-              "2" + "0000" + "0000" + "0000" + "0000");
-        check(""  + "4000" + "0000", 2,
-              "1" + "0000" + "0000");
-        check(""  + "4000", 2,
-              "1" + "0000");
+        check("\
+              4000\
+              0000\
+              0000\
+              0000",
+              3,
+              "2\
+              0000\
+              0000\
+              0000\
+              0000");
+        check("4000\
+              0000",
+              2,
+              "1\
+              0000\
+              0000");
+        check("4000",
+              2,
+              "1\
+              0000");
 
-        check(""  + "4000" + "0000" + "0000" + "0000", 67,
-              "2" + "0000" + "0000" + "0000" + "0000" + "0000" + "0000" + "0000" + "0000");
-        check(""  + "4000" + "0000", 35,
-              "2" + "0000" + "0000" + "0000" + "0000");
-        check(""  + "4000", 19,
-              "2" + "0000" + "0000");
+        check("4000\
+              0000\
+              0000\
+              0000",
+              67,
+              "2\
+              0000\
+              0000\
+              0000\
+              0000\
+              0000\
+              0000\
+              0000\
+              0000");
+        check("4000\
+              0000",
+              35,
+              "2\
+              0000\
+              0000\
+              0000\
+              0000");
+        check("4000",
+              19,
+              "2\
+              0000\
+              0000");
 
-        check(""  + "fedc" + "ba98" + "7654" + "3210" + "fedc" + "ba98" + "7654" + "3210", 4,
-              "f" + "edcb" + "a987" + "6543" + "210f" + "edcb" + "a987" + "6543" + "2100");
+        check("fedc\
+              ba98\
+              7654\
+              3210\
+              fedc\
+              ba98\
+              7654\
+              3210",
+              4,
+              "f\
+              edcb\
+              a987\
+              6543\
+              210f\
+              edcb\
+              a987\
+              6543\
+              2100");
         check("88887777666655554444333322221111", 16,
               "888877776666555544443333222211110000");
     }
@@ -1571,63 +1599,113 @@ mod biguint_tests {
         check("0", 3, "0");
         check("f", 3, "1");
 
-        check("1" + "0000" + "0000" + "0000" + "0001" + "0000" + "0000" + "0000" + "0001", 3,
-              ""  + "2000" + "0000" + "0000" + "0000" + "2000" + "0000" + "0000" + "0000");
-        check("1" + "0000" + "0001" + "0000" + "0001", 2,
-              ""  + "4000" + "0000" + "4000" + "0000");
-        check("1" + "0001" + "0001", 1,
-              ""  + "8000" + "8000");
+        check("1\
+              0000\
+              0000\
+              0000\
+              0001\
+              0000\
+              0000\
+              0000\
+              0001",
+              3,
+              "2000\
+              0000\
+              0000\
+              0000\
+              2000\
+              0000\
+              0000\
+              0000");
+        check("1\
+              0000\
+              0001\
+              0000\
+              0001",
+              2,
+              "4000\
+              0000\
+              4000\
+              0000");
+        check("1\
+              0001\
+              0001",
+              1,
+              "8000\
+              8000");
 
-        check("2" + "0000" + "0000" + "0000" + "0001" + "0000" + "0000" + "0000" + "0001", 67,
-              ""  + "4000" + "0000" + "0000" + "0000");
-        check("2" + "0000" + "0001" + "0000" + "0001", 35,
-              ""  + "4000" + "0000");
-        check("2" + "0001" + "0001", 19,
-              ""  + "4000");
+        check("2\
+              0000\
+              0000\
+              0000\
+              0001\
+              0000\
+              0000\
+              0000\
+              0001",
+              67,
+              "4000\
+              0000\
+              0000\
+              0000");
+        check("2\
+              0000\
+              0001\
+              0000\
+              0001",
+              35,
+              "4000\
+              0000");
+        check("2\
+              0001\
+              0001",
+              19,
+              "4000");
 
-        check("1" + "0000" + "0000" + "0000" + "0000", 1,
-              ""  + "8000" + "0000" + "0000" + "0000");
-        check("1" + "0000" + "0000", 1,
-              ""  + "8000" + "0000");
-        check("1" + "0000", 1,
-              ""  + "8000");
-        check("f" + "edcb" + "a987" + "6543" + "210f" + "edcb" + "a987" + "6543" + "2100", 4,
-              ""  + "fedc" + "ba98" + "7654" + "3210" + "fedc" + "ba98" + "7654" + "3210");
+        check("1\
+              0000\
+              0000\
+              0000\
+              0000",
+              1,
+              "8000\
+              0000\
+              0000\
+              0000");
+        check("1\
+              0000\
+              0000",
+              1,
+              "8000\
+              0000");
+        check("1\
+              0000",
+              1,
+              "8000");
+        check("f\
+              edcb\
+              a987\
+              6543\
+              210f\
+              edcb\
+              a987\
+              6543\
+              2100",
+              4,
+              "fedc\
+              ba98\
+              7654\
+              3210\
+              fedc\
+              ba98\
+              7654\
+              3210");
 
         check("888877776666555544443333222211110000", 16,
               "88887777666655554444333322221111");
     }
 
-    #[cfg(target_word_size = "32")]
-    #[test]
-    fn test_convert_i64() {
-        fn check(b1: BigUint, i: i64) {
-            let b2: BigUint = FromPrimitive::from_i64(i).unwrap();
-            assert!(b1 == b2);
-            assert!(b1.to_i64().unwrap() == i);
-        }
-
-        check(Zero::zero(), 0);
-        check(One::one(), 1);
-        check(i64::MAX.to_biguint().unwrap(), i64::MAX);
-
-        check(BigUint::new(vec!(                   )), 0);
-        check(BigUint::new(vec!( 1                 )), (1 << (0*BigDigit::bits)));
-        check(BigUint::new(vec!(-1                 )), (1 << (1*BigDigit::bits)) - 1);
-        check(BigUint::new(vec!( 0,  1             )), (1 << (1*BigDigit::bits)));
-        check(BigUint::new(vec!(-1, -1             )), (1 << (2*BigDigit::bits)) - 1);
-        check(BigUint::new(vec!( 0,  0,  1         )), (1 << (2*BigDigit::bits)));
-        check(BigUint::new(vec!(-1, -1, -1         )), (1 << (3*BigDigit::bits)) - 1);
-        check(BigUint::new(vec!( 0,  0,  0,  1     )), (1 << (3*BigDigit::bits)));
-        check(BigUint::new(vec!(-1, -1, -1, -1 >> 1)), i64::MAX);
-
-        assert_eq!(i64::MIN.to_biguint(), None);
-        assert_eq!(BigUint::new(vec!(-1, -1, -1, -1    )).to_i64(), None);
-        assert_eq!(BigUint::new(vec!( 0,  0,  0,  0,  1)).to_i64(), None);
-        assert_eq!(BigUint::new(vec!(-1, -1, -1, -1, -1)).to_i64(), None);
-    }
-
-    #[cfg(target_word_size = "64")]
+    // `DoubleBigDigit` size dependent
     #[test]
     fn test_convert_i64() {
         fn check(b1: BigUint, i: i64) {
@@ -1652,35 +1730,7 @@ mod biguint_tests {
         assert_eq!(BigUint::new(vec!(-1, -1, -1)).to_i64(), None);
     }
 
-    #[cfg(target_word_size = "32")]
-    #[test]
-    fn test_convert_u64() {
-        fn check(b1: BigUint, u: u64) {
-            let b2: BigUint = FromPrimitive::from_u64(u).unwrap();
-            assert!(b1 == b2);
-            assert!(b1.to_u64().unwrap() == u);
-        }
-
-        check(Zero::zero(), 0);
-        check(One::one(), 1);
-        check(u64::MIN.to_biguint().unwrap(), u64::MIN);
-        check(u64::MAX.to_biguint().unwrap(), u64::MAX);
-
-        check(BigUint::new(vec!(              )), 0);
-        check(BigUint::new(vec!( 1            )), (1 << (0*BigDigit::bits)));
-        check(BigUint::new(vec!(-1            )), (1 << (1*BigDigit::bits)) - 1);
-        check(BigUint::new(vec!( 0,  1        )), (1 << (1*BigDigit::bits)));
-        check(BigUint::new(vec!(-1, -1        )), (1 << (2*BigDigit::bits)) - 1);
-        check(BigUint::new(vec!( 0,  0,  1    )), (1 << (2*BigDigit::bits)));
-        check(BigUint::new(vec!(-1, -1, -1    )), (1 << (3*BigDigit::bits)) - 1);
-        check(BigUint::new(vec!( 0,  0,  0,  1)), (1 << (3*BigDigit::bits)));
-        check(BigUint::new(vec!(-1, -1, -1, -1)), u64::MAX);
-
-        assert_eq!(BigUint::new(vec!( 0,  0,  0,  0,  1)).to_u64(), None);
-        assert_eq!(BigUint::new(vec!(-1, -1, -1, -1, -1)).to_u64(), None);
-    }
-
-    #[cfg(target_word_size = "64")]
+    // `DoubleBigDigit` size dependent
     #[test]
     fn test_convert_u64() {
         fn check(b1: BigUint, u: u64) {
@@ -1753,6 +1803,13 @@ mod biguint_tests {
             assert!(c - a == b);
             assert!(c - b == a);
         }
+    }
+
+    #[test]
+    #[should_fail]
+    fn test_sub_fail_on_underflow() {
+        let (a, b) : (BigUint, BigUint) = (Zero::zero(), One::one());
+        a - b;
     }
 
     static mul_triples: &'static [(&'static [BigDigit],
@@ -1971,60 +2028,60 @@ mod biguint_tests {
         assert!(((one << 64) + one).is_odd());
     }
 
-    fn to_str_pairs() -> Vec<(BigUint, Vec<(uint, ~str)>)> {
+    fn to_str_pairs() -> Vec<(BigUint, Vec<(uint, String)>)> {
         let bits = BigDigit::bits;
         vec!(( Zero::zero(), vec!(
-            (2, ~"0"), (3, ~"0")
+            (2, "0".to_string()), (3, "0".to_string())
         )), ( BigUint::from_slice([ 0xff ]), vec!(
-            (2,  ~"11111111"),
-            (3,  ~"100110"),
-            (4,  ~"3333"),
-            (5,  ~"2010"),
-            (6,  ~"1103"),
-            (7,  ~"513"),
-            (8,  ~"377"),
-            (9,  ~"313"),
-            (10, ~"255"),
-            (11, ~"212"),
-            (12, ~"193"),
-            (13, ~"168"),
-            (14, ~"143"),
-            (15, ~"120"),
-            (16, ~"ff")
+            (2,  "11111111".to_string()),
+            (3,  "100110".to_string()),
+            (4,  "3333".to_string()),
+            (5,  "2010".to_string()),
+            (6,  "1103".to_string()),
+            (7,  "513".to_string()),
+            (8,  "377".to_string()),
+            (9,  "313".to_string()),
+            (10, "255".to_string()),
+            (11, "212".to_string()),
+            (12, "193".to_string()),
+            (13, "168".to_string()),
+            (14, "143".to_string()),
+            (15, "120".to_string()),
+            (16, "ff".to_string())
         )), ( BigUint::from_slice([ 0xfff ]), vec!(
-            (2,  ~"111111111111"),
-            (4,  ~"333333"),
-            (16, ~"fff")
+            (2,  "111111111111".to_string()),
+            (4,  "333333".to_string()),
+            (16, "fff".to_string())
         )), ( BigUint::from_slice([ 1, 2 ]), vec!(
             (2,
-             ~"10" +
-             "0".repeat(bits - 1) + "1"),
+             format!("10{}1", "0".repeat(bits - 1))),
             (4,
-             ~"2" +
-             "0".repeat(bits / 2 - 1) + "1"),
+             format!("2{}1", "0".repeat(bits / 2 - 1))),
             (10, match bits {
-                32 => ~"8589934593", 16 => ~"131073", _ => fail!()
-            }),
-            (16,
-             ~"2" +
-             "0".repeat(bits / 4 - 1) + "1")
-        )), ( BigUint::from_slice([ 1, 2, 3 ]), vec!(
-            (2,
-             ~"11" +
-             "0".repeat(bits - 2) + "10" +
-             "0".repeat(bits - 1) + "1"),
-            (4,
-             ~"3" +
-             "0".repeat(bits / 2 - 1) + "2" +
-             "0".repeat(bits / 2 - 1) + "1"),
-            (10, match bits {
-                32 => ~"55340232229718589441",
-                16 => ~"12885032961",
+                32 => "8589934593".to_string(),
+                16 => "131073".to_string(),
                 _ => fail!()
             }),
-            (16, ~"3" +
-             "0".repeat(bits / 4 - 1) + "2" +
-             "0".repeat(bits / 4 - 1) + "1")
+            (16,
+             format!("2{}1", "0".repeat(bits / 4 - 1)))
+        )), ( BigUint::from_slice([ 1, 2, 3 ]), vec!(
+            (2,
+             format!("11{}10{}1",
+                     "0".repeat(bits - 2),
+                     "0".repeat(bits - 1))),
+            (4,
+             format!("3{}2{}1",
+                     "0".repeat(bits / 2 - 1),
+                     "0".repeat(bits / 2 - 1))),
+            (10, match bits {
+                32 => "55340232229718589441".to_string(),
+                16 => "12885032961".to_string(),
+                _ => fail!()
+            }),
+            (16,
+             format!("3{}2{}1",
+                     "0".repeat(bits / 4 - 1),
+                     "0".repeat(bits / 4 - 1)))
         )) )
     }
 
@@ -2035,7 +2092,8 @@ mod biguint_tests {
             let &(ref n, ref rs) = num_pair;
             for str_pair in rs.iter() {
                 let &(ref radix, ref str) = str_pair;
-                assert_eq!(&n.to_str_radix(*radix), str);
+                assert_eq!(n.to_str_radix(*radix).as_slice(),
+                           str.as_slice());
             }
         }
     }
@@ -2047,7 +2105,9 @@ mod biguint_tests {
             let &(ref n, ref rs) = num_pair;
             for str_pair in rs.iter() {
                 let &(ref radix, ref str) = str_pair;
-                assert_eq!(n, &FromStrRadix::from_str_radix(*str, *radix).unwrap());
+                assert_eq!(n,
+                           &FromStrRadix::from_str_radix(str.as_slice(),
+                                                         *radix).unwrap());
             }
         }
 
@@ -2159,7 +2219,7 @@ mod bigint_tests {
     use std::num::CheckedDiv;
     use std::num::{Zero, One, FromStrRadix, ToStrRadix};
     use std::num::{ToPrimitive, FromPrimitive};
-    use rand::{task_rng};
+    use std::rand::task_rng;
     use std::u64;
 
     #[test]
@@ -2179,7 +2239,7 @@ mod bigint_tests {
     fn test_cmp() {
         let vs = [ &[2 as BigDigit], &[1, 1], &[2, 1], &[1, 1, 1] ];
         let mut nums = Vec::new();
-        for s in vs.rev_iter() {
+        for s in vs.iter().rev() {
             nums.push(BigInt::from_slice(Minus, *s));
         }
         nums.push(Zero::zero());
@@ -2646,7 +2706,7 @@ mod bigint_tests {
     fn test_to_str_radix() {
         fn check(n: int, ans: &str) {
             let n: BigInt = FromPrimitive::from_int(n).unwrap();
-            assert!(ans == n.to_str_radix(10));
+            assert!(ans == n.to_str_radix(10).as_slice());
         }
         check(10, "10");
         check(1, "1");
@@ -2675,7 +2735,8 @@ mod bigint_tests {
 
         // issue 10522, this hit an edge case that caused it to
         // attempt to allocate a vector of size (-1u) == huge.
-        let x: BigInt = from_str("1" + "0".repeat(36)).unwrap();
+        let x: BigInt =
+            from_str(format!("1{}", "0".repeat(36)).as_slice()).unwrap();
         let _y = x.to_str();
     }
 

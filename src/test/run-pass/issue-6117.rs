@@ -8,12 +8,14 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#[feature(managed_boxes)];
+#![feature(managed_boxes)]
+
+use std::gc::GC;
 
 enum Either<T, U> { Left(T), Right(U) }
 
 pub fn main() {
-    match Left(@17) {
+    match Left(box(GC) 17) {
         Right(()) => {}
         _ => {}
     }

@@ -1,5 +1,3 @@
-// ignore-pretty
-
 // Copyright 2012-2014 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
@@ -16,6 +14,8 @@
 // groups, but that shouldn't have to happen for already-dead groups.
 //
 // The filename is a song reference; google it in quotes.
+
+// ignore-pretty very bad with line comments
 
 use std::comm;
 use std::os;
@@ -41,16 +41,16 @@ fn child_generation(gens_left: uint, tx: comm::Sender<()>) {
 fn main() {
     let args = os::args();
     let args = if os::getenv("RUST_BENCH").is_some() {
-        vec!(~"", ~"100000")
+        vec!("".to_string(), "100000".to_string())
     } else if args.len() <= 1 {
-        vec!(~"", ~"100")
+        vec!("".to_string(), "100".to_string())
     } else {
         args.clone().move_iter().collect()
     };
 
     let (tx, rx) = channel();
-    child_generation(from_str::<uint>(*args.get(1)).unwrap(), tx);
-    if rx.recv_opt().is_none() {
+    child_generation(from_str::<uint>(args.get(1).as_slice()).unwrap(), tx);
+    if rx.recv_opt().is_err() {
         fail!("it happened when we slumbered");
     }
 }

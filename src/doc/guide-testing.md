@@ -19,7 +19,7 @@ fn return_two_test() {
 To run these tests, compile with `rustc --test` and run the resulting
 binary:
 
-~~~ {.notrust}
+~~~console
 $ rustc --test foo.rs
 $ ./foo
 running 1 test
@@ -90,10 +90,15 @@ fn test_out_of_bounds_failure() {
 ~~~
 
 A test runner built with the `--test` flag supports a limited set of
-arguments to control which tests are run: the first free argument
-passed to a test runner specifies a filter used to narrow down the set
-of tests being run; the `--ignored` flag tells the test runner to run
-only tests with the `ignore` attribute.
+arguments to control which tests are run:
+
+- the first free argument passed to a test runner is interpreted as a
+  regular expression
+  ([syntax reference](regex/index.html#syntax))
+  and is used to narrow down the set of tests being run. Note: a plain
+  string is a valid regular expression that matches itself.
+- the `--ignored` flag tells the test runner to run only tests with the
+  `ignore` attribute.
 
 ## Parallelism
 
@@ -106,7 +111,7 @@ sequentially.
 
 ### Typical test run
 
-~~~ {.notrust}
+~~~console
 $ mytests
 
 running 30 tests
@@ -120,7 +125,7 @@ result: ok. 28 passed; 0 failed; 2 ignored
 
 ### Test run with failures
 
-~~~ {.notrust}
+~~~console
 $ mytests
 
 running 30 tests
@@ -134,7 +139,7 @@ result: FAILED. 27 passed; 1 failed; 2 ignored
 
 ### Running ignored tests
 
-~~~ {.notrust}
+~~~console
 $ mytests --ignored
 
 running 2 tests
@@ -146,16 +151,31 @@ result: FAILED. 1 passed; 1 failed; 0 ignored
 
 ### Running a subset of tests
 
-~~~ {.notrust}
-$ mytests mytest1
+Using a plain string:
 
-running 11 tests
+~~~console
+$ mytests mytest23
+
+running 1 tests
+running driver::tests::mytest23 ... ok
+
+result: ok. 1 passed; 0 failed; 0 ignored
+~~~
+
+Using some regular expression features:
+
+~~~console
+$ mytests 'mytest[145]'
+
+running 13 tests
 running driver::tests::mytest1 ... ok
+running driver::tests::mytest4 ... ok
+running driver::tests::mytest5 ... ok
 running driver::tests::mytest10 ... ignored
 ... snip ...
 running driver::tests::mytest19 ... ok
 
-result: ok. 11 passed; 0 failed; 1 ignored
+result: ok. 13 passed; 0 failed; 1 ignored
 ~~~
 
 # Microbenchmarking
@@ -185,7 +205,7 @@ amount.
 For example:
 
 ~~~
-# #[allow(unused_imports)];
+# #![allow(unused_imports)]
 extern crate test;
 
 use std::slice;
@@ -227,7 +247,7 @@ Advice on writing benchmarks:
 To run benchmarks, pass the `--bench` flag to the compiled
 test-runner. Benchmarks are compiled-in but not executed by default.
 
-~~~ {.notrust}
+~~~console
 $ rustc mytests.rs -O --test
 $ mytests --bench
 
@@ -247,7 +267,7 @@ recognize that some calculation has no external effects and remove
 it entirely.
 
 ~~~
-# #[allow(unused_imports)];
+# #![allow(unused_imports)]
 extern crate test;
 use test::Bencher;
 
@@ -263,7 +283,7 @@ fn bench_xor_1000_ints(b: &mut Bencher) {
 
 gives the following results
 
-~~~ {.notrust}
+~~~console
 running 1 test
 test bench_xor_1000_ints ... bench:         0 ns/iter (+/- 0)
 
@@ -303,7 +323,7 @@ overhead (e.g. `black_box(&huge_struct)`).
 Performing either of the above changes gives the following
 benchmarking results
 
-~~~ {.notrust}
+~~~console
 running 1 test
 test bench_xor_1000_ints ... bench:       375 ns/iter (+/- 148)
 

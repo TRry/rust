@@ -8,20 +8,21 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+
 struct S {
-    x: ~int
+    x: Box<int>,
 }
 
 impl S {
     pub fn foo(self) -> int {
         self.bar();
-        return *self.x;  //~ ERROR use of moved value: `self`
+        return *self.x;  //~ ERROR use of partially moved value: `*self.x`
     }
 
     pub fn bar(self) {}
 }
 
 fn main() {
-    let x = S { x: ~1 };
+    let x = S { x: box 1 };
     println!("{}", x.foo());
 }

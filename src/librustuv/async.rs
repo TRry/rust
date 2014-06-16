@@ -8,10 +8,10 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use std::cast;
-use libc::c_int;
+use alloc::arc::Arc;
+use std::mem;
+use std::rt::exclusive::Exclusive;
 use std::rt::rtio::{Callback, RemoteCallback};
-use std::unstable::sync::Exclusive;
 
 use uvll;
 use super::{Loop, UvHandle};
@@ -23,24 +23,24 @@ pub struct AsyncWatcher {
 
     // A flag to tell the callback to exit, set from the dtor. This is
     // almost never contested - only in rare races with the dtor.
-    exit_flag: Exclusive<bool>
+    exit_flag: Arc<Exclusive<bool>>,
 }
 
 struct Payload {
-    callback: ~Callback:Send,
-    exit_flag: Exclusive<bool>,
+    callback: Box<Callback + Send>,
+    exit_flag: Arc<Exclusive<bool>>,
 }
 
 impl AsyncWatcher {
-    pub fn new(loop_: &mut Loop, cb: ~Callback:Send) -> AsyncWatcher {
+    pub fn new(loop_: &mut Loop, cb: Box<Callback + Send>) -> AsyncWatcher {
         let handle = UvHandle::alloc(None::<AsyncWatcher>, uvll::UV_ASYNC);
         assert_eq!(unsafe {
             uvll::uv_async_init(loop_.handle, handle, async_cb)
         }, 0);
-        let flag = Exclusive::new(false);
-        let payload = ~Payload { callback: cb, exit_flag: flag.clone() };
+        let flag = Arc::new(Exclusive::new(false));
+        let payload = box Payload { callback: cb, exit_flag: flag.clone() };
         unsafe {
-            let payload: *u8 = cast::transmute(payload);
+            let payload: *u8 = mem::transmute(payload);
             uvll::set_data_for_uv_handle(handle, payload);
         }
         return AsyncWatcher { handle: handle, exit_flag: flag, };
@@ -54,10 +54,9 @@ impl UvHandle<uvll::uv_async_t> for AsyncWatcher {
     }
 }
 
-extern fn async_cb(handle: *uvll::uv_async_t, status: c_int) {
-    assert!(status == 0);
+extern fn async_cb(handle: *uvll::uv_async_t) {
     let payload: &mut Payload = unsafe {
-        cast::transmute(uvll::get_data_for_uv_handle(handle))
+        mem::transmute(uvll::get_data_for_uv_handle(handle))
     };
 
     // The synchronization logic here is subtle. To review,
@@ -82,9 +81,7 @@ extern fn async_cb(handle: *uvll::uv_async_t, status: c_int) {
     // could be called in the other thread, missing the final
     // callback while still destroying the handle.
 
-    let should_exit = unsafe {
-        payload.exit_flag.with_imm(|&should_exit| should_exit)
-    };
+    let should_exit = unsafe { *payload.exit_flag.lock() };
 
     payload.callback.call();
 
@@ -95,8 +92,8 @@ extern fn async_cb(handle: *uvll::uv_async_t, status: c_int) {
 
 extern fn close_cb(handle: *uvll::uv_handle_t) {
     // drop the payload
-    let _payload: ~Payload = unsafe {
-        cast::transmute(uvll::get_data_for_uv_handle(handle))
+    let _payload: Box<Payload> = unsafe {
+        mem::transmute(uvll::get_data_for_uv_handle(handle))
     };
     // and then free the handle
     unsafe { uvll::free_handle(handle) }
@@ -110,16 +107,13 @@ impl RemoteCallback for AsyncWatcher {
 
 impl Drop for AsyncWatcher {
     fn drop(&mut self) {
-        unsafe {
-            self.exit_flag.with(|should_exit| {
-                // NB: These two things need to happen atomically. Otherwise
-                // the event handler could wake up due to a *previous*
-                // signal and see the exit flag, destroying the handle
-                // before the final send.
-                *should_exit = true;
-                uvll::uv_async_send(self.handle)
-            })
-        }
+        let mut should_exit = unsafe { self.exit_flag.lock() };
+        // NB: These two things need to happen atomically. Otherwise
+        // the event handler could wake up due to a *previous*
+        // signal and see the exit flag, destroying the handle
+        // before the final send.
+        *should_exit = true;
+        unsafe { uvll::uv_async_send(self.handle) }
     }
 }
 
@@ -148,7 +142,7 @@ mod test_remote {
         }
 
         let (tx, rx) = channel();
-        let cb = ~MyCallback(Some(tx));
+        let cb = box MyCallback(Some(tx));
         let watcher = AsyncWatcher::new(&mut local_loop().loop_, cb);
 
         let thread = Thread::start(proc() {

@@ -1,4 +1,4 @@
-// Copyright 2012-2013 The Rust Project Developers. See the COPYRIGHT
+// Copyright 2012-2014 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
 //
@@ -11,12 +11,17 @@
 //! A double-ended queue implemented as a circular buffer
 //!
 //! RingBuf implements the trait Deque. It should be imported with `use
-//! collections::deque::Deque`.
+//! collections::Deque`.
 
-use std::cmp;
-use std::iter::{Rev, RandomAccessIterator};
+use core::prelude::*;
 
-use deque::Deque;
+use core::cmp;
+use core::default::Default;
+use core::fmt;
+use core::iter::RandomAccessIterator;
+
+use {Deque, Collection, Mutable};
+use vec::Vec;
 
 static INITIAL_CAPACITY: uint = 8u; // 2^3
 static MINIMUM_CAPACITY: uint = 2u;
@@ -29,7 +34,7 @@ pub struct RingBuf<T> {
     elts: Vec<Option<T>>
 }
 
-impl<T> Container for RingBuf<T> {
+impl<T> Collection for RingBuf<T> {
     /// Return the number of elements in the RingBuf
     fn len(&self) -> uint { self.nelts }
 }
@@ -61,7 +66,8 @@ impl<T> Deque<T> for RingBuf<T> {
 
     /// Return a mutable reference to the last element in the RingBuf
     fn back_mut<'a>(&'a mut self) -> Option<&'a mut T> {
-        if self.nelts > 0 { Some(self.get_mut(self.nelts - 1)) } else { None }
+        let nelts = self.nelts;
+        if nelts > 0 { Some(self.get_mut(nelts - 1)) } else { None }
     }
 
     /// Remove and return the first element in the RingBuf, or None if it is empty
@@ -106,6 +112,11 @@ impl<T> Deque<T> for RingBuf<T> {
         *self.elts.get_mut(hi) = Some(t);
         self.nelts += 1u;
     }
+}
+
+impl<T> Default for RingBuf<T> {
+    #[inline]
+    fn default() -> RingBuf<T> { RingBuf::new() }
 }
 
 impl<T> RingBuf<T> {
@@ -190,11 +201,6 @@ impl<T> RingBuf<T> {
         Items{index: 0, rindex: self.nelts, lo: self.lo, elts: self.elts.as_slice()}
     }
 
-    /// Back-to-front iterator.
-    pub fn rev_iter<'a>(&'a self) -> Rev<Items<'a, T>> {
-        self.iter().rev()
-    }
-
     /// Front-to-back iterator which returns mutable values.
     pub fn mut_iter<'a>(&'a mut self) -> MutItems<'a, T> {
         let start_index = raw_index(self.lo, self.elts.len(), 0);
@@ -219,11 +225,6 @@ impl<T> RingBuf<T> {
                                  remaining2: empty,
                                  nelts: self.nelts }
         }
-    }
-
-    /// Back-to-front iterator which returns mutable values.
-    pub fn mut_rev_iter<'a>(&'a mut self) -> Rev<MutItems<'a, T>> {
-        self.mut_iter().rev()
     }
 }
 
@@ -272,7 +273,7 @@ impl<'a, T> RandomAccessIterator<&'a T> for Items<'a, T> {
     fn indexable(&self) -> uint { self.rindex - self.index }
 
     #[inline]
-    fn idx(&self, j: uint) -> Option<&'a T> {
+    fn idx(&mut self, j: uint) -> Option<&'a T> {
         if j >= self.indexable() {
             None
         } else {
@@ -374,7 +375,7 @@ fn raw_index(lo: uint, len: uint, index: uint) -> uint {
     }
 }
 
-impl<A: Eq> Eq for RingBuf<A> {
+impl<A: PartialEq> PartialEq for RingBuf<A> {
     fn eq(&self, other: &RingBuf<A>) -> bool {
         self.nelts == other.nelts &&
             self.iter().zip(other.iter()).all(|(a, b)| a.eq(b))
@@ -401,15 +402,30 @@ impl<A> Extendable<A> for RingBuf<A> {
     }
 }
 
+impl<T: fmt::Show> fmt::Show for RingBuf<T> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        try!(write!(f, "["));
+
+        for (i, e) in self.iter().enumerate() {
+            if i != 0 { try!(write!(f, ", ")); }
+            try!(write!(f, "{}", *e));
+        }
+
+        write!(f, "]")
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    extern crate test;
-    use self::test::Bencher;
-    use deque::Deque;
-    use std::clone::Clone;
-    use std::cmp::Eq;
     use std::fmt::Show;
+    use std::prelude::*;
+    use std::gc::{GC, Gc};
+    use test::Bencher;
+    use test;
+
+    use {Deque, Mutable};
     use super::RingBuf;
+    use vec::Vec;
 
     #[test]
     fn test_simple() {
@@ -458,10 +474,10 @@ mod tests {
 
     #[test]
     fn test_boxes() {
-        let a: @int = @5;
-        let b: @int = @72;
-        let c: @int = @64;
-        let d: @int = @175;
+        let a: Gc<int> = box(GC) 5;
+        let b: Gc<int> = box(GC) 72;
+        let c: Gc<int> = box(GC) 64;
+        let d: Gc<int> = box(GC) 175;
 
         let mut deq = RingBuf::new();
         assert_eq!(deq.len(), 0);
@@ -493,7 +509,7 @@ mod tests {
     }
 
     #[cfg(test)]
-    fn test_parameterized<T:Clone + Eq + Show>(a: T, b: T, c: T, d: T) {
+    fn test_parameterized<T:Clone + PartialEq + Show>(a: T, b: T, c: T, d: T) {
         let mut deq = RingBuf::new();
         assert_eq!(deq.len(), 0);
         deq.push_front(a.clone());
@@ -578,21 +594,21 @@ mod tests {
         })
     }
 
-    #[deriving(Clone, Eq, Show)]
+    #[deriving(Clone, PartialEq, Show)]
     enum Taggy {
         One(int),
         Two(int, int),
         Three(int, int, int),
     }
 
-    #[deriving(Clone, Eq, Show)]
+    #[deriving(Clone, PartialEq, Show)]
     enum Taggypar<T> {
         Onepar(int),
         Twopar(int, int),
         Threepar(int, int, int),
     }
 
-    #[deriving(Clone, Eq, Show)]
+    #[deriving(Clone, PartialEq, Show)]
     struct RecCy {
         x: int,
         y: int,
@@ -606,7 +622,8 @@ mod tests {
 
     #[test]
     fn test_param_at_int() {
-        test_parameterized::<@int>(@5, @72, @64, @175);
+        test_parameterized::<Gc<int>>(box(GC) 5, box(GC) 72,
+                                      box(GC) 64, box(GC) 175);
     }
 
     #[test]
@@ -702,23 +719,23 @@ mod tests {
     #[test]
     fn test_rev_iter() {
         let mut d = RingBuf::new();
-        assert_eq!(d.rev_iter().next(), None);
+        assert_eq!(d.iter().rev().next(), None);
 
         for i in range(0, 5) {
             d.push_back(i);
         }
-        assert_eq!(d.rev_iter().collect::<Vec<&int>>().as_slice(), &[&4,&3,&2,&1,&0]);
+        assert_eq!(d.iter().rev().collect::<Vec<&int>>().as_slice(), &[&4,&3,&2,&1,&0]);
 
         for i in range(6, 9) {
             d.push_front(i);
         }
-        assert_eq!(d.rev_iter().collect::<Vec<&int>>().as_slice(), &[&4,&3,&2,&1,&0,&6,&7,&8]);
+        assert_eq!(d.iter().rev().collect::<Vec<&int>>().as_slice(), &[&4,&3,&2,&1,&0,&6,&7,&8]);
     }
 
     #[test]
     fn test_mut_rev_iter_wrap() {
         let mut d = RingBuf::with_capacity(3);
-        assert!(d.mut_rev_iter().next().is_none());
+        assert!(d.mut_iter().rev().next().is_none());
 
         d.push_back(1);
         d.push_back(2);
@@ -726,7 +743,7 @@ mod tests {
         assert_eq!(d.pop_front(), Some(1));
         d.push_back(4);
 
-        assert_eq!(d.mut_rev_iter().map(|x| *x).collect::<Vec<int>>(),
+        assert_eq!(d.mut_iter().rev().map(|x| *x).collect::<Vec<int>>(),
                    vec!(4, 3, 2));
     }
 
@@ -756,19 +773,19 @@ mod tests {
     #[test]
     fn test_mut_rev_iter() {
         let mut d = RingBuf::new();
-        assert!(d.mut_rev_iter().next().is_none());
+        assert!(d.mut_iter().rev().next().is_none());
 
         for i in range(0u, 3) {
             d.push_front(i);
         }
 
-        for (i, elt) in d.mut_rev_iter().enumerate() {
+        for (i, elt) in d.mut_iter().rev().enumerate() {
             assert_eq!(*elt, i);
             *elt = i;
         }
 
         {
-            let mut it = d.mut_rev_iter();
+            let mut it = d.mut_iter().rev();
             assert_eq!(*it.next().unwrap(), 0);
             assert_eq!(*it.next().unwrap(), 1);
             assert_eq!(*it.next().unwrap(), 2);
@@ -828,5 +845,16 @@ mod tests {
         assert!(e != d);
         e.clear();
         assert!(e == RingBuf::new());
+    }
+
+    #[test]
+    fn test_show() {
+        let ringbuf: RingBuf<int> = range(0, 10).collect();
+        assert!(format!("{}", ringbuf).as_slice() == "[0, 1, 2, 3, 4, 5, 6, 7, 8, 9]");
+
+        let ringbuf: RingBuf<&str> = vec!["just", "one", "test", "more"].iter()
+                                                                        .map(|&s| s)
+                                                                        .collect();
+        assert!(format!("{}", ringbuf).as_slice() == "[just, one, test, more]");
     }
 }

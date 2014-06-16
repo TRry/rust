@@ -34,7 +34,7 @@
 //! use getopts::{optopt,optflag,getopts,OptGroup};
 //! use std::os;
 //!
-//! fn do_work(inp: &str, out: Option<~str>) {
+//! fn do_work(inp: &str, out: Option<String>) {
 //!     println!("{}", inp);
 //!     match out {
 //!         Some(x) => println!("{}", x),
@@ -49,9 +49,11 @@
 //! }
 //!
 //! fn main() {
-//!     let args = os::args();
+//!     let args: Vec<String> = os::args().iter()
+//!                                       .map(|x| x.to_string())
+//!                                       .collect();
 //!
-//!     let program = args[0].clone();
+//!     let program = args.get(0).clone();
 //!
 //!     let opts = [
 //!         optopt("o", "", "set output file name", "NAME"),
@@ -59,54 +61,56 @@
 //!     ];
 //!     let matches = match getopts(args.tail(), opts) {
 //!         Ok(m) => { m }
-//!         Err(f) => { fail!(f.to_err_msg()) }
+//!         Err(f) => { fail!(f.to_str()) }
 //!     };
 //!     if matches.opt_present("h") {
-//!         print_usage(program, opts);
+//!         print_usage(program.as_slice(), opts);
 //!         return;
 //!     }
 //!     let output = matches.opt_str("o");
-//!     let input: &str = if !matches.free.is_empty() {
+//!     let input = if !matches.free.is_empty() {
 //!         (*matches.free.get(0)).clone()
 //!     } else {
-//!         print_usage(program, opts);
+//!         print_usage(program.as_slice(), opts);
 //!         return;
 //!     };
-//!     do_work(input, output);
+//!     do_work(input.as_slice(), output);
 //! }
 //! ~~~
 
-#![crate_id = "getopts#0.11-pre"]
+#![crate_id = "getopts#0.11.0-pre"]
 #![crate_type = "rlib"]
 #![crate_type = "dylib"]
 #![license = "MIT/ASL2"]
 #![doc(html_logo_url = "http://www.rust-lang.org/logos/rust-logo-128x128-blk-v2.png",
        html_favicon_url = "http://www.rust-lang.org/favicon.ico",
-       html_root_url = "http://static.rust-lang.org/doc/master")]
+       html_root_url = "http://doc.rust-lang.org/",
+       html_playground_url = "http://play.rust-lang.org/")]
 #![feature(globs, phase)]
 #![deny(missing_doc)]
-#![deny(deprecated_owned_vector)]
 
-#[cfg(test)] #[phase(syntax, link)] extern crate log;
+#[cfg(test)] extern crate debug;
+#[cfg(test)] #[phase(plugin, link)] extern crate log;
 
-use std::cmp::Eq;
+use std::cmp::PartialEq;
+use std::fmt;
 use std::result::{Err, Ok};
 use std::result;
-use std::strbuf::StrBuf;
+use std::string::String;
 
 /// Name of an option. Either a string or a single char.
-#[deriving(Clone, Eq)]
+#[deriving(Clone, PartialEq, Eq)]
 pub enum Name {
     /// A string representing the long name of an option.
     /// For example: "help"
-    Long(~str),
+    Long(String),
     /// A char representing the short name of an option.
     /// For example: 'h'
     Short(char),
 }
 
 /// Describes whether an option has an argument.
-#[deriving(Clone, Eq)]
+#[deriving(Clone, PartialEq, Eq)]
 pub enum HasArg {
     /// The option requires an argument.
     Yes,
@@ -117,7 +121,7 @@ pub enum HasArg {
 }
 
 /// Describes how often an option may occur.
-#[deriving(Clone, Eq)]
+#[deriving(Clone, PartialEq, Eq)]
 pub enum Occur {
     /// The option occurs once.
     Req,
@@ -128,7 +132,7 @@ pub enum Occur {
 }
 
 /// A description of a possible option.
-#[deriving(Clone, Eq)]
+#[deriving(Clone, PartialEq, Eq)]
 pub struct Opt {
     /// Name of the option
     pub name: Name,
@@ -137,65 +141,65 @@ pub struct Opt {
     /// How often it can occur
     pub occur: Occur,
     /// Which options it aliases
-    pub aliases: Vec<Opt> ,
+    pub aliases: Vec<Opt>,
 }
 
 /// One group of options, e.g., both -h and --help, along with
 /// their shared description and properties.
-#[deriving(Clone, Eq)]
+#[deriving(Clone, PartialEq, Eq)]
 pub struct OptGroup {
     /// Short Name of the `OptGroup`
-    pub short_name: ~str,
+    pub short_name: String,
     /// Long Name of the `OptGroup`
-    pub long_name: ~str,
+    pub long_name: String,
     /// Hint
-    pub hint: ~str,
+    pub hint: String,
     /// Description
-    pub desc: ~str,
+    pub desc: String,
     /// Whether it has an argument
     pub hasarg: HasArg,
     /// How often it can occur
     pub occur: Occur
 }
 
-/// Describes wether an option is given at all or has a value.
-#[deriving(Clone, Eq)]
+/// Describes whether an option is given at all or has a value.
+#[deriving(Clone, PartialEq, Eq)]
 enum Optval {
-    Val(~str),
+    Val(String),
     Given,
 }
 
 /// The result of checking command line arguments. Contains a vector
 /// of matches and a vector of free strings.
-#[deriving(Clone, Eq)]
+#[deriving(Clone, PartialEq, Eq)]
 pub struct Matches {
     /// Options that matched
-    opts: Vec<Opt> ,
+    opts: Vec<Opt>,
     /// Values of the Options that matched
-    vals: Vec<Vec<Optval> > ,
+    vals: Vec<Vec<Optval>>,
     /// Free string fragments
-    pub free: Vec<~str>,
+    pub free: Vec<String>,
 }
 
 /// The type returned when the command line does not conform to the
-/// expected format. Call the `to_err_msg` method to retrieve the
-/// error as a string.
-#[deriving(Clone, Eq, Show)]
+/// expected format. Use the `Show` implementation to output detailed
+/// information.
+#[deriving(Clone, PartialEq, Eq)]
 pub enum Fail_ {
     /// The option requires an argument but none was passed.
-    ArgumentMissing(~str),
+    ArgumentMissing(String),
     /// The passed option is not declared among the possible options.
-    UnrecognizedOption(~str),
+    UnrecognizedOption(String),
     /// A required option is not present.
-    OptionMissing(~str),
-    /// A single occurence option is being used multiple times.
-    OptionDuplicated(~str),
+    OptionMissing(String),
+    /// A single occurrence option is being used multiple times.
+    OptionDuplicated(String),
     /// There's an argument being passed to a non-argument option.
-    UnexpectedArgument(~str),
+    UnexpectedArgument(String),
 }
 
 /// The type of failure that occurred.
-#[deriving(Eq)]
+#[deriving(PartialEq, Eq)]
 #[allow(missing_doc)]
 pub enum FailType {
     ArgumentMissing_,
@@ -213,14 +217,14 @@ impl Name {
         if nm.len() == 1u {
             Short(nm.char_at(0u))
         } else {
-            Long(nm.to_owned())
+            Long(nm.to_string())
         }
     }
 
-    fn to_str(&self) -> ~str {
+    fn to_str(&self) -> String {
         match *self {
             Short(ch) => ch.to_str(),
-            Long(ref s) => s.to_owned()
+            Long(ref s) => s.to_string()
         }
     }
 }
@@ -246,7 +250,7 @@ impl OptGroup {
                 aliases: Vec::new()
             },
             (1,0) => Opt {
-                name: Short(short_name.char_at(0)),
+                name: Short(short_name.as_slice().char_at(0)),
                 hasarg: hasarg,
                 occur: occur,
                 aliases: Vec::new()
@@ -257,7 +261,7 @@ impl OptGroup {
                 occur:  occur,
                 aliases: vec!(
                     Opt {
-                        name: Short(short_name.char_at(0)),
+                        name: Short(short_name.as_slice().char_at(0)),
                         hasarg: hasarg,
                         occur:  occur,
                         aliases: Vec::new()
@@ -297,9 +301,10 @@ impl Matches {
     }
 
     /// Returns true if any of several options were matched.
-    pub fn opts_present(&self, names: &[~str]) -> bool {
+    pub fn opts_present(&self, names: &[String]) -> bool {
         for nm in names.iter() {
-            match find_opt(self.opts.as_slice(), Name::from_str(*nm)) {
+            match find_opt(self.opts.as_slice(),
+                           Name::from_str(nm.as_slice())) {
                 Some(id) if !self.vals.get(id).is_empty() => return true,
                 _ => (),
             };
@@ -308,9 +313,9 @@ impl Matches {
     }
 
     /// Returns the string argument supplied to one of several matching options or `None`.
-    pub fn opts_str(&self, names: &[~str]) -> Option<~str> {
+    pub fn opts_str(&self, names: &[String]) -> Option<String> {
         for nm in names.iter() {
-            match self.opt_val(*nm) {
+            match self.opt_val(nm.as_slice()) {
                 Some(Val(ref s)) => return Some(s.clone()),
                 _ => ()
             }
@@ -322,8 +327,8 @@ impl Matches {
     /// option.
     ///
     /// Used when an option accepts multiple values.
-    pub fn opt_strs(&self, nm: &str) -> Vec<~str> {
-        let mut acc: Vec<~str> = Vec::new();
+    pub fn opt_strs(&self, nm: &str) -> Vec<String> {
+        let mut acc: Vec<String> = Vec::new();
         let r = self.opt_vals(nm);
         for v in r.iter() {
             match *v {
@@ -335,10 +340,10 @@ impl Matches {
     }
 
     /// Returns the string argument supplied to a matching option or `None`.
-    pub fn opt_str(&self, nm: &str) -> Option<~str> {
+    pub fn opt_str(&self, nm: &str) -> Option<String> {
         let vals = self.opt_vals(nm);
         if vals.is_empty() {
-            return None::<~str>;
+            return None::<String>;
         }
         match vals.get(0) {
             &Val(ref s) => Some((*s).clone()),
@@ -352,12 +357,14 @@ impl Matches {
     /// Returns none if the option was not present, `def` if the option was
     /// present but no argument was provided, and the argument if the option was
     /// present and an argument was provided.
-    pub fn opt_default(&self, nm: &str, def: &str) -> Option<~str> {
+    pub fn opt_default(&self, nm: &str, def: &str) -> Option<String> {
         let vals = self.opt_vals(nm);
-        if vals.is_empty() { return None; }
+        if vals.is_empty() {
+            return None;
+        }
         match vals.get(0) {
             &Val(ref s) => Some((*s).clone()),
-            _ => Some(def.to_owned())
+            _ => Some(def.to_string())
         }
     }
 
@@ -389,10 +396,10 @@ pub fn reqopt(short_name: &str, long_name: &str, desc: &str, hint: &str) -> OptG
     let len = short_name.len();
     assert!(len == 1 || len == 0);
     OptGroup {
-        short_name: short_name.to_owned(),
-        long_name: long_name.to_owned(),
-        hint: hint.to_owned(),
-        desc: desc.to_owned(),
+        short_name: short_name.to_string(),
+        long_name: long_name.to_string(),
+        hint: hint.to_string(),
+        desc: desc.to_string(),
         hasarg: Yes,
         occur: Req
     }
@@ -403,10 +410,10 @@ pub fn optopt(short_name: &str, long_name: &str, desc: &str, hint: &str) -> OptG
     let len = short_name.len();
     assert!(len == 1 || len == 0);
     OptGroup {
-        short_name: short_name.to_owned(),
-        long_name: long_name.to_owned(),
-        hint: hint.to_owned(),
-        desc: desc.to_owned(),
+        short_name: short_name.to_string(),
+        long_name: long_name.to_string(),
+        hint: hint.to_string(),
+        desc: desc.to_string(),
         hasarg: Yes,
         occur: Optional
     }
@@ -417,10 +424,10 @@ pub fn optflag(short_name: &str, long_name: &str, desc: &str) -> OptGroup {
     let len = short_name.len();
     assert!(len == 1 || len == 0);
     OptGroup {
-        short_name: short_name.to_owned(),
-        long_name: long_name.to_owned(),
-        hint: ~"",
-        desc: desc.to_owned(),
+        short_name: short_name.to_string(),
+        long_name: long_name.to_string(),
+        hint: "".to_string(),
+        desc: desc.to_string(),
         hasarg: No,
         occur: Optional
     }
@@ -432,10 +439,10 @@ pub fn optflagmulti(short_name: &str, long_name: &str, desc: &str) -> OptGroup {
     let len = short_name.len();
     assert!(len == 1 || len == 0);
     OptGroup {
-        short_name: short_name.to_owned(),
-        long_name: long_name.to_owned(),
-        hint: ~"",
-        desc: desc.to_owned(),
+        short_name: short_name.to_string(),
+        long_name: long_name.to_string(),
+        hint: "".to_string(),
+        desc: desc.to_string(),
         hasarg: No,
         occur: Multi
     }
@@ -446,10 +453,10 @@ pub fn optflagopt(short_name: &str, long_name: &str, desc: &str, hint: &str) -> 
     let len = short_name.len();
     assert!(len == 1 || len == 0);
     OptGroup {
-        short_name: short_name.to_owned(),
-        long_name: long_name.to_owned(),
-        hint: hint.to_owned(),
-        desc: desc.to_owned(),
+        short_name: short_name.to_string(),
+        long_name: long_name.to_string(),
+        hint: hint.to_string(),
+        desc: desc.to_string(),
         hasarg: Maybe,
         occur: Optional
     }
@@ -461,10 +468,10 @@ pub fn optmulti(short_name: &str, long_name: &str, desc: &str, hint: &str) -> Op
     let len = short_name.len();
     assert!(len == 1 || len == 0);
     OptGroup {
-        short_name: short_name.to_owned(),
-        long_name: long_name.to_owned(),
-        hint: hint.to_owned(),
-        desc: desc.to_owned(),
+        short_name: short_name.to_string(),
+        long_name: long_name.to_string(),
+        hint: hint.to_string(),
+        desc: desc.to_string(),
         hasarg: Yes,
         occur: Multi
     }
@@ -480,10 +487,10 @@ pub fn opt(short_name: &str,
     let len = short_name.len();
     assert!(len == 1 || len == 0);
     OptGroup {
-        short_name: short_name.to_owned(),
-        long_name: long_name.to_owned(),
-        hint: hint.to_owned(),
-        desc: desc.to_owned(),
+        short_name: short_name.to_string(),
+        long_name: long_name.to_string(),
+        hint: hint.to_string(),
+        desc: desc.to_string(),
         hasarg: hasarg,
         occur: occur
     }
@@ -491,22 +498,29 @@ pub fn opt(short_name: &str,
 
 impl Fail_ {
     /// Convert a `Fail_` enum into an error string.
-    pub fn to_err_msg(self) -> ~str {
-        match self {
+    #[deprecated="use `Show` (`{}` format specifier)"]
+    pub fn to_err_msg(self) -> String {
+        self.to_str()
+    }
+}
+
+impl fmt::Show for Fail_ {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
             ArgumentMissing(ref nm) => {
-                format!("Argument to option '{}' missing.", *nm)
+                write!(f, "Argument to option '{}' missing.", *nm)
             }
             UnrecognizedOption(ref nm) => {
-                format!("Unrecognized option: '{}'.", *nm)
+                write!(f, "Unrecognized option: '{}'.", *nm)
             }
             OptionMissing(ref nm) => {
-                format!("Required option '{}' missing.", *nm)
+                write!(f, "Required option '{}' missing.", *nm)
             }
             OptionDuplicated(ref nm) => {
-                format!("Option '{}' given more than once.", *nm)
+                write!(f, "Option '{}' given more than once.", *nm)
             }
             UnexpectedArgument(ref nm) => {
-                format!("Option '{}' does not take an argument.", *nm)
+                write!(f, "Option '{}' does not take an argument.", *nm)
             }
         }
     }
@@ -515,46 +529,47 @@ impl Fail_ {
 /// Parse command line arguments according to the provided options.
 ///
 /// On success returns `Ok(Opt)`. Use methods such as `opt_present`
-/// `opt_str`, etc. to interrogate results.  Returns `Err(Fail_)` on failure.
-/// Use `to_err_msg` to get an error message.
-pub fn getopts(args: &[~str], optgrps: &[OptGroup]) -> Result {
+/// `opt_str`, etc. to interrogate results.  Returns `Err(Fail_)` on
+/// failure: use the `Show` implementation of `Fail_` to display
+/// information about it.
+pub fn getopts(args: &[String], optgrps: &[OptGroup]) -> Result {
     let opts: Vec<Opt> = optgrps.iter().map(|x| x.long_to_short()).collect();
     let n_opts = opts.len();
 
     fn f(_x: uint) -> Vec<Optval> { return Vec::new(); }
 
     let mut vals = Vec::from_fn(n_opts, f);
-    let mut free: Vec<~str> = Vec::new();
+    let mut free: Vec<String> = Vec::new();
     let l = args.len();
     let mut i = 0;
     while i < l {
         let cur = args[i].clone();
         let curlen = cur.len();
-        if !is_arg(cur) {
+        if !is_arg(cur.as_slice()) {
             free.push(cur);
-        } else if cur == ~"--" {
+        } else if cur.as_slice() == "--" {
             let mut j = i + 1;
             while j < l { free.push(args[j].clone()); j += 1; }
             break;
         } else {
             let mut names;
             let mut i_arg = None;
-            if cur[1] == '-' as u8 {
-                let tail = cur.slice(2, curlen);
+            if cur.as_slice()[1] == '-' as u8 {
+                let tail = cur.as_slice().slice(2, curlen);
                 let tail_eq: Vec<&str> = tail.split('=').collect();
                 if tail_eq.len() <= 1 {
-                    names = vec!(Long(tail.to_owned()));
+                    names = vec!(Long(tail.to_string()));
                 } else {
                     names =
-                        vec!(Long((*tail_eq.get(0)).to_owned()));
-                    i_arg = Some((*tail_eq.get(1)).to_owned());
+                        vec!(Long((*tail_eq.get(0)).to_string()));
+                    i_arg = Some((*tail_eq.get(1)).to_string());
                 }
             } else {
                 let mut j = 1;
                 let mut last_valid_opt_id = None;
                 names = Vec::new();
                 while j < curlen {
-                    let range = cur.char_range_at(j);
+                    let range = cur.as_slice().char_range_at(j);
                     let opt = Short(range.ch);
 
                     /* In a series of potential options (eg. -aheJ), if we
@@ -576,7 +591,8 @@ pub fn getopts(args: &[~str], optgrps: &[OptGroup]) -> Result {
                               No => false
                             };
                         if arg_follows && j < curlen {
-                            i_arg = Some(cur.slice(j, curlen).to_owned());
+                            i_arg = Some(cur.as_slice()
+                                            .slice(j, curlen).to_string());
                             break;
                         } else {
                             last_valid_opt_id = None;
@@ -606,8 +622,8 @@ pub fn getopts(args: &[~str], optgrps: &[OptGroup]) -> Result {
                         vals.get_mut(optid)
                             .push(Val((i_arg.clone())
                             .unwrap()));
-                    } else if name_pos < names.len() ||
-                                  i + 1 == l || is_arg(args[i + 1]) {
+                    } else if name_pos < names.len() || i + 1 == l ||
+                            is_arg(args[i + 1].as_slice()) {
                         vals.get_mut(optid).push(Given);
                     } else {
                         i += 1;
@@ -653,9 +669,9 @@ pub fn getopts(args: &[~str], optgrps: &[OptGroup]) -> Result {
 }
 
 /// Derive a usage message from a set of long options.
-pub fn usage(brief: &str, opts: &[OptGroup]) -> ~str {
+pub fn usage(brief: &str, opts: &[OptGroup]) -> String {
 
-    let desc_sep = "\n" + " ".repeat(24);
+    let desc_sep = format!("\n{}", " ".repeat(24));
 
     let mut rows = opts.iter().map(|optref| {
         let OptGroup{short_name: short_name,
@@ -665,14 +681,14 @@ pub fn usage(brief: &str, opts: &[OptGroup]) -> ~str {
                      hasarg: hasarg,
                      ..} = (*optref).clone();
 
-        let mut row = StrBuf::from_owned_str(" ".repeat(4));
+        let mut row = " ".repeat(4);
 
         // short option
         match short_name.len() {
             0 => {}
             1 => {
                 row.push_char('-');
-                row.push_str(short_name);
+                row.push_str(short_name.as_slice());
                 row.push_char(' ');
             }
             _ => fail!("the short name should only be 1 ascii char long"),
@@ -683,7 +699,7 @@ pub fn usage(brief: &str, opts: &[OptGroup]) -> ~str {
             0 => {}
             _ => {
                 row.push_str("--");
-                row.push_str(long_name);
+                row.push_str(long_name.as_slice());
                 row.push_char(' ');
             }
         }
@@ -691,10 +707,10 @@ pub fn usage(brief: &str, opts: &[OptGroup]) -> ~str {
         // arg
         match hasarg {
             No => {}
-            Yes => row.push_str(hint),
+            Yes => row.push_str(hint.as_slice()),
             Maybe => {
                 row.push_char('[');
-                row.push_str(hint);
+                row.push_str(hint.as_slice());
                 row.push_char(']');
             }
         }
@@ -707,12 +723,12 @@ pub fn usage(brief: &str, opts: &[OptGroup]) -> ~str {
                 row.push_char(' ');
             }
         } else {
-            row.push_str(desc_sep)
+            row.push_str(desc_sep.as_slice())
         }
 
         // Normalize desc to contain words separated by one space character
-        let mut desc_normalized_whitespace = StrBuf::new();
-        for word in desc.words() {
+        let mut desc_normalized_whitespace = String::new();
+        for word in desc.as_slice().words() {
             desc_normalized_whitespace.push_str(word);
             desc_normalized_whitespace.push_char(' ');
         }
@@ -722,22 +738,23 @@ pub fn usage(brief: &str, opts: &[OptGroup]) -> ~str {
         each_split_within(desc_normalized_whitespace.as_slice(),
                           54,
                           |substr| {
-            desc_rows.push(substr.to_owned());
+            desc_rows.push(substr.to_string());
             true
         });
 
         // FIXME: #5516 should be graphemes not codepoints
         // wrapped description
-        row.push_str(desc_rows.connect(desc_sep));
+        row.push_str(desc_rows.connect(desc_sep.as_slice()).as_slice());
 
-        row.into_owned()
+        row
     });
 
-    format!("{}\n\nOptions:\n{}\n", brief, rows.collect::<Vec<~str> >().connect("\n"))
+    format!("{}\n\nOptions:\n{}\n", brief,
+            rows.collect::<Vec<String>>().connect("\n"))
 }
 
-fn format_option(opt: &OptGroup) -> ~str {
-    let mut line = StrBuf::new();
+fn format_option(opt: &OptGroup) -> String {
+    let mut line = String::new();
 
     if opt.occur != Req {
         line.push_char('[');
@@ -746,10 +763,10 @@ fn format_option(opt: &OptGroup) -> ~str {
     // Use short_name is possible, but fallback to long_name.
     if opt.short_name.len() > 0 {
         line.push_char('-');
-        line.push_str(opt.short_name);
+        line.push_str(opt.short_name.as_slice());
     } else {
         line.push_str("--");
-        line.push_str(opt.long_name);
+        line.push_str(opt.long_name.as_slice());
     }
 
     if opt.hasarg != No {
@@ -757,7 +774,7 @@ fn format_option(opt: &OptGroup) -> ~str {
         if opt.hasarg == Maybe {
             line.push_char('[');
         }
-        line.push_str(opt.hint);
+        line.push_str(opt.hint.as_slice());
         if opt.hasarg == Maybe {
             line.push_char(']');
         }
@@ -770,14 +787,18 @@ fn format_option(opt: &OptGroup) -> ~str {
         line.push_str("..");
     }
 
-    line.into_owned()
+    line
 }
 
 /// Derive a short one-line usage summary from a set of long options.
-pub fn short_usage(program_name: &str, opts: &[OptGroup]) -> ~str {
-    let mut line = StrBuf::from_str("Usage: " + program_name + " ");
-    line.push_str(opts.iter().map(format_option).collect::<Vec<~str>>().connect(" "));
-    line.into_owned()
+pub fn short_usage(program_name: &str, opts: &[OptGroup]) -> String {
+    let mut line = format!("Usage: {} ", program_name);
+    line.push_str(opts.iter()
+                      .map(format_option)
+                      .collect::<Vec<String>>()
+                      .connect(" ")
+                      .as_slice());
+    line
 }
 
 
@@ -886,18 +907,21 @@ fn each_split_within<'a>(ss: &'a str, lim: uint, it: |&'a str| -> bool)
 
 #[test]
 fn test_split_within() {
-    fn t(s: &str, i: uint, u: &[~str]) {
+    fn t(s: &str, i: uint, u: &[String]) {
         let mut v = Vec::new();
-        each_split_within(s, i, |s| { v.push(s.to_owned()); true });
+        each_split_within(s, i, |s| { v.push(s.to_string()); true });
         assert!(v.iter().zip(u.iter()).all(|(a,b)| a == b));
     }
     t("", 0, []);
     t("", 15, []);
-    t("hello", 15, [~"hello"]);
-    t("\nMary had a little lamb\nLittle lamb\n", 15,
-        [~"Mary had a", ~"little lamb", ~"Little lamb"]);
+    t("hello", 15, ["hello".to_string()]);
+    t("\nMary had a little lamb\nLittle lamb\n", 15, [
+        "Mary had a".to_string(),
+        "little lamb".to_string(),
+        "Little lamb".to_string()
+    ]);
     t("\nMary had a little lamb\nLittle lamb\n", ::std::uint::MAX,
-        [~"Mary had a little lamb\nLittle lamb"]);
+        ["Mary had a little lamb\nLittle lamb".to_string()]);
 }
 
 #[cfg(test)]
@@ -920,25 +944,25 @@ mod tests {
     // Tests for reqopt
     #[test]
     fn test_reqopt() {
-        let long_args = vec!(~"--test=20");
+        let long_args = vec!("--test=20".to_string());
         let opts = vec!(reqopt("t", "test", "testing", "TEST"));
         let rs = getopts(long_args.as_slice(), opts.as_slice());
         match rs {
           Ok(ref m) => {
             assert!(m.opt_present("test"));
-            assert_eq!(m.opt_str("test").unwrap(), ~"20");
+            assert_eq!(m.opt_str("test").unwrap(), "20".to_string());
             assert!(m.opt_present("t"));
-            assert_eq!(m.opt_str("t").unwrap(), ~"20");
+            assert_eq!(m.opt_str("t").unwrap(), "20".to_string());
           }
           _ => { fail!("test_reqopt failed (long arg)"); }
         }
-        let short_args = vec!(~"-t", ~"20");
+        let short_args = vec!("-t".to_string(), "20".to_string());
         match getopts(short_args.as_slice(), opts.as_slice()) {
           Ok(ref m) => {
             assert!((m.opt_present("test")));
-            assert_eq!(m.opt_str("test").unwrap(), ~"20");
+            assert_eq!(m.opt_str("test").unwrap(), "20".to_string());
             assert!((m.opt_present("t")));
-            assert_eq!(m.opt_str("t").unwrap(), ~"20");
+            assert_eq!(m.opt_str("t").unwrap(), "20".to_string());
           }
           _ => { fail!("test_reqopt failed (short arg)"); }
         }
@@ -946,7 +970,7 @@ mod tests {
 
     #[test]
     fn test_reqopt_missing() {
-        let args = vec!(~"blah");
+        let args = vec!("blah".to_string());
         let opts = vec!(reqopt("t", "test", "testing", "TEST"));
         let rs = getopts(args.as_slice(), opts.as_slice());
         match rs {
@@ -957,14 +981,14 @@ mod tests {
 
     #[test]
     fn test_reqopt_no_arg() {
-        let long_args = vec!(~"--test");
+        let long_args = vec!("--test".to_string());
         let opts = vec!(reqopt("t", "test", "testing", "TEST"));
         let rs = getopts(long_args.as_slice(), opts.as_slice());
         match rs {
           Err(f) => check_fail_type(f, ArgumentMissing_),
           _ => fail!()
         }
-        let short_args = vec!(~"-t");
+        let short_args = vec!("-t".to_string());
         match getopts(short_args.as_slice(), opts.as_slice()) {
           Err(f) => check_fail_type(f, ArgumentMissing_),
           _ => fail!()
@@ -973,7 +997,7 @@ mod tests {
 
     #[test]
     fn test_reqopt_multi() {
-        let args = vec!(~"--test=20", ~"-t", ~"30");
+        let args = vec!("--test=20".to_string(), "-t".to_string(), "30".to_string());
         let opts = vec!(reqopt("t", "test", "testing", "TEST"));
         let rs = getopts(args.as_slice(), opts.as_slice());
         match rs {
@@ -985,25 +1009,25 @@ mod tests {
     // Tests for optopt
     #[test]
     fn test_optopt() {
-        let long_args = vec!(~"--test=20");
+        let long_args = vec!("--test=20".to_string());
         let opts = vec!(optopt("t", "test", "testing", "TEST"));
         let rs = getopts(long_args.as_slice(), opts.as_slice());
         match rs {
           Ok(ref m) => {
             assert!(m.opt_present("test"));
-            assert_eq!(m.opt_str("test").unwrap(), ~"20");
+            assert_eq!(m.opt_str("test").unwrap(), "20".to_string());
             assert!((m.opt_present("t")));
-            assert_eq!(m.opt_str("t").unwrap(), ~"20");
+            assert_eq!(m.opt_str("t").unwrap(), "20".to_string());
           }
           _ => fail!()
         }
-        let short_args = vec!(~"-t", ~"20");
+        let short_args = vec!("-t".to_string(), "20".to_string());
         match getopts(short_args.as_slice(), opts.as_slice()) {
           Ok(ref m) => {
             assert!((m.opt_present("test")));
-            assert_eq!(m.opt_str("test").unwrap(), ~"20");
+            assert_eq!(m.opt_str("test").unwrap(), "20".to_string());
             assert!((m.opt_present("t")));
-            assert_eq!(m.opt_str("t").unwrap(), ~"20");
+            assert_eq!(m.opt_str("t").unwrap(), "20".to_string());
           }
           _ => fail!()
         }
@@ -1011,7 +1035,7 @@ mod tests {
 
     #[test]
     fn test_optopt_missing() {
-        let args = vec!(~"blah");
+        let args = vec!("blah".to_string());
         let opts = vec!(optopt("t", "test", "testing", "TEST"));
         let rs = getopts(args.as_slice(), opts.as_slice());
         match rs {
@@ -1025,14 +1049,14 @@ mod tests {
 
     #[test]
     fn test_optopt_no_arg() {
-        let long_args = vec!(~"--test");
+        let long_args = vec!("--test".to_string());
         let opts = vec!(optopt("t", "test", "testing", "TEST"));
         let rs = getopts(long_args.as_slice(), opts.as_slice());
         match rs {
           Err(f) => check_fail_type(f, ArgumentMissing_),
           _ => fail!()
         }
-        let short_args = vec!(~"-t");
+        let short_args = vec!("-t".to_string());
         match getopts(short_args.as_slice(), opts.as_slice()) {
           Err(f) => check_fail_type(f, ArgumentMissing_),
           _ => fail!()
@@ -1041,7 +1065,7 @@ mod tests {
 
     #[test]
     fn test_optopt_multi() {
-        let args = vec!(~"--test=20", ~"-t", ~"30");
+        let args = vec!("--test=20".to_string(), "-t".to_string(), "30".to_string());
         let opts = vec!(optopt("t", "test", "testing", "TEST"));
         let rs = getopts(args.as_slice(), opts.as_slice());
         match rs {
@@ -1053,7 +1077,7 @@ mod tests {
     // Tests for optflag
     #[test]
     fn test_optflag() {
-        let long_args = vec!(~"--test");
+        let long_args = vec!("--test".to_string());
         let opts = vec!(optflag("t", "test", "testing"));
         let rs = getopts(long_args.as_slice(), opts.as_slice());
         match rs {
@@ -1063,7 +1087,7 @@ mod tests {
           }
           _ => fail!()
         }
-        let short_args = vec!(~"-t");
+        let short_args = vec!("-t".to_string());
         match getopts(short_args.as_slice(), opts.as_slice()) {
           Ok(ref m) => {
             assert!(m.opt_present("test"));
@@ -1075,7 +1099,7 @@ mod tests {
 
     #[test]
     fn test_optflag_missing() {
-        let args = vec!(~"blah");
+        let args = vec!("blah".to_string());
         let opts = vec!(optflag("t", "test", "testing"));
         let rs = getopts(args.as_slice(), opts.as_slice());
         match rs {
@@ -1089,12 +1113,11 @@ mod tests {
 
     #[test]
     fn test_optflag_long_arg() {
-        let args = vec!(~"--test=20");
+        let args = vec!("--test=20".to_string());
         let opts = vec!(optflag("t", "test", "testing"));
         let rs = getopts(args.as_slice(), opts.as_slice());
         match rs {
           Err(f) => {
-            error!("{:?}", f.clone().to_err_msg());
             check_fail_type(f, UnexpectedArgument_);
           }
           _ => fail!()
@@ -1103,7 +1126,7 @@ mod tests {
 
     #[test]
     fn test_optflag_multi() {
-        let args = vec!(~"--test", ~"-t");
+        let args = vec!("--test".to_string(), "-t".to_string());
         let opts = vec!(optflag("t", "test", "testing"));
         let rs = getopts(args.as_slice(), opts.as_slice());
         match rs {
@@ -1114,14 +1137,14 @@ mod tests {
 
     #[test]
     fn test_optflag_short_arg() {
-        let args = vec!(~"-t", ~"20");
+        let args = vec!("-t".to_string(), "20".to_string());
         let opts = vec!(optflag("t", "test", "testing"));
         let rs = getopts(args.as_slice(), opts.as_slice());
         match rs {
           Ok(ref m) => {
             // The next variable after the flag is just a free argument
 
-            assert!(*m.free.get(0) == ~"20");
+            assert!(*m.free.get(0) == "20".to_string());
           }
           _ => fail!()
         }
@@ -1130,7 +1153,7 @@ mod tests {
     // Tests for optflagmulti
     #[test]
     fn test_optflagmulti_short1() {
-        let args = vec!(~"-v");
+        let args = vec!("-v".to_string());
         let opts = vec!(optflagmulti("v", "verbose", "verbosity"));
         let rs = getopts(args.as_slice(), opts.as_slice());
         match rs {
@@ -1143,7 +1166,7 @@ mod tests {
 
     #[test]
     fn test_optflagmulti_short2a() {
-        let args = vec!(~"-v", ~"-v");
+        let args = vec!("-v".to_string(), "-v".to_string());
         let opts = vec!(optflagmulti("v", "verbose", "verbosity"));
         let rs = getopts(args.as_slice(), opts.as_slice());
         match rs {
@@ -1156,7 +1179,7 @@ mod tests {
 
     #[test]
     fn test_optflagmulti_short2b() {
-        let args = vec!(~"-vv");
+        let args = vec!("-vv".to_string());
         let opts = vec!(optflagmulti("v", "verbose", "verbosity"));
         let rs = getopts(args.as_slice(), opts.as_slice());
         match rs {
@@ -1169,7 +1192,7 @@ mod tests {
 
     #[test]
     fn test_optflagmulti_long1() {
-        let args = vec!(~"--verbose");
+        let args = vec!("--verbose".to_string());
         let opts = vec!(optflagmulti("v", "verbose", "verbosity"));
         let rs = getopts(args.as_slice(), opts.as_slice());
         match rs {
@@ -1182,7 +1205,7 @@ mod tests {
 
     #[test]
     fn test_optflagmulti_long2() {
-        let args = vec!(~"--verbose", ~"--verbose");
+        let args = vec!("--verbose".to_string(), "--verbose".to_string());
         let opts = vec!(optflagmulti("v", "verbose", "verbosity"));
         let rs = getopts(args.as_slice(), opts.as_slice());
         match rs {
@@ -1195,7 +1218,8 @@ mod tests {
 
     #[test]
     fn test_optflagmulti_mix() {
-        let args = vec!(~"--verbose", ~"-v", ~"-vv", ~"verbose");
+        let args = vec!("--verbose".to_string(), "-v".to_string(),
+                        "-vv".to_string(), "verbose".to_string());
         let opts = vec!(optflagmulti("v", "verbose", "verbosity"));
         let rs = getopts(args.as_slice(), opts.as_slice());
         match rs {
@@ -1210,25 +1234,25 @@ mod tests {
     // Tests for optmulti
     #[test]
     fn test_optmulti() {
-        let long_args = vec!(~"--test=20");
+        let long_args = vec!("--test=20".to_string());
         let opts = vec!(optmulti("t", "test", "testing", "TEST"));
         let rs = getopts(long_args.as_slice(), opts.as_slice());
         match rs {
           Ok(ref m) => {
             assert!((m.opt_present("test")));
-            assert_eq!(m.opt_str("test").unwrap(), ~"20");
+            assert_eq!(m.opt_str("test").unwrap(), "20".to_string());
             assert!((m.opt_present("t")));
-            assert_eq!(m.opt_str("t").unwrap(), ~"20");
+            assert_eq!(m.opt_str("t").unwrap(), "20".to_string());
           }
           _ => fail!()
         }
-        let short_args = vec!(~"-t", ~"20");
+        let short_args = vec!("-t".to_string(), "20".to_string());
         match getopts(short_args.as_slice(), opts.as_slice()) {
           Ok(ref m) => {
             assert!((m.opt_present("test")));
-            assert_eq!(m.opt_str("test").unwrap(), ~"20");
+            assert_eq!(m.opt_str("test").unwrap(), "20".to_string());
             assert!((m.opt_present("t")));
-            assert_eq!(m.opt_str("t").unwrap(), ~"20");
+            assert_eq!(m.opt_str("t").unwrap(), "20".to_string());
           }
           _ => fail!()
         }
@@ -1236,7 +1260,7 @@ mod tests {
 
     #[test]
     fn test_optmulti_missing() {
-        let args = vec!(~"blah");
+        let args = vec!("blah".to_string());
         let opts = vec!(optmulti("t", "test", "testing", "TEST"));
         let rs = getopts(args.as_slice(), opts.as_slice());
         match rs {
@@ -1250,14 +1274,14 @@ mod tests {
 
     #[test]
     fn test_optmulti_no_arg() {
-        let long_args = vec!(~"--test");
+        let long_args = vec!("--test".to_string());
         let opts = vec!(optmulti("t", "test", "testing", "TEST"));
         let rs = getopts(long_args.as_slice(), opts.as_slice());
         match rs {
           Err(f) => check_fail_type(f, ArgumentMissing_),
           _ => fail!()
         }
-        let short_args = vec!(~"-t");
+        let short_args = vec!("-t".to_string());
         match getopts(short_args.as_slice(), opts.as_slice()) {
           Err(f) => check_fail_type(f, ArgumentMissing_),
           _ => fail!()
@@ -1266,18 +1290,18 @@ mod tests {
 
     #[test]
     fn test_optmulti_multi() {
-        let args = vec!(~"--test=20", ~"-t", ~"30");
+        let args = vec!("--test=20".to_string(), "-t".to_string(), "30".to_string());
         let opts = vec!(optmulti("t", "test", "testing", "TEST"));
         let rs = getopts(args.as_slice(), opts.as_slice());
         match rs {
           Ok(ref m) => {
               assert!(m.opt_present("test"));
-              assert_eq!(m.opt_str("test").unwrap(), ~"20");
+              assert_eq!(m.opt_str("test").unwrap(), "20".to_string());
               assert!(m.opt_present("t"));
-              assert_eq!(m.opt_str("t").unwrap(), ~"20");
+              assert_eq!(m.opt_str("t").unwrap(), "20".to_string());
               let pair = m.opt_strs("test");
-              assert!(*pair.get(0) == ~"20");
-              assert!(*pair.get(1) == ~"30");
+              assert!(*pair.get(0) == "20".to_string());
+              assert!(*pair.get(1) == "30".to_string());
           }
           _ => fail!()
         }
@@ -1285,14 +1309,14 @@ mod tests {
 
     #[test]
     fn test_unrecognized_option() {
-        let long_args = vec!(~"--untest");
+        let long_args = vec!("--untest".to_string());
         let opts = vec!(optmulti("t", "test", "testing", "TEST"));
         let rs = getopts(long_args.as_slice(), opts.as_slice());
         match rs {
           Err(f) => check_fail_type(f, UnrecognizedOption_),
           _ => fail!()
         }
-        let short_args = vec!(~"-u");
+        let short_args = vec!("-u".to_string());
         match getopts(short_args.as_slice(), opts.as_slice()) {
           Err(f) => check_fail_type(f, UnrecognizedOption_),
           _ => fail!()
@@ -1302,9 +1326,22 @@ mod tests {
     #[test]
     fn test_combined() {
         let args =
-            vec!(~"prog", ~"free1", ~"-s", ~"20", ~"free2",
-              ~"--flag", ~"--long=30", ~"-f", ~"-m", ~"40",
-              ~"-m", ~"50", ~"-n", ~"-A B", ~"-n", ~"-60 70");
+            vec!("prog".to_string(),
+                 "free1".to_string(),
+                 "-s".to_string(),
+                 "20".to_string(),
+                 "free2".to_string(),
+                 "--flag".to_string(),
+                 "--long=30".to_string(),
+                 "-f".to_string(),
+                 "-m".to_string(),
+                 "40".to_string(),
+                 "-m".to_string(),
+                 "50".to_string(),
+                 "-n".to_string(),
+                 "-A B".to_string(),
+                 "-n".to_string(),
+                 "-60 70".to_string());
         let opts =
             vec!(optopt("s", "something", "something", "SOMETHING"),
               optflag("", "flag", "a flag"),
@@ -1316,19 +1353,19 @@ mod tests {
         let rs = getopts(args.as_slice(), opts.as_slice());
         match rs {
           Ok(ref m) => {
-            assert!(*m.free.get(0) == ~"prog");
-            assert!(*m.free.get(1) == ~"free1");
-            assert_eq!(m.opt_str("s").unwrap(), ~"20");
-            assert!(*m.free.get(2) == ~"free2");
+            assert!(*m.free.get(0) == "prog".to_string());
+            assert!(*m.free.get(1) == "free1".to_string());
+            assert_eq!(m.opt_str("s").unwrap(), "20".to_string());
+            assert!(*m.free.get(2) == "free2".to_string());
             assert!((m.opt_present("flag")));
-            assert_eq!(m.opt_str("long").unwrap(), ~"30");
+            assert_eq!(m.opt_str("long").unwrap(), "30".to_string());
             assert!((m.opt_present("f")));
             let pair = m.opt_strs("m");
-            assert!(*pair.get(0) == ~"40");
-            assert!(*pair.get(1) == ~"50");
+            assert!(*pair.get(0) == "40".to_string());
+            assert!(*pair.get(1) == "50".to_string());
             let pair = m.opt_strs("n");
-            assert!(*pair.get(0) == ~"-A B");
-            assert!(*pair.get(1) == ~"-60 70");
+            assert!(*pair.get(0) == "-A B".to_string());
+            assert!(*pair.get(1) == "-60 70".to_string());
             assert!((!m.opt_present("notpresent")));
           }
           _ => fail!()
@@ -1341,63 +1378,68 @@ mod tests {
                      optopt("", "encrypt", "encrypt", "ENCRYPT"),
                      optopt("f", "", "flag", "FLAG"));
 
-        let args_single = vec!(~"-e", ~"foo");
+        let args_single = vec!("-e".to_string(), "foo".to_string());
         let matches_single = &match getopts(args_single.as_slice(),
                                             opts.as_slice()) {
           result::Ok(m) => m,
           result::Err(_) => fail!()
         };
-        assert!(matches_single.opts_present([~"e"]));
-        assert!(matches_single.opts_present([~"encrypt", ~"e"]));
-        assert!(matches_single.opts_present([~"e", ~"encrypt"]));
-        assert!(!matches_single.opts_present([~"encrypt"]));
-        assert!(!matches_single.opts_present([~"thing"]));
+        assert!(matches_single.opts_present(["e".to_string()]));
+        assert!(matches_single.opts_present(["encrypt".to_string(), "e".to_string()]));
+        assert!(matches_single.opts_present(["e".to_string(), "encrypt".to_string()]));
+        assert!(!matches_single.opts_present(["encrypt".to_string()]));
+        assert!(!matches_single.opts_present(["thing".to_string()]));
         assert!(!matches_single.opts_present([]));
 
-        assert_eq!(matches_single.opts_str([~"e"]).unwrap(), ~"foo");
-        assert_eq!(matches_single.opts_str([~"e", ~"encrypt"]).unwrap(), ~"foo");
-        assert_eq!(matches_single.opts_str([~"encrypt", ~"e"]).unwrap(), ~"foo");
+        assert_eq!(matches_single.opts_str(["e".to_string()]).unwrap(), "foo".to_string());
+        assert_eq!(matches_single.opts_str(["e".to_string(), "encrypt".to_string()]).unwrap(),
+                   "foo".to_string());
+        assert_eq!(matches_single.opts_str(["encrypt".to_string(), "e".to_string()]).unwrap(),
+                   "foo".to_string());
 
-        let args_both = vec!(~"-e", ~"foo", ~"--encrypt", ~"foo");
+        let args_both = vec!("-e".to_string(), "foo".to_string(), "--encrypt".to_string(),
+                             "foo".to_string());
         let matches_both = &match getopts(args_both.as_slice(),
                                           opts.as_slice()) {
           result::Ok(m) => m,
           result::Err(_) => fail!()
         };
-        assert!(matches_both.opts_present([~"e"]));
-        assert!(matches_both.opts_present([~"encrypt"]));
-        assert!(matches_both.opts_present([~"encrypt", ~"e"]));
-        assert!(matches_both.opts_present([~"e", ~"encrypt"]));
-        assert!(!matches_both.opts_present([~"f"]));
-        assert!(!matches_both.opts_present([~"thing"]));
+        assert!(matches_both.opts_present(["e".to_string()]));
+        assert!(matches_both.opts_present(["encrypt".to_string()]));
+        assert!(matches_both.opts_present(["encrypt".to_string(), "e".to_string()]));
+        assert!(matches_both.opts_present(["e".to_string(), "encrypt".to_string()]));
+        assert!(!matches_both.opts_present(["f".to_string()]));
+        assert!(!matches_both.opts_present(["thing".to_string()]));
         assert!(!matches_both.opts_present([]));
 
-        assert_eq!(matches_both.opts_str([~"e"]).unwrap(), ~"foo");
-        assert_eq!(matches_both.opts_str([~"encrypt"]).unwrap(), ~"foo");
-        assert_eq!(matches_both.opts_str([~"e", ~"encrypt"]).unwrap(), ~"foo");
-        assert_eq!(matches_both.opts_str([~"encrypt", ~"e"]).unwrap(), ~"foo");
+        assert_eq!(matches_both.opts_str(["e".to_string()]).unwrap(), "foo".to_string());
+        assert_eq!(matches_both.opts_str(["encrypt".to_string()]).unwrap(), "foo".to_string());
+        assert_eq!(matches_both.opts_str(["e".to_string(), "encrypt".to_string()]).unwrap(),
+                   "foo".to_string());
+        assert_eq!(matches_both.opts_str(["encrypt".to_string(), "e".to_string()]).unwrap(),
+                   "foo".to_string());
     }
 
     #[test]
     fn test_nospace() {
-        let args = vec!(~"-Lfoo", ~"-M.");
+        let args = vec!("-Lfoo".to_string(), "-M.".to_string());
         let opts = vec!(optmulti("L", "", "library directory", "LIB"),
                      optmulti("M", "", "something", "MMMM"));
         let matches = &match getopts(args.as_slice(), opts.as_slice()) {
           result::Ok(m) => m,
           result::Err(_) => fail!()
         };
-        assert!(matches.opts_present([~"L"]));
-        assert_eq!(matches.opts_str([~"L"]).unwrap(), ~"foo");
-        assert!(matches.opts_present([~"M"]));
-        assert_eq!(matches.opts_str([~"M"]).unwrap(), ~".");
+        assert!(matches.opts_present(["L".to_string()]));
+        assert_eq!(matches.opts_str(["L".to_string()]).unwrap(), "foo".to_string());
+        assert!(matches.opts_present(["M".to_string()]));
+        assert_eq!(matches.opts_str(["M".to_string()]).unwrap(), ".".to_string());
 
     }
 
     #[test]
     fn test_long_to_short() {
         let mut short = Opt {
-            name: Long(~"banana"),
+            name: Long("banana".to_string()),
             hasarg: Yes,
             occur: Req,
             aliases: Vec::new(),
@@ -1416,7 +1458,7 @@ mod tests {
         let opts = vec!(
             optflagmulti("a", "apple", "Desc"));
 
-        let args = vec!(~"-a", ~"--apple", ~"-a");
+        let args = vec!("-a".to_string(), "--apple".to_string(), "-a".to_string());
 
         let matches = getopts(args.as_slice(), opts.as_slice()).unwrap();
         assert_eq!(3, matches.opt_count("a"));
@@ -1434,7 +1476,7 @@ mod tests {
             optmulti("l", "", "Desc", "VAL"));
 
         let expected =
-~"Usage: fruits
+"Usage: fruits
 
 Options:
     -b --banana VAL     Desc
@@ -1443,7 +1485,7 @@ Options:
     -k --kiwi           Desc
     -p [VAL]            Desc
     -l VAL              Desc
-";
+".to_string();
 
         let generated_usage = usage("Usage: fruits", optgroups.as_slice());
 
@@ -1464,13 +1506,13 @@ Options:
                 "This is a long description which _will_ be wrapped..+.."));
 
         let expected =
-~"Usage: fruits
+"Usage: fruits
 
 Options:
     -k --kiwi           This is a long description which won't be wrapped..+..
     -a --apple          This is a long description which _will_ be
                         wrapped..+..
-";
+".to_string();
 
         let usage = usage("Usage: fruits", optgroups.as_slice());
 
@@ -1489,14 +1531,14 @@ Options:
 confuse the line wrapping; an apple costs 0.51€ in some parts of Europe."));
 
         let expected =
-~"Usage: fruits
+"Usage: fruits
 
 Options:
     -k --k–w–           The word kiwi is normally spelled with two i's
     -a --apple          This “description” has some characters that could
                         confuse the line wrapping; an apple costs 0.51€ in
                         some parts of Europe.
-";
+".to_string();
 
         let usage = usage("Usage: fruits", optgroups.as_slice());
 
@@ -1515,7 +1557,7 @@ Options:
             optflagopt("p", "", "Desc", "VAL"),
             optmulti("l", "", "Desc", "VAL"));
 
-        let expected = ~"Usage: fruits -b VAL [-a VAL] [-k] [-p [VAL]] [-l VAL]..";
+        let expected = "Usage: fruits -b VAL [-a VAL] [-k] [-p [VAL]] [-l VAL]..".to_string();
         let generated_usage = short_usage("fruits", optgroups.as_slice());
 
         debug!("expected: <<{}>>", expected);

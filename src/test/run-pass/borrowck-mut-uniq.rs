@@ -8,9 +8,11 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+extern crate debug;
+
 use std::mem::swap;
 
-struct Ints {sum: ~int, values: Vec<int> }
+struct Ints {sum: Box<int>, values: Vec<int> }
 
 fn add_int(x: &mut Ints, v: int) {
     *x.sum += v;
@@ -26,7 +28,7 @@ fn iter_ints(x: &Ints, f: |x: &int| -> bool) -> bool {
 }
 
 pub fn main() {
-    let mut ints = ~Ints {sum: ~0, values: Vec::new()};
+    let mut ints = box Ints {sum: box 0, values: Vec::new()};
     add_int(ints, 22);
     add_int(ints, 44);
 

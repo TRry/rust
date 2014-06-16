@@ -16,10 +16,13 @@ use syntax::codemap::Span;
 use syntax::ast;
 use syntax::ast::{Ident, NodeId};
 
+use std::gc::Gc;
+
 pub struct Module {
     pub name: Option<Ident>,
     pub attrs: Vec<ast::Attribute>,
-    pub where: Span,
+    pub where_outer: Span,
+    pub where_inner: Span,
     pub structs: Vec<Struct>,
     pub enums: Vec<Enum>,
     pub fns: Vec<Function>,
@@ -41,8 +44,9 @@ impl Module {
         Module {
             name       : name,
             id: 0,
-            vis: ast::Private,
-            where: syntax::codemap::DUMMY_SP,
+            vis: ast::Inherited,
+            where_outer: syntax::codemap::DUMMY_SP,
+            where_inner: syntax::codemap::DUMMY_SP,
             attrs      : Vec::new(),
             structs    : Vec::new(),
             enums      : Vec::new(),
@@ -131,7 +135,7 @@ pub struct Typedef {
 pub struct Static {
     pub type_: ast::P<ast::Ty>,
     pub mutability: ast::Mutability,
-    pub expr: @ast::Expr,
+    pub expr: Gc<ast::Expr>,
     pub name: Ident,
     pub attrs: Vec<ast::Attribute>,
     pub vis: ast::Visibility,
@@ -154,7 +158,7 @@ pub struct Impl {
     pub generics: ast::Generics,
     pub trait_: Option<ast::TraitRef>,
     pub for_: ast::P<ast::Ty>,
-    pub methods: Vec<@ast::Method>,
+    pub methods: Vec<Gc<ast::Method>>,
     pub attrs: Vec<ast::Attribute>,
     pub where: Span,
     pub vis: ast::Visibility,

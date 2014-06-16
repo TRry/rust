@@ -8,19 +8,21 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#[feature(managed_boxes)];
+#![feature(managed_boxes)]
+
+use std::gc::Gc;
 
 pub struct Foo {
     a: int,
 }
 
 struct Bar<'a> {
-    a: ~Option<int>,
+    a: Box<Option<int>>,
     b: &'a Foo,
 }
 
-fn check(a: @Foo) {
-    let _ic = Bar{ b: a, a: ~None };
+fn check(a: Gc<Foo>) {
+    let _ic = Bar{ b: a, a: box None };
 }
 
 pub fn main(){}

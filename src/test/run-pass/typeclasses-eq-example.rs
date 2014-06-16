@@ -8,9 +8,11 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#[feature(managed_boxes)];
+#![feature(managed_boxes)]
 
 // Example from lkuper's intern talk, August 2012.
+
+use std::gc::{GC, Gc};
 
 trait Equal {
     fn isEq(&self, a: Self) -> bool;
@@ -32,7 +34,7 @@ impl Equal for Color {
 
 enum ColorTree {
     leaf(Color),
-    branch(@ColorTree, @ColorTree)
+    branch(Gc<ColorTree>, Gc<ColorTree>)
 }
 
 impl Equal for ColorTree {
@@ -56,11 +58,11 @@ pub fn main() {
     assert!(leaf(cyan).isEq(leaf(cyan)));
     assert!(!leaf(cyan).isEq(leaf(yellow)));
 
-    assert!(branch(@leaf(magenta), @leaf(cyan))
-        .isEq(branch(@leaf(magenta), @leaf(cyan))));
+    assert!(branch(box(GC) leaf(magenta), box(GC) leaf(cyan))
+        .isEq(branch(box(GC) leaf(magenta), box(GC) leaf(cyan))));
 
-    assert!(!branch(@leaf(magenta), @leaf(cyan))
-        .isEq(branch(@leaf(magenta), @leaf(magenta))));
+    assert!(!branch(box(GC) leaf(magenta), box(GC) leaf(cyan))
+        .isEq(branch(box(GC) leaf(magenta), box(GC) leaf(magenta))));
 
     println!("Assertions all succeeded!");
 }

@@ -10,14 +10,15 @@
 
 // aux-build:issue-3012-1.rs
 
-#[feature(managed_boxes)];
+#![feature(managed_boxes)]
 
 extern crate socketlib;
 extern crate libc;
 
+use std::gc::GC;
 use socketlib::socket;
 
 pub fn main() {
     let fd: libc::c_int = 1 as libc::c_int;
-    let _sock = @socket::socket_handle(fd);
+    let _sock = box(GC) socket::socket_handle(fd);
 }

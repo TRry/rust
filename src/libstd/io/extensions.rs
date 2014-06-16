@@ -15,13 +15,13 @@
 // FIXME: Not sure how this should be structured
 // FIXME: Iteration should probably be considered separately
 
-use container::Container;
+use collections::Collection;
 use iter::Iterator;
 use option::{Option, Some, None};
 use result::{Ok, Err};
 use io;
 use io::{IoError, IoResult, Reader};
-use slice::{OwnedVector, ImmutableVector, Vector};
+use slice::{ImmutableVector, Vector};
 use ptr::RawPtr;
 
 /// An iterator that reads a single byte on each iteration,
@@ -77,15 +77,15 @@ impl<'r, R: Reader> Iterator<IoResult<u8>> for Bytes<'r, R> {
 /// This function returns the value returned by the callback, for convenience.
 pub fn u64_to_le_bytes<T>(n: u64, size: uint, f: |v: &[u8]| -> T) -> T {
     use mem::{to_le16, to_le32, to_le64};
-    use cast::transmute;
+    use mem::transmute;
 
     // LLVM fails to properly optimize this when using shifts instead of the to_le* intrinsics
     assert!(size <= 8u);
     match size {
       1u => f(&[n as u8]),
-      2u => f(unsafe { transmute::<i16, [u8, ..2]>(to_le16(n as i16)) }),
-      4u => f(unsafe { transmute::<i32, [u8, ..4]>(to_le32(n as i32)) }),
-      8u => f(unsafe { transmute::<i64, [u8, ..8]>(to_le64(n as i64)) }),
+      2u => f(unsafe { transmute::<_, [u8, ..2]>(to_le16(n as u16)) }),
+      4u => f(unsafe { transmute::<_, [u8, ..4]>(to_le32(n as u32)) }),
+      8u => f(unsafe { transmute::<_, [u8, ..8]>(to_le64(n)) }),
       _ => {
 
         let mut bytes = vec!();
@@ -117,15 +117,15 @@ pub fn u64_to_le_bytes<T>(n: u64, size: uint, f: |v: &[u8]| -> T) -> T {
 /// This function returns the value returned by the callback, for convenience.
 pub fn u64_to_be_bytes<T>(n: u64, size: uint, f: |v: &[u8]| -> T) -> T {
     use mem::{to_be16, to_be32, to_be64};
-    use cast::transmute;
+    use mem::transmute;
 
     // LLVM fails to properly optimize this when using shifts instead of the to_be* intrinsics
     assert!(size <= 8u);
     match size {
       1u => f(&[n as u8]),
-      2u => f(unsafe { transmute::<i16, [u8, ..2]>(to_be16(n as i16)) }),
-      4u => f(unsafe { transmute::<i32, [u8, ..4]>(to_be32(n as i32)) }),
-      8u => f(unsafe { transmute::<i64, [u8, ..8]>(to_be64(n as i64)) }),
+      2u => f(unsafe { transmute::<_, [u8, ..2]>(to_be16(n as u16)) }),
+      4u => f(unsafe { transmute::<_, [u8, ..4]>(to_be32(n as u32)) }),
+      8u => f(unsafe { transmute::<_, [u8, ..8]>(to_be64(n)) }),
       _ => {
         let mut bytes = vec!();
         let mut i = size;
@@ -166,7 +166,7 @@ pub fn u64_from_be_bytes(data: &[u8], start: uint, size: uint) -> u64 {
         let ptr = data.as_ptr().offset(start as int);
         let out = buf.as_mut_ptr();
         copy_nonoverlapping_memory(out.offset((8 - size) as int), ptr, size);
-        from_be64(*(out as *i64)) as u64
+        from_be64(*(out as *u64))
     }
 }
 
@@ -342,39 +342,39 @@ mod test {
     }
 
     #[test]
-    fn push_exact() {
-        let mut reader = MemReader::new(vec!(10, 11, 12, 13));
-        let mut buf = vec!(8, 9);
-        reader.push_exact(&mut buf, 4).unwrap();
-        assert!(buf == vec!(8, 9, 10, 11, 12, 13));
+    fn push_at_least() {
+        let mut reader = MemReader::new(vec![10, 11, 12, 13]);
+        let mut buf = vec![8, 9];
+        assert!(reader.push_at_least(4, 4, &mut buf).is_ok());
+        assert!(buf == vec![8, 9, 10, 11, 12, 13]);
     }
 
     #[test]
-    fn push_exact_partial() {
+    fn push_at_least_partial() {
         let mut reader = PartialReader {
             count: 0,
         };
-        let mut buf = vec!(8, 9);
-        reader.push_exact(&mut buf, 4).unwrap();
-        assert!(buf == vec!(8, 9, 10, 11, 12, 13));
+        let mut buf = vec![8, 9];
+        assert!(reader.push_at_least(4, 4, &mut buf).is_ok());
+        assert!(buf == vec![8, 9, 10, 11, 12, 13]);
     }
 
     #[test]
-    fn push_exact_eof() {
-        let mut reader = MemReader::new(vec!(10, 11));
-        let mut buf = vec!(8, 9);
-        assert!(reader.push_exact(&mut buf, 4).is_err());
-        assert!(buf == vec!(8, 9, 10, 11));
+    fn push_at_least_eof() {
+        let mut reader = MemReader::new(vec![10, 11]);
+        let mut buf = vec![8, 9];
+        assert!(reader.push_at_least(4, 4, &mut buf).is_err());
+        assert!(buf == vec![8, 9, 10, 11]);
     }
 
     #[test]
-    fn push_exact_error() {
+    fn push_at_least_error() {
         let mut reader = ErroringLaterReader {
             count: 0,
         };
-        let mut buf = vec!(8, 9);
-        assert!(reader.push_exact(&mut buf, 4).is_err());
-        assert!(buf == vec!(8, 9, 10));
+        let mut buf = vec![8, 9];
+        assert!(reader.push_at_least(4, 4, &mut buf).is_err());
+        assert!(buf == vec![8, 9, 10]);
     }
 
     #[test]
@@ -447,10 +447,10 @@ mod test {
     #[test]
     fn test_read_f32() {
         //big-endian floating-point 8.1250
-        let buf = ~[0x41, 0x02, 0x00, 0x00];
+        let buf = vec![0x41, 0x02, 0x00, 0x00];
 
         let mut writer = MemWriter::new();
-        writer.write(buf).unwrap();
+        writer.write(buf.as_slice()).unwrap();
 
         let mut reader = MemReader::new(writer.unwrap());
         let f = reader.read_be_f32().unwrap();
@@ -503,21 +503,22 @@ mod test {
 #[cfg(test)]
 mod bench {
     extern crate test;
+
+    use collections::Collection;
+    use prelude::*;
     use self::test::Bencher;
-    use container::Container;
 
     macro_rules! u64_from_be_bytes_bench_impl(
         ($size:expr, $stride:expr, $start_index:expr) =>
         ({
-            use slice;
             use super::u64_from_be_bytes;
 
-            let data = slice::from_fn($stride*100+$start_index, |i| i as u8);
+            let data = Vec::from_fn($stride*100+$start_index, |i| i as u8);
             let mut sum = 0u64;
             b.iter(|| {
                 let mut i = $start_index;
                 while i < data.len() {
-                    sum += u64_from_be_bytes(data, i, $size);
+                    sum += u64_from_be_bytes(data.as_slice(), i, $size);
                     i += $stride;
                 }
             });

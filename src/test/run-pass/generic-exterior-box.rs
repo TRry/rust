@@ -8,11 +8,13 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#[feature(managed_boxes)];
+#![feature(managed_boxes)]
 
-struct Recbox<T> {x: @T}
+use std::gc::{Gc, GC};
 
-fn reclift<T:'static>(t: T) -> Recbox<T> { return Recbox {x: @t}; }
+struct Recbox<T> {x: Gc<T>}
+
+fn reclift<T:'static>(t: T) -> Recbox<T> { return Recbox {x: box(GC) t}; }
 
 pub fn main() {
     let foo: int = 17;

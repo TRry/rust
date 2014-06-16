@@ -43,12 +43,15 @@
  *   taken to it, implementing them for Rust seems difficult.
  */
 
-use std::container::Map;
+#![allow(unsigned_negate)]
+
 use libc::c_ulonglong;
-use std::option::{Option, Some, None};
 use std::num::{Bitwise};
+use std::rc::Rc;
 
 use lib::llvm::{ValueRef, True, IntEQ, IntNE};
+use middle::subst;
+use middle::subst::Subst;
 use middle::trans::_match;
 use middle::trans::build::*;
 use middle::trans::common::*;
@@ -85,6 +88,18 @@ pub enum Repr {
     General(IntType, Vec<Struct>),
     /**
      * Two cases distinguished by a nullable pointer: the case with discriminant
+     * `nndiscr` must have single field which is known to be nonnull due to its type.
+     * The other case is known to be zero sized. Hence we represent the enum
+     * as simply a nullable pointer: if not null it indicates the `nndiscr` variant,
+     * otherwise it indicates the other case.
+     */
+    RawNullablePointer {
+        pub nndiscr: Disr,
+        pub nnty: ty::t,
+        pub nullfields: Vec<ty::t>
+    },
+    /**
+     * Two cases distinguished by a nullable pointer: the case with discriminant
      * `nndiscr` is represented by the struct `nonnull`, where the `ptrfield`th
      * field is known to be nonnull due to its type; if that field is null, then
      * it represents the other case, which is inhabited by at most one value
@@ -94,7 +109,7 @@ pub enum Repr {
      * is represented such that `None` is a null pointer and `Some` is the
      * identity function.
      */
-    NullablePointer {
+    StructWrappedNullablePointer {
         pub nonnull: Struct,
         pub nndiscr: Disr,
         pub ptrfield: uint,
@@ -115,22 +130,22 @@ pub struct Struct {
  * these, for places in trans where the `ty::t` isn't directly
  * available.
  */
-pub fn represent_node(bcx: &Block, node: ast::NodeId) -> @Repr {
+pub fn represent_node(bcx: &Block, node: ast::NodeId) -> Rc<Repr> {
     represent_type(bcx.ccx(), node_id_type(bcx, node))
 }
 
 /// Decides how to represent a given type.
-pub fn represent_type(cx: &CrateContext, t: ty::t) -> @Repr {
+pub fn represent_type(cx: &CrateContext, t: ty::t) -> Rc<Repr> {
     debug!("Representing: {}", ty_to_str(cx.tcx(), t));
     match cx.adt_reprs.borrow().find(&t) {
-        Some(repr) => return *repr,
+        Some(repr) => return repr.clone(),
         None => {}
     }
 
-    let repr = @represent_type_uncached(cx, t);
+    let repr = Rc::new(represent_type_uncached(cx, t));
     debug!("Represented as: {:?}", repr)
-    cx.adt_reprs.borrow_mut().insert(t, repr);
-    return repr;
+    cx.adt_reprs.borrow_mut().insert(t, repr.clone());
+    repr
 }
 
 fn represent_type_uncached(cx: &CrateContext, t: ty::t) -> Repr {
@@ -178,7 +193,8 @@ fn represent_type_uncached(cx: &CrateContext, t: ty::t) -> Repr {
             if !cases.iter().enumerate().all(|(i,c)| c.discr == (i as Disr)) {
                 cx.sess().bug(format!("non-C-like enum {} with specified \
                                       discriminants",
-                                      ty::item_path_str(cx.tcx(), def_id)))
+                                      ty::item_path_str(cx.tcx(),
+                                                        def_id)).as_slice())
             }
 
             if cases.len() == 1 {
@@ -198,17 +214,23 @@ fn represent_type_uncached(cx: &CrateContext, t: ty::t) -> Repr {
                     if cases.get(1 - discr).is_zerolen(cx) {
                         match cases.get(discr).find_ptr() {
                             Some(ptrfield) => {
-                                return NullablePointer {
-                                    nndiscr: discr as u64,
-                                    nonnull: mk_struct(cx,
-                                                       cases.get(discr)
-                                                            .tys
-                                                            .as_slice(),
-                                                       false),
-                                    ptrfield: ptrfield,
-                                    nullfields: cases.get(1 - discr).tys
-                                                                    .clone()
-                                }
+                                let st = mk_struct(cx, cases.get(discr).tys.as_slice(),
+                                                   false);
+
+                                return if st.fields.len() == 1 {
+                                    RawNullablePointer {
+                                        nndiscr: discr as Disr,
+                                        nnty: *st.fields.get(0),
+                                        nullfields: cases.get(1 - discr).tys.clone()
+                                    }
+                                } else {
+                                    StructWrappedNullablePointer {
+                                        nndiscr: discr as Disr,
+                                        nonnull: st,
+                                        ptrfield: ptrfield,
+                                        nullfields: cases.get(1 - discr).tys.clone()
+                                    }
+                                };
                             }
                             None => { }
                         }
@@ -246,9 +268,10 @@ pub fn is_ffi_safe(tcx: &ty::ctxt, def_id: ast::DefId) -> bool {
             if hint.is_ffi_safe() {
                 return true;
             }
-            // Option<~T> and similar are used in FFI.  Rather than try to resolve type parameters
-            // and recognize this case exactly, this overapproximates -- assuming that if a
-            // non-C-like enum is being used in FFI then the user knows what they're doing.
+            // Option<Box<T>> and similar are used in FFI.  Rather than try to
+            // resolve type parameters and recognize this case exactly, this
+            // overapproximates -- assuming that if a non-C-like enum is being
+            // used in FFI then the user knows what they're doing.
             if variants.iter().any(|vi| !vi.args.is_empty()) {
                 return true;
             }
@@ -267,14 +290,25 @@ impl Case {
         mk_struct(cx, self.tys.as_slice(), false).size == 0
     }
     fn find_ptr(&self) -> Option<uint> {
-        self.tys.iter().position(|&ty| mono_data_classify(ty) == MonoNonNull)
+        self.tys.iter().position(|&ty| {
+            match ty::get(ty).sty {
+                ty::ty_rptr(_, mt) => match ty::get(mt.ty).sty {
+                    ty::ty_vec(_, None) | ty::ty_str => false,
+                    _ => true,
+                },
+                ty::ty_uniq(..) | ty::ty_box(..) |
+                ty::ty_bare_fn(..) => true,
+                // Is that everything?  Would closures or slices qualify?
+                _ => false
+            }
+        })
     }
 }
 
-fn get_cases(tcx: &ty::ctxt, def_id: ast::DefId, substs: &ty::substs) -> Vec<Case> {
+fn get_cases(tcx: &ty::ctxt, def_id: ast::DefId, substs: &subst::Substs) -> Vec<Case> {
     ty::enum_variants(tcx, def_id).iter().map(|vi| {
         let arg_tys = vi.args.iter().map(|&raw_ty| {
-            ty::subst(tcx, substs, raw_ty)
+            raw_ty.subst(tcx, substs)
         }).collect();
         Case { discr: vi.disr_val, tys: arg_tys }
     }).collect()
@@ -399,8 +433,8 @@ pub fn incomplete_type_of(cx: &CrateContext, r: &Repr, name: &str) -> Type {
 }
 pub fn finish_type_of(cx: &CrateContext, r: &Repr, llty: &mut Type) {
     match *r {
-        CEnum(..) | General(..) => { }
-        Univariant(ref st, _) | NullablePointer{ nonnull: ref st, .. } =>
+        CEnum(..) | General(..) | RawNullablePointer { .. } => { }
+        Univariant(ref st, _) | StructWrappedNullablePointer { nonnull: ref st, .. } =>
             llty.set_struct_body(struct_llfields(cx, st, false).as_slice(),
                                  st.packed)
     }
@@ -409,7 +443,8 @@ pub fn finish_type_of(cx: &CrateContext, r: &Repr, llty: &mut Type) {
 fn generic_type_of(cx: &CrateContext, r: &Repr, name: Option<&str>, sizing: bool) -> Type {
     match *r {
         CEnum(ity, _, _) => ll_inttype(cx, ity),
-        Univariant(ref st, _) | NullablePointer{ nonnull: ref st, .. } => {
+        RawNullablePointer { nnty, .. } => type_of::sizing_type_of(cx, nnty),
+        Univariant(ref st, _) | StructWrappedNullablePointer { nonnull: ref st, .. } => {
             match name {
                 None => {
                     Type::struct_(cx, struct_llfields(cx, st, sizing).as_slice(),
@@ -481,11 +516,9 @@ fn struct_llfields(cx: &CrateContext, st: &Struct, sizing: bool) -> Vec<Type> {
 pub fn trans_switch(bcx: &Block, r: &Repr, scrutinee: ValueRef)
     -> (_match::branch_kind, Option<ValueRef>) {
     match *r {
-        CEnum(..) | General(..) => {
+        CEnum(..) | General(..) |
+        RawNullablePointer { .. } | StructWrappedNullablePointer { .. } => {
             (_match::switch, Some(trans_get_discr(bcx, r, scrutinee, None)))
-        }
-        NullablePointer{ nonnull: ref nonnull, nndiscr, ptrfield, .. } => {
-            (_match::switch, Some(nullable_bitdiscr(bcx, nonnull, nndiscr, ptrfield, scrutinee)))
         }
         Univariant(..) => {
             (_match::single, None)
@@ -514,8 +547,14 @@ pub fn trans_get_discr(bcx: &Block, r: &Repr, scrutinee: ValueRef, cast_to: Opti
             val = C_u8(bcx.ccx(), 0);
             signed = false;
         }
-        NullablePointer{ nonnull: ref nonnull, nndiscr, ptrfield, .. } => {
-            val = nullable_bitdiscr(bcx, nonnull, nndiscr, ptrfield, scrutinee);
+        RawNullablePointer { nndiscr, nnty, .. } =>  {
+            let cmp = if nndiscr == 0 { IntEQ } else { IntNE };
+            let llptrty = type_of::sizing_type_of(bcx.ccx(), nnty);
+            val = ICmp(bcx, cmp, Load(bcx, scrutinee), C_null(llptrty));
+            signed = false;
+        }
+        StructWrappedNullablePointer { nonnull: ref nonnull, nndiscr, ptrfield, .. } => {
+            val = struct_wrapped_nullable_bitdiscr(bcx, nonnull, nndiscr, ptrfield, scrutinee);
             signed = false;
         }
     }
@@ -525,10 +564,10 @@ pub fn trans_get_discr(bcx: &Block, r: &Repr, scrutinee: ValueRef, cast_to: Opti
     }
 }
 
-fn nullable_bitdiscr(bcx: &Block, nonnull: &Struct, nndiscr: Disr, ptrfield: uint,
-                     scrutinee: ValueRef) -> ValueRef {
-    let cmp = if nndiscr == 0 { IntEQ } else { IntNE };
+fn struct_wrapped_nullable_bitdiscr(bcx: &Block, nonnull: &Struct, nndiscr: Disr, ptrfield: uint,
+                                    scrutinee: ValueRef) -> ValueRef {
     let llptr = Load(bcx, GEPi(bcx, scrutinee, [0, ptrfield]));
+    let cmp = if nndiscr == 0 { IntEQ } else { IntNE };
     let llptrty = type_of::type_of(bcx.ccx(), *nonnull.fields.get(ptrfield));
     ICmp(bcx, cmp, llptr, C_null(llptrty))
 }
@@ -566,19 +605,20 @@ pub fn trans_case<'a>(bcx: &'a Block<'a>, r: &Repr, discr: Disr)
                   -> _match::opt_result<'a> {
     match *r {
         CEnum(ity, _, _) => {
-            _match::single_result(rslt(bcx, C_integral(ll_inttype(bcx.ccx(), ity),
-                                                       discr as u64, true)))
+            _match::single_result(Result::new(bcx, C_integral(ll_inttype(bcx.ccx(), ity),
+                                                              discr as u64, true)))
         }
         General(ity, _) => {
-            _match::single_result(rslt(bcx, C_integral(ll_inttype(bcx.ccx(), ity),
-                                                       discr as u64, true)))
+            _match::single_result(Result::new(bcx, C_integral(ll_inttype(bcx.ccx(), ity),
+                                                              discr as u64, true)))
         }
         Univariant(..) => {
             bcx.ccx().sess().bug("no cases for univariants or structs")
         }
-        NullablePointer{ .. } => {
+        RawNullablePointer { .. } |
+        StructWrappedNullablePointer { .. } => {
             assert!(discr == 0 || discr == 1);
-            _match::single_result(rslt(bcx, C_i1(bcx.ccx(), discr != 0)))
+            _match::single_result(Result::new(bcx, C_i1(bcx.ccx(), discr != 0)))
         }
     }
 }
@@ -607,7 +647,13 @@ pub fn trans_start_init(bcx: &Block, r: &Repr, val: ValueRef, discr: Disr) {
         Univariant(..) => {
             assert_eq!(discr, 0);
         }
-        NullablePointer{ nonnull: ref nonnull, nndiscr, ptrfield, .. } => {
+        RawNullablePointer { nndiscr, nnty, ..} => {
+            if discr != nndiscr {
+                let llptrty = type_of::sizing_type_of(bcx.ccx(), nnty);
+                Store(bcx, C_null(llptrty), val)
+            }
+        }
+        StructWrappedNullablePointer { nonnull: ref nonnull, nndiscr, ptrfield, .. } => {
             if discr != nndiscr {
                 let llptrptr = GEPi(bcx, val, [0, ptrfield]);
                 let llptrty = type_of::type_of(bcx.ccx(),
@@ -637,8 +683,11 @@ pub fn num_args(r: &Repr, discr: Disr) -> uint {
             st.fields.len() - (if dtor { 1 } else { 0 })
         }
         General(_, ref cases) => cases.get(discr as uint).fields.len() - 1,
-        NullablePointer{ nonnull: ref nonnull, nndiscr,
-                         nullfields: ref nullfields, .. } => {
+        RawNullablePointer { nndiscr, ref nullfields, .. } => {
+            if discr == nndiscr { 1 } else { nullfields.len() }
+        }
+        StructWrappedNullablePointer { nonnull: ref nonnull, nndiscr,
+                                       nullfields: ref nullfields, .. } => {
             if discr == nndiscr { nonnull.fields.len() } else { nullfields.len() }
         }
     }
@@ -661,19 +710,25 @@ pub fn trans_field_ptr(bcx: &Block, r: &Repr, val: ValueRef, discr: Disr,
         General(_, ref cases) => {
             struct_field_ptr(bcx, cases.get(discr as uint), val, ix + 1, true)
         }
-        NullablePointer{ nonnull: ref nonnull, nullfields: ref nullfields,
-                         nndiscr, .. } => {
-            if discr == nndiscr {
-                struct_field_ptr(bcx, nonnull, val, ix, false)
-            } else {
-                // The unit-like case might have a nonzero number of unit-like fields.
-                // (e.g., Result or Either with () as one side.)
-                let ty = type_of::type_of(bcx.ccx(), *nullfields.get(ix));
-                assert_eq!(machine::llsize_of_alloc(bcx.ccx(), ty), 0);
-                // The contents of memory at this pointer can't matter, but use
-                // the value that's "reasonable" in case of pointer comparison.
-                PointerCast(bcx, val, ty.ptr_to())
-            }
+        RawNullablePointer { nndiscr, ref nullfields, .. } |
+        StructWrappedNullablePointer { nndiscr, ref nullfields, .. } if discr != nndiscr => {
+            // The unit-like case might have a nonzero number of unit-like fields.
+            // (e.d., Result of Either with (), as one side.)
+            let ty = type_of::type_of(bcx.ccx(), *nullfields.get(ix));
+            assert_eq!(machine::llsize_of_alloc(bcx.ccx(), ty), 0);
+            // The contents of memory at this pointer can't matter, but use
+            // the value that's "reasonable" in case of pointer comparison.
+            PointerCast(bcx, val, ty.ptr_to())
+        }
+        RawNullablePointer { nndiscr, nnty, .. } => {
+            assert_eq!(ix, 0);
+            assert_eq!(discr, nndiscr);
+            let ty = type_of::type_of(bcx.ccx(), nnty);
+            PointerCast(bcx, val, ty.ptr_to())
+        }
+        StructWrappedNullablePointer { ref nonnull, nndiscr, .. } => {
+            assert_eq!(discr, nndiscr);
+            struct_field_ptr(bcx, nonnull, val, ix, false)
         }
     }
 }
@@ -745,7 +800,15 @@ pub fn trans_const(ccx: &CrateContext, r: &Repr, discr: Disr,
             let contents = build_const_struct(ccx, st, vals);
             C_struct(ccx, contents.as_slice(), st.packed)
         }
-        NullablePointer{ nonnull: ref nonnull, nndiscr, .. } => {
+        RawNullablePointer { nndiscr, nnty, .. } => {
+            if discr == nndiscr {
+                assert_eq!(vals.len(), 1);
+                vals[0]
+            } else {
+                C_null(type_of::sizing_type_of(ccx, nnty))
+            }
+        }
+        StructWrappedNullablePointer { nonnull: ref nonnull, nndiscr, .. } => {
             if discr == nndiscr {
                 C_struct(ccx, build_const_struct(ccx,
                                                  nonnull,
@@ -767,6 +830,26 @@ pub fn trans_const(ccx: &CrateContext, r: &Repr, discr: Disr,
 }
 
 /**
+ * Compute struct field offsets relative to struct begin.
+ */
+fn compute_struct_field_offsets(ccx: &CrateContext, st: &Struct) -> Vec<u64> {
+    let mut offsets = vec!();
+
+    let mut offset = 0;
+    for &ty in st.fields.iter() {
+        let llty = type_of::sizing_type_of(ccx, ty);
+        if !st.packed {
+            let type_align = machine::llalign_of_min(ccx, llty) as u64;
+            offset = roundup(offset, type_align);
+        }
+        offsets.push(offset);
+        offset += machine::llsize_of_alloc(ccx, llty) as u64;
+    }
+    assert_eq!(st.fields.len(), offsets.len());
+    offsets
+}
+
+/**
  * Building structs is a little complicated, because we might need to
  * insert padding if a field's value is less aligned than its type.
  *
@@ -780,26 +863,32 @@ fn build_const_struct(ccx: &CrateContext, st: &Struct, vals: &[ValueRef])
     -> Vec<ValueRef> {
     assert_eq!(vals.len(), st.fields.len());
 
+    let target_offsets = compute_struct_field_offsets(ccx, st);
+
+    // offset of current value
     let mut offset = 0;
     let mut cfields = Vec::new();
-    for (i, &ty) in st.fields.iter().enumerate() {
-        let llty = type_of::sizing_type_of(ccx, ty);
-        let type_align = machine::llalign_of_min(ccx, llty)
-            /*bad*/as u64;
-        let val_align = machine::llalign_of_min(ccx, val_ty(vals[i]))
-            /*bad*/as u64;
-        let target_offset = roundup(offset, type_align);
-        offset = roundup(offset, val_align);
+    for (&val, &target_offset) in vals.iter().zip(target_offsets.iter()) {
+        if !st.packed {
+            let val_align = machine::llalign_of_min(ccx, val_ty(val))
+                /*bad*/as u64;
+            offset = roundup(offset, val_align);
+        }
         if offset != target_offset {
             cfields.push(padding(ccx, target_offset - offset));
             offset = target_offset;
         }
-        assert!(!is_undef(vals[i]));
-        cfields.push(vals[i]);
-        offset += machine::llsize_of_alloc(ccx, llty) as u64
+        assert!(!is_undef(val));
+        cfields.push(val);
+        offset += machine::llsize_of_alloc(ccx, val_ty(val)) as u64;
     }
 
-    return cfields;
+    assert!(offset <= st.size);
+    if offset != st.size {
+        cfields.push(padding(ccx, st.size - offset));
+    }
+
+    cfields
 }
 
 fn padding(ccx: &CrateContext, size: u64) -> ValueRef {
@@ -827,7 +916,15 @@ pub fn const_get_discrim(ccx: &CrateContext, r: &Repr, val: ValueRef)
             }
         }
         Univariant(..) => 0,
-        NullablePointer{ nndiscr, ptrfield, .. } => {
+        RawNullablePointer { nndiscr, .. } => {
+            if is_null(val) {
+                /* subtraction as uint is ok because nndiscr is either 0 or 1 */
+                (1 - nndiscr) as Disr
+            } else {
+                nndiscr
+            }
+        }
+        StructWrappedNullablePointer { nndiscr, ptrfield, .. } => {
             if is_null(const_struct_field(ccx, val, ptrfield)) {
                 /* subtraction as uint is ok because nndiscr is either 0 or 1 */
                 (1 - nndiscr) as Disr
@@ -851,7 +948,11 @@ pub fn const_get_field(ccx: &CrateContext, r: &Repr, val: ValueRef,
         CEnum(..) => ccx.sess().bug("element access in C-like enum const"),
         Univariant(..) => const_struct_field(ccx, val, ix),
         General(..) => const_struct_field(ccx, val, ix + 1),
-        NullablePointer{ .. } => const_struct_field(ccx, val, ix)
+        RawNullablePointer { .. } => {
+            assert_eq!(ix, 0);
+            val
+        }
+        StructWrappedNullablePointer{ .. } => const_struct_field(ccx, val, ix)
     }
 }
 

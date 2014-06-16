@@ -11,30 +11,34 @@
 
 
 trait to_str {
-    fn to_string(&self) -> ~str;
+    fn to_string(&self) -> String;
 }
 
 impl to_str for int {
-    fn to_string(&self) -> ~str { self.to_str() }
+    fn to_string(&self) -> String { self.to_str() }
 }
 
 impl<T:to_str> to_str for Vec<T> {
-    fn to_string(&self) -> ~str {
-        format!("[{}]", self.iter().map(|e| e.to_string()).collect::<~[~str]>().connect(", "))
+    fn to_string(&self) -> String {
+        format!("[{}]",
+                self.iter()
+                    .map(|e| e.to_string())
+                    .collect::<Vec<String>>()
+                    .connect(", "))
     }
 }
 
 pub fn main() {
-    assert!(1.to_string() == ~"1");
-    assert!((vec!(2, 3, 4)).to_string() == ~"[2, 3, 4]");
+    assert!(1.to_string() == "1".to_string());
+    assert!((vec!(2, 3, 4)).to_string() == "[2, 3, 4]".to_string());
 
-    fn indirect<T:to_str>(x: T) -> ~str {
-        x.to_string() + "!"
+    fn indirect<T:to_str>(x: T) -> String {
+        format!("{}!", x.to_string())
     }
-    assert!(indirect(vec!(10, 20)) == ~"[10, 20]!");
+    assert!(indirect(vec!(10, 20)) == "[10, 20]!".to_string());
 
-    fn indirect2<T:to_str>(x: T) -> ~str {
+    fn indirect2<T:to_str>(x: T) -> String {
         indirect(x)
     }
-    assert!(indirect2(vec!(1)) == ~"[1]!");
+    assert!(indirect2(vec!(1)) == "[1]!".to_string());
 }

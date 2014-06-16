@@ -18,8 +18,10 @@ fn main() {
         _ => ()
     }
 
-    let x: Vec<~str> = vec!(~"foo", ~"bar", ~"baz");
-    let x: &[~str] = x.as_slice();
+    let x: Vec<String> = vec!["foo".to_string(),
+                              "bar".to_string(),
+                              "baz".to_string()];
+    let x: &[String] = x.as_slice();
     match x {
         [a, _, _, ..] => { println!("{}", a); }
         [_, _, _, _, _] => { } //~ ERROR unreachable pattern

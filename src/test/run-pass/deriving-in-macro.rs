@@ -8,12 +8,12 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#[feature(macro_rules)];
+#![feature(macro_rules)]
 
 macro_rules! define_vec (
     () => (
         mod foo {
-            #[deriving(Eq)]
+            #[deriving(PartialEq)]
             pub struct bar;
         }
     )

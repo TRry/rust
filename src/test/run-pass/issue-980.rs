@@ -8,13 +8,14 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#[feature(managed_boxes)];
+#![feature(managed_boxes)]
 
 use std::cell::RefCell;
+use std::gc::{Gc, GC};
 
 enum maybe_pointy {
     no_pointy,
-    yes_pointy(@RefCell<Pointy>),
+    yes_pointy(Gc<RefCell<Pointy>>),
 }
 
 struct Pointy {
@@ -22,7 +23,7 @@ struct Pointy {
 }
 
 pub fn main() {
-    let m = @RefCell::new(Pointy { x : no_pointy });
+    let m = box(GC) RefCell::new(Pointy { x : no_pointy });
     *m.borrow_mut() = Pointy {
         x: yes_pointy(m)
     };

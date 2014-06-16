@@ -13,18 +13,19 @@ documentation.
 > [getting started][wiki-start] notes on the wiki.
 
 [installer]: http://www.rust-lang.org/install.html
-[tutorial]: http://static.rust-lang.org/doc/tutorial.html
+[tutorial]: http://doc.rust-lang.org/tutorial.html
 [wiki-start]: https://github.com/mozilla/rust/wiki/Note-getting-started-developing-Rust
 [win-wiki]: https://github.com/mozilla/rust/wiki/Using-Rust-on-Windows
 
 ## Building from Source
 
 1. Make sure you have installed the dependencies:
-    * `g++` 4.4 or `clang++` 3.x
+    * `g++` 4.7 or `clang++` 3.x
     * `python` 2.6 or later (but not 3.x)
     * `perl` 5.0 or later
     * GNU `make` 3.81 or later
     * `curl`
+    * `git`
 2. Download and build Rust:
 
     You can either download a [tarball] or build directly from the [repo].
@@ -59,7 +60,7 @@ documentation.
 
 [repo]: https://github.com/mozilla/rust
 [tarball]: http://static.rust-lang.org/dist/rust-nightly.tar.gz
-[tutorial]: http://static.rust-lang.org/doc/master/tutorial.html
+[tutorial]: http://doc.rust-lang.org/tutorial.html
 
 ## Notes
 

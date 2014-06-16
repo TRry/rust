@@ -10,11 +10,10 @@
 
 // ignore-stage1
 // ignore-pretty
-// ignore-cross-compile
 
 #![feature(phase)]
 
-#[phase(syntax)]
+#[phase(plugin)]
 extern crate fourcc;
 
 static static_val: u32 = fourcc!("foo ");

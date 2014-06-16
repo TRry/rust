@@ -10,9 +10,11 @@
 
 // error-pattern:fail
 
-#[feature(managed_boxes)];
-#[allow(unreachable_code)];
-#[allow(unused_variable)];
+#![feature(managed_boxes)]
+#![allow(unreachable_code)]
+#![allow(unused_variable)]
+
+use std::gc::GC;
 
 fn x(it: |int|) {
     fail!();
@@ -20,6 +22,6 @@ fn x(it: |int|) {
 }
 
 fn main() {
-    let a = @0;
+    let a = box(GC) 0;
     x(|_i| { } );
 }

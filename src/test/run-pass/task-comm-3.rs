@@ -8,8 +8,9 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+extern crate debug;
 
-use std::task;
+use std::task::TaskBuilder;
 
 pub fn main() { println!("===== WITHOUT THREADS ====="); test00(); }
 
@@ -38,7 +39,7 @@ fn test00() {
     let mut results = Vec::new();
     while i < number_of_tasks {
         let tx = tx.clone();
-        let mut builder = task::task();
+        let mut builder = TaskBuilder::new();
         results.push(builder.future_result());
         builder.spawn({
             let i = i;

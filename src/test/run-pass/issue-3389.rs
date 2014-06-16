@@ -10,11 +10,11 @@
 
 
 struct trie_node {
-    content: Vec<~str> ,
+    content: Vec<String> ,
     children: Vec<trie_node> ,
 }
 
-fn print_str_vector(vector: Vec<~str> ) {
+fn print_str_vector(vector: Vec<String> ) {
     for string in vector.iter() {
         println!("{}", *string);
     }
@@ -25,8 +25,8 @@ pub fn main() {
         content: Vec::new(),
         children: Vec::new()
     };
-    let v = vec!(~"123", ~"abc");
-    node.content = vec!(~"123", ~"abc");
+    let v = vec!("123".to_string(), "abc".to_string());
+    node.content = vec!("123".to_string(), "abc".to_string());
     print_str_vector(v);
     print_str_vector(node.content.clone());
 

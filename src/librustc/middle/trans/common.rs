@@ -8,7 +8,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#![allow(non_camel_case_types)]
+#![allow(non_camel_case_types, non_snake_case_functions)]
 
 //! Code that is useful in various trans modules.
 
@@ -17,11 +17,13 @@ use lib::llvm::{ValueRef, BasicBlockRef, BuilderRef};
 use lib::llvm::{True, False, Bool};
 use lib::llvm::llvm;
 use lib;
+use middle::def;
 use middle::lang_items::LangItem;
+use middle::subst;
+use middle::subst::Subst;
 use middle::trans::build;
 use middle::trans::cleanup;
 use middle::trans::datum;
-use middle::trans::datum::{Datum, Lvalue};
 use middle::trans::debuginfo;
 use middle::trans::type_::Type;
 use middle::ty;
@@ -30,7 +32,7 @@ use util::ppaux::Repr;
 use util::nodemap::NodeMap;
 
 use arena::TypedArena;
-use collections::HashMap;
+use std::collections::HashMap;
 use libc::{c_uint, c_longlong, c_ulonglong, c_char};
 use std::c_str::ToCStr;
 use std::cell::{Cell, RefCell};
@@ -107,7 +109,7 @@ pub fn gensym_name(name: &str) -> PathElem {
     let num = token::gensym(name);
     // use one colon which will get translated to a period by the mangler, and
     // we're guaranteed that `num` is globally unique for this crate.
-    PathName(token::gensym(format!("{}:{}", name, num)))
+    PathName(token::gensym(format!("{}:{}", name, num).as_slice()))
 }
 
 pub struct tydesc_info {
@@ -154,21 +156,6 @@ pub fn expr_info(expr: &ast::Expr) -> NodeInfo {
     NodeInfo { id: expr.id, span: expr.span }
 }
 
-pub struct Stats {
-    pub n_static_tydescs: Cell<uint>,
-    pub n_glues_created: Cell<uint>,
-    pub n_null_glues: Cell<uint>,
-    pub n_real_glues: Cell<uint>,
-    pub n_fns: Cell<uint>,
-    pub n_monos: Cell<uint>,
-    pub n_inlines: Cell<uint>,
-    pub n_closures: Cell<uint>,
-    pub n_llvm_insns: Cell<uint>,
-    pub llvm_insns: RefCell<HashMap<~str, uint>>,
-    // (ident, time-in-ms, llvm-instructions)
-    pub fn_stats: RefCell<Vec<(~str, uint, uint)> >,
-}
-
 pub struct BuilderRef_res {
     pub b: BuilderRef,
 }
@@ -187,33 +174,46 @@ pub fn BuilderRef_res(b: BuilderRef) -> BuilderRef_res {
     }
 }
 
-pub type ExternMap = HashMap<~str, ValueRef>;
+pub type ExternMap = HashMap<String, ValueRef>;
 
 // Here `self_ty` is the real type of the self parameter to this method. It
 // will only be set in the case of default methods.
 pub struct param_substs {
-    pub tys: Vec<ty::t> ,
-    pub self_ty: Option<ty::t>,
-    pub vtables: Option<typeck::vtable_res>,
-    pub self_vtables: Option<typeck::vtable_param_res>
+    pub substs: subst::Substs,
+    pub vtables: typeck::vtable_res,
 }
 
 impl param_substs {
+    pub fn empty() -> param_substs {
+        param_substs {
+            substs: subst::Substs::trans_empty(),
+            vtables: subst::VecPerParamSpace::empty(),
+        }
+    }
+
     pub fn validate(&self) {
-        for t in self.tys.iter() { assert!(!ty::type_needs_infer(*t)); }
-        for t in self.self_ty.iter() { assert!(!ty::type_needs_infer(*t)); }
+        assert!(self.substs.types.all(|t| !ty::type_needs_infer(*t)));
     }
 }
 
-fn param_substs_to_str(this: &param_substs, tcx: &ty::ctxt) -> ~str {
-    format!("param_substs \\{tys:{}, vtables:{}\\}",
-         this.tys.repr(tcx),
-         this.vtables.repr(tcx))
+fn param_substs_to_str(this: &param_substs, tcx: &ty::ctxt) -> String {
+    format!("param_substs({})", this.substs.repr(tcx))
 }
 
 impl Repr for param_substs {
-    fn repr(&self, tcx: &ty::ctxt) -> ~str {
+    fn repr(&self, tcx: &ty::ctxt) -> String {
         param_substs_to_str(self, tcx)
+    }
+}
+
+pub trait SubstP {
+    fn substp(&self, tcx: &ty::ctxt, param_substs: &param_substs)
+              -> Self;
+}
+
+impl<T:Subst+Clone> SubstP for T {
+    fn substp(&self, tcx: &ty::ctxt, substs: &param_substs) -> T {
+        self.subst(tcx, &substs.substs)
     }
 }
 
@@ -274,7 +274,7 @@ pub struct FunctionContext<'a> {
 
     // If this function is being monomorphized, this contains the type
     // substitutions used.
-    pub param_substs: Option<@param_substs>,
+    pub param_substs: &'a param_substs,
 
     // The source span and nesting context where this function comes from, for
     // error reporting and symbol generation.
@@ -436,41 +436,41 @@ impl<'a> Block<'a> {
     }
     pub fn sess(&self) -> &'a Session { self.fcx.ccx.sess() }
 
-    pub fn ident(&self, ident: Ident) -> ~str {
-        token::get_ident(ident).get().to_str()
+    pub fn ident(&self, ident: Ident) -> String {
+        token::get_ident(ident).get().to_string()
     }
 
-    pub fn node_id_to_str(&self, id: ast::NodeId) -> ~str {
-        self.tcx().map.node_to_str(id)
+    pub fn node_id_to_str(&self, id: ast::NodeId) -> String {
+        self.tcx().map.node_to_str(id).to_string()
     }
 
-    pub fn expr_to_str(&self, e: &ast::Expr) -> ~str {
+    pub fn expr_to_str(&self, e: &ast::Expr) -> String {
         e.repr(self.tcx())
     }
 
-    pub fn def(&self, nid: ast::NodeId) -> ast::Def {
+    pub fn def(&self, nid: ast::NodeId) -> def::Def {
         match self.tcx().def_map.borrow().find(&nid) {
             Some(&v) => v,
             None => {
                 self.tcx().sess.bug(format!(
-                    "no def associated with node id {:?}", nid));
+                    "no def associated with node id {:?}", nid).as_slice());
             }
         }
     }
 
-    pub fn val_to_str(&self, val: ValueRef) -> ~str {
+    pub fn val_to_str(&self, val: ValueRef) -> String {
         self.ccx().tn.val_to_str(val)
     }
 
-    pub fn llty_str(&self, ty: Type) -> ~str {
+    pub fn llty_str(&self, ty: Type) -> String {
         self.ccx().tn.type_to_str(ty)
     }
 
-    pub fn ty_to_str(&self, t: ty::t) -> ~str {
+    pub fn ty_to_str(&self, t: ty::t) -> String {
         t.repr(self.tcx())
     }
 
-    pub fn to_str(&self) -> ~str {
+    pub fn to_str(&self) -> String {
         let blk: *Block = self;
         format!("[block {}]", blk)
     }
@@ -481,10 +481,12 @@ pub struct Result<'a> {
     pub val: ValueRef
 }
 
-pub fn rslt<'a>(bcx: &'a Block<'a>, val: ValueRef) -> Result<'a> {
-    Result {
-        bcx: bcx,
-        val: val,
+impl<'a> Result<'a> {
+    pub fn new(bcx: &'a Block<'a>, val: ValueRef) -> Result<'a> {
+        Result {
+            bcx: bcx,
+            val: val,
+        }
     }
 }
 
@@ -588,8 +590,9 @@ pub fn C_cstr(cx: &CrateContext, s: InternedString, null_terminated: bool) -> Va
 pub fn C_str_slice(cx: &CrateContext, s: InternedString) -> ValueRef {
     unsafe {
         let len = s.get().len();
-        let cs = llvm::LLVMConstPointerCast(C_cstr(cx, s, false), Type::i8p(cx).to_ref());
-        C_struct(cx, [cs, C_uint(cx, len)], false)
+        let cs = llvm::LLVMConstPointerCast(C_cstr(cx, s, false),
+                                            Type::i8p(cx).to_ref());
+        C_named_struct(cx.tn.find_type("str_slice").unwrap(), [cs, C_uint(cx, len)])
     }
 }
 
@@ -686,57 +689,8 @@ pub fn is_null(val: ValueRef) -> bool {
     }
 }
 
-// Used to identify cached monomorphized functions and vtables
-#[deriving(Eq, TotalEq, Hash)]
-pub enum mono_param_id {
-    mono_precise(ty::t, Option<@Vec<mono_id> >),
-    mono_any,
-    mono_repr(uint /* size */,
-              uint /* align */,
-              MonoDataClass,
-              datum::RvalueMode),
-}
-
-#[deriving(Eq, TotalEq, Hash)]
-pub enum MonoDataClass {
-    MonoBits,    // Anything not treated differently from arbitrary integer data
-    MonoNonNull, // Non-null pointers (used for optional-pointer optimization)
-    // FIXME(#3547)---scalars and floats are
-    // treated differently in most ABIs.  But we
-    // should be doing something more detailed
-    // here.
-    MonoFloat
-}
-
-pub fn mono_data_classify(t: ty::t) -> MonoDataClass {
-    match ty::get(t).sty {
-        ty::ty_float(_) => MonoFloat,
-        ty::ty_rptr(..) | ty::ty_uniq(..) | ty::ty_box(..) |
-        ty::ty_str(ty::VstoreUniq) | ty::ty_vec(_, ty::VstoreUniq) |
-        ty::ty_bare_fn(..) => MonoNonNull,
-        // Is that everything?  Would closures or slices qualify?
-        _ => MonoBits
-    }
-}
-
-#[deriving(Eq, TotalEq, Hash)]
-pub struct mono_id_ {
-    pub def: ast::DefId,
-    pub params: Vec<mono_param_id> }
-
-pub type mono_id = @mono_id_;
-
 pub fn monomorphize_type(bcx: &Block, t: ty::t) -> ty::t {
-    match bcx.fcx.param_substs {
-        Some(substs) => {
-            ty::subst_tps(bcx.tcx(), substs.tys.as_slice(), substs.self_ty, t)
-        }
-        _ => {
-            assert!(!ty::type_has_params(t));
-            assert!(!ty::type_has_self(t));
-            t
-        }
-    }
+    t.subst(bcx.tcx(), &bcx.fcx.param_substs.substs)
 }
 
 pub fn node_id_type(bcx: &Block, id: ast::NodeId) -> ty::t {
@@ -750,13 +704,11 @@ pub fn expr_ty(bcx: &Block, ex: &ast::Expr) -> ty::t {
 }
 
 pub fn expr_ty_adjusted(bcx: &Block, ex: &ast::Expr) -> ty::t {
-    let tcx = bcx.tcx();
-    let t = ty::expr_ty_adjusted(tcx, ex, &*bcx.ccx().maps.method_map.borrow());
-    monomorphize_type(bcx, t)
+    monomorphize_type(bcx, ty::expr_ty_adjusted(bcx.tcx(), ex))
 }
 
 // Key used to lookup values supplied for type parameters in an expr.
-#[deriving(Eq)]
+#[deriving(PartialEq)]
 pub enum ExprOrMethodCall {
     // Type parameters for a path like `None::<int>`
     ExprId(ast::NodeId),
@@ -765,108 +717,91 @@ pub enum ExprOrMethodCall {
     MethodCall(typeck::MethodCall)
 }
 
-pub fn node_id_type_params(bcx: &Block, node: ExprOrMethodCall) -> Vec<ty::t> {
+pub fn node_id_substs(bcx: &Block,
+                      node: ExprOrMethodCall)
+                      -> subst::Substs {
     let tcx = bcx.tcx();
-    let params = match node {
-        ExprId(id) => ty::node_id_to_type_params(tcx, id),
+
+    let substs = match node {
+        ExprId(id) => {
+            ty::node_id_item_substs(tcx, id).substs
+        }
         MethodCall(method_call) => {
-            bcx.ccx().maps.method_map.borrow().get(&method_call).substs.tps.clone()
+            tcx.method_map.borrow().get(&method_call).substs.clone()
         }
     };
 
-    if !params.iter().all(|t| !ty::type_needs_infer(*t)) {
+    if substs.types.any(|t| ty::type_needs_infer(*t)) {
         bcx.sess().bug(
-            format!("type parameters for node {:?} include inference types: {}",
-                 node, params.iter()
-                             .map(|t| bcx.ty_to_str(*t))
-                             .collect::<Vec<~str>>()
-                             .connect(",")));
+            format!("type parameters for node {:?} include inference types: \
+                     {}",
+                    node,
+                    substs.repr(bcx.tcx())).as_slice());
     }
 
-    match bcx.fcx.param_substs {
-      Some(substs) => {
-        params.iter().map(|t| {
-            ty::subst_tps(tcx, substs.tys.as_slice(), substs.self_ty, *t)
-        }).collect()
-      }
-      _ => params
-    }
+    substs.substp(tcx, bcx.fcx.param_substs)
 }
 
 pub fn node_vtables(bcx: &Block, id: typeck::MethodCall)
-                 -> Option<typeck::vtable_res> {
-    let vtable_map = bcx.ccx().maps.vtable_map.borrow();
-    let raw_vtables = vtable_map.find(&id);
-    raw_vtables.map(|vts| resolve_vtables_in_fn_ctxt(bcx.fcx, *vts))
+                 -> typeck::vtable_res {
+    bcx.tcx().vtable_map.borrow().find(&id).map(|vts| {
+        resolve_vtables_in_fn_ctxt(bcx.fcx, vts)
+    }).unwrap_or_else(|| subst::VecPerParamSpace::empty())
 }
 
 // Apply the typaram substitutions in the FunctionContext to some
 // vtables. This should eliminate any vtable_params.
-pub fn resolve_vtables_in_fn_ctxt(fcx: &FunctionContext, vts: typeck::vtable_res)
-    -> typeck::vtable_res {
+pub fn resolve_vtables_in_fn_ctxt(fcx: &FunctionContext,
+                                  vts: &typeck::vtable_res)
+                                  -> typeck::vtable_res {
     resolve_vtables_under_param_substs(fcx.ccx.tcx(),
                                        fcx.param_substs,
                                        vts)
 }
 
 pub fn resolve_vtables_under_param_substs(tcx: &ty::ctxt,
-                                          param_substs: Option<@param_substs>,
-                                          vts: typeck::vtable_res)
-    -> typeck::vtable_res {
-    @vts.iter().map(|ds|
-      resolve_param_vtables_under_param_substs(tcx,
-                                               param_substs,
-                                               *ds))
-        .collect()
+                                          param_substs: &param_substs,
+                                          vts: &typeck::vtable_res)
+                                          -> typeck::vtable_res
+{
+    vts.map(|ds| {
+        resolve_param_vtables_under_param_substs(tcx,
+                                                 param_substs,
+                                                 ds)
+    })
 }
 
-pub fn resolve_param_vtables_under_param_substs(
-    tcx: &ty::ctxt,
-    param_substs: Option<@param_substs>,
-    ds: typeck::vtable_param_res)
-    -> typeck::vtable_param_res {
-    @ds.iter().map(
-        |d| resolve_vtable_under_param_substs(tcx,
-                                              param_substs,
-                                              d))
-        .collect()
+pub fn resolve_param_vtables_under_param_substs(tcx: &ty::ctxt,
+                                                param_substs: &param_substs,
+                                                ds: &typeck::vtable_param_res)
+                                                -> typeck::vtable_param_res
+{
+    ds.iter().map(|d| {
+        resolve_vtable_under_param_substs(tcx,
+                                          param_substs,
+                                          d)
+    }).collect()
 }
 
 
 
 pub fn resolve_vtable_under_param_substs(tcx: &ty::ctxt,
-                                         param_substs: Option<@param_substs>,
+                                         param_substs: &param_substs,
                                          vt: &typeck::vtable_origin)
-                                         -> typeck::vtable_origin {
+                                         -> typeck::vtable_origin
+{
     match *vt {
-        typeck::vtable_static(trait_id, ref tys, sub) => {
-            let tys = match param_substs {
-                Some(substs) => {
-                    tys.iter().map(|t| {
-                        ty::subst_tps(tcx,
-                                      substs.tys.as_slice(),
-                                      substs.self_ty,
-                                      *t)
-                    }).collect()
-                }
-                _ => Vec::from_slice(tys.as_slice())
-            };
+        typeck::vtable_static(trait_id, ref vtable_substs, ref sub) => {
+            let vtable_substs = vtable_substs.substp(tcx, param_substs);
             typeck::vtable_static(
-                trait_id, tys,
+                trait_id,
+                vtable_substs,
                 resolve_vtables_under_param_substs(tcx, param_substs, sub))
         }
         typeck::vtable_param(n_param, n_bound) => {
-            match param_substs {
-                Some(substs) => {
-                    find_vtable(tcx, substs, n_param, n_bound)
-                }
-                _ => {
-                    tcx.sess.bug(format!(
-                        "resolve_vtable_under_param_substs: asked to lookup \
-                         but no vtables in the fn_ctxt!"))
-                }
-            }
+            find_vtable(tcx, param_substs, n_param, n_bound)
         }
+        typeck::vtable_error => typeck::vtable_error
     }
 }
 
@@ -878,25 +813,9 @@ pub fn find_vtable(tcx: &ty::ctxt,
     debug!("find_vtable(n_param={:?}, n_bound={}, ps={})",
            n_param, n_bound, ps.repr(tcx));
 
-    let param_bounds = match n_param {
-        typeck::param_self => ps.self_vtables.expect("self vtables missing"),
-        typeck::param_numbered(n) => {
-            let tables = ps.vtables
-                .expect("vtables missing where they are needed");
-            *tables.get(n)
-        }
-    };
+    let param_bounds = ps.vtables.get(n_param.space,
+                                      n_param.index);
     param_bounds.get(n_bound).clone()
-}
-
-pub fn filename_and_line_num_from_span(bcx: &Block, span: Span)
-                                       -> (ValueRef, ValueRef) {
-    let loc = bcx.sess().codemap().lookup_char_pos(span.lo);
-    let filename_cstr = C_cstr(bcx.ccx(),
-                               token::intern_and_get_ident(loc.file.name), true);
-    let filename = build::PointerCast(bcx, filename_cstr, Type::i8p(bcx.ccx()));
-    let line = C_int(bcx.ccx(), loc.line as int);
-    (filename, line)
 }
 
 // Casts a Rust bool value to an i1.
@@ -914,8 +833,8 @@ pub fn langcall(bcx: &Block,
         Err(s) => {
             let msg = format!("{} {}", msg, s);
             match span {
-                Some(span) => { bcx.tcx().sess.span_fatal(span, msg); }
-                None => { bcx.tcx().sess.fatal(msg); }
+                Some(span) => bcx.tcx().sess.span_fatal(span, msg.as_slice()),
+                None => bcx.tcx().sess.fatal(msg.as_slice()),
             }
         }
     }

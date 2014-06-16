@@ -8,11 +8,11 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#[crate_id="anonexternmod#0.1"];
+#![crate_id="anonexternmod#0.1"]
 
 extern crate libc;
 
-#[link(name="rustrt")]
+#[link(name="rust_test_helpers")]
 extern {
     pub fn rust_get_test_int() -> libc::intptr_t;
 }

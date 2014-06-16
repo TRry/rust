@@ -21,15 +21,16 @@ mod mlibc {
     }
 }
 
-fn atol(s: ~str) -> int {
-    s.with_c_str(|x| unsafe { mlibc::atol(x) as int })
+fn atol(s: String) -> int {
+    s.as_slice().with_c_str(|x| unsafe { mlibc::atol(x) as int })
 }
 
-fn atoll(s: ~str) -> i64 {
-    s.with_c_str(|x| unsafe { mlibc::atoll(x) as i64 })
+fn atoll(s: String) -> i64 {
+    s.as_slice().with_c_str(|x| unsafe { mlibc::atoll(x) as i64 })
 }
 
 pub fn main() {
-    assert_eq!(atol(~"1024") * 10, atol(~"10240"));
-    assert!((atoll(~"11111111111111111") * 10) == atoll(~"111111111111111110"));
+    assert_eq!(atol("1024".to_string()) * 10, atol("10240".to_string()));
+    assert!((atoll("11111111111111111".to_string()) * 10) ==
+             atoll("111111111111111110".to_string()));
 }

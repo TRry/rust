@@ -8,8 +8,10 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#[feature(managed_boxes)];
+#![feature(managed_boxes)]
+
+use std::gc::{Gc, GC};
 
 fn leaky<T>(_t: T) { }
 
-pub fn main() { let x = @10; leaky::<@int>(x); }
+pub fn main() { let x = box(GC) 10; leaky::<Gc<int>>(x); }

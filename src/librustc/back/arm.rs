@@ -9,60 +9,64 @@
 // except according to those terms.
 
 use back::target_strs;
-use driver::session::sess_os_to_meta_os;
-use metadata::loader::meta_section_name;
 use syntax::abi;
 
-pub fn get_target_strs(target_triple: ~str, target_os: abi::Os) -> target_strs::t {
-    let cc_args = if target_triple.contains("thumb") {
-        vec!(~"-mthumb")
+pub fn get_target_strs(target_triple: String, target_os: abi::Os) -> target_strs::t {
+    let cc_args = if target_triple.as_slice().contains("thumb") {
+        vec!("-mthumb".to_string())
     } else {
-        vec!(~"-marm")
+        vec!("-marm".to_string())
     };
     return target_strs::t {
-        module_asm: ~"",
-
-        meta_sect_name: meta_section_name(sess_os_to_meta_os(target_os)).to_owned(),
+        module_asm: "".to_string(),
 
         data_layout: match target_os {
           abi::OsMacos => {
-            ~"e-p:32:32:32" +
-                "-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:64:64" +
-                "-f32:32:32-f64:64:64" +
-                "-v64:64:64-v128:64:128" +
-                "-a0:0:64-n32"
+            "e-p:32:32:32\
+                -i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:64:64\
+                -f32:32:32-f64:64:64\
+                -v64:64:64-v128:64:128\
+                -a0:0:64-n32".to_string()
+          }
+
+          abi::OsiOS => {
+            "e-p:32:32:32\
+                -i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:64:64\
+                -f32:32:32-f64:64:64\
+                -v64:64:64-v128:64:128\
+                -a0:0:64-n32".to_string()
           }
 
           abi::OsWin32 => {
-            ~"e-p:32:32:32" +
-                "-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:64:64" +
-                "-f32:32:32-f64:64:64" +
-                "-v64:64:64-v128:64:128" +
-                "-a0:0:64-n32"
+            "e-p:32:32:32\
+                -i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:64:64\
+                -f32:32:32-f64:64:64\
+                -v64:64:64-v128:64:128\
+                -a0:0:64-n32".to_string()
           }
 
           abi::OsLinux => {
-            ~"e-p:32:32:32" +
-                "-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:64:64" +
-                "-f32:32:32-f64:64:64" +
-                "-v64:64:64-v128:64:128" +
-                "-a0:0:64-n32"
+            "e-p:32:32:32\
+                -i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:64:64\
+                -f32:32:32-f64:64:64\
+                -v64:64:64-v128:64:128\
+                -a0:0:64-n32".to_string()
           }
 
           abi::OsAndroid => {
-            ~"e-p:32:32:32" +
-                "-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:64:64" +
-                "-f32:32:32-f64:64:64" +
-                "-v64:64:64-v128:64:128" +
-                "-a0:0:64-n32"
+            "e-p:32:32:32\
+                -i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:64:64\
+                -f32:32:32-f64:64:64\
+                -v64:64:64-v128:64:128\
+                -a0:0:64-n32".to_string()
           }
 
           abi::OsFreebsd => {
-            ~"e-p:32:32:32" +
-                "-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:64:64" +
-                "-f32:32:32-f64:64:64" +
-                "-v64:64:64-v128:64:128" +
-                "-a0:0:64-n32"
+            "e-p:32:32:32\
+                -i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:64:64\
+                -f32:32:32-f64:64:64\
+                -v64:64:64-v128:64:128\
+                -a0:0:64-n32".to_string()
           }
         },
 
