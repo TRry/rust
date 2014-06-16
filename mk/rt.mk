@@ -35,7 +35,8 @@
 # that's per-target so you're allowed to conditionally add files based on the
 # target.
 ################################################################################
-NATIVE_LIBS := rustrt hoedown uv_support morestack miniz context_switch
+NATIVE_LIBS := rust_builtin hoedown uv_support morestack miniz context_switch \
+		rustrt_native rust_test_helpers
 
 # $(1) is the target triple
 define NATIVE_LIBRARIES
@@ -51,11 +52,12 @@ NATIVE_DEPS_hoedown_$(1) := hoedown/src/autolink.c \
 			hoedown/src/version.c
 NATIVE_DEPS_uv_support_$(1) := rust_uv.c
 NATIVE_DEPS_miniz_$(1) = miniz.c
-NATIVE_DEPS_rustrt_$(1) := rust_builtin.c \
-			rust_android_dummy.c \
-			rust_test_helpers.c \
+NATIVE_DEPS_rust_builtin_$(1) := rust_builtin.c \
+			rust_android_dummy.c
+NATIVE_DEPS_rustrt_native_$(1) := \
 			rust_try.ll \
 			arch/$$(HOST_$(1))/record_sp.S
+NATIVE_DEPS_rust_test_helpers_$(1) := rust_test_helpers.c
 NATIVE_DEPS_morestack_$(1) := arch/$$(HOST_$(1))/morestack.S
 NATIVE_DEPS_context_switch_$(1) := \
 			arch/$$(HOST_$(1))/_context.S
@@ -164,6 +166,9 @@ ifeq ($$(CFG_WINDOWSY_$(1)), 1)
   JEMALLOC_ARGS_$(1) := --enable-lazy-lock
 else ifeq ($(OSTYPE_$(1)), apple-darwin)
   LIBUV_OSTYPE_$(1) := mac
+else ifeq ($(OSTYPE_$(1)), apple-ios)
+  LIBUV_OSTYPE_$(1) := ios
+  JEMALLOC_ARGS_$(1) := --disable-tls
 else ifeq ($(OSTYPE_$(1)), unknown-freebsd)
   LIBUV_OSTYPE_$(1) := freebsd
 else ifeq ($(OSTYPE_$(1)), linux-androideabi)
@@ -204,18 +209,15 @@ $$(LIBUV_MAKEFILE_$(1)): $$(LIBUV_DEPS) $$(MKFILE_DEPS) $$(LIBUV_STAMP_$(1))
 # theory when we support msvc then we should be using gyp's msvc output instead
 # of mingw's makefile for windows
 ifdef CFG_WINDOWSY_$(1)
-$$(LIBUV_LIB_$(1)): $$(LIBUV_DEPS) $$(MKFILE_DEPS)
+LIBUV_LOCAL_$(1) := $$(S)src/libuv/libuv.a
+$$(LIBUV_LOCAL_$(1)): $$(LIBUV_DEPS) $$(MKFILE_DEPS)
 	$$(Q)$$(MAKE) -C $$(S)src/libuv -f Makefile.mingw \
 		LDFLAGS="$$(CFG_GCCISH_LINK_FLAGS_$(1))" \
 		CC="$$(CC_$(1)) $$(LIBUV_CFLAGS_$(1)) $$(SNAP_DEFINES)" \
 		CXX="$$(CXX_$(1))" \
 		AR="$$(AR_$(1))" \
 		V=$$(VERBOSE)
-	$$(Q)cp $$(S)src/libuv/libuv.a $$@
 else ifeq ($(OSTYPE_$(1)), apple-ios) # iOS
-
-JEMALLOC_ARGS_$(1) := --disable-tls
-
 $$(LIBUV_XCODEPROJ_$(1)): $$(LIBUV_DEPS) $$(MKFILE_DEPS) $$(LIBUV_STAMP_$(1))
 	cp -rf $(S)src/libuv/ $$(LIBUV_BUILD_DIR_$(1))
 	(cd $$(LIBUV_BUILD_DIR_$(1)) && \
@@ -229,7 +231,7 @@ LIBUV_XCODE_OUT_LIB_$(1) := $$(LIBUV_BUILD_DIR_$(1))/build/Release-$$(CFG_SDK_NA
 $$(LIBUV_LIB_$(1)): $$(LIBUV_XCODE_OUT_LIB_$(1)) $$(MKFILE_DEPS)
 	$$(Q)cp $$< $$@
 $$(LIBUV_XCODE_OUT_LIB_$(1)): $$(LIBUV_DEPS) $$(LIBUV_XCODEPROJ_$(1)) \
-				    $$(MKFILE_DEPS)				    
+				    $$(MKFILE_DEPS)
 	$$(Q)xcodebuild -project $$(LIBUV_BUILD_DIR_$(1))/uv.xcodeproj \
 		CFLAGS="$$(LIBUV_CFLAGS_$(1)) $$(SNAP_DEFINES)" \
 		LDFLAGS="$$(CFG_GCCISH_LINK_FLAGS_$(1))" \
@@ -240,10 +242,8 @@ $$(LIBUV_XCODE_OUT_LIB_$(1)): $$(LIBUV_DEPS) $$(LIBUV_XCODEPROJ_$(1)) \
 		ARCHS="$$(CFG_SDK_ARCHS_$(1))"
 	$$(Q)touch $$@
 else
-$$(LIBUV_LIB_$(1)): $$(LIBUV_DIR_$(1))/Release/libuv.a $$(MKFILE_DEPS)
-	$$(Q)cp $$< $$@
-$$(LIBUV_DIR_$(1))/Release/libuv.a: $$(LIBUV_DEPS) $$(LIBUV_MAKEFILE_$(1)) \
-				    $$(MKFILE_DEPS)
+LIBUV_LOCAL_$(1) := $$(LIBUV_DIR_$(1))/Release/libuv.a
+$$(LIBUV_LOCAL_$(1)): $$(LIBUV_DEPS) $$(LIBUV_MAKEFILE_$(1)) $$(MKFILE_DEPS)
 	$$(Q)$$(MAKE) -C $$(LIBUV_DIR_$(1)) \
 		CFLAGS="$$(LIBUV_CFLAGS_$(1)) $$(SNAP_DEFINES)" \
 		LDFLAGS="$$(CFG_GCCISH_LINK_FLAGS_$(1))" \
@@ -255,6 +255,19 @@ $$(LIBUV_DIR_$(1))/Release/libuv.a: $$(LIBUV_DEPS) $$(LIBUV_MAKEFILE_$(1)) \
 		NO_LOAD="$$(LIBUV_NO_LOAD)" \
 		V=$$(VERBOSE)
 	$$(Q)touch $$@
+endif
+
+ifeq ($(1),$$(CFG_BUILD))
+ifneq ($$(CFG_LIBUV_ROOT),)
+$$(LIBUV_LIB_$(1)): $$(CFG_LIBUV_ROOT)/libuv.a
+	$$(Q)cp $$< $$@
+else
+$$(LIBUV_LIB_$(1)): $$(LIBUV_LOCAL_$(1))
+	$$(Q)cp $$< $$@
+endif
+else
+$$(LIBUV_LIB_$(1)): $$(LIBUV_LOCAL_$(1))
+	$$(Q)cp $$< $$@
 endif
 
 ################################################################################
@@ -271,10 +284,6 @@ JEMALLOC_DEPS := $(wildcard \
 		   $(S)src/jemalloc/*/*/*/*)
 endif
 
-ifeq ($(OSTYPE_$(1)), apple-ios)
-JEMALLOC_ARGS_$(1) := --disable-tls
-endif
-
 JEMALLOC_NAME_$(1) := $$(call CFG_STATIC_LIB_NAME_$(1),jemalloc)
 ifeq ($$(CFG_WINDOWSY_$(1)),1)
   JEMALLOC_REAL_NAME_$(1) := $$(call CFG_STATIC_LIB_NAME_$(1),jemalloc_s)
@@ -283,19 +292,33 @@ else
 endif
 JEMALLOC_LIB_$(1) := $$(RT_OUTPUT_DIR_$(1))/$$(JEMALLOC_NAME_$(1))
 JEMALLOC_BUILD_DIR_$(1) := $$(RT_OUTPUT_DIR_$(1))/jemalloc
+JEMALLOC_LOCAL_$(1) := $$(JEMALLOC_BUILD_DIR_$(1))/lib/$$(JEMALLOC_REAL_NAME_$(1))
 
-$$(JEMALLOC_LIB_$(1)): $$(JEMALLOC_DEPS) $$(MKFILE_DEPS)
+$$(JEMALLOC_LOCAL_$(1)): $$(JEMALLOC_DEPS) $$(MKFILE_DEPS)
 	@$$(call E, make: jemalloc)
 	cd "$$(JEMALLOC_BUILD_DIR_$(1))"; "$(S)src/jemalloc/configure" \
-		$$(JEMALLOC_ARGS_$(1)) --enable-cc-silence --with-jemalloc-prefix=je_ \
-		--disable-experimental --build=$(CFG_BUILD) --host=$(1) \
+		$$(JEMALLOC_ARGS_$(1)) --with-jemalloc-prefix=je_ \
+		--build=$(CFG_BUILD) --host=$(1) \
 		CC="$$(CC_$(1))" \
 		AR="$$(AR_$(1))" \
 		RANLIB="$$(AR_$(1)) s" \
 		CPPFLAGS="-I $(S)src/rt/" \
 		EXTRA_CFLAGS="$$(CFG_CFLAGS_$(1)) $$(CFG_JEMALLOC_CFLAGS_$(1)) -g1"
 	$$(Q)$$(MAKE) -C "$$(JEMALLOC_BUILD_DIR_$(1))" build_lib_static
-	$$(Q)cp $$(JEMALLOC_BUILD_DIR_$(1))/lib/$$(JEMALLOC_REAL_NAME_$(1)) $$(JEMALLOC_LIB_$(1))
+
+ifeq ($(1),$$(CFG_BUILD))
+ifneq ($$(CFG_JEMALLOC_ROOT),)
+$$(JEMALLOC_LIB_$(1)): $$(CFG_JEMALLOC_ROOT)/libjemalloc_pic.a
+	@$$(call E, copy: jemalloc)
+	$$(Q)cp $$< $$@
+else
+$$(JEMALLOC_LIB_$(1)): $$(JEMALLOC_LOCAL_$(1))
+	$$(Q)cp $$< $$@
+endif
+else
+$$(JEMALLOC_LIB_$(1)): $$(JEMALLOC_LOCAL_$(1))
+	$$(Q)cp $$< $$@
+endif
 
 ################################################################################
 # compiler-rt
@@ -340,20 +363,22 @@ BACKTRACE_NAME_$(1) := $$(call CFG_STATIC_LIB_NAME_$(1),backtrace)
 BACKTRACE_LIB_$(1) := $$(RT_OUTPUT_DIR_$(1))/$$(BACKTRACE_NAME_$(1))
 BACKTRACE_BUILD_DIR_$(1) := $$(RT_OUTPUT_DIR_$(1))/libbacktrace
 
-ifeq ($$(findstring darwin,$$(OSTYPE_$(1))),darwin)
-
 # We don't use this on platforms that aren't linux-based, so just make the file
 # available, the compilation of libstd won't actually build it.
+ifeq ($$(findstring darwin,$$(OSTYPE_$(1))),darwin)
+# See comment above
 $$(BACKTRACE_LIB_$(1)):
 	touch $$@
 
 else
 ifeq ($$(findstring ios,$$(OSTYPE_$(1))),ios)
+# See comment above
 $$(BACKTRACE_LIB_$(1)):
 	touch $$@
 else
 
 ifeq ($$(CFG_WINDOWSY_$(1)),1)
+# See comment above
 $$(BACKTRACE_LIB_$(1)):
 	touch $$@
 else

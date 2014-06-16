@@ -17,7 +17,6 @@ use metadata::filesearch;
 use middle::lint;
 use util::nodemap::NodeMap;
 
-use syntax::abi;
 use syntax::ast::NodeId;
 use syntax::codemap::Span;
 use syntax::diagnostic;
@@ -29,6 +28,7 @@ use syntax::{ast, codemap};
 use std::os;
 use std::cell::{Cell, RefCell};
 
+
 pub struct Session {
     pub targ_cfg: config::Config,
     pub opts: config::Options,
@@ -37,7 +37,7 @@ pub struct Session {
     // For a library crate, this is always none
     pub entry_fn: RefCell<Option<(NodeId, codemap::Span)>>,
     pub entry_type: Cell<Option<config::EntryFnType>>,
-    pub macro_registrar_fn: Cell<Option<ast::NodeId>>,
+    pub plugin_registrar_fn: Cell<Option<ast::NodeId>>,
     pub default_sysroot: Option<Path>,
     // The name of the root source file of the crate, in the local file system. The path is always
     // expected to be absolute. `None` means that there is no source file.
@@ -216,11 +216,6 @@ pub fn build_session_(sopts: config::Options,
         None => Some(filesearch::get_or_default_sysroot())
     };
 
-    let mut sopts = sopts;
-    if target_cfg.os == abi::OsiOS && target_cfg.arch == abi::Arm {
-      sopts.cg.no_split_stack = true
-    }    
-
     // Make the path absolute, if necessary
     let local_crate_source_file = local_crate_source_file.map(|path|
         if path.is_absolute() {
@@ -238,7 +233,7 @@ pub fn build_session_(sopts: config::Options,
         // For a library crate, this is always none
         entry_fn: RefCell::new(None),
         entry_type: Cell::new(None),
-        macro_registrar_fn: Cell::new(None),
+        plugin_registrar_fn: Cell::new(None),
         default_sysroot: default_sysroot,
         local_crate_source_file: local_crate_source_file,
         working_dir: os::getcwd(),

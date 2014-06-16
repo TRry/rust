@@ -76,6 +76,7 @@ use core::cmp;
 use core::iter::AdditiveIterator;
 use core::mem;
 
+use Collection;
 use hash;
 use string::String;
 use vec::Vec;
@@ -610,7 +611,7 @@ impl<'a> StrAllocating for MaybeOwned<'a> {
     }
 }
 
-impl<'a> Container for MaybeOwned<'a> {
+impl<'a> Collection for MaybeOwned<'a> {
     #[inline]
     fn len(&self) -> uint { self.as_slice().len() }
 }
@@ -706,7 +707,7 @@ pub mod raw {
         use str::StrAllocating;
 
         unsafe {
-            let a = ~[65u8, 65u8, 65u8, 65u8, 65u8, 65u8, 65u8, 0u8];
+            let a = vec![65u8, 65u8, 65u8, 65u8, 65u8, 65u8, 65u8, 0u8];
             let b = a.as_ptr();
             let c = from_buf_len(b, 3u);
             assert_eq!(c, "AAA".to_string());
@@ -1123,7 +1124,7 @@ mod tests {
         assert!(half_a_million_letter_a() ==
             unsafe {raw::slice_bytes(letters.as_slice(),
                                      0u,
-                                     500000)}.to_owned());
+                                     500000)}.to_string());
     }
 
     #[test]
@@ -1218,7 +1219,7 @@ mod tests {
         assert_eq!("", data.slice(3, 3));
         assert_eq!("华", data.slice(30, 33));
 
-        fn a_million_letter_X() -> String {
+        fn a_million_letter_x() -> String {
             let mut i = 0;
             let mut rs = String::new();
             while i < 100000 {
@@ -1227,7 +1228,7 @@ mod tests {
             }
             rs
         }
-        fn half_a_million_letter_X() -> String {
+        fn half_a_million_letter_x() -> String {
             let mut i = 0;
             let mut rs = String::new();
             while i < 100000 {
@@ -1236,9 +1237,9 @@ mod tests {
             }
             rs
         }
-        let letters = a_million_letter_X();
-        assert!(half_a_million_letter_X() ==
-            letters.as_slice().slice(0u, 3u * 500000u).to_owned());
+        let letters = a_million_letter_x();
+        assert!(half_a_million_letter_x() ==
+            letters.as_slice().slice(0u, 3u * 500000u).to_string());
     }
 
     #[test]
@@ -1463,7 +1464,7 @@ mod tests {
     #[test]
     fn test_raw_from_c_str() {
         unsafe {
-            let a = box [65, 65, 65, 65, 65, 65, 65, 0];
+            let a = vec![65, 65, 65, 65, 65, 65, 65, 0];
             let b = a.as_ptr();
             let c = raw::from_c_str(b);
             assert_eq!(c, "AAAAAAA".to_string());
@@ -1681,7 +1682,7 @@ mod tests {
     #[test]
     fn test_char_at() {
         let s = "ศไทย中华Việt Nam";
-        let v = box ['ศ','ไ','ท','ย','中','华','V','i','ệ','t',' ','N','a','m'];
+        let v = vec!['ศ','ไ','ท','ย','中','华','V','i','ệ','t',' ','N','a','m'];
         let mut pos = 0;
         for ch in v.iter() {
             assert!(s.char_at(pos) == *ch);
@@ -1692,7 +1693,7 @@ mod tests {
     #[test]
     fn test_char_at_reverse() {
         let s = "ศไทย中华Việt Nam";
-        let v = box ['ศ','ไ','ท','ย','中','华','V','i','ệ','t',' ','N','a','m'];
+        let v = vec!['ศ','ไ','ท','ย','中','华','V','i','ệ','t',' ','N','a','m'];
         let mut pos = s.len();
         for ch in v.iter().rev() {
             assert!(s.char_at_reverse(pos) == *ch);
@@ -1755,7 +1756,7 @@ mod tests {
     #[test]
     fn test_iterator() {
         let s = "ศไทย中华Việt Nam";
-        let v = box ['ศ','ไ','ท','ย','中','华','V','i','ệ','t',' ','N','a','m'];
+        let v = ['ศ','ไ','ท','ย','中','华','V','i','ệ','t',' ','N','a','m'];
 
         let mut pos = 0;
         let mut it = s.chars();
@@ -1770,7 +1771,7 @@ mod tests {
     #[test]
     fn test_rev_iterator() {
         let s = "ศไทย中华Việt Nam";
-        let v = box ['m', 'a', 'N', ' ', 't', 'ệ','i','V','华','中','ย','ท','ไ','ศ'];
+        let v = ['m', 'a', 'N', ' ', 't', 'ệ','i','V','华','中','ย','ท','ไ','ศ'];
 
         let mut pos = 0;
         let mut it = s.chars().rev();
@@ -2036,7 +2037,7 @@ mod tests {
 
     #[test]
     fn test_str_container() {
-        fn sum_len<S: Container>(v: &[S]) -> uint {
+        fn sum_len<S: Collection>(v: &[S]) -> uint {
             v.iter().map(|x| x.len()).sum()
         }
 
@@ -2181,7 +2182,7 @@ mod bench {
         let s = "ศไทย中华Việt Nam; Mary had a little lamb, Little lamb";
         let len = s.char_len();
 
-        b.iter(|| assert_eq!(s.chars().len(), len));
+        b.iter(|| assert_eq!(s.chars().count(), len));
     }
 
     #[bench]
@@ -2194,7 +2195,7 @@ mod bench {
         Mary had a little lamb, Little lamb";
         let len = s.char_len();
 
-        b.iter(|| assert_eq!(s.chars().len(), len));
+        b.iter(|| assert_eq!(s.chars().count(), len));
     }
 
     #[bench]
@@ -2202,7 +2203,7 @@ mod bench {
         let s = "ศไทย中华Việt Nam; Mary had a little lamb, Little lamb";
         let len = s.char_len();
 
-        b.iter(|| assert_eq!(s.chars().rev().len(), len));
+        b.iter(|| assert_eq!(s.chars().rev().count(), len));
     }
 
     #[bench]
@@ -2210,7 +2211,7 @@ mod bench {
         let s = "ศไทย中华Việt Nam; Mary had a little lamb, Little lamb";
         let len = s.char_len();
 
-        b.iter(|| assert_eq!(s.char_indices().len(), len));
+        b.iter(|| assert_eq!(s.char_indices().count(), len));
     }
 
     #[bench]
@@ -2218,14 +2219,14 @@ mod bench {
         let s = "ศไทย中华Việt Nam; Mary had a little lamb, Little lamb";
         let len = s.char_len();
 
-        b.iter(|| assert_eq!(s.char_indices().rev().len(), len));
+        b.iter(|| assert_eq!(s.char_indices().rev().count(), len));
     }
 
     #[bench]
     fn split_unicode_ascii(b: &mut Bencher) {
         let s = "ประเทศไทย中华Việt Namประเทศไทย中华Việt Nam";
 
-        b.iter(|| assert_eq!(s.split('V').len(), 3));
+        b.iter(|| assert_eq!(s.split('V').count(), 3));
     }
 
     #[bench]
@@ -2240,16 +2241,16 @@ mod bench {
         }
         let s = "ประเทศไทย中华Việt Namประเทศไทย中华Việt Nam";
 
-        b.iter(|| assert_eq!(s.split(NotAscii('V')).len(), 3));
+        b.iter(|| assert_eq!(s.split(NotAscii('V')).count(), 3));
     }
 
 
     #[bench]
     fn split_ascii(b: &mut Bencher) {
         let s = "Mary had a little lamb, Little lamb, little-lamb.";
-        let len = s.split(' ').len();
+        let len = s.split(' ').count();
 
-        b.iter(|| assert_eq!(s.split(' ').len(), len));
+        b.iter(|| assert_eq!(s.split(' ').count(), len));
     }
 
     #[bench]
@@ -2264,34 +2265,34 @@ mod bench {
             fn only_ascii(&self) -> bool { false }
         }
         let s = "Mary had a little lamb, Little lamb, little-lamb.";
-        let len = s.split(' ').len();
+        let len = s.split(' ').count();
 
-        b.iter(|| assert_eq!(s.split(NotAscii(' ')).len(), len));
+        b.iter(|| assert_eq!(s.split(NotAscii(' ')).count(), len));
     }
 
     #[bench]
     fn split_extern_fn(b: &mut Bencher) {
         let s = "Mary had a little lamb, Little lamb, little-lamb.";
-        let len = s.split(' ').len();
+        let len = s.split(' ').count();
         fn pred(c: char) -> bool { c == ' ' }
 
-        b.iter(|| assert_eq!(s.split(pred).len(), len));
+        b.iter(|| assert_eq!(s.split(pred).count(), len));
     }
 
     #[bench]
     fn split_closure(b: &mut Bencher) {
         let s = "Mary had a little lamb, Little lamb, little-lamb.";
-        let len = s.split(' ').len();
+        let len = s.split(' ').count();
 
-        b.iter(|| assert_eq!(s.split(|c: char| c == ' ').len(), len));
+        b.iter(|| assert_eq!(s.split(|c: char| c == ' ').count(), len));
     }
 
     #[bench]
     fn split_slice(b: &mut Bencher) {
         let s = "Mary had a little lamb, Little lamb, little-lamb.";
-        let len = s.split(' ').len();
+        let len = s.split(' ').count();
 
-        b.iter(|| assert_eq!(s.split(&[' ']).len(), len));
+        b.iter(|| assert_eq!(s.split(&[' ']).count(), len));
     }
 
     #[bench]

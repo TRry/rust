@@ -35,7 +35,7 @@ into a `loop`, for example, the `for` loop in this example is essentially
 translated to the `loop` below.
 
 ```rust
-let values = ~[1, 2, 3];
+let values = vec![1, 2, 3];
 
 // "Syntactical sugar" taking advantage of an iterator
 for &x in values.iter() {
@@ -378,7 +378,7 @@ pub trait Iterator<A> {
     ///     }
     ///     sum
     /// }
-    /// let x = ~[1,2,3,7,8,9];
+    /// let x = vec![1,2,3,7,8,9];
     /// assert_eq!(process(x.move_iter()), 1006);
     /// ```
     #[inline]
@@ -529,11 +529,11 @@ pub trait Iterator<A> {
     /// ```rust
     /// let a = [1, 2, 3, 4, 5];
     /// let mut it = a.iter();
-    /// assert!(it.len() == 5);
-    /// assert!(it.len() == 0);
+    /// assert!(it.count() == 5);
+    /// assert!(it.count() == 0);
     /// ```
     #[inline]
-    fn len(&mut self) -> uint {
+    fn count(&mut self) -> uint {
         self.fold(0, |cnt, _x| cnt + 1)
     }
 
@@ -589,16 +589,6 @@ pub trait Iterator<A> {
             i += 1;
         }
         None
-    }
-
-    /// Count the number of elements satisfying the specified predicate
-    #[inline]
-    fn count(&mut self, predicate: |A| -> bool) -> uint {
-        let mut i = 0;
-        for x in *self {
-            if predicate(x) { i += 1 }
-        }
-        i
     }
 
     /// Return the element that gives the maximum value from the
@@ -737,6 +727,14 @@ pub trait ExactSize<A> : DoubleEndedIterator<A> {
             }
         }
         None
+    }
+
+    #[inline]
+    /// Return the exact length of the iterator.
+    fn len(&self) -> uint {
+        let (lower, upper) = self.size_hint();
+        assert!(upper == Some(lower));
+        lower
     }
 }
 
@@ -2347,6 +2345,7 @@ mod tests {
     use num;
     use realstd::vec::Vec;
     use realstd::slice::Vector;
+    use realstd::gc::GC;
 
     use cmp;
     use realstd::owned::Box;
@@ -2427,7 +2426,7 @@ mod tests {
 
     #[test]
     fn test_iterator_peekable() {
-        let xs = box [0u, 1, 2, 3, 4, 5];
+        let xs = vec![0u, 1, 2, 3, 4, 5];
         let mut it = xs.iter().map(|&x|x).peekable();
         assert_eq!(it.peek().unwrap(), &0);
         assert_eq!(it.next().unwrap(), 0);
@@ -2594,9 +2593,9 @@ mod tests {
     #[test]
     fn test_iterator_len() {
         let v = &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-        assert_eq!(v.slice(0, 4).iter().len(), 4);
-        assert_eq!(v.slice(0, 10).iter().len(), 10);
-        assert_eq!(v.slice(0, 0).iter().len(), 0);
+        assert_eq!(v.slice(0, 4).iter().count(), 4);
+        assert_eq!(v.slice(0, 10).iter().count(), 10);
+        assert_eq!(v.slice(0, 0).iter().count(), 0);
     }
 
     #[test]
@@ -2712,9 +2711,9 @@ mod tests {
     #[test]
     fn test_count() {
         let xs = &[1, 2, 2, 1, 5, 9, 0, 2];
-        assert_eq!(xs.iter().count(|x| *x == 2), 3);
-        assert_eq!(xs.iter().count(|x| *x == 5), 1);
-        assert_eq!(xs.iter().count(|x| *x == 95), 0);
+        assert_eq!(xs.iter().filter(|x| **x == 2).count(), 3);
+        assert_eq!(xs.iter().filter(|x| **x == 5).count(), 1);
+        assert_eq!(xs.iter().filter(|x| **x == 95).count(), 0);
     }
 
     #[test]
@@ -2811,7 +2810,7 @@ mod tests {
     #[test]
     fn test_double_ended_chain() {
         let xs = [1, 2, 3, 4, 5];
-        let ys = box [7, 9, 11];
+        let ys = [7, 9, 11];
         let mut it = xs.iter().chain(ys.iter()).rev();
         assert_eq!(it.next().unwrap(), &11)
         assert_eq!(it.next().unwrap(), &9)
@@ -2828,7 +2827,7 @@ mod tests {
     fn test_rposition() {
         fn f(xy: &(int, char)) -> bool { let (_x, y) = *xy; y == 'b' }
         fn g(xy: &(int, char)) -> bool { let (_x, y) = *xy; y == 'd' }
-        let v = box [(0, 'a'), (1, 'b'), (2, 'c'), (3, 'b')];
+        let v = [(0, 'a'), (1, 'b'), (2, 'c'), (3, 'b')];
 
         assert_eq!(v.iter().rposition(f), Some(3u));
         assert!(v.iter().rposition(g).is_none());
@@ -2837,7 +2836,8 @@ mod tests {
     #[test]
     #[should_fail]
     fn test_rposition_fail() {
-        let v = [(box 0, @0), (box 0, @0), (box 0, @0), (box 0, @0)];
+        let v = [(box 0, box(GC) 0), (box 0, box(GC) 0),
+                 (box 0, box(GC) 0), (box 0, box(GC) 0)];
         let mut i = 0;
         v.iter().rposition(|_elt| {
             if i == 2 {
@@ -2889,7 +2889,7 @@ mod tests {
     #[test]
     fn test_random_access_chain() {
         let xs = [1, 2, 3, 4, 5];
-        let ys = box [7, 9, 11];
+        let ys = [7, 9, 11];
         let mut it = xs.iter().chain(ys.iter());
         assert_eq!(it.idx(0).unwrap(), &1);
         assert_eq!(it.idx(5).unwrap(), &7);
@@ -3044,10 +3044,10 @@ mod tests {
         assert!(range(-10i, -1).collect::<Vec<int>>() ==
                    vec![-10, -9, -8, -7, -6, -5, -4, -3, -2]);
         assert!(range(0i, 5).rev().collect::<Vec<int>>() == vec![4, 3, 2, 1, 0]);
-        assert_eq!(range(200, -5).len(), 0);
-        assert_eq!(range(200, -5).rev().len(), 0);
-        assert_eq!(range(200, 200).len(), 0);
-        assert_eq!(range(200, 200).rev().len(), 0);
+        assert_eq!(range(200, -5).count(), 0);
+        assert_eq!(range(200, -5).rev().count(), 0);
+        assert_eq!(range(200, 200).count(), 0);
+        assert_eq!(range(200, 200).rev().count(), 0);
 
         assert_eq!(range(0i, 100).size_hint(), (100, Some(100)));
         // this test is only meaningful when sizeof uint < sizeof u64
@@ -3062,8 +3062,8 @@ mod tests {
                 vec![0i, 1, 2, 3, 4, 5]);
         assert!(range_inclusive(0i, 5).rev().collect::<Vec<int>>() ==
                 vec![5i, 4, 3, 2, 1, 0]);
-        assert_eq!(range_inclusive(200, -5).len(), 0);
-        assert_eq!(range_inclusive(200, -5).rev().len(), 0);
+        assert_eq!(range_inclusive(200, -5).count(), 0);
+        assert_eq!(range_inclusive(200, -5).rev().count(), 0);
         assert!(range_inclusive(200, 200).collect::<Vec<int>>() == vec![200]);
         assert!(range_inclusive(200, 200).rev().collect::<Vec<int>>() == vec![200]);
     }
@@ -3133,7 +3133,7 @@ mod tests {
     }
 
     #[test]
-    fn test_MinMaxResult() {
+    fn test_min_max_result() {
         let r: MinMaxResult<int> = NoElements;
         assert_eq!(r.into_option(), None)
 

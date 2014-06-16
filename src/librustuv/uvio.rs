@@ -11,21 +11,13 @@
 //! The implementation of `rtio` for libuv
 
 use std::c_str::CString;
-use std::io::IoError;
-use std::io::net::ip::SocketAddr;
-use std::io::signal::Signum;
-use std::io::{FileMode, FileAccess, Open, Append, Truncate, Read, Write,
-              ReadWrite, FileStat};
-use std::io;
 use std::mem;
 use libc::c_int;
 use libc::{O_CREAT, O_APPEND, O_TRUNC, O_RDWR, O_RDONLY, O_WRONLY, S_IRUSR,
                 S_IWUSR};
 use libc;
-use std::path::Path;
 use std::rt::rtio;
-use std::rt::rtio::{ProcessConfig, IoFactory, EventLoop};
-use ai = std::io::net::addrinfo;
+use std::rt::rtio::{ProcessConfig, IoFactory, EventLoop, IoResult};
 
 #[cfg(test)] use std::rt::thread::Thread;
 
@@ -92,16 +84,16 @@ impl EventLoop for UvEventLoop {
         IdleWatcher::onetime(&mut self.uvio.loop_, f);
     }
 
-    fn pausable_idle_callback(&mut self, cb: Box<rtio::Callback:Send>)
-                              -> Box<rtio::PausableIdleCallback:Send> {
+    fn pausable_idle_callback(&mut self, cb: Box<rtio::Callback + Send>)
+                              -> Box<rtio::PausableIdleCallback + Send> {
         IdleWatcher::new(&mut self.uvio.loop_, cb)
-                         as Box<rtio::PausableIdleCallback:Send>
+                         as Box<rtio::PausableIdleCallback + Send>
     }
 
-    fn remote_callback(&mut self, f: Box<rtio::Callback:Send>)
-                       -> Box<rtio::RemoteCallback:Send> {
+    fn remote_callback(&mut self, f: Box<rtio::Callback + Send>)
+                       -> Box<rtio::RemoteCallback + Send> {
         box AsyncWatcher::new(&mut self.uvio.loop_, f) as
-            Box<rtio::RemoteCallback:Send>
+            Box<rtio::RemoteCallback + Send>
     }
 
     fn io<'a>(&'a mut self) -> Option<&'a mut rtio::IoFactory> {
@@ -148,183 +140,186 @@ impl IoFactory for UvIoFactory {
     // Connect to an address and return a new stream
     // NB: This blocks the task waiting on the connection.
     // It would probably be better to return a future
-    fn tcp_connect(&mut self, addr: SocketAddr, timeout: Option<u64>)
-                   -> Result<Box<rtio::RtioTcpStream:Send>, IoError> {
+    fn tcp_connect(&mut self, addr: rtio::SocketAddr, timeout: Option<u64>)
+                   -> IoResult<Box<rtio::RtioTcpStream + Send>> {
         match TcpWatcher::connect(self, addr, timeout) {
-            Ok(t) => Ok(box t as Box<rtio::RtioTcpStream:Send>),
+            Ok(t) => Ok(box t as Box<rtio::RtioTcpStream + Send>),
             Err(e) => Err(uv_error_to_io_error(e)),
         }
     }
 
-    fn tcp_bind(&mut self, addr: SocketAddr)
-                -> Result<Box<rtio::RtioTcpListener:Send>, IoError> {
+    fn tcp_bind(&mut self, addr: rtio::SocketAddr)
+                -> IoResult<Box<rtio::RtioTcpListener + Send>> {
         match TcpListener::bind(self, addr) {
-            Ok(t) => Ok(t as Box<rtio::RtioTcpListener:Send>),
+            Ok(t) => Ok(t as Box<rtio::RtioTcpListener + Send>),
             Err(e) => Err(uv_error_to_io_error(e)),
         }
     }
 
-    fn udp_bind(&mut self, addr: SocketAddr)
-                -> Result<Box<rtio::RtioUdpSocket:Send>, IoError> {
+    fn udp_bind(&mut self, addr: rtio::SocketAddr)
+                -> IoResult<Box<rtio::RtioUdpSocket + Send>> {
         match UdpWatcher::bind(self, addr) {
-            Ok(u) => Ok(box u as Box<rtio::RtioUdpSocket:Send>),
+            Ok(u) => Ok(box u as Box<rtio::RtioUdpSocket + Send>),
             Err(e) => Err(uv_error_to_io_error(e)),
         }
     }
 
-    fn timer_init(&mut self) -> Result<Box<rtio::RtioTimer:Send>, IoError> {
-        Ok(TimerWatcher::new(self) as Box<rtio::RtioTimer:Send>)
+    fn timer_init(&mut self) -> IoResult<Box<rtio::RtioTimer + Send>> {
+        Ok(TimerWatcher::new(self) as Box<rtio::RtioTimer + Send>)
     }
 
     fn get_host_addresses(&mut self, host: Option<&str>, servname: Option<&str>,
-                          hint: Option<ai::Hint>) -> Result<Vec<ai::Info>, IoError> {
+                          hint: Option<rtio::AddrinfoHint>)
+        -> IoResult<Vec<rtio::AddrinfoInfo>>
+    {
         let r = GetAddrInfoRequest::run(&self.loop_, host, servname, hint);
         r.map_err(uv_error_to_io_error)
     }
 
     fn fs_from_raw_fd(&mut self, fd: c_int, close: rtio::CloseBehavior)
-                      -> Box<rtio::RtioFileStream:Send> {
+                      -> Box<rtio::RtioFileStream + Send> {
         box FileWatcher::new(self, fd, close) as
-            Box<rtio::RtioFileStream:Send>
+            Box<rtio::RtioFileStream + Send>
     }
 
-    fn fs_open(&mut self, path: &CString, fm: FileMode, fa: FileAccess)
-               -> Result<Box<rtio::RtioFileStream:Send>, IoError> {
+    fn fs_open(&mut self, path: &CString, fm: rtio::FileMode,
+               fa: rtio::FileAccess)
+        -> IoResult<Box<rtio::RtioFileStream + Send>>
+    {
         let flags = match fm {
-            io::Open => 0,
-            io::Append => libc::O_APPEND,
-            io::Truncate => libc::O_TRUNC,
+            rtio::Open => 0,
+            rtio::Append => libc::O_APPEND,
+            rtio::Truncate => libc::O_TRUNC,
         };
         // Opening with a write permission must silently create the file.
         let (flags, mode) = match fa {
-            io::Read => (flags | libc::O_RDONLY, 0),
-            io::Write => (flags | libc::O_WRONLY | libc::O_CREAT,
-                          libc::S_IRUSR | libc::S_IWUSR),
-            io::ReadWrite => (flags | libc::O_RDWR | libc::O_CREAT,
-                              libc::S_IRUSR | libc::S_IWUSR),
+            rtio::Read => (flags | libc::O_RDONLY, 0),
+            rtio::Write => (flags | libc::O_WRONLY | libc::O_CREAT,
+                            libc::S_IRUSR | libc::S_IWUSR),
+            rtio::ReadWrite => (flags | libc::O_RDWR | libc::O_CREAT,
+                                libc::S_IRUSR | libc::S_IWUSR),
         };
 
         match FsRequest::open(self, path, flags as int, mode as int) {
-            Ok(fs) => Ok(box fs as Box<rtio::RtioFileStream:Send>),
+            Ok(fs) => Ok(box fs as Box<rtio::RtioFileStream + Send>),
             Err(e) => Err(uv_error_to_io_error(e))
         }
     }
 
-    fn fs_unlink(&mut self, path: &CString) -> Result<(), IoError> {
+    fn fs_unlink(&mut self, path: &CString) -> IoResult<()> {
         let r = FsRequest::unlink(&self.loop_, path);
         r.map_err(uv_error_to_io_error)
     }
-    fn fs_lstat(&mut self, path: &CString) -> Result<FileStat, IoError> {
+    fn fs_lstat(&mut self, path: &CString) -> IoResult<rtio::FileStat> {
         let r = FsRequest::lstat(&self.loop_, path);
         r.map_err(uv_error_to_io_error)
     }
-    fn fs_stat(&mut self, path: &CString) -> Result<FileStat, IoError> {
+    fn fs_stat(&mut self, path: &CString) -> IoResult<rtio::FileStat> {
         let r = FsRequest::stat(&self.loop_, path);
         r.map_err(uv_error_to_io_error)
     }
-    fn fs_mkdir(&mut self, path: &CString,
-                perm: io::FilePermission) -> Result<(), IoError> {
-        let r = FsRequest::mkdir(&self.loop_, path, perm.bits() as c_int);
+    fn fs_mkdir(&mut self, path: &CString, perm: uint) -> IoResult<()> {
+        let r = FsRequest::mkdir(&self.loop_, path, perm as c_int);
         r.map_err(uv_error_to_io_error)
     }
-    fn fs_rmdir(&mut self, path: &CString) -> Result<(), IoError> {
+    fn fs_rmdir(&mut self, path: &CString) -> IoResult<()> {
         let r = FsRequest::rmdir(&self.loop_, path);
         r.map_err(uv_error_to_io_error)
     }
-    fn fs_rename(&mut self, path: &CString, to: &CString) -> Result<(), IoError> {
+    fn fs_rename(&mut self, path: &CString, to: &CString) -> IoResult<()> {
         let r = FsRequest::rename(&self.loop_, path, to);
         r.map_err(uv_error_to_io_error)
     }
-    fn fs_chmod(&mut self, path: &CString,
-                perm: io::FilePermission) -> Result<(), IoError> {
-        let r = FsRequest::chmod(&self.loop_, path, perm.bits() as c_int);
+    fn fs_chmod(&mut self, path: &CString, perm: uint) -> IoResult<()> {
+        let r = FsRequest::chmod(&self.loop_, path, perm as c_int);
         r.map_err(uv_error_to_io_error)
     }
     fn fs_readdir(&mut self, path: &CString, flags: c_int)
-        -> Result<Vec<Path>, IoError>
+        -> IoResult<Vec<CString>>
     {
         let r = FsRequest::readdir(&self.loop_, path, flags);
         r.map_err(uv_error_to_io_error)
     }
-    fn fs_link(&mut self, src: &CString, dst: &CString) -> Result<(), IoError> {
+    fn fs_link(&mut self, src: &CString, dst: &CString) -> IoResult<()> {
         let r = FsRequest::link(&self.loop_, src, dst);
         r.map_err(uv_error_to_io_error)
     }
-    fn fs_symlink(&mut self, src: &CString, dst: &CString) -> Result<(), IoError> {
+    fn fs_symlink(&mut self, src: &CString, dst: &CString) -> IoResult<()> {
         let r = FsRequest::symlink(&self.loop_, src, dst);
         r.map_err(uv_error_to_io_error)
     }
-    fn fs_chown(&mut self, path: &CString, uid: int, gid: int) -> Result<(), IoError> {
+    fn fs_chown(&mut self, path: &CString, uid: int, gid: int) -> IoResult<()> {
         let r = FsRequest::chown(&self.loop_, path, uid, gid);
         r.map_err(uv_error_to_io_error)
     }
-    fn fs_readlink(&mut self, path: &CString) -> Result<Path, IoError> {
+    fn fs_readlink(&mut self, path: &CString) -> IoResult<CString> {
         let r = FsRequest::readlink(&self.loop_, path);
         r.map_err(uv_error_to_io_error)
     }
     fn fs_utime(&mut self, path: &CString, atime: u64, mtime: u64)
-        -> Result<(), IoError>
+        -> IoResult<()>
     {
         let r = FsRequest::utime(&self.loop_, path, atime, mtime);
         r.map_err(uv_error_to_io_error)
     }
 
     fn spawn(&mut self, cfg: ProcessConfig)
-            -> Result<(Box<rtio::RtioProcess:Send>,
-                       Vec<Option<Box<rtio::RtioPipe:Send>>>),
-                      IoError>
+            -> IoResult<(Box<rtio::RtioProcess + Send>,
+                         Vec<Option<Box<rtio::RtioPipe + Send>>>)>
     {
         match Process::spawn(self, cfg) {
             Ok((p, io)) => {
-                Ok((p as Box<rtio::RtioProcess:Send>,
+                Ok((p as Box<rtio::RtioProcess + Send>,
                     io.move_iter().map(|i| i.map(|p| {
-                        box p as Box<rtio::RtioPipe:Send>
+                        box p as Box<rtio::RtioPipe + Send>
                     })).collect()))
             }
             Err(e) => Err(uv_error_to_io_error(e)),
         }
     }
 
-    fn kill(&mut self, pid: libc::pid_t, signum: int) -> Result<(), IoError> {
+    fn kill(&mut self, pid: libc::pid_t, signum: int) -> IoResult<()> {
         Process::kill(pid, signum).map_err(uv_error_to_io_error)
     }
 
     fn unix_bind(&mut self, path: &CString)
-                 -> Result<Box<rtio::RtioUnixListener:Send>, IoError> {
+                 -> IoResult<Box<rtio::RtioUnixListener + Send>> {
         match PipeListener::bind(self, path) {
-            Ok(p) => Ok(p as Box<rtio::RtioUnixListener:Send>),
+            Ok(p) => Ok(p as Box<rtio::RtioUnixListener + Send>),
             Err(e) => Err(uv_error_to_io_error(e)),
         }
     }
 
     fn unix_connect(&mut self, path: &CString, timeout: Option<u64>)
-                    -> Result<Box<rtio::RtioPipe:Send>, IoError> {
+                    -> IoResult<Box<rtio::RtioPipe + Send>> {
         match PipeWatcher::connect(self, path, timeout) {
-            Ok(p) => Ok(box p as Box<rtio::RtioPipe:Send>),
+            Ok(p) => Ok(box p as Box<rtio::RtioPipe + Send>),
             Err(e) => Err(uv_error_to_io_error(e)),
         }
     }
 
     fn tty_open(&mut self, fd: c_int, readable: bool)
-            -> Result<Box<rtio::RtioTTY:Send>, IoError> {
+            -> IoResult<Box<rtio::RtioTTY + Send>> {
         match TtyWatcher::new(self, fd, readable) {
-            Ok(tty) => Ok(box tty as Box<rtio::RtioTTY:Send>),
+            Ok(tty) => Ok(box tty as Box<rtio::RtioTTY + Send>),
             Err(e) => Err(uv_error_to_io_error(e))
         }
     }
 
     fn pipe_open(&mut self, fd: c_int)
-                 -> Result<Box<rtio::RtioPipe:Send>, IoError> {
+        -> IoResult<Box<rtio::RtioPipe + Send>>
+    {
         match PipeWatcher::open(self, fd) {
-            Ok(s) => Ok(box s as Box<rtio::RtioPipe:Send>),
+            Ok(s) => Ok(box s as Box<rtio::RtioPipe + Send>),
             Err(e) => Err(uv_error_to_io_error(e))
         }
     }
 
-    fn signal(&mut self, signum: Signum, channel: Sender<Signum>)
-        -> Result<Box<rtio::RtioSignal:Send>, IoError> {
-        match SignalWatcher::new(self, signum, channel) {
-            Ok(s) => Ok(s as Box<rtio::RtioSignal:Send>),
+    fn signal(&mut self, signum: int, cb: Box<rtio::Callback + Send>)
+        -> IoResult<Box<rtio::RtioSignal + Send>>
+    {
+        match SignalWatcher::new(self, signum, cb) {
+            Ok(s) => Ok(s as Box<rtio::RtioSignal + Send>),
             Err(e) => Err(uv_error_to_io_error(e)),
         }
     }

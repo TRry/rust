@@ -13,7 +13,7 @@
 #![allow(non_camel_case_types)]
 
 use char::Char;
-use container::Container;
+use collections::Collection;
 use from_str::from_str;
 use io::{IoResult, Writer};
 use iter::Iterator;
@@ -84,7 +84,7 @@ fn demangle(writer: &mut Writer, s: &str) -> IoResult<()> {
             if i == 0 {
                 valid = chars.next().is_none();
                 break
-            } else if chars.by_ref().take(i - 1).len() != i - 1 {
+            } else if chars.by_ref().take(i - 1).count() != i - 1 {
                 valid = false;
             }
         }
@@ -237,23 +237,63 @@ fn demangle(writer: &mut Writer, s: &str) -> IoResult<()> {
 #[cfg(unix)]
 mod imp {
     use c_str::CString;
-    use io::{IoResult, IoError, Writer};
+    use io::{IoResult, Writer};
     use libc;
     use mem;
     use option::{Some, None, Option};
     use result::{Ok, Err};
-    use unstable::mutex::{StaticNativeMutex, NATIVE_MUTEX_INIT};
-    use uw = rt::libunwind;
+    use rt::mutex::{StaticNativeMutex, NATIVE_MUTEX_INIT};
 
-    struct Context<'a> {
-        idx: int,
-        writer: &'a mut Writer,
-        last_error: Option<IoError>,
+    /// As always - iOS on arm uses SjLj exceptions and
+    /// _Unwind_Backtrace is even not available there. Still,
+    /// backtraces could be extracted using a backtrace function,
+    /// which thanks god is public
+    ///
+    /// As mentioned in a huge comment block above, backtrace doesn't
+    /// play well with green threads, so while it is extremely nice
+    /// and simple to use it should be used only on iOS devices as the
+    /// only viable option.
+    #[cfg(target_os = "ios", target_arch = "arm")]
+    #[inline(never)]
+    pub fn write(w: &mut Writer) -> IoResult<()> {
+        use iter::{Iterator, range};
+        use result;
+        use slice::{MutableVector};
+
+        extern {
+            fn backtrace(buf: *mut *libc::c_void, sz: libc::c_int) -> libc::c_int;
+        }
+
+        // while it doesn't requires lock for work as everything is
+        // local, it still displays much nicier backtraces when a
+        // couple of tasks fail simultaneously
+        static mut LOCK: StaticNativeMutex = NATIVE_MUTEX_INIT;
+        let _g = unsafe { LOCK.lock() };
+
+        try!(writeln!(w, "stack backtrace:"));
+        // 100 lines should be enough
+        static SIZE: libc::c_int = 100;
+        let mut buf: [*libc::c_void, ..SIZE] = unsafe {mem::zeroed()};
+        let cnt = unsafe { backtrace(buf.as_mut_ptr(), SIZE) as uint};
+
+        // skipping the first one as it is write itself
+        result::fold_(range(1, cnt).map(|i| {
+            print(w, i as int, buf[i])
+        }))
     }
 
+    #[cfg(not(target_os = "ios", target_arch = "arm"))]
     #[inline(never)] // if we know this is a function call, we can skip it when
                      // tracing
     pub fn write(w: &mut Writer) -> IoResult<()> {
+        use io::IoError;
+
+        struct Context<'a> {
+            idx: int,
+            writer: &'a mut Writer,
+            last_error: Option<IoError>,
+        }
+
         // When using libbacktrace, we use some necessary global state, so we
         // need to prevent more than one thread from entering this block. This
         // is semi-reasonable in terms of printing anyway, and we know that all
@@ -292,7 +332,7 @@ mod imp {
             // instructions after it. This means that the return instruction
             // pointer points *outside* of the calling function, and by
             // unwinding it we go back to the original function.
-            let ip = if cfg!(target_os = "macos") {
+            let ip = if cfg!(target_os = "macos") || cfg!(target_os = "ios") {
                 ip
             } else {
                 unsafe { uw::_Unwind_FindEnclosingFunction(ip) }
@@ -324,9 +364,10 @@ mod imp {
     }
 
     #[cfg(target_os = "macos")]
-    #[cfg(target_os = "ios")] // FIXME: [iOS] check if it ever will work
+    #[cfg(target_os = "ios")]
     fn print(w: &mut Writer, idx: int, addr: *libc::c_void) -> IoResult<()> {
         use intrinsics;
+        #[repr(C)]
         struct Dl_info {
             dli_fname: *libc::c_char,
             dli_fbase: *libc::c_void,
@@ -350,7 +391,7 @@ mod imp {
 
     #[cfg(not(target_os = "macos"), not(target_os = "ios"))]
     fn print(w: &mut Writer, idx: int, addr: *libc::c_void) -> IoResult<()> {
-        use container::Container;
+        use collections::Collection;
         use iter::Iterator;
         use os;
         use path::GenericPath;
@@ -485,6 +526,113 @@ mod imp {
         }
         w.write(['\n' as u8])
     }
+
+    /// Unwind library interface used for backtraces
+    ///
+    /// Note that the native libraries come from librustrt, not this
+    /// module.
+    /// Note that dead code is allowed as here are just bindings
+    /// iOS doesn't use all of them it but adding more
+    /// platform-specific configs pollutes the code too much
+    #[allow(non_camel_case_types)]
+    #[allow(non_snake_case_functions)]
+    #[allow(dead_code)]
+    mod uw {
+        use libc;
+
+        #[repr(C)]
+        pub enum _Unwind_Reason_Code {
+            _URC_NO_REASON = 0,
+            _URC_FOREIGN_EXCEPTION_CAUGHT = 1,
+            _URC_FATAL_PHASE2_ERROR = 2,
+            _URC_FATAL_PHASE1_ERROR = 3,
+            _URC_NORMAL_STOP = 4,
+            _URC_END_OF_STACK = 5,
+            _URC_HANDLER_FOUND = 6,
+            _URC_INSTALL_CONTEXT = 7,
+            _URC_CONTINUE_UNWIND = 8,
+            _URC_FAILURE = 9, // used only by ARM EABI
+        }
+
+        pub enum _Unwind_Context {}
+
+        pub type _Unwind_Trace_Fn =
+                extern fn(ctx: *_Unwind_Context,
+                          arg: *libc::c_void) -> _Unwind_Reason_Code;
+
+        extern {
+            // No native _Unwind_Backtrace on iOS
+            #[cfg(not(target_os = "ios", target_arch = "arm"))]
+            pub fn _Unwind_Backtrace(trace: _Unwind_Trace_Fn,
+                                     trace_argument: *libc::c_void)
+                        -> _Unwind_Reason_Code;
+
+            #[cfg(not(target_os = "android"),
+                  not(target_os = "linux", target_arch = "arm"))]
+            pub fn _Unwind_GetIP(ctx: *_Unwind_Context) -> libc::uintptr_t;
+            #[cfg(not(target_os = "android"),
+                  not(target_os = "linux", target_arch = "arm"))]
+            pub fn _Unwind_FindEnclosingFunction(pc: *libc::c_void)
+                -> *libc::c_void;
+        }
+
+        // On android, the function _Unwind_GetIP is a macro, and this is the
+        // expansion of the macro. This is all copy/pasted directly from the
+        // header file with the definition of _Unwind_GetIP.
+        #[cfg(target_os = "android")]
+        #[cfg(target_os = "linux", target_arch = "arm")]
+        pub unsafe fn _Unwind_GetIP(ctx: *_Unwind_Context) -> libc::uintptr_t {
+            #[repr(C)]
+            enum _Unwind_VRS_Result {
+                _UVRSR_OK = 0,
+                _UVRSR_NOT_IMPLEMENTED = 1,
+                _UVRSR_FAILED = 2,
+            }
+            #[repr(C)]
+            enum _Unwind_VRS_RegClass {
+                _UVRSC_CORE = 0,
+                _UVRSC_VFP = 1,
+                _UVRSC_FPA = 2,
+                _UVRSC_WMMXD = 3,
+                _UVRSC_WMMXC = 4,
+            }
+            #[repr(C)]
+            enum _Unwind_VRS_DataRepresentation {
+                _UVRSD_UINT32 = 0,
+                _UVRSD_VFPX = 1,
+                _UVRSD_FPAX = 2,
+                _UVRSD_UINT64 = 3,
+                _UVRSD_FLOAT = 4,
+                _UVRSD_DOUBLE = 5,
+            }
+
+            type _Unwind_Word = libc::c_uint;
+            extern {
+                fn _Unwind_VRS_Get(ctx: *_Unwind_Context,
+                                   klass: _Unwind_VRS_RegClass,
+                                   word: _Unwind_Word,
+                                   repr: _Unwind_VRS_DataRepresentation,
+                                   data: *mut libc::c_void)
+                    -> _Unwind_VRS_Result;
+            }
+
+            let mut val: _Unwind_Word = 0;
+            let ptr = &mut val as *mut _Unwind_Word;
+            let _ = _Unwind_VRS_Get(ctx, _UVRSC_CORE, 15, _UVRSD_UINT32,
+                                    ptr as *mut libc::c_void);
+            (val & !1) as libc::uintptr_t
+        }
+
+        // This function also doesn't exist on android or arm/linux, so make it
+        // a no-op
+        #[cfg(target_os = "android")]
+        #[cfg(target_os = "linux", target_arch = "arm")]
+        pub unsafe fn _Unwind_FindEnclosingFunction(pc: *libc::c_void)
+            -> *libc::c_void
+        {
+            pc
+        }
+    }
 }
 
 /// As always, windows has something very different than unix, we mainly want
@@ -504,20 +652,19 @@ mod imp {
 #[allow(dead_code, uppercase_variables)]
 mod imp {
     use c_str::CString;
-    use container::Container;
+    use core_collections::Collection;
+    use intrinsics;
     use io::{IoResult, Writer};
-    use iter::Iterator;
     use libc;
     use mem;
     use ops::Drop;
     use option::{Some, None};
     use path::Path;
     use result::{Ok, Err};
-    use str::StrSlice;
-    use unstable::dynamic_lib::DynamicLibrary;
-    use intrinsics;
-    use unstable::mutex::{StaticNativeMutex, NATIVE_MUTEX_INIT};
+    use rt::mutex::{StaticNativeMutex, NATIVE_MUTEX_INIT};
     use slice::ImmutableVector;
+    use str::StrSlice;
+    use dynamic_lib::DynamicLibrary;
 
     #[allow(non_snake_case_functions)]
     extern "system" {
@@ -775,12 +922,12 @@ mod imp {
             Err(..) => return Ok(()),
         };
 
-        macro_rules! sym( ($e:expr, $t:ident) => (
-            match unsafe { lib.symbol::<$t>($e) } {
-                Ok(f) => f,
+        macro_rules! sym( ($e:expr, $t:ident) => (unsafe {
+            match lib.symbol($e) {
+                Ok(f) => mem::transmute::<*u8, $t>(f),
                 Err(..) => return Ok(())
             }
-        ) )
+        }) )
 
         // Fetch the symbols necessary from dbghelp.dll
         let SymFromAddr = sym!("SymFromAddr", SymFromAddrFn);

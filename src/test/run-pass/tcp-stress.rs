@@ -13,7 +13,7 @@
 // exec-env:RUST_LOG=debug
 
 #![feature(phase)]
-#[phase(syntax, link)]
+#[phase(plugin, link)]
 extern crate log;
 extern crate libc;
 extern crate green;
@@ -61,7 +61,7 @@ fn main() {
     for _ in range(0, 1000) {
         let tx = tx.clone();
         let mut builder = TaskBuilder::new();
-        builder.opts.stack_size = Some(32 * 1024);
+        builder.opts.stack_size = Some(64 * 1024);
         builder.spawn(proc() {
             let host = addr.ip.to_str();
             let port = addr.port;

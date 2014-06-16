@@ -38,6 +38,8 @@
 use driver::session;
 use metadata::csearch;
 use middle::dead::DEAD_CODE_LINT_STR;
+use middle::def;
+use middle::def::*;
 use middle::pat_util;
 use middle::privacy;
 use middle::trans::adt; // for `adt::is_ffi_safe`
@@ -55,6 +57,7 @@ use std::i32;
 use std::i64;
 use std::i8;
 use std::rc::Rc;
+use std::gc::Gc;
 use std::to_str::ToStr;
 use std::u16;
 use std::u32;
@@ -90,7 +93,6 @@ pub enum Lint {
     TypeOverflow,
     UnusedUnsafe,
     UnsafeBlock,
-    AttributeUsage,
     UnusedAttribute,
     UnknownFeatures,
     UnknownCrateType,
@@ -118,8 +120,6 @@ pub enum Lint {
 
     UnusedMustUse,
     UnusedResult,
-
-    DeprecatedOwnedVector,
 
     Warnings,
 
@@ -292,13 +292,6 @@ static lint_table: &'static [(&'static str, LintSpec)] = &[
         default: Allow
     }),
 
-    ("attribute_usage",
-     LintSpec {
-        lint: AttributeUsage,
-        desc: "detects bad use of attributes",
-        default: Warn
-    }),
-
     ("unused_attribute",
      LintSpec {
          lint: UnusedAttribute,
@@ -438,13 +431,6 @@ static lint_table: &'static [(&'static str, LintSpec)] = &[
         default: Allow,
     }),
 
-    ("deprecated_owned_vector",
-     LintSpec {
-        lint: DeprecatedOwnedVector,
-        desc: "use of a `~[T]` vector",
-        default: Allow,
-    }),
-
     ("raw_pointer_deriving",
      LintSpec {
         lint: RawPointerDeriving,
@@ -499,7 +485,7 @@ pub fn emit_lint(level: Level, src: LintSource, msg: &str, span: Span,
     let mut note = None;
     let msg = match src {
         Default => {
-            format!("{}, \\#[{}({})] on by default", msg,
+            format!("{}, #[{}({})] on by default", msg,
                 level_to_str(level), lint_str)
         },
         CommandLine => {
@@ -658,7 +644,7 @@ impl<'a> Context<'a> {
 /// Return true if that's the case. Otherwise return false.
 pub fn each_lint(sess: &session::Session,
                  attrs: &[ast::Attribute],
-                 f: |@ast::MetaItem, Level, InternedString| -> bool)
+                 f: |Gc<ast::MetaItem>, Level, InternedString| -> bool)
                  -> bool {
     let xs = [Allow, Warn, Deny, Forbid];
     for &level in xs.iter() {
@@ -751,8 +737,8 @@ impl<'a> AstConv for Context<'a>{
 fn check_unused_casts(cx: &Context, e: &ast::Expr) {
     return match e.node {
         ast::ExprCast(expr, ty) => {
-            let t_t = ast_ty_to_ty(cx, &infer::new_infer_ctxt(cx.tcx), ty);
-            if  ty::get(ty::expr_ty(cx.tcx, expr)).sty == ty::get(t_t).sty {
+            let t_t = ast_ty_to_ty(cx, &infer::new_infer_ctxt(cx.tcx), &*ty);
+            if  ty::get(ty::expr_ty(cx.tcx, &*expr)).sty == ty::get(t_t).sty {
                 cx.span_lint(UnnecessaryTypecast, ty.span,
                              "unnecessary type cast");
             }
@@ -775,7 +761,7 @@ fn check_type_limits(cx: &Context, e: &ast::Expr) {
                     }
                 },
                 _ => {
-                    let t = ty::expr_ty(cx.tcx, ex);
+                    let t = ty::expr_ty(cx.tcx, &*ex);
                     match ty::get(t).sty {
                         ty::ty_uint(_) => {
                             cx.span_lint(UnsignedNegate, e.span,
@@ -787,7 +773,7 @@ fn check_type_limits(cx: &Context, e: &ast::Expr) {
             }
         },
         ast::ExprBinary(binop, l, r) => {
-            if is_comparison(binop) && !check_limits(cx.tcx, binop, l, r) {
+            if is_comparison(binop) && !check_limits(cx.tcx, binop, &*l, &*r) {
                 cx.span_lint(TypeLimits, e.span,
                              "comparison is useless due to type limits");
             }
@@ -935,17 +921,17 @@ fn check_item_ctypes(cx: &Context, it: &ast::Item) {
         match ty.node {
             ast::TyPath(_, _, id) => {
                 match cx.tcx.def_map.borrow().get_copy(&id) {
-                    ast::DefPrimTy(ast::TyInt(ast::TyI)) => {
+                    def::DefPrimTy(ast::TyInt(ast::TyI)) => {
                         cx.span_lint(CTypes, ty.span,
                                 "found rust type `int` in foreign module, while \
                                 libc::c_int or libc::c_long should be used");
                     }
-                    ast::DefPrimTy(ast::TyUint(ast::TyU)) => {
+                    def::DefPrimTy(ast::TyUint(ast::TyU)) => {
                         cx.span_lint(CTypes, ty.span,
                                 "found rust type `uint` in foreign module, while \
                                 libc::c_uint or libc::c_ulong should be used");
                     }
-                    ast::DefTy(def_id) => {
+                    def::DefTy(def_id) => {
                         if !adt::is_ffi_safe(cx.tcx, def_id) {
                             cx.span_lint(CTypes, ty.span,
                                          "found enum type without foreign-function-safe \
@@ -956,24 +942,24 @@ fn check_item_ctypes(cx: &Context, it: &ast::Item) {
                     _ => ()
                 }
             }
-            ast::TyPtr(ref mt) => { check_ty(cx, mt.ty) }
+            ast::TyPtr(ref mt) => { check_ty(cx, &*mt.ty) }
             _ => {}
         }
     }
 
     fn check_foreign_fn(cx: &Context, decl: &ast::FnDecl) {
         for input in decl.inputs.iter() {
-            check_ty(cx, input.ty);
+            check_ty(cx, &*input.ty);
         }
-        check_ty(cx, decl.output)
+        check_ty(cx, &*decl.output)
     }
 
     match it.node {
       ast::ItemForeignMod(ref nmod) if nmod.abi != abi::RustIntrinsic => {
         for ni in nmod.items.iter() {
             match ni.node {
-                ast::ForeignItemFn(decl, _) => check_foreign_fn(cx, decl),
-                ast::ForeignItemStatic(t, _) => check_ty(cx, t)
+                ast::ForeignItemFn(decl, _) => check_foreign_fn(cx, &*decl),
+                ast::ForeignItemStatic(t, _) => check_ty(cx, &*t)
             }
         }
       }
@@ -1088,100 +1074,13 @@ fn check_raw_ptr_deriving(cx: &mut Context, item: &ast::Item) {
     match item.node {
         ast::ItemStruct(..) | ast::ItemEnum(..) => {
             let mut visitor = RawPtrDerivingVisitor { cx: cx };
-            visit::walk_item(&mut visitor, item, ());
+            visit::walk_item(&mut visitor, &*item, ());
         }
         _ => {}
     }
 }
 
-static crate_attrs: &'static [&'static str] = &[
-    "crate_type", "feature", "no_start", "no_main", "no_std", "crate_id",
-    "desc", "comment", "license", "copyright", // not used in rustc now
-    "no_builtins",
-];
-
-
-static obsolete_attrs: &'static [(&'static str, &'static str)] = &[
-    ("abi", "Use `extern \"abi\" fn` instead"),
-    ("auto_encode", "Use `#[deriving(Encodable)]` instead"),
-    ("auto_decode", "Use `#[deriving(Decodable)]` instead"),
-    ("fast_ffi", "Remove it"),
-    ("fixed_stack_segment", "Remove it"),
-    ("rust_stack", "Remove it"),
-];
-
-static other_attrs: &'static [&'static str] = &[
-    // item-level
-    "address_insignificant", // can be crate-level too
-    "thread_local", // for statics
-    "allow", "deny", "forbid", "warn", // lint options
-    "deprecated", "experimental", "unstable", "stable", "locked", "frozen", //item stability
-    "cfg", "doc", "export_name", "link_section",
-    "no_mangle", "static_assert", "unsafe_no_drop_flag", "packed",
-    "simd", "repr", "deriving", "unsafe_destructor", "link", "phase",
-    "macro_export", "must_use", "automatically_derived",
-
-    //mod-level
-    "path", "link_name", "link_args", "macro_escape", "no_implicit_prelude",
-
-    // fn-level
-    "test", "bench", "should_fail", "ignore", "inline", "lang", "main", "start",
-    "no_split_stack", "cold", "macro_registrar", "linkage",
-
-    // internal attribute: bypass privacy inside items
-    "!resolve_unexported",
-];
-
-fn check_crate_attrs_usage(cx: &Context, attrs: &[ast::Attribute]) {
-
-    for attr in attrs.iter() {
-        let name = attr.node.value.name();
-        let mut iter = crate_attrs.iter().chain(other_attrs.iter());
-        if !iter.any(|other_attr| { name.equiv(other_attr) }) {
-            cx.span_lint(AttributeUsage, attr.span, "unknown crate attribute");
-        }
-        if name.equiv(&("link")) {
-            cx.tcx.sess.span_err(attr.span,
-                                 "obsolete crate `link` attribute");
-            cx.tcx.sess.note("the link attribute has been superceded by the crate_id \
-                             attribute, which has the format `#[crate_id = \"name#version\"]`");
-        }
-    }
-}
-
-fn check_attrs_usage(cx: &Context, attrs: &[ast::Attribute]) {
-    // check if element has crate-level, obsolete, or any unknown attributes.
-
-    for attr in attrs.iter() {
-        let name = attr.node.value.name();
-        for crate_attr in crate_attrs.iter() {
-            if name.equiv(crate_attr) {
-                let msg = match attr.node.style {
-                    ast::AttrOuter => "crate-level attribute should be an inner attribute: \
-                                       add an exclamation mark: #![foo]",
-                    ast::AttrInner => "crate-level attribute should be in the root module",
-                };
-                cx.span_lint(AttributeUsage, attr.span, msg);
-                return;
-            }
-        }
-
-        for &(obs_attr, obs_alter) in obsolete_attrs.iter() {
-            if name.equiv(&obs_attr) {
-                cx.span_lint(AttributeUsage, attr.span,
-                             format!("obsolete attribute: {:s}",
-                                     obs_alter).as_slice());
-                return;
-            }
-        }
-
-        if !other_attrs.iter().any(|other_attr| { name.equiv(other_attr) }) {
-            cx.span_lint(AttributeUsage, attr.span, "unknown attribute");
-        }
-    }
-}
-
-fn check_unused_attribute(cx: &Context, attrs: &[ast::Attribute]) {
+fn check_unused_attribute(cx: &Context, attr: &ast::Attribute) {
     static ATTRIBUTE_WHITELIST: &'static [&'static str] = &'static [
         // FIXME: #14408 whitelist docs since rustdoc looks at them
         "doc",
@@ -1216,15 +1115,37 @@ fn check_unused_attribute(cx: &Context, attrs: &[ast::Attribute]) {
         "stable",
         "unstable",
     ];
-    for attr in attrs.iter() {
-        for &name in ATTRIBUTE_WHITELIST.iter() {
-            if attr.check_name(name) {
-                break;
-            }
-        }
 
-        if !attr::is_used(attr) {
-            cx.span_lint(UnusedAttribute, attr.span, "unused attribute");
+    static CRATE_ATTRS: &'static [&'static str] = &'static [
+        "crate_type",
+        "feature",
+        "no_start",
+        "no_main",
+        "no_std",
+        "crate_id",
+        "desc",
+        "comment",
+        "license",
+        "copyright",
+        "no_builtins",
+    ];
+
+    for &name in ATTRIBUTE_WHITELIST.iter() {
+        if attr.check_name(name) {
+            break;
+        }
+    }
+
+    if !attr::is_used(attr) {
+        cx.span_lint(UnusedAttribute, attr.span, "unused attribute");
+        if CRATE_ATTRS.contains(&attr.name().get()) {
+            let msg = match attr.node.style {
+                ast::AttrOuter => "crate-level attribute should be an inner \
+                                  attribute: add an exclamation mark: #![foo]",
+                ast::AttrInner => "crate-level attribute should be in the \
+                                   root module",
+            };
+            cx.span_lint(UnusedAttribute, attr.span, msg);
         }
     }
 }
@@ -1255,7 +1176,7 @@ fn check_unused_result(cx: &Context, s: &ast::Stmt) {
         ast::StmtSemi(expr, _) => expr,
         _ => return
     };
-    let t = ty::expr_ty(cx.tcx, expr);
+    let t = ty::expr_ty(cx.tcx, &*expr);
     match ty::get(t).sty {
         ty::ty_nil | ty::ty_bot | ty::ty_bool => return,
         _ => {}
@@ -1265,7 +1186,7 @@ fn check_unused_result(cx: &Context, s: &ast::Stmt) {
         _ => {}
     }
 
-    let t = ty::expr_ty(cx.tcx, expr);
+    let t = ty::expr_ty(cx.tcx, &*expr);
     let mut warned = false;
     match ty::get(t).sty {
         ty::ty_struct(did, _) |
@@ -1299,20 +1220,6 @@ fn check_unused_result(cx: &Context, s: &ast::Stmt) {
     }
 }
 
-fn check_deprecated_owned_vector(cx: &Context, e: &ast::Expr) {
-    let t = ty::expr_ty(cx.tcx, e);
-    match ty::get(t).sty {
-        ty::ty_uniq(t) => match ty::get(t).sty {
-            ty::ty_vec(_, None) => {
-                cx.span_lint(DeprecatedOwnedVector, e.span,
-                             "use of deprecated `~[]` vector; replaced by `std::vec::Vec`")
-            }
-            _ => {}
-        },
-        _ => {}
-    }
-}
-
 fn check_item_non_camel_case_types(cx: &Context, it: &ast::Item) {
     fn is_camel_case(ident: ast::Ident) -> bool {
         let ident = token::get_ident(ident);
@@ -1324,12 +1231,21 @@ fn check_item_non_camel_case_types(cx: &Context, it: &ast::Item) {
         !ident.char_at(0).is_lowercase() && !ident.contains_char('_')
     }
 
+    fn to_camel_case(s: &str) -> String {
+        s.split('_').flat_map(|word| word.chars().enumerate().map(|(i, c)|
+            if i == 0 { c.to_uppercase() }
+            else { c }
+        )).collect()
+    }
+
     fn check_case(cx: &Context, sort: &str, ident: ast::Ident, span: Span) {
+        let s = token::get_ident(ident);
+
         if !is_camel_case(ident) {
             cx.span_lint(
                 NonCamelCaseTypes, span,
-                format!("{} `{}` should have a camel case identifier",
-                    sort, token::get_ident(ident)).as_slice());
+                format!("{} `{}` should have a camel case name such as `{}`",
+                    sort, s, to_camel_case(s.get())).as_slice());
         }
     }
 
@@ -1367,10 +1283,29 @@ fn check_snake_case(cx: &Context, sort: &str, ident: ast::Ident, span: Span) {
         })
     }
 
+    fn to_snake_case(str: &str) -> String {
+        let mut words = vec![];
+        for s in str.split('_') {
+            let mut buf = String::new();
+            if s.is_empty() { continue; }
+            for ch in s.chars() {
+                if !buf.is_empty() && ch.is_uppercase() {
+                    words.push(buf);
+                    buf = String::new();
+                }
+                buf.push_char(ch.to_lowercase());
+            }
+            words.push(buf);
+        }
+        words.connect("_")
+    }
+
+    let s = token::get_ident(ident);
+
     if !is_snake_case(ident) {
         cx.span_lint(NonSnakeCaseFunctions, span,
-                    format!("{} `{}` should have a snake case identifier",
-                            sort, token::get_ident(ident)).as_slice());
+                    format!("{} `{}` should have a snake case name such as `{}`",
+                            sort, s, to_snake_case(s.get())).as_slice());
     }
 }
 
@@ -1384,7 +1319,10 @@ fn check_item_non_uppercase_statics(cx: &Context, it: &ast::Item) {
             // upper/lowercase)
             if s.get().chars().any(|c| c.is_lowercase()) {
                 cx.span_lint(NonUppercaseStatics, it.span,
-                             "static constant should have an uppercase identifier");
+                            format!("static constant `{}` should have an uppercase name \
+                                such as `{}`", s.get(),
+                                s.get().chars().map(|c| c.to_uppercase())
+                                    .collect::<String>().as_slice()).as_slice());
             }
         }
         _ => {}
@@ -1394,13 +1332,16 @@ fn check_item_non_uppercase_statics(cx: &Context, it: &ast::Item) {
 fn check_pat_non_uppercase_statics(cx: &Context, p: &ast::Pat) {
     // Lint for constants that look like binding identifiers (#7526)
     match (&p.node, cx.tcx.def_map.borrow().find(&p.id)) {
-        (&ast::PatIdent(_, ref path, _), Some(&ast::DefStatic(_, false))) => {
+        (&ast::PatIdent(_, ref path, _), Some(&def::DefStatic(_, false))) => {
             // last identifier alone is right choice for this lint.
             let ident = path.segments.last().unwrap().identifier;
             let s = token::get_ident(ident);
             if s.get().chars().any(|c| c.is_lowercase()) {
                 cx.span_lint(NonUppercasePatternStatics, path.span,
-                             "static constant in pattern should be all caps");
+                            format!("static constant in pattern `{}` should have an uppercase \
+                                name such as `{}`", s.get(),
+                                s.get().chars().map(|c| c.to_uppercase())
+                                    .collect::<String>().as_slice()).as_slice());
             }
         }
         _ => {}
@@ -1411,8 +1352,8 @@ fn check_pat_uppercase_variable(cx: &Context, p: &ast::Pat) {
     match &p.node {
         &ast::PatIdent(_, ref path, _) => {
             match cx.tcx.def_map.borrow().find(&p.id) {
-                Some(&ast::DefLocal(_, _)) | Some(&ast::DefBinding(_, _)) |
-                        Some(&ast::DefArg(_, _)) => {
+                Some(&def::DefLocal(_, _)) | Some(&def::DefBinding(_, _)) |
+                        Some(&def::DefArg(_, _)) => {
                     // last identifier alone is right choice for this lint.
                     let ident = path.segments.last().unwrap().identifier;
                     let s = token::get_ident(ident);
@@ -1468,7 +1409,7 @@ fn check_unnecessary_parens_expr(cx: &Context, e: &ast::Expr) {
         ast::ExprAssignOp(_, _, value) => (value, "assigned value"),
         _ => return
     };
-    check_unnecessary_parens_core(cx, value, msg);
+    check_unnecessary_parens_core(cx, &*value, msg);
 }
 
 fn check_unnecessary_parens_stmt(cx: &Context, s: &ast::Stmt) {
@@ -1482,7 +1423,7 @@ fn check_unnecessary_parens_stmt(cx: &Context, s: &ast::Stmt) {
         },
         _ => return
     };
-    check_unnecessary_parens_core(cx, value, msg);
+    check_unnecessary_parens_core(cx, &*value, msg);
 }
 
 fn check_unused_unsafe(cx: &Context, e: &ast::Expr) {
@@ -1509,12 +1450,12 @@ fn check_unsafe_block(cx: &Context, e: &ast::Expr) {
     }
 }
 
-fn check_unused_mut_pat(cx: &Context, pats: &[@ast::Pat]) {
+fn check_unused_mut_pat(cx: &Context, pats: &[Gc<ast::Pat>]) {
     // collect all mutable pattern and group their NodeIDs by their Identifier to
     // avoid false warnings in match arms with multiple patterns
     let mut mutables = HashMap::new();
     for &p in pats.iter() {
-        pat_util::pat_bindings(&cx.tcx.def_map, p, |mode, id, _, path| {
+        pat_util::pat_bindings(&cx.tcx.def_map, &*p, |mode, id, _, path| {
             match mode {
                 ast::BindByValue(ast::MutMutable) => {
                     if path.segments.len() != 1 {
@@ -1726,7 +1667,7 @@ fn check_stability(cx: &Context, e: &ast::Expr) {
     let id = match e.node {
         ast::ExprPath(..) | ast::ExprStruct(..) => {
             match cx.tcx.def_map.borrow().find(&e.id) {
-                Some(&def) => ast_util::def_id_of_def(def),
+                Some(&def) => def.def_id(),
                 None => return
             }
         }
@@ -1833,8 +1774,6 @@ impl<'a> Visitor<()> for Context<'a> {
             check_item_non_uppercase_statics(cx, it);
             check_heap_item(cx, it);
             check_missing_doc_item(cx, it);
-            check_attrs_usage(cx, it.attrs.as_slice());
-            check_unused_attribute(cx, it.attrs.as_slice());
             check_raw_ptr_deriving(cx, it);
 
             cx.visit_ids(|v| v.visit_item(it, ()));
@@ -1845,15 +1784,12 @@ impl<'a> Visitor<()> for Context<'a> {
 
     fn visit_foreign_item(&mut self, it: &ast::ForeignItem, _: ()) {
         self.with_lint_attrs(it.attrs.as_slice(), |cx| {
-            check_attrs_usage(cx, it.attrs.as_slice());
             visit::walk_foreign_item(cx, it, ());
         })
     }
 
     fn visit_view_item(&mut self, i: &ast::ViewItem, _: ()) {
         self.with_lint_attrs(i.attrs.as_slice(), |cx| {
-            check_attrs_usage(cx, i.attrs.as_slice());
-
             cx.visit_ids(|v| v.visit_view_item(i, ()));
 
             visit::walk_view_item(cx, i, ());
@@ -1896,7 +1832,6 @@ impl<'a> Visitor<()> for Context<'a> {
 
         check_type_limits(self, e);
         check_unused_casts(self, e);
-        check_deprecated_owned_vector(self, e);
 
         visit::walk_expr(self, e, ());
     }
@@ -1935,7 +1870,6 @@ impl<'a> Visitor<()> for Context<'a> {
             visit::FkMethod(ident, _, m) => {
                 self.with_lint_attrs(m.attrs.as_slice(), |cx| {
                     check_missing_doc_method(cx, m);
-                    check_attrs_usage(cx, m.attrs.as_slice());
 
                     match method_context(cx, m) {
                         PlainImpl => check_snake_case(cx, "method", ident, span),
@@ -1960,7 +1894,6 @@ impl<'a> Visitor<()> for Context<'a> {
     fn visit_ty_method(&mut self, t: &ast::TypeMethod, _: ()) {
         self.with_lint_attrs(t.attrs.as_slice(), |cx| {
             check_missing_doc_ty_method(cx, t);
-            check_attrs_usage(cx, t.attrs.as_slice());
             check_snake_case(cx, "trait method", t.ident, t.span);
 
             visit::walk_ty_method(cx, t, ());
@@ -1984,7 +1917,6 @@ impl<'a> Visitor<()> for Context<'a> {
     fn visit_struct_field(&mut self, s: &ast::StructField, _: ()) {
         self.with_lint_attrs(s.node.attrs.as_slice(), |cx| {
             check_missing_doc_struct_field(cx, s);
-            check_attrs_usage(cx, s.node.attrs.as_slice());
 
             visit::walk_struct_field(cx, s, ());
         })
@@ -1993,7 +1925,6 @@ impl<'a> Visitor<()> for Context<'a> {
     fn visit_variant(&mut self, v: &ast::Variant, g: &ast::Generics, _: ()) {
         self.with_lint_attrs(v.node.attrs.as_slice(), |cx| {
             check_missing_doc_variant(cx, v);
-            check_attrs_usage(cx, v.node.attrs.as_slice());
 
             visit::walk_variant(cx, v, g, ());
         })
@@ -2001,6 +1932,10 @@ impl<'a> Visitor<()> for Context<'a> {
 
     // FIXME(#10894) should continue recursing
     fn visit_ty(&mut self, _t: &ast::Ty, _: ()) {}
+
+    fn visit_attribute(&mut self, attr: &ast::Attribute, _: ()) {
+        check_unused_attribute(self, attr);
+    }
 }
 
 impl<'a> IdVisitingOperation for Context<'a> {
@@ -2049,10 +1984,8 @@ pub fn check_crate(tcx: &ty::ctxt,
             visit::walk_crate(v, krate, ());
         });
 
-        check_crate_attrs_usage(cx, krate.attrs.as_slice());
         // since the root module isn't visited as an item (because it isn't an item), warn for it
         // here.
-        check_unused_attribute(cx, krate.attrs.as_slice());
         check_missing_doc_attrs(cx,
                                 None,
                                 krate.attrs.as_slice(),

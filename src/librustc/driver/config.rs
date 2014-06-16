@@ -19,7 +19,6 @@ use back;
 use back::link;
 use back::target_strs;
 use back::{arm, x86, x86_64, mips};
-use metadata;
 use middle::lint;
 
 use syntax::abi;
@@ -36,6 +35,7 @@ use getopts::{optopt, optmulti, optflag, optflagopt};
 use getopts;
 use lib::llvm::llvm;
 use std::cell::{RefCell};
+use std::fmt;
 
 
 pub struct Config {
@@ -172,7 +172,8 @@ debugging_opts!(
         LTO,
         AST_JSON,
         AST_JSON_NOEXPAND,
-        LS
+        LS,
+        SAVE_ANALYSIS
     ]
     0
 )
@@ -206,7 +207,9 @@ pub fn debugging_opts_map() -> Vec<(&'static str, &'static str, u64)> {
      ("lto", "Perform LLVM link-time optimizations", LTO),
      ("ast-json", "Print the AST as JSON and halt", AST_JSON),
      ("ast-json-noexpand", "Print the pre-expansion AST as JSON and halt", AST_JSON_NOEXPAND),
-     ("ls", "List the symbols defined by a library crate", LS))
+     ("ls", "List the symbols defined by a library crate", LS),
+     ("save-analysis", "Write syntax and type analysis information \
+                        in addition to normal output", SAVE_ANALYSIS))
 }
 
 /// Declare a macro that will define all CodegenOptions fields and parsers all
@@ -220,7 +223,7 @@ pub fn debugging_opts_map() -> Vec<(&'static str, &'static str, u64)> {
 /// its respective field in the struct. There are a few hand-written parsers for
 /// parsing specific types of values in this module.
 macro_rules! cgoptions(
-    ($($opt:ident : $t:ty = ($init:expr, $parse:ident, $desc:expr, $is_public:expr)),* ,) =>
+    ($($opt:ident : $t:ty = ($init:expr, $parse:ident, $desc:expr)),* ,) =>
 (
     #[deriving(Clone)]
     pub struct CodegenOptions { $(pub $opt: $t),* }
@@ -231,8 +234,8 @@ macro_rules! cgoptions(
 
     pub type CodegenSetter = fn(&mut CodegenOptions, v: Option<&str>) -> bool;
     pub static CG_OPTIONS: &'static [(&'static str, CodegenSetter,
-                                      &'static str, bool)] =
-        &[ $( (stringify!($opt), cgsetters::$opt, $desc, $is_public) ),* ];
+                                      &'static str)] =
+        &[ $( (stringify!($opt), cgsetters::$opt, $desc) ),* ];
 
     mod cgsetters {
         use super::CodegenOptions;
@@ -282,39 +285,37 @@ macro_rules! cgoptions(
 
 cgoptions!(
     ar: Option<String> = (None, parse_opt_string,
-        "tool to assemble archives with", true),
+        "tool to assemble archives with"),
     linker: Option<String> = (None, parse_opt_string,
-        "system linker to link outputs with", true),
+        "system linker to link outputs with"),
     link_args: Vec<String> = (Vec::new(), parse_list,
-        "extra arguments to pass to the linker (space separated)", true),
+        "extra arguments to pass to the linker (space separated)"),
     target_cpu: String = ("generic".to_string(), parse_string,
-        "select target processor (llc -mcpu=help for details)", true),
+        "select target processor (llc -mcpu=help for details)"),
     target_feature: String = ("".to_string(), parse_string,
-        "target specific attributes (llc -mattr=help for details)", true),
+        "target specific attributes (llc -mattr=help for details)"),
     passes: Vec<String> = (Vec::new(), parse_list,
-        "a list of extra LLVM passes to run (space separated)", true),
+        "a list of extra LLVM passes to run (space separated)"),
     llvm_args: Vec<String> = (Vec::new(), parse_list,
-        "a list of arguments to pass to llvm (space separated)", true),
+        "a list of arguments to pass to llvm (space separated)"),
     save_temps: bool = (false, parse_bool,
-        "save all temporary output files during compilation", true),
+        "save all temporary output files during compilation"),
     no_rpath: bool = (false, parse_bool,
-        "disables setting the rpath in libs/exes", true),
+        "disables setting the rpath in libs/exes"),
     no_prepopulate_passes: bool = (false, parse_bool,
-        "don't pre-populate the pass manager with a list of passes", true),
+        "don't pre-populate the pass manager with a list of passes"),
     no_vectorize_loops: bool = (false, parse_bool,
-        "don't run the loop vectorization optimization passes", true),
+        "don't run the loop vectorization optimization passes"),
     no_vectorize_slp: bool = (false, parse_bool,
-        "don't run LLVM's SLP vectorization pass", true),
+        "don't run LLVM's SLP vectorization pass"),
     soft_float: bool = (false, parse_bool,
-        "generate software floating point library calls", true),
+        "generate software floating point library calls"),
     prefer_dynamic: bool = (false, parse_bool,
-        "prefer dynamic linking to static linking", true),
+        "prefer dynamic linking to static linking"),
     no_integrated_as: bool = (false, parse_bool,
-        "use an external assembler rather than LLVM's integrated one", true),
+        "use an external assembler rather than LLVM's integrated one"),
     relocation_model: String = ("pic".to_string(), parse_string,
-         "choose the relocation model to use (llc -relocation-model for details)", true),
-    no_split_stack: bool = (false, parse_bool,
-        "disable segmented stack support", false),
+         "choose the relocation model to use (llc -relocation-model for details)"),
 )
 
 pub fn build_codegen_options(matches: &getopts::Matches) -> CodegenOptions
@@ -326,8 +327,8 @@ pub fn build_codegen_options(matches: &getopts::Matches) -> CodegenOptions
         let value = iter.next();
         let option_to_lookup = key.replace("-", "_");
         let mut found = false;
-        for &(candidate, setter, _, is_public) in CG_OPTIONS.iter() {
-            if option_to_lookup.as_slice() != candidate || !is_public { continue }
+        for &(candidate, setter, _) in CG_OPTIONS.iter() {
+            if option_to_lookup.as_slice() != candidate { continue }
             if !setter(&mut cg, value) {
                 match value {
                     Some(..) => {
@@ -354,19 +355,6 @@ pub fn build_codegen_options(matches: &getopts::Matches) -> CodegenOptions
 
 pub fn default_lib_output() -> CrateType {
     CrateTypeRlib
-}
-
-pub fn cfg_os_to_meta_os(os: abi::Os) -> metadata::loader::Os {
-    use metadata::loader;
-
-    match os {
-        abi::OsWin32 => loader::OsWin32,
-        abi::OsLinux => loader::OsLinux,
-        abi::OsAndroid => loader::OsAndroid,
-        abi::OsMacos => loader::OsMacos,
-        abi::OsFreebsd => loader::OsFreebsd,
-        abi::OsiOS => loader::OsiOS,
-    }
 }
 
 pub fn default_configuration(sess: &Session) -> ast::CrateConfig {
@@ -777,6 +765,16 @@ pub fn build_session_options(matches: &getopts::Matches) -> Options {
     }
 }
 
+impl fmt::Show for CrateType {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            CrateTypeExecutable => "bin".fmt(f),
+            CrateTypeDylib => "dylib".fmt(f),
+            CrateTypeRlib => "rlib".fmt(f),
+            CrateTypeStaticlib => "staticlib".fmt(f)
+        }
+    }
+}
 
 #[cfg(test)]
 mod test {
@@ -794,7 +792,7 @@ mod test {
         let matches =
             &match getopts(["--test".to_string()], optgroups().as_slice()) {
               Ok(m) => m,
-              Err(f) => fail!("test_switch_implies_cfg_test: {}", f.to_err_msg())
+              Err(f) => fail!("test_switch_implies_cfg_test: {}", f)
             };
         let sessopts = build_session_options(matches);
         let sess = build_session(sessopts, None);
@@ -811,8 +809,7 @@ mod test {
                            optgroups().as_slice()) {
               Ok(m) => m,
               Err(f) => {
-                fail!("test_switch_implies_cfg_test_unless_cfg_test: {}",
-                       f.to_err_msg());
+                fail!("test_switch_implies_cfg_test_unless_cfg_test: {}", f)
               }
             };
         let sessopts = build_session_options(matches);

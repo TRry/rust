@@ -39,13 +39,14 @@
 
 /// Trait for values that can be compared for equality and inequality.
 ///
-/// This trait allows partial equality, where types can be unordered instead of
-/// strictly equal or unequal. For example, with the built-in floating-point
-/// types `a == b` and `a != b` will both evaluate to false if either `a` or
-/// `b` is NaN (cf. IEEE 754-2008 section 5.11).
+/// This trait allows for partial equality, for types that do not have an
+/// equivalence relation. For example, in floating point numbers `NaN != NaN`,
+/// so floating point types implement `PartialEq` but not `Eq`.
 ///
-/// PartialEq only requires the `eq` method to be implemented; `ne` is its negation by
-/// default.
+/// PartialEq only requires the `eq` method to be implemented; `ne` is defined
+/// in terms of it by default. Any manual implementation of `ne` *must* respect
+/// the rule that `eq` is a strict inverse of `ne`; that is, `!(a == b)` if and
+/// only if `a != b`.
 ///
 /// Eventually, this will be implemented by default for types that implement
 /// `Eq`.
@@ -147,9 +148,10 @@ pub fn lexical_ordering(o1: Ordering, o2: Ordering) -> Ordering {
 /// PartialOrd only requires implementation of the `lt` method,
 /// with the others generated from default implementations.
 ///
-/// However it remains possible to implement the others separately,
-/// for compatibility with floating-point NaN semantics
-/// (cf. IEEE 754-2008 section 5.11).
+/// However it remains possible to implement the others separately for types
+/// which do not have a total order. For example, for floating point numbers,
+/// `NaN < 0 == false` and `NaN >= 0 == false` (cf. IEEE 754-2008 section
+/// 5.11).
 #[lang="ord"]
 pub trait PartialOrd: PartialEq {
     /// This method tests less than (for `self` and `other`) and is used by the `<` operator.
@@ -324,29 +326,6 @@ mod impls {
         fn cmp(&self, other: &&'a mut T) -> Ordering { (**self).cmp(*other) }
     }
     impl<'a, T: Eq> Eq for &'a mut T {}
-
-    // @ pointers
-    impl<T:PartialEq> PartialEq for @T {
-        #[inline]
-        fn eq(&self, other: &@T) -> bool { *(*self) == *(*other) }
-        #[inline]
-        fn ne(&self, other: &@T) -> bool { *(*self) != *(*other) }
-    }
-    impl<T:PartialOrd> PartialOrd for @T {
-        #[inline]
-        fn lt(&self, other: &@T) -> bool { *(*self) < *(*other) }
-        #[inline]
-        fn le(&self, other: &@T) -> bool { *(*self) <= *(*other) }
-        #[inline]
-        fn ge(&self, other: &@T) -> bool { *(*self) >= *(*other) }
-        #[inline]
-        fn gt(&self, other: &@T) -> bool { *(*self) > *(*other) }
-    }
-    impl<T: Ord> Ord for @T {
-        #[inline]
-        fn cmp(&self, other: &@T) -> Ordering { (**self).cmp(*other) }
-    }
-    impl<T: Eq> Eq for @T {}
 }
 
 #[cfg(test)]

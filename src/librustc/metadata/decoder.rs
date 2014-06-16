@@ -22,18 +22,20 @@ use metadata::tydecode::{parse_ty_data, parse_def_id,
                          parse_type_param_def_data,
                          parse_bare_fn_ty_data, parse_trait_ref_data};
 use middle::lang_items;
+use middle::def;
+use middle::subst;
 use middle::ty::{ImplContainer, TraitContainer};
 use middle::ty;
 use middle::typeck;
 use middle::astencode::vtable_decoder_helpers;
 
-use std::u64;
-use std::hash;
+use std::gc::Gc;
 use std::hash::Hash;
-use std::io;
+use std::hash;
 use std::io::extensions::u64_from_be_bytes;
-use std::option;
+use std::io;
 use std::rc::Rc;
+use std::u64;
 use serialize::ebml::reader;
 use serialize::ebml;
 use serialize::Decodable;
@@ -256,34 +258,44 @@ fn item_ty_param_defs(item: ebml::Doc,
                       tcx: &ty::ctxt,
                       cdata: Cmd,
                       tag: uint)
-                      -> Rc<Vec<ty::TypeParameterDef> > {
-    let mut bounds = Vec::new();
+                      -> subst::VecPerParamSpace<ty::TypeParameterDef> {
+    let mut bounds = subst::VecPerParamSpace::empty();
     reader::tagged_docs(item, tag, |p| {
         let bd = parse_type_param_def_data(
             p.data, p.start, cdata.cnum, tcx,
             |_, did| translate_def_id(cdata, did));
-        bounds.push(bd);
+        bounds.push(bd.space, bd);
         true
     });
-    Rc::new(bounds)
+    bounds
 }
 
 fn item_region_param_defs(item_doc: ebml::Doc, cdata: Cmd)
-                          -> Rc<Vec<ty::RegionParameterDef> > {
-    let mut v = Vec::new();
+                          -> subst::VecPerParamSpace<ty::RegionParameterDef>
+{
+    let mut v = subst::VecPerParamSpace::empty();
     reader::tagged_docs(item_doc, tag_region_param_def, |rp_doc| {
-            let ident_str_doc = reader::get_doc(rp_doc,
-                                                tag_region_param_def_ident);
-            let ident = item_name(&*token::get_ident_interner(), ident_str_doc);
-            let def_id_doc = reader::get_doc(rp_doc,
-                                             tag_region_param_def_def_id);
-            let def_id = reader::with_doc_data(def_id_doc, parse_def_id);
-            let def_id = translate_def_id(cdata, def_id);
-            v.push(ty::RegionParameterDef { name: ident.name,
-                                            def_id: def_id });
-            true
-        });
-    Rc::new(v)
+        let ident_str_doc = reader::get_doc(rp_doc,
+                                            tag_region_param_def_ident);
+        let ident = item_name(&*token::get_ident_interner(), ident_str_doc);
+        let def_id_doc = reader::get_doc(rp_doc,
+                                         tag_region_param_def_def_id);
+        let def_id = reader::with_doc_data(def_id_doc, parse_def_id);
+        let def_id = translate_def_id(cdata, def_id);
+
+        let doc = reader::get_doc(rp_doc, tag_region_param_def_space);
+        let space = subst::ParamSpace::from_uint(reader::doc_as_u64(doc) as uint);
+
+        let doc = reader::get_doc(rp_doc, tag_region_param_def_index);
+        let index = reader::doc_as_u64(doc) as uint;
+
+        v.push(space, ty::RegionParameterDef { name: ident.name,
+                                               def_id: def_id,
+                                               space: space,
+                                               index: index });
+        true
+    });
+    v
 }
 
 fn enum_variant_ids(item: ebml::Doc, cdata: Cmd) -> Vec<ast::DefId> {
@@ -333,11 +345,11 @@ fn item_to_def_like(item: ebml::Doc, did: ast::DefId, cnum: ast::CrateNum)
     -> DefLike {
     let fam = item_family(item);
     match fam {
-        ImmStatic => DlDef(ast::DefStatic(did, false)),
-        MutStatic => DlDef(ast::DefStatic(did, true)),
-        Struct    => DlDef(ast::DefStruct(did)),
-        UnsafeFn  => DlDef(ast::DefFn(did, ast::UnsafeFn)),
-        Fn        => DlDef(ast::DefFn(did, ast::NormalFn)),
+        ImmStatic => DlDef(def::DefStatic(did, false)),
+        MutStatic => DlDef(def::DefStatic(did, true)),
+        Struct    => DlDef(def::DefStruct(did)),
+        UnsafeFn  => DlDef(def::DefFn(did, ast::UnsafeFn)),
+        Fn        => DlDef(def::DefFn(did, ast::NormalFn)),
         StaticMethod | UnsafeStaticMethod => {
             let fn_style = if fam == UnsafeStaticMethod { ast::UnsafeFn } else
                 { ast::NormalFn };
@@ -348,27 +360,27 @@ fn item_to_def_like(item: ebml::Doc, did: ast::DefId, cnum: ast::CrateNum)
             // a trait_method_sort.
             let provenance = if reader::maybe_get_doc(
                   item, tag_item_trait_method_sort).is_some() {
-                ast::FromTrait(item_reqd_and_translated_parent_item(cnum,
+                def::FromTrait(item_reqd_and_translated_parent_item(cnum,
                                                                     item))
             } else {
-                ast::FromImpl(item_reqd_and_translated_parent_item(cnum,
+                def::FromImpl(item_reqd_and_translated_parent_item(cnum,
                                                                    item))
             };
-            DlDef(ast::DefStaticMethod(did, provenance, fn_style))
+            DlDef(def::DefStaticMethod(did, provenance, fn_style))
         }
-        Type | ForeignType => DlDef(ast::DefTy(did)),
-        Mod => DlDef(ast::DefMod(did)),
-        ForeignMod => DlDef(ast::DefForeignMod(did)),
+        Type | ForeignType => DlDef(def::DefTy(did)),
+        Mod => DlDef(def::DefMod(did)),
+        ForeignMod => DlDef(def::DefForeignMod(did)),
         StructVariant => {
             let enum_did = item_reqd_and_translated_parent_item(cnum, item);
-            DlDef(ast::DefVariant(enum_did, did, true))
+            DlDef(def::DefVariant(enum_did, did, true))
         }
         TupleVariant => {
             let enum_did = item_reqd_and_translated_parent_item(cnum, item);
-            DlDef(ast::DefVariant(enum_did, did, false))
+            DlDef(def::DefVariant(enum_did, did, false))
         }
-        Trait => DlDef(ast::DefTrait(did)),
-        Enum => DlDef(ast::DefTy(did)),
+        Trait => DlDef(def::DefTrait(did)),
+        Enum => DlDef(def::DefTy(did)),
         Impl => DlImpl(did),
         PublicField | InheritedField => DlField,
     }
@@ -402,8 +414,8 @@ pub fn get_trait_def(cdata: Cmd,
     }
 
     ty::TraitDef {
-        generics: ty::Generics {type_param_defs: tp_defs,
-                                region_param_defs: rp_defs},
+        generics: ty::Generics {types: tp_defs,
+                                regions: rp_defs},
         bounds: bounds,
         trait_ref: Rc::new(item_trait_ref(item_doc, tcx, cdata))
     }
@@ -421,8 +433,8 @@ pub fn get_type(cdata: Cmd, id: ast::NodeId, tcx: &ty::ctxt)
     let rp_defs = item_region_param_defs(item, cdata);
 
     ty::ty_param_bounds_and_ty {
-        generics: ty::Generics {type_param_defs: tp_defs,
-                                region_param_defs: rp_defs},
+        generics: ty::Generics {types: tp_defs,
+                                regions: rp_defs},
         ty: t
     }
 }
@@ -439,16 +451,13 @@ pub fn get_impl_trait(cdata: Cmd,
 
 pub fn get_impl_vtables(cdata: Cmd,
                         id: ast::NodeId,
-                        tcx: &ty::ctxt) -> typeck::impl_res
+                        tcx: &ty::ctxt)
+                        -> typeck::vtable_res
 {
     let item_doc = lookup_item(id, cdata.data());
     let vtables_doc = reader::get_doc(item_doc, tag_item_impl_vtables);
     let mut decoder = reader::Decoder::new(vtables_doc);
-
-    typeck::impl_res {
-        trait_vtables: decoder.read_vtable_res(tcx, cdata),
-        self_vtables: decoder.read_vtable_param_res(tcx, cdata)
-    }
+    decoder.read_vtable_res(tcx, cdata)
 }
 
 
@@ -459,7 +468,7 @@ pub fn get_symbol(data: &[u8], id: ast::NodeId) -> String {
 // Something that a name can resolve to.
 #[deriving(Clone)]
 pub enum DefLike {
-    DlDef(ast::Def),
+    DlDef(def::Def),
     DlImpl(ast::DefId),
     DlField
 }
@@ -801,8 +810,8 @@ pub fn get_method(intr: Rc<IdentInterner>, cdata: Cmd, id: ast::NodeId,
     ty::Method::new(
         name,
         ty::Generics {
-            type_param_defs: type_param_defs,
-            region_param_defs: rp_defs,
+            types: type_param_defs,
+            regions: rp_defs,
         },
         fty,
         explicit_self,
@@ -1009,8 +1018,8 @@ pub fn get_struct_fields(intr: Rc<IdentInterner>, cdata: Cmd, id: ast::NodeId)
     result
 }
 
-fn get_meta_items(md: ebml::Doc) -> Vec<@ast::MetaItem> {
-    let mut items: Vec<@ast::MetaItem> = Vec::new();
+fn get_meta_items(md: ebml::Doc) -> Vec<Gc<ast::MetaItem>> {
+    let mut items: Vec<Gc<ast::MetaItem>> = Vec::new();
     reader::tagged_docs(md, tag_meta_item_word, |meta_item_doc| {
         let nd = reader::get_doc(meta_item_doc, tag_meta_item_name);
         let n = token::intern_and_get_ident(nd.as_str_slice());
@@ -1040,7 +1049,7 @@ fn get_meta_items(md: ebml::Doc) -> Vec<@ast::MetaItem> {
 fn get_attributes(md: ebml::Doc) -> Vec<ast::Attribute> {
     let mut attrs: Vec<ast::Attribute> = Vec::new();
     match reader::maybe_get_doc(md, tag_attributes) {
-      option::Some(attrs_d) => {
+      Some(attrs_d) => {
         reader::tagged_docs(attrs_d, tag_attribute, |attr_doc| {
             let meta_items = get_meta_items(attr_doc);
             // Currently it's only possible to have a single meta item on
@@ -1060,7 +1069,7 @@ fn get_attributes(md: ebml::Doc) -> Vec<ast::Attribute> {
             true
         });
       }
-      option::None => ()
+      None => ()
     }
     return attrs;
 }
@@ -1254,8 +1263,8 @@ pub fn get_native_libraries(cdata: Cmd)
     return result;
 }
 
-pub fn get_macro_registrar_fn(data: &[u8]) -> Option<ast::NodeId> {
-    reader::maybe_get_doc(ebml::Doc::new(data), tag_macro_registrar_fn)
+pub fn get_plugin_registrar_fn(data: &[u8]) -> Option<ast::NodeId> {
+    reader::maybe_get_doc(ebml::Doc::new(data), tag_plugin_registrar_fn)
         .map(|doc| FromPrimitive::from_u32(reader::doc_as_u32(doc)).unwrap())
 }
 
@@ -1323,4 +1332,26 @@ pub fn get_method_arg_names(cdata: Cmd, id: ast::NodeId) -> Vec<String> {
         None => {}
     }
     return ret;
+}
+
+pub fn get_reachable_extern_fns(cdata: Cmd) -> Vec<ast::DefId> {
+    let mut ret = Vec::new();
+    let items = reader::get_doc(ebml::Doc::new(cdata.data()),
+                                tag_reachable_extern_fns);
+    reader::tagged_docs(items, tag_reachable_extern_fn_id, |doc| {
+        ret.push(ast::DefId {
+            krate: cdata.cnum,
+            node: reader::doc_as_u32(doc),
+        });
+        true
+    });
+    return ret;
+}
+
+pub fn is_typedef(cdata: Cmd, id: ast::NodeId) -> bool {
+    let item_doc = lookup_item(id, cdata.data());
+    match item_family(item_doc) {
+        Type => true,
+        _ => false,
+    }
 }

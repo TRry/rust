@@ -31,7 +31,7 @@
  * is the address of the lvalue.  If Expr is an rvalue, this is the address of
  * some temporary spot in memory where the result is stored.
  *
- * Now, cat_expr() classies the expression Expr and the address A=ToAddr(Expr)
+ * Now, cat_expr() classifies the expression Expr and the address A=ToAddr(Expr)
  * as follows:
  *
  * - cat: what kind of expression was this?  This is a subset of the
@@ -42,7 +42,7 @@
  *
  * The resulting categorization tree differs somewhat from the expressions
  * themselves.  For example, auto-derefs are explicit.  Also, an index a[b] is
- * decomposed into two operations: a derefence to reach the array data and
+ * decomposed into two operations: a dereference to reach the array data and
  * then an index to jump forward to the relevant item.
  *
  * ## By-reference upvars
@@ -62,6 +62,7 @@
 
 #![allow(non_camel_case_types)]
 
+use middle::def;
 use middle::ty;
 use middle::typeck;
 use util::nodemap::NodeMap;
@@ -390,12 +391,10 @@ impl<'t,TYPER:Typer> MemCategorizationContext<'t,TYPER> {
             Some(adjustment) => {
                 match *adjustment {
                     ty::AutoObject(..) => {
-                        // Implicity casts a concrete object to trait object
-                        // so just patch up the type
+                        // Implicity cast a concrete object to trait object.
+                        // Result is an rvalue.
                         let expr_ty = if_ok!(self.expr_ty_adjusted(expr));
-                        let mut expr_cmt = (*if_ok!(self.cat_expr_unadjusted(expr))).clone();
-                        expr_cmt.ty = expr_ty;
-                        Ok(Rc::new(expr_cmt))
+                        Ok(self.cat_rvalue_node(expr.id(), expr.span(), expr_ty))
                     }
 
                     ty::AutoAddEnv(..) => {
@@ -441,22 +440,22 @@ impl<'t,TYPER:Typer> MemCategorizationContext<'t,TYPER> {
 
         let expr_ty = if_ok!(self.expr_ty(expr));
         match expr.node {
-          ast::ExprUnary(ast::UnDeref, e_base) => {
-            let base_cmt = if_ok!(self.cat_expr(e_base));
+          ast::ExprUnary(ast::UnDeref, ref e_base) => {
+            let base_cmt = if_ok!(self.cat_expr(&**e_base));
             Ok(self.cat_deref(expr, base_cmt, 0))
           }
 
-          ast::ExprField(base, f_name, _) => {
-            let base_cmt = if_ok!(self.cat_expr(base));
+          ast::ExprField(ref base, f_name, _) => {
+            let base_cmt = if_ok!(self.cat_expr(&**base));
             Ok(self.cat_field(expr, base_cmt, f_name, expr_ty))
           }
 
-          ast::ExprIndex(base, _) => {
+          ast::ExprIndex(ref base, _) => {
             if self.typer.is_method_call(expr.id) {
                 return Ok(self.cat_rvalue_node(expr.id(), expr.span(), expr_ty));
             }
 
-            let base_cmt = if_ok!(self.cat_expr(base));
+            let base_cmt = if_ok!(self.cat_expr(&**base));
             Ok(self.cat_index(expr, base_cmt, 0))
           }
 
@@ -465,8 +464,8 @@ impl<'t,TYPER:Typer> MemCategorizationContext<'t,TYPER> {
             self.cat_def(expr.id, expr.span, expr_ty, def)
           }
 
-          ast::ExprParen(e) => {
-            self.cat_expr(e)
+          ast::ExprParen(ref e) => {
+            self.cat_expr(&**e)
           }
 
           ast::ExprAddrOf(..) | ast::ExprCall(..) |
@@ -491,20 +490,20 @@ impl<'t,TYPER:Typer> MemCategorizationContext<'t,TYPER> {
                    id: ast::NodeId,
                    span: Span,
                    expr_ty: ty::t,
-                   def: ast::Def)
+                   def: def::Def)
                    -> McResult<cmt> {
         debug!("cat_def: id={} expr={} def={:?}",
                id, expr_ty.repr(self.tcx()), def);
 
         match def {
-          ast::DefStruct(..) | ast::DefVariant(..) => {
+          def::DefStruct(..) | def::DefVariant(..) => {
                 Ok(self.cat_rvalue_node(id, span, expr_ty))
           }
-          ast::DefFn(..) | ast::DefStaticMethod(..) | ast::DefMod(_) |
-          ast::DefForeignMod(_) | ast::DefStatic(_, false) |
-          ast::DefUse(_) | ast::DefTrait(_) | ast::DefTy(_) | ast::DefPrimTy(_) |
-          ast::DefTyParam(..) | ast::DefTyParamBinder(..) | ast::DefRegion(_) |
-          ast::DefLabel(_) | ast::DefSelfTy(..) | ast::DefMethod(..) => {
+          def::DefFn(..) | def::DefStaticMethod(..) | def::DefMod(_) |
+          def::DefForeignMod(_) | def::DefStatic(_, false) |
+          def::DefUse(_) | def::DefTrait(_) | def::DefTy(_) | def::DefPrimTy(_) |
+          def::DefTyParam(..) | def::DefTyParamBinder(..) | def::DefRegion(_) |
+          def::DefLabel(_) | def::DefSelfTy(..) | def::DefMethod(..) => {
               Ok(Rc::new(cmt_ {
                   id:id,
                   span:span,
@@ -514,7 +513,7 @@ impl<'t,TYPER:Typer> MemCategorizationContext<'t,TYPER> {
               }))
           }
 
-          ast::DefStatic(_, true) => {
+          def::DefStatic(_, true) => {
               Ok(Rc::new(cmt_ {
                   id:id,
                   span:span,
@@ -524,7 +523,7 @@ impl<'t,TYPER:Typer> MemCategorizationContext<'t,TYPER> {
               }))
           }
 
-          ast::DefArg(vid, binding_mode) => {
+          def::DefArg(vid, binding_mode) => {
             // Idea: make this could be rewritten to model by-ref
             // stuff as `&const` and `&mut`?
 
@@ -542,7 +541,7 @@ impl<'t,TYPER:Typer> MemCategorizationContext<'t,TYPER> {
             }))
           }
 
-          ast::DefUpvar(var_id, _, fn_node_id, _) => {
+          def::DefUpvar(var_id, _, fn_node_id, _) => {
               let ty = if_ok!(self.node_ty(fn_node_id));
               match ty::get(ty).sty {
                   ty::ty_closure(ref closure_ty) => {
@@ -584,8 +583,8 @@ impl<'t,TYPER:Typer> MemCategorizationContext<'t,TYPER> {
               }
           }
 
-          ast::DefLocal(vid, binding_mode) |
-          ast::DefBinding(vid, binding_mode) => {
+          def::DefLocal(vid, binding_mode) |
+          def::DefBinding(vid, binding_mode) => {
             // by-value/by-ref bindings are local variables
             let m = match binding_mode {
                 ast::BindByValue(ast::MutMutable) => McDeclared,
@@ -989,7 +988,7 @@ impl<'t,TYPER:Typer> MemCategorizationContext<'t,TYPER> {
           }
           ast::PatEnum(_, Some(ref subpats)) => {
             match self.tcx().def_map.borrow().find(&pat.id) {
-                Some(&ast::DefVariant(enum_did, _, _)) => {
+                Some(&def::DefVariant(enum_did, _, _)) => {
                     // variant(x, y, z)
 
                     let downcast_cmt = {
@@ -1000,31 +999,32 @@ impl<'t,TYPER:Typer> MemCategorizationContext<'t,TYPER> {
                         }
                     };
 
-                    for (i, &subpat) in subpats.iter().enumerate() {
-                        let subpat_ty = if_ok!(self.pat_ty(subpat)); // see (*2)
+                    for (i, subpat) in subpats.iter().enumerate() {
+                        let subpat_ty = if_ok!(self.pat_ty(&**subpat)); // see (*2)
 
                         let subcmt =
                             self.cat_imm_interior(
                                 pat, downcast_cmt.clone(), subpat_ty,
                                 InteriorField(PositionalField(i)));
 
-                        if_ok!(self.cat_pattern(subcmt, subpat, |x,y,z| op(x,y,z)));
+                        if_ok!(self.cat_pattern(subcmt, &**subpat, |x,y,z| op(x,y,z)));
                     }
                 }
-                Some(&ast::DefFn(..)) |
-                Some(&ast::DefStruct(..)) => {
-                    for (i, &subpat) in subpats.iter().enumerate() {
-                        let subpat_ty = if_ok!(self.pat_ty(subpat)); // see (*2)
+                Some(&def::DefFn(..)) |
+                Some(&def::DefStruct(..)) => {
+                    for (i, subpat) in subpats.iter().enumerate() {
+                        let subpat_ty = if_ok!(self.pat_ty(&**subpat)); // see (*2)
                         let cmt_field =
                             self.cat_imm_interior(
                                 pat, cmt.clone(), subpat_ty,
                                 InteriorField(PositionalField(i)));
-                        if_ok!(self.cat_pattern(cmt_field, subpat, |x,y,z| op(x,y,z)));
+                        if_ok!(self.cat_pattern(cmt_field, &**subpat,
+                                                |x,y,z| op(x,y,z)));
                     }
                 }
-                Some(&ast::DefStatic(..)) => {
-                    for &subpat in subpats.iter() {
-                        if_ok!(self.cat_pattern(cmt.clone(), subpat, |x,y,z| op(x,y,z)));
+                Some(&def::DefStatic(..)) => {
+                    for subpat in subpats.iter() {
+                        if_ok!(self.cat_pattern(cmt.clone(), &**subpat, |x,y,z| op(x,y,z)));
                     }
                 }
                 _ => {
@@ -1035,8 +1035,8 @@ impl<'t,TYPER:Typer> MemCategorizationContext<'t,TYPER> {
             }
           }
 
-          ast::PatIdent(_, _, Some(subpat)) => {
-              if_ok!(self.cat_pattern(cmt, subpat, op));
+          ast::PatIdent(_, _, Some(ref subpat)) => {
+              if_ok!(self.cat_pattern(cmt, &**subpat, op));
           }
 
           ast::PatIdent(_, _, None) => {
@@ -1046,42 +1046,43 @@ impl<'t,TYPER:Typer> MemCategorizationContext<'t,TYPER> {
           ast::PatStruct(_, ref field_pats, _) => {
             // {f1: p1, ..., fN: pN}
             for fp in field_pats.iter() {
-                let field_ty = if_ok!(self.pat_ty(fp.pat)); // see (*2)
+                let field_ty = if_ok!(self.pat_ty(&*fp.pat)); // see (*2)
                 let cmt_field = self.cat_field(pat, cmt.clone(), fp.ident, field_ty);
-                if_ok!(self.cat_pattern(cmt_field, fp.pat, |x,y,z| op(x,y,z)));
+                if_ok!(self.cat_pattern(cmt_field, &*fp.pat, |x,y,z| op(x,y,z)));
             }
           }
 
           ast::PatTup(ref subpats) => {
             // (p1, ..., pN)
-            for (i, &subpat) in subpats.iter().enumerate() {
-                let subpat_ty = if_ok!(self.pat_ty(subpat)); // see (*2)
+            for (i, subpat) in subpats.iter().enumerate() {
+                let subpat_ty = if_ok!(self.pat_ty(&**subpat)); // see (*2)
                 let subcmt =
                     self.cat_imm_interior(
                         pat, cmt.clone(), subpat_ty,
                         InteriorField(PositionalField(i)));
-                if_ok!(self.cat_pattern(subcmt, subpat, |x,y,z| op(x,y,z)));
+                if_ok!(self.cat_pattern(subcmt, &**subpat, |x,y,z| op(x,y,z)));
             }
           }
 
-          ast::PatBox(subpat) | ast::PatRegion(subpat) => {
+          ast::PatBox(ref subpat) | ast::PatRegion(ref subpat) => {
             // @p1, ~p1
             let subcmt = self.cat_deref(pat, cmt, 0);
-            if_ok!(self.cat_pattern(subcmt, subpat, op));
+            if_ok!(self.cat_pattern(subcmt, &**subpat, op));
           }
 
           ast::PatVec(ref before, slice, ref after) => {
               let elt_cmt = self.cat_index(pat, cmt, 0);
-              for &before_pat in before.iter() {
-                  if_ok!(self.cat_pattern(elt_cmt.clone(), before_pat, |x,y,z| op(x,y,z)));
+              for before_pat in before.iter() {
+                  if_ok!(self.cat_pattern(elt_cmt.clone(), &**before_pat,
+                                          |x,y,z| op(x,y,z)));
               }
-              for &slice_pat in slice.iter() {
-                  let slice_ty = if_ok!(self.pat_ty(slice_pat));
+              for slice_pat in slice.iter() {
+                  let slice_ty = if_ok!(self.pat_ty(&**slice_pat));
                   let slice_cmt = self.cat_rvalue_node(pat.id(), pat.span(), slice_ty);
-                  if_ok!(self.cat_pattern(slice_cmt, slice_pat, |x,y,z| op(x,y,z)));
+                  if_ok!(self.cat_pattern(slice_cmt, &**slice_pat, |x,y,z| op(x,y,z)));
               }
-              for &after_pat in after.iter() {
-                  if_ok!(self.cat_pattern(elt_cmt.clone(), after_pat, |x,y,z| op(x,y,z)));
+              for after_pat in after.iter() {
+                  if_ok!(self.cat_pattern(elt_cmt.clone(), &**after_pat, |x,y,z| op(x,y,z)));
               }
           }
 
@@ -1253,7 +1254,7 @@ impl cmt_ {
 
 impl Repr for cmt_ {
     fn repr(&self, tcx: &ty::ctxt) -> String {
-        format!("\\{{} id:{} m:{:?} ty:{}\\}",
+        format!("{{{} id:{} m:{:?} ty:{}}}",
                 self.cat.repr(tcx),
                 self.id,
                 self.mutbl,
@@ -1305,7 +1306,7 @@ impl Repr for InteriorKind {
             InteriorField(NamedField(fld)) => {
                 token::get_name(fld).get().to_str()
             }
-            InteriorField(PositionalField(i)) => format!("\\#{:?}", i),
+            InteriorField(PositionalField(i)) => format!("#{:?}", i),
             InteriorElement(_) => "[]".to_string(),
         }
     }

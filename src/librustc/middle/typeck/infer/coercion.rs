@@ -64,7 +64,7 @@ we may want to adjust precisely when coercions occur.
 
 */
 
-
+use middle::subst;
 use middle::ty::{AutoPtr, AutoBorrowVec, AutoBorrowObj, AutoDerefRef};
 use middle::ty::{mt};
 use middle::ty;
@@ -180,7 +180,7 @@ impl<'f> Coerce<'f> {
         self.unpack_actual_value(a, |sty_a| {
             match *sty_a {
                 ty::ty_bare_fn(ref a_f) => {
-                    // Bare functions are coercable to any closure type.
+                    // Bare functions are coercible to any closure type.
                     //
                     // FIXME(#3320) this should go away and be
                     // replaced with proper inference, got a patch
@@ -443,7 +443,7 @@ impl<'f> Coerce<'f> {
                          sty_a: &ty::sty,
                          b: ty::t,
                          trait_def_id: ast::DefId,
-                         trait_substs: &ty::substs,
+                         trait_substs: &subst::Substs,
                          trait_store: ty::TraitStore,
                          bounds: ty::BuiltinBounds) -> CoerceResult {
 

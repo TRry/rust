@@ -122,8 +122,36 @@ prologue detection. The `create_argument_metadata()` and related functions take 
 `llvm.dbg.declare` instructions to the correct source locations even while source location emission
 is still disabled, so there is no need to do anything special with source location handling here.
 
-*/
+## Unique Type Identification
+In order for link-time optimization to work properly, LLVM needs a unique type identifier that tells
+it across compilation units which types are the same as others. This type identifier is created by
+TypeMap::get_unique_type_id_of_type() using the following algorithm:
 
+(1) Primitive types have their name as ID
+(2) Structs, enums and traits have a multipart identifier
+    (1) The first part is the SVH (strict version hash) of the crate they were originally defined in
+    (2) The second part is the ast::NodeId of the definition in their original crate
+    (3) The final part is a concatenation of the type IDs of their concrete type arguments if they
+        are generic types.
+(3) Tuple-, pointer and function types are structurally identified, which means that they are
+    equivalent if their component types are equivalent (i.e. (int, int) is the same regardless in
+    which crate it is used).
+
+This algorithm also provides a stable ID for types that are defined in one crate but instantiated
+from metadata within another crate. We just have to take care to always map crate and node IDs back
+to the original crate context.
+
+As a side-effect these unique type IDs also help to solve a problem arising from lifetime
+parameters. Since lifetime parameters are completely omitted in debuginfo, more than one `ty::t`
+instance may map to the same debuginfo type metadata, that is, some struct `Struct<'a>` may have N
+instantiations with different concrete substitutions for `'a`, and thus there will be N `ty::t`
+instances for the type `Struct<'a>` even though it is not generic otherwise. Unfortunately this
+means that we cannot use `ty::type_id()` as cheap identifier for type metadata---we have done this
+in the past, but it led to unnecessary metadata duplication in the best case and LLVM assertions in
+the worst. However, the unique type ID as described above *can* be used as identifier. Since it is
+comparatively expensive to construct, though, `ty::type_id()` is still used additionally as an
+optimization for cases where the exact same type has been seen before (which is most of the time).
+*/
 
 use driver::config;
 use driver::config::{FullDebugInfo, LimitedDebugInfo, NoDebugInfo};
@@ -131,6 +159,7 @@ use lib::llvm::llvm;
 use lib::llvm::{ModuleRef, ContextRef, ValueRef};
 use lib::llvm::debuginfo::*;
 use metadata::csearch;
+use middle::subst;
 use middle::trans::adt;
 use middle::trans::common::*;
 use middle::trans::datum::{Datum, Lvalue};
@@ -142,15 +171,15 @@ use middle::ty;
 use middle::pat_util;
 use util::ppaux;
 
+use libc::{c_uint, c_ulonglong, c_longlong};
 use std::c_str::{CString, ToCStr};
 use std::cell::{Cell, RefCell};
-use std::rc::{Rc, Weak};
 use std::collections::HashMap;
 use std::collections::HashSet;
-use libc::{c_uint, c_ulonglong, c_longlong};
+use std::gc::Gc;
 use std::ptr;
-use std::string::String;
-use std::sync::atomics;
+use std::rc::{Rc, Weak};
+use syntax::util::interner::Interner;
 use syntax::codemap::{Span, Pos};
 use syntax::{abi, ast, codemap, ast_util, ast_map};
 use syntax::owned_slice::OwnedSlice;
@@ -165,7 +194,6 @@ static DW_TAG_arg_variable: c_uint = 0x101;
 static DW_ATE_boolean: c_uint = 0x02;
 static DW_ATE_float: c_uint = 0x04;
 static DW_ATE_signed: c_uint = 0x05;
-// static DW_ATE_signed_char: c_uint = 0x06;
 static DW_ATE_unsigned: c_uint = 0x07;
 static DW_ATE_unsigned_char: c_uint = 0x08;
 
@@ -173,15 +201,371 @@ static DW_ATE_unsigned_char: c_uint = 0x08;
 //  Public Interface of debuginfo module
 //=-------------------------------------------------------------------------------------------------
 
+#[deriving(Copy, Show, Hash, Eq, PartialEq, Clone)]
+struct UniqueTypeId(ast::Name);
+
+// The TypeMap is where the CrateDebugContext holds the type metadata nodes created so far. The
+// metadata nodes are indexed by UniqueTypeId, and, for faster lookup, also by ty::t. The
+// TypeMap is responsible for creating UniqueTypeIds.
+struct TypeMap {
+    // The UniqueTypeIds created so far
+    unique_id_interner: Interner<Rc<String>>,
+    // A map from UniqueTypeId to debuginfo metadata for that type. This is a 1:1 mapping.
+    unique_id_to_metadata: HashMap<UniqueTypeId, DIType>,
+    // A map from ty::type_id() to debuginfo metadata. This is a N:1 mapping.
+    type_to_metadata: HashMap<uint, DIType>,
+    // A map from ty::type_id() to UniqueTypeId. This is a N:1 mapping.
+    type_to_unique_id: HashMap<uint, UniqueTypeId>
+}
+
+impl TypeMap {
+
+    fn new() -> TypeMap {
+        TypeMap {
+            unique_id_interner: Interner::new(),
+            type_to_metadata: HashMap::new(),
+            unique_id_to_metadata: HashMap::new(),
+            type_to_unique_id: HashMap::new(),
+        }
+    }
+
+    // Adds a ty::t to metadata mapping to the TypeMap. The method will fail if the mapping already
+    // exists.
+    fn register_type_with_metadata(&mut self,
+                                   cx: &CrateContext,
+                                   type_: ty::t,
+                                   metadata: DIType) {
+        if !self.type_to_metadata.insert(ty::type_id(type_), metadata) {
+            cx.sess().bug(format!("Type metadata for ty::t '{}' is already in the TypeMap!",
+                                  ppaux::ty_to_str(cx.tcx(), type_)).as_slice());
+        }
+    }
+
+    // Adds a UniqueTypeId to metadata mapping to the TypeMap. The method will fail if the mapping
+    // already exists.
+    fn register_unique_id_with_metadata(&mut self,
+                                        cx: &CrateContext,
+                                        unique_type_id: UniqueTypeId,
+                                        metadata: DIType) {
+        if !self.unique_id_to_metadata.insert(unique_type_id, metadata) {
+            let unique_type_id_str = self.get_unique_type_id_as_string(unique_type_id);
+            cx.sess().bug(format!("Type metadata for unique id '{}' is already in the TypeMap!",
+                                  unique_type_id_str.as_slice()).as_slice());
+        }
+    }
+
+    fn find_metadata_for_type(&self, type_: ty::t) -> Option<DIType> {
+        self.type_to_metadata.find_copy(&ty::type_id(type_))
+    }
+
+    fn find_metadata_for_unique_id(&self, unique_type_id: UniqueTypeId) -> Option<DIType> {
+        self.unique_id_to_metadata.find_copy(&unique_type_id)
+    }
+
+    // Get the string representation of a UniqueTypeId. This method will fail if the id is unknown.
+    fn get_unique_type_id_as_string(&self, unique_type_id: UniqueTypeId) -> Rc<String> {
+        let UniqueTypeId(interner_key) = unique_type_id;
+        self.unique_id_interner.get(interner_key)
+    }
+
+    // Get the UniqueTypeId for the given type. If the UniqueTypeId for the given type has been
+    // requested before, this is just a table lookup. Otherwise an ID will be generated and stored
+    // for later lookup.
+    fn get_unique_type_id_of_type(&mut self, cx: &CrateContext, type_: ty::t) -> UniqueTypeId {
+
+        // basic type           -> {:name of the type:}
+        // tuple                -> {tuple_(:param-uid:)*}
+        // struct               -> {struct_:svh: / :node-id:_<(:param-uid:),*> }
+        // enum                 -> {enum_:svh: / :node-id:_<(:param-uid:),*> }
+        // enum variant         -> {variant_:variant-name:_:enum-uid:}
+        // reference (&)        -> {& :pointee-uid:}
+        // mut reference (&mut) -> {&mut :pointee-uid:}
+        // ptr (*)              -> {* :pointee-uid:}
+        // mut ptr (*mut)       -> {*mut :pointee-uid:}
+        // unique ptr (~)       -> {~ :pointee-uid:}
+        // @-ptr (@)            -> {@ :pointee-uid:}
+        // sized vec ([T, ..x]) -> {[:size:] :element-uid:}
+        // vec slice (&[T])     -> {&<mut> [] :element-uid:}
+        // trait (~ | &[mut] T) -> {:sigil: trait_:svh: / :node-id:_<(:param-uid:),*> }
+        // closure              -> {<unsafe_> <once_> :store-sigil: |(:param-uid:),* <,_...>| -> \
+        //                             :return-type-uid: : (:bounds:)*}
+        // function             -> {<unsafe_> <abi_> fn( (:param-uid:)* <,_...> ) -> \
+        //                             :return-type-uid:}
+
+        match self.type_to_unique_id.find_copy(&ty::type_id(type_)) {
+            Some(unique_type_id) => return unique_type_id,
+            None => { /* generate one */}
+        };
+
+        let mut unique_type_id = String::with_capacity(256);
+        unique_type_id.push_char('{');
+
+        match ty::get(type_).sty {
+            ty::ty_nil                |
+            ty::ty_bot                |
+            ty::ty_bool               |
+            ty::ty_char               |
+            ty::ty_str                |
+            ty::ty_int(_)             |
+            ty::ty_uint(_)            |
+            ty::ty_float(_) => {
+                unique_type_id.push_str(ppaux::ty_to_str(cx.tcx(), type_).as_slice());
+            },
+            ty::ty_enum(def_id, ref substs) => {
+                unique_type_id.push_str("enum ");
+                from_def_id_and_substs(self, cx, def_id, substs, &mut unique_type_id);
+            },
+            ty::ty_struct(def_id, ref substs) => {
+                unique_type_id.push_str("struct ");
+                from_def_id_and_substs(self, cx, def_id, substs, &mut unique_type_id);
+            },
+            ty::ty_tup(ref component_types) => {
+                unique_type_id.push_str("tuple ");
+                for &component_type in component_types.iter() {
+                    let component_type_id = self.get_unique_type_id_of_type(cx, component_type);
+                    let component_type_id = self.get_unique_type_id_as_string(component_type_id);
+                    unique_type_id.push_str(component_type_id.as_slice());
+                }
+            },
+            ty::ty_box(inner_type) => {
+                unique_type_id.push_char('@');
+                let inner_type_id = self.get_unique_type_id_of_type(cx, inner_type);
+                let inner_type_id = self.get_unique_type_id_as_string(inner_type_id);
+                unique_type_id.push_str(inner_type_id.as_slice());
+            },
+            ty::ty_uniq(inner_type) => {
+                unique_type_id.push_char('~');
+                let inner_type_id = self.get_unique_type_id_of_type(cx, inner_type);
+                let inner_type_id = self.get_unique_type_id_as_string(inner_type_id);
+                unique_type_id.push_str(inner_type_id.as_slice());
+            },
+            ty::ty_ptr(ty::mt { ty: inner_type, mutbl } ) => {
+                unique_type_id.push_char('*');
+                if mutbl == ast::MutMutable {
+                    unique_type_id.push_str("mut");
+                }
+
+                let inner_type_id = self.get_unique_type_id_of_type(cx, inner_type);
+                let inner_type_id = self.get_unique_type_id_as_string(inner_type_id);
+                unique_type_id.push_str(inner_type_id.as_slice());
+            },
+            ty::ty_rptr(_, ty::mt { ty: inner_type, mutbl }) => {
+                unique_type_id.push_char('&');
+                if mutbl == ast::MutMutable {
+                    unique_type_id.push_str("mut");
+                }
+
+                let inner_type_id = self.get_unique_type_id_of_type(cx, inner_type);
+                let inner_type_id = self.get_unique_type_id_as_string(inner_type_id);
+                unique_type_id.push_str(inner_type_id.as_slice());
+            },
+            ty::ty_vec(ty::mt { ty: inner_type, mutbl }, optional_length) => {
+                match optional_length {
+                    Some(len) => {
+                        unique_type_id.push_str(format!("[{}]", len).as_slice());
+                    }
+                    None => {
+                        unique_type_id.push_char('&');
+
+                        if mutbl == ast::MutMutable {
+                           unique_type_id.push_str("mut");
+                        }
+
+                        unique_type_id.push_str("[]");
+                    }
+                };
+
+                let inner_type_id = self.get_unique_type_id_of_type(cx, inner_type);
+                let inner_type_id = self.get_unique_type_id_as_string(inner_type_id);
+                unique_type_id.push_str(inner_type_id.as_slice());
+            },
+            ty::ty_trait(ref trait_data) => {
+                match trait_data.store {
+                    ty::UniqTraitStore => unique_type_id.push_char('~'),
+                    ty::RegionTraitStore(_, ast::MutMutable) => unique_type_id.push_str("&mut"),
+                    ty::RegionTraitStore(_, ast::MutImmutable) => unique_type_id.push_char('&'),
+                };
+
+                unique_type_id.push_str("trait ");
+
+                from_def_id_and_substs(self,
+                                       cx,
+                                       trait_data.def_id,
+                                       &trait_data.substs,
+                                       &mut unique_type_id);
+            },
+            ty::ty_bare_fn(ty::BareFnTy{ fn_style, abi, ref sig } ) => {
+                if fn_style == ast::UnsafeFn {
+                    unique_type_id.push_str("unsafe ");
+                }
+
+                unique_type_id.push_str(abi.name());
+
+                unique_type_id.push_str(" fn(");
+
+                for &parameter_type in sig.inputs.iter() {
+                    let parameter_type_id = self.get_unique_type_id_of_type(cx, parameter_type);
+                    let parameter_type_id = self.get_unique_type_id_as_string(parameter_type_id);
+                    unique_type_id.push_str(parameter_type_id.as_slice());
+                    unique_type_id.push_char(',');
+                }
+
+                if sig.variadic {
+                    unique_type_id.push_str("...");
+                }
+
+                unique_type_id.push_str(")->");
+                let return_type_id = self.get_unique_type_id_of_type(cx, sig.output);
+                let return_type_id = self.get_unique_type_id_as_string(return_type_id);
+                unique_type_id.push_str(return_type_id.as_slice());
+            },
+            ty::ty_closure(box ty::ClosureTy { fn_style,
+                                               onceness,
+                                               store,
+                                               ref bounds,
+                                               ref sig }) => {
+                if fn_style == ast::UnsafeFn {
+                    unique_type_id.push_str("unsafe ");
+                }
+
+                if onceness == ast::Once {
+                    unique_type_id.push_str("once ");
+                }
+
+                match store {
+                    ty::UniqTraitStore => unique_type_id.push_str("~|"),
+                    ty::RegionTraitStore(_, ast::MutMutable) => unique_type_id.push_str("&mut|"),
+                    ty::RegionTraitStore(_, ast::MutImmutable) => unique_type_id.push_str("&|"),
+                };
+
+                for &parameter_type in sig.inputs.iter() {
+                    let parameter_type_id = self.get_unique_type_id_of_type(cx, parameter_type);
+                    let parameter_type_id = self.get_unique_type_id_as_string(parameter_type_id);
+                    unique_type_id.push_str(parameter_type_id.as_slice());
+                    unique_type_id.push_char(',');
+                }
+
+                if sig.variadic {
+                    unique_type_id.push_str("...");
+                }
+
+                unique_type_id.push_str("|->");
+
+                let return_type_id = self.get_unique_type_id_of_type(cx, sig.output);
+                let return_type_id = self.get_unique_type_id_as_string(return_type_id);
+                unique_type_id.push_str(return_type_id.as_slice());
+
+                unique_type_id.push_char(':');
+
+                for bound in bounds.iter() {
+                    match bound {
+                        ty::BoundStatic => unique_type_id.push_str("'static"),
+                        ty::BoundSend => unique_type_id.push_str("Send"),
+                        ty::BoundSized => unique_type_id.push_str("Sized"),
+                        ty::BoundCopy => unique_type_id.push_str("Copy"),
+                        ty::BoundShare => unique_type_id.push_str("Share"),
+                    };
+                    unique_type_id.push_char('+');
+                }
+            },
+            _ => {
+                cx.sess().bug(format!("get_unique_type_id_of_type() - unexpected type: {}, {:?}",
+                                      ppaux::ty_to_str(cx.tcx(), type_).as_slice(),
+                                      ty::get(type_).sty).as_slice())
+            }
+        };
+
+        unique_type_id.push_char('}');
+
+        // Trim to size before storing permanently
+        unique_type_id.shrink_to_fit();
+
+        let key = self.unique_id_interner.intern(Rc::new(unique_type_id));
+        self.type_to_unique_id.insert(ty::type_id(type_), UniqueTypeId(key));
+
+        return UniqueTypeId(key);
+
+        fn from_def_id_and_substs(type_map: &mut TypeMap,
+                                  cx: &CrateContext,
+                                  def_id: ast::DefId,
+                                  substs: &subst::Substs,
+                                  output: &mut String) {
+            use std::num::ToStrRadix;
+
+            // First, find out the 'real' def_id of the type. Items inlined from other crates have
+            // to be mapped back to their source.
+            let source_def_id = if def_id.krate == ast::LOCAL_CRATE {
+                match cx.external_srcs.borrow().find_copy(&def_id.node) {
+                    Some(source_def_id) => {
+                        // The given def_id identifies the inlined copy of a type definition,
+                        // let's take the source of the copy
+                        source_def_id
+                    }
+                    None => def_id
+                }
+            } else {
+                def_id
+            };
+
+            // Get the crate hash as first part of the identifier
+            let crate_hash = if source_def_id.krate == ast::LOCAL_CRATE {
+                cx.link_meta.crate_hash.clone()
+            } else {
+                cx.sess().cstore.get_crate_hash(source_def_id.krate)
+            };
+
+            output.push_str(crate_hash.as_str());
+            output.push_str("/");
+            output.push_str(def_id.node.to_str_radix(16).as_slice());
+
+            // Maybe check that there is no self type here
+
+            let tps = substs.types.get_vec(subst::TypeSpace);
+            if tps.len() > 0 {
+                output.push_char('<');
+
+                for &type_parameter in tps.iter() {
+                    let param_type_id = type_map.get_unique_type_id_of_type(cx, type_parameter);
+                    let param_type_id = type_map.get_unique_type_id_as_string(param_type_id);
+                    output.push_str(param_type_id.as_slice());
+                    output.push_char(',');
+                }
+
+                output.push_char('>');
+            }
+        }
+    }
+
+    // Get the UniqueTypeId for an enum variant. Enum variants are not really types of their own,
+    // so they need special handling. We still need a UniqueTypeId for them, since to debuginfo they
+    // *are* real types.
+    fn get_unique_type_id_of_enum_variant(&mut self,
+                                          cx: &CrateContext,
+                                          enum_type: ty::t,
+                                          variant_name: &str)
+                                       -> UniqueTypeId {
+        let enum_type_id = self.get_unique_type_id_of_type(cx, enum_type);
+        let enum_variant_type_id = format!("{}::{}",
+                                           self.get_unique_type_id_as_string(enum_type_id)
+                                               .as_slice(),
+                                           variant_name);
+        let interner_key = self.unique_id_interner.intern(Rc::new(enum_variant_type_id));
+        UniqueTypeId(interner_key)
+    }
+}
+
+
 /// A context object for maintaining all state needed by the debuginfo module.
 pub struct CrateDebugContext {
     llcontext: ContextRef,
     builder: DIBuilderRef,
     current_debug_location: Cell<DebugLocation>,
     created_files: RefCell<HashMap<String, DIFile>>,
-    created_types: RefCell<HashMap<uint, DIType>>,
     created_enum_disr_types: RefCell<HashMap<ast::DefId, DIType>>,
+
+    type_map: RefCell<TypeMap>,
     namespace_map: RefCell<HashMap<Vec<ast::Name>, Rc<NamespaceTreeNode>>>,
+
     // This collection is used to assert that composite types (structs, enums, ...) have their
     // members only set once:
     composite_types_completed: RefCell<HashSet<DIType>>,
@@ -198,8 +582,8 @@ impl CrateDebugContext {
             builder: builder,
             current_debug_location: Cell::new(UnknownLocation),
             created_files: RefCell::new(HashMap::new()),
-            created_types: RefCell::new(HashMap::new()),
             created_enum_disr_types: RefCell::new(HashMap::new()),
+            type_map: RefCell::new(TypeMap::new()),
             namespace_map: RefCell::new(HashMap::new()),
             composite_types_completed: RefCell::new(HashSet::new()),
         };
@@ -379,7 +763,7 @@ pub fn create_local_var_metadata(bcx: &Block, local: &ast::Local) {
     let cx = bcx.ccx();
     let def_map = &cx.tcx.def_map;
 
-    pat_util::pat_bindings(def_map, local.pat, |_, node_id, span, path_ref| {
+    pat_util::pat_bindings(def_map, &*local.pat, |_, node_id, span, path_ref| {
         let var_ident = ast_util::path_to_ident(path_ref);
 
         let datum = match bcx.fcx.lllocals.borrow().find_copy(&node_id) {
@@ -524,7 +908,7 @@ pub fn create_argument_metadata(bcx: &Block, arg: &ast::Arg) {
     let def_map = &cx.tcx.def_map;
     let scope_metadata = bcx.fcx.debug_context.get_ref(cx, arg.pat.span).fn_metadata;
 
-    pat_util::pat_bindings(def_map, arg.pat, |_, node_id, span, path_ref| {
+    pat_util::pat_bindings(def_map, &*arg.pat, |_, node_id, span, path_ref| {
         let llarg = match bcx.fcx.llargs.borrow().find_copy(&node_id) {
             Some(v) => v,
             None => {
@@ -621,7 +1005,7 @@ pub fn start_emitting_source_locations(fcx: &FunctionContext) {
 /// indicates why no debuginfo should be created for the function.
 pub fn create_function_debug_context(cx: &CrateContext,
                                      fn_ast_id: ast::NodeId,
-                                     param_substs: Option<&param_substs>,
+                                     param_substs: &param_substs,
                                      llfn: ValueRef) -> FunctionDebugContext {
     if cx.sess().opts.debuginfo == NoDebugInfo {
         return FunctionDebugContext { repr: DebugInfoDisabled };
@@ -715,7 +1099,7 @@ pub fn create_function_debug_context(cx: &CrateContext,
     let file_metadata = file_metadata(cx, loc.file.name.as_slice());
 
     let function_type_metadata = unsafe {
-        let fn_signature = get_function_signature(cx, fn_ast_id, fn_decl, param_substs, span);
+        let fn_signature = get_function_signature(cx, fn_ast_id, &*fn_decl, param_substs, span);
         llvm::LLVMDIBuilderCreateSubroutineType(DIB(cx), file_metadata, fn_signature)
     };
 
@@ -779,7 +1163,7 @@ pub fn create_function_debug_context(cx: &CrateContext,
     let arg_pats = fn_decl.inputs.iter().map(|arg_ref| arg_ref.pat).collect::<Vec<_>>();
     populate_scope_map(cx,
                        arg_pats.as_slice(),
-                       top_level_block,
+                       &*top_level_block,
                        fn_metadata,
                        &mut *fn_debug_context.scope_map.borrow_mut());
 
@@ -788,7 +1172,7 @@ pub fn create_function_debug_context(cx: &CrateContext,
     fn get_function_signature(cx: &CrateContext,
                               fn_ast_id: ast::NodeId,
                               fn_decl: &ast::FnDecl,
-                              param_substs: Option<&param_substs>,
+                              param_substs: &param_substs,
                               error_span: Span) -> DIArray {
         if cx.sess().opts.debuginfo == LimitedDebugInfo {
             return create_DIArray(DIB(cx), []);
@@ -823,14 +1207,11 @@ pub fn create_function_debug_context(cx: &CrateContext,
 
     fn get_template_parameters(cx: &CrateContext,
                                generics: &ast::Generics,
-                               param_substs: Option<&param_substs>,
+                               param_substs: &param_substs,
                                file_metadata: DIFile,
                                name_to_append_suffix_to: &mut String)
                                -> DIArray {
-        let self_type = match param_substs {
-            Some(param_substs) => param_substs.substs.self_ty,
-            _ => None
-        };
+        let self_type = param_substs.substs.self_ty();
 
         // Only true for static default methods:
         let has_self_type = self_type.is_some();
@@ -884,13 +1265,7 @@ pub fn create_function_debug_context(cx: &CrateContext,
         }
 
         // Handle other generic parameters
-        let actual_types = match param_substs {
-            Some(param_substs) => &param_substs.substs.tps,
-            None => {
-                return create_DIArray(DIB(cx), template_params.as_slice());
-            }
-        };
-
+        let actual_types = param_substs.substs.types.get_vec(subst::FnSpace);
         for (index, &ast::TyParam{ ident: ident, .. }) in generics.ty_params.iter().enumerate() {
             let actual_type = *actual_types.get(index);
             // Add actual type name to <...> clause of function name
@@ -1264,13 +1639,39 @@ impl MemberDescriptionFactory {
 // more information.
 enum RecursiveTypeDescription {
     UnfinishedMetadata {
-        cache_id: uint,
+        unfinished_type: ty::t,
+        unique_type_id: UniqueTypeId,
         metadata_stub: DICompositeType,
         llvm_type: Type,
         file_metadata: DIFile,
         member_description_factory: MemberDescriptionFactory,
     },
     FinalMetadata(DICompositeType)
+}
+
+fn create_and_register_recursive_type_forward_declaration(
+    cx: &CrateContext,
+    unfinished_type: ty::t,
+    unique_type_id: UniqueTypeId,
+    metadata_stub: DICompositeType,
+    llvm_type: Type,
+    file_metadata: DIFile,
+    member_description_factory: MemberDescriptionFactory)
+ -> RecursiveTypeDescription {
+
+    // Insert the stub into the TypeMap in order to allow for recursive references
+    let mut type_map = debug_context(cx).type_map.borrow_mut();
+    type_map.register_unique_id_with_metadata(cx, unique_type_id, metadata_stub);
+    type_map.register_type_with_metadata(cx, unfinished_type, metadata_stub);
+
+    UnfinishedMetadata {
+        unfinished_type: unfinished_type,
+        unique_type_id: unique_type_id,
+        metadata_stub: metadata_stub,
+        llvm_type: llvm_type,
+        file_metadata: file_metadata,
+        member_description_factory: member_description_factory,
+    }
 }
 
 impl RecursiveTypeDescription {
@@ -1280,15 +1681,27 @@ impl RecursiveTypeDescription {
         match *self {
             FinalMetadata(metadata) => metadata,
             UnfinishedMetadata {
-                cache_id,
+                unfinished_type,
+                unique_type_id,
                 metadata_stub,
                 llvm_type,
                 file_metadata,
                 ref member_description_factory
             } => {
-                // Insert the stub into the cache in order to allow recursive references ...
-                debug_context(cx).created_types.borrow_mut()
-                                 .insert(cache_id, metadata_stub);
+                // Make sure that we have a forward declaration of the type in the TypeMap so that
+                // recursive references are possible. This will always be the case if the
+                // RecursiveTypeDescription has been properly created through the
+                // create_and_register_recursive_type_forward_declaration() function.
+                {
+                    let type_map = debug_context(cx).type_map.borrow();
+                    if type_map.find_metadata_for_unique_id(unique_type_id).is_none() ||
+                       type_map.find_metadata_for_type(unfinished_type).is_none() {
+                        cx.sess().bug(format!("Forward declaration of potentially recursive type \
+                                              '{}' was not found in TypeMap!",
+                                              ppaux::ty_to_str(cx.tcx(), unfinished_type))
+                                      .as_slice());
+                    }
+                }
 
                 // ... then create the member descriptions ...
                 let member_descriptions = member_description_factory.create_member_descriptions(cx);
@@ -1357,7 +1770,8 @@ impl StructMemberDescriptionFactory {
 fn prepare_struct_metadata(cx: &CrateContext,
                            struct_type: ty::t,
                            def_id: ast::DefId,
-                           substs: &ty::substs,
+                           substs: &subst::Substs,
+                           unique_type_id: UniqueTypeId,
                            span: Span)
                         -> RecursiveTypeDescription {
     let struct_name = ppaux::ty_to_str(cx.tcx(), struct_type);
@@ -1371,23 +1785,26 @@ fn prepare_struct_metadata(cx: &CrateContext,
     let struct_metadata_stub = create_struct_stub(cx,
                                                   struct_llvm_type,
                                                   struct_name.as_slice(),
+                                                  unique_type_id,
                                                   containing_scope,
                                                   file_metadata,
                                                   definition_span);
 
     let fields = ty::struct_fields(cx.tcx(), def_id, substs);
 
-    UnfinishedMetadata {
-        cache_id: cache_id_for_type(struct_type),
-        metadata_stub: struct_metadata_stub,
-        llvm_type: struct_llvm_type,
-        file_metadata: file_metadata,
-        member_description_factory: StructMDF(StructMemberDescriptionFactory {
+    create_and_register_recursive_type_forward_declaration(
+        cx,
+        struct_type,
+        unique_type_id,
+        struct_metadata_stub,
+        struct_llvm_type,
+        file_metadata,
+        StructMDF(StructMemberDescriptionFactory {
             fields: fields,
             is_simd: ty::type_is_simd(cx.tcx(), struct_type),
             span: span,
-        }),
-    }
+        })
+    )
 }
 
 
@@ -1418,6 +1835,7 @@ impl TupleMemberDescriptionFactory {
 fn prepare_tuple_metadata(cx: &CrateContext,
                           tuple_type: ty::t,
                           component_types: &[ty::t],
+                          unique_type_id: UniqueTypeId,
                           span: Span)
                        -> RecursiveTypeDescription {
     let tuple_name = ppaux::ty_to_str(cx.tcx(), tuple_type);
@@ -1426,21 +1844,24 @@ fn prepare_tuple_metadata(cx: &CrateContext,
     let loc = span_start(cx, span);
     let file_metadata = file_metadata(cx, loc.file.name.as_slice());
 
-    UnfinishedMetadata {
-        cache_id: cache_id_for_type(tuple_type),
-        metadata_stub: create_struct_stub(cx,
-                                          tuple_llvm_type,
-                                          tuple_name.as_slice(),
-                                          file_metadata,
-                                          file_metadata,
-                                          span),
-        llvm_type: tuple_llvm_type,
-        file_metadata: file_metadata,
-        member_description_factory: TupleMDF(TupleMemberDescriptionFactory {
+    create_and_register_recursive_type_forward_declaration(
+        cx,
+        tuple_type,
+        unique_type_id,
+        create_struct_stub(cx,
+                           tuple_llvm_type,
+                           tuple_name.as_slice(),
+                           unique_type_id,
+                           file_metadata,
+                           file_metadata,
+                           span),
+        tuple_llvm_type,
+        file_metadata,
+        TupleMDF(TupleMemberDescriptionFactory {
             component_types: Vec::from_slice(component_types),
             span: span,
         })
-    }
+    )
 }
 
 
@@ -1453,6 +1874,7 @@ fn prepare_tuple_metadata(cx: &CrateContext,
 // variant of the given enum, this factory will produce one MemberDescription (all with no name and
 // a fixed offset of zero bytes).
 struct EnumMemberDescriptionFactory {
+    enum_type: ty::t,
     type_rep: Rc<adt::Repr>,
     variants: Rc<Vec<Rc<ty::VariantInfo>>>,
     discriminant_type_metadata: Option<DIType>,
@@ -1474,6 +1896,7 @@ impl EnumMemberDescriptionFactory {
                     .map(|(i, struct_def)| {
                         let (variant_type_metadata, variant_llvm_type, member_desc_factory) =
                             describe_enum_variant(cx,
+                                                  self.enum_type,
                                                   struct_def,
                                                   &**self.variants.get(i),
                                                   discriminant_info,
@@ -1506,6 +1929,7 @@ impl EnumMemberDescriptionFactory {
                 } else {
                     let (variant_type_metadata, variant_llvm_type, member_description_factory) =
                         describe_enum_variant(cx,
+                                              self.enum_type,
                                               struct_def,
                                               &**self.variants.get(0),
                                               NoDiscriminant,
@@ -1536,7 +1960,7 @@ impl EnumMemberDescriptionFactory {
                 // As far as debuginfo is concerned, the pointer this enum represents is still
                 // wrapped in a struct. This is to make the DWARF representation of enums uniform.
 
-                // First create a description of the artifical wrapper struct:
+                // First create a description of the artificial wrapper struct:
                 let non_null_variant = self.variants.get(non_null_variant_index as uint);
                 let non_null_variant_ident = non_null_variant.name;
                 let non_null_variant_name = token::get_ident(non_null_variant_ident);
@@ -1560,11 +1984,19 @@ impl EnumMemberDescriptionFactory {
                     offset: FixedMemberOffset { bytes: 0 },
                 };
 
+                let unique_type_id = debug_context(cx).type_map
+                                                      .borrow_mut()
+                                                      .get_unique_type_id_of_enum_variant(
+                                                          cx,
+                                                          self.enum_type,
+                                                          non_null_variant_name.get());
+
                 // Now we can create the metadata of the artificial struct
                 let artificial_struct_metadata =
                     composite_type_metadata(cx,
                                             artificial_struct_llvm_type,
                                             non_null_variant_name.get(),
+                                            unique_type_id,
                                             &[sole_struct_member_description],
                                             self.containing_scope,
                                             self.file_metadata,
@@ -1590,6 +2022,7 @@ impl EnumMemberDescriptionFactory {
                 // Create a description of the non-null variant
                 let (variant_type_metadata, variant_llvm_type, member_description_factory) =
                     describe_enum_variant(cx,
+                                          self.enum_type,
                                           struct_def,
                                           &**self.variants.get(nndiscr as uint),
                                           OptimizedDiscriminant(ptrfield),
@@ -1663,6 +2096,7 @@ enum EnumDiscriminantInfo {
 // (3) a MemberDescriptionFactory for producing the descriptions of the fields of the variant. This
 // is a rudimentary version of a full RecursiveTypeDescription.
 fn describe_enum_variant(cx: &CrateContext,
+                         enum_type: ty::t,
                          struct_def: &adt::Struct,
                          variant_info: &ty::VariantInfo,
                          discriminant_info: EnumDiscriminantInfo,
@@ -1687,9 +2121,19 @@ fn describe_enum_variant(cx: &CrateContext,
         codemap::DUMMY_SP
     };
 
+    let variant_name = token::get_ident(variant_info.name);
+    let variant_name = variant_name.get();
+    let unique_type_id = debug_context(cx).type_map
+                                          .borrow_mut()
+                                          .get_unique_type_id_of_enum_variant(
+                                              cx,
+                                              enum_type,
+                                              variant_name);
+
     let metadata_stub = create_struct_stub(cx,
                                            variant_llvm_type,
-                                           token::get_ident(variant_info.name).get(),
+                                           variant_name,
+                                           unique_type_id,
                                            containing_scope,
                                            file_metadata,
                                            variant_definition_span);
@@ -1733,6 +2177,7 @@ fn describe_enum_variant(cx: &CrateContext,
 fn prepare_enum_metadata(cx: &CrateContext,
                          enum_type: ty::t,
                          enum_def_id: ast::DefId,
+                         unique_type_id: UniqueTypeId,
                          span: Span)
                       -> RecursiveTypeDescription {
     let enum_name = ppaux::ty_to_str(cx.tcx(), enum_type);
@@ -1813,10 +2258,14 @@ fn prepare_enum_metadata(cx: &CrateContext,
 
     let enum_llvm_type = type_of::type_of(cx, enum_type);
     let (enum_type_size, enum_type_align) = size_and_align_of(cx, enum_llvm_type);
-    let unique_id = generate_unique_type_id("DI_ENUM_");
+
+    let unique_type_id_str = debug_context(cx)
+                             .type_map
+                             .borrow()
+                             .get_unique_type_id_as_string(unique_type_id);
 
     let enum_metadata = enum_name.as_slice().with_c_str(|enum_name| {
-        unique_id.as_slice().with_c_str(|unique_id| {
+        unique_type_id_str.as_slice().with_c_str(|unique_type_id_str| {
             unsafe {
                 llvm::LLVMDIBuilderCreateUnionType(
                 DIB(cx),
@@ -1829,17 +2278,20 @@ fn prepare_enum_metadata(cx: &CrateContext,
                 0, // Flags
                 ptr::null(),
                 0, // RuntimeLang
-                unique_id)
+                unique_type_id_str)
             }
         })
     });
 
-    return UnfinishedMetadata {
-        cache_id: cache_id_for_type(enum_type),
-        metadata_stub: enum_metadata,
-        llvm_type: enum_llvm_type,
-        file_metadata: file_metadata,
-        member_description_factory: EnumMDF(EnumMemberDescriptionFactory {
+    return create_and_register_recursive_type_forward_declaration(
+        cx,
+        enum_type,
+        unique_type_id,
+        enum_metadata,
+        enum_llvm_type,
+        file_metadata,
+        EnumMDF(EnumMemberDescriptionFactory {
+            enum_type: enum_type,
             type_rep: type_rep.clone(),
             variants: variants,
             discriminant_type_metadata: discriminant_type_metadata,
@@ -1847,7 +2299,7 @@ fn prepare_enum_metadata(cx: &CrateContext,
             file_metadata: file_metadata,
             span: span,
         }),
-    };
+    );
 
     fn get_enum_discriminant_name(cx: &CrateContext, def_id: ast::DefId) -> token::InternedString {
         let name = if def_id.krate == ast::LOCAL_CRATE {
@@ -1866,6 +2318,7 @@ fn prepare_enum_metadata(cx: &CrateContext,
 fn composite_type_metadata(cx: &CrateContext,
                            composite_llvm_type: Type,
                            composite_type_name: &str,
+                           composite_type_unique_id: UniqueTypeId,
                            member_descriptions: &[MemberDescription],
                            containing_scope: DIScope,
                            file_metadata: DIFile,
@@ -1875,10 +2328,10 @@ fn composite_type_metadata(cx: &CrateContext,
     let composite_type_metadata = create_struct_stub(cx,
                                                      composite_llvm_type,
                                                      composite_type_name,
+                                                     composite_type_unique_id,
                                                      containing_scope,
                                                      file_metadata,
                                                      definition_span);
-
     // ... and immediately create and add the member descriptions.
     set_members_of_composite_type(cx,
                                   composite_type_metadata,
@@ -1904,9 +2357,22 @@ fn set_members_of_composite_type(cx: &CrateContext,
         let mut composite_types_completed =
             debug_context(cx).composite_types_completed.borrow_mut();
         if composite_types_completed.contains(&composite_type_metadata) {
-            cx.sess().span_bug(definition_span, "debuginfo::set_members_of_composite_type() - \
-                                                 Already completed forward declaration \
-                                                 re-encountered.");
+            let (llvm_version_major, llvm_version_minor) = unsafe {
+                (llvm::LLVMVersionMajor(), llvm::LLVMVersionMinor())
+            };
+
+            let actual_llvm_version = llvm_version_major * 1000000 + llvm_version_minor * 1000;
+            let min_supported_llvm_version = 3 * 1000000 + 4 * 1000;
+
+            if actual_llvm_version < min_supported_llvm_version {
+                cx.sess().warn(format!("This version of rustc was built with LLVM {}.{}. \
+                    Rustc just ran into a known debuginfo corruption problem that \
+                    often occurs with LLVM versions below 3.4. Please use a rustc built with a \
+                    newer version of LLVM.", llvm_version_major, llvm_version_minor).as_slice());
+            } else {
+                cx.sess().bug("debuginfo::set_members_of_composite_type() - \
+                               Already completed forward declaration re-encountered.");
+            }
         } else {
             composite_types_completed.insert(composite_type_metadata);
         }
@@ -1953,6 +2419,7 @@ fn set_members_of_composite_type(cx: &CrateContext,
 fn create_struct_stub(cx: &CrateContext,
                       struct_llvm_type: Type,
                       struct_type_name: &str,
+                      unique_type_id: UniqueTypeId,
                       containing_scope: DIScope,
                       file_metadata: DIFile,
                       definition_span: Span)
@@ -1960,13 +2427,12 @@ fn create_struct_stub(cx: &CrateContext,
     let loc = span_start(cx, definition_span);
     let (struct_size, struct_align) = size_and_align_of(cx, struct_llvm_type);
 
-    // We assign unique IDs to the type stubs so LLVM metadata uniquing does not reuse instances
-    // where we don't want it.
-    let unique_id = generate_unique_type_id("DI_STRUCT_");
-
-    return unsafe {
+    let unique_type_id_str = debug_context(cx).type_map
+                                              .borrow()
+                                              .get_unique_type_id_as_string(unique_type_id);
+    let metadata_stub = unsafe {
         struct_type_name.with_c_str(|name| {
-            unique_id.as_slice().with_c_str(|unique_id| {
+            unique_type_id_str.as_slice().with_c_str(|unique_type_id| {
                 // LLVMDIBuilderCreateStructType() wants an empty array. A null pointer will lead to
                 // hard to trace and debug LLVM assertions later on in llvm/lib/IR/Value.cpp
                 let empty_array = create_DIArray(DIB(cx), []);
@@ -1984,23 +2450,23 @@ fn create_struct_stub(cx: &CrateContext,
                     empty_array,
                     0,
                     ptr::null(),
-                    unique_id)
+                    unique_type_id)
             })
         })
     };
+
+    return metadata_stub;
 }
 
-fn boxed_type_metadata(cx: &CrateContext,
-                       content_type_name: Option<&str>,
-                       content_llvm_type: Type,
-                       content_type_metadata: DIType,
-                       span: Span)
-                    -> DICompositeType {
-    let box_type_name = match content_type_name {
-        Some(content_type_name) => format!("Boxed<{}>", content_type_name),
-        None                    => "BoxedType".to_string()
-    };
+fn at_box_metadata(cx: &CrateContext,
+                   content_type: ty::t,
+                   unique_type_id: UniqueTypeId) -> DIType {
+    let content_type_name = ppaux::ty_to_str(cx.tcx(), content_type);
+    let content_type_name = content_type_name.as_slice();
+    let content_llvm_type = type_of::type_of(cx, content_type);
+    let content_type_metadata = type_metadata(cx, content_type, codemap::DUMMY_SP);
 
+    let box_type_name = format!("Boxed<{}>", content_type_name);
     let box_llvm_type = Type::at_box(cx, content_llvm_type);
     let member_llvm_types = box_llvm_type.field_types();
     assert!(box_layout_is_correct(cx,
@@ -2044,17 +2510,18 @@ fn boxed_type_metadata(cx: &CrateContext,
         }
     ];
 
-    let loc = span_start(cx, span);
+    let loc = span_start(cx, codemap::DUMMY_SP);
     let file_metadata = file_metadata(cx, loc.file.name.as_slice());
 
     return composite_type_metadata(
         cx,
         box_llvm_type,
         box_type_name.as_slice(),
+        unique_type_id,
         member_descriptions,
         file_metadata,
         file_metadata,
-        span);
+        codemap::DUMMY_SP);
 
     // Unfortunately, we cannot assert anything but the correct types here---and not whether the
     // 'next' and 'prev' pointers are in the correct order.
@@ -2070,6 +2537,7 @@ fn boxed_type_metadata(cx: &CrateContext,
         member_llvm_types[4] == content_llvm_type
     }
 }
+
 
 fn fixed_vec_metadata(cx: &CrateContext,
                       element_type: ty::t,
@@ -2098,18 +2566,19 @@ fn fixed_vec_metadata(cx: &CrateContext,
     };
 }
 
-fn vec_metadata(cx: &CrateContext,
-                element_type: ty::t,
-                span: Span)
-             -> DICompositeType {
+fn heap_vec_metadata(cx: &CrateContext,
+                     vec_type: ty::t,
+                     element_type: ty::t,
+                     unique_type_id: UniqueTypeId,
+                     span: Span)
+                  -> DICompositeType {
 
     let element_type_metadata = type_metadata(cx, element_type, span);
     let element_llvm_type = type_of::type_of(cx, element_type);
     let (element_size, element_align) = size_and_align_of(cx, element_llvm_type);
 
     let vec_llvm_type = Type::vec(cx, &element_llvm_type);
-    let vec_type_name = format!("[{}]",
-                                ppaux::ty_to_str(cx.tcx(), element_type));
+    let vec_type_name = ppaux::ty_to_str(cx.tcx(), vec_type);
     let vec_type_name = vec_type_name.as_slice();
 
     let member_llvm_types = vec_llvm_type.field_types();
@@ -2154,6 +2623,7 @@ fn vec_metadata(cx: &CrateContext,
         cx,
         vec_llvm_type,
         vec_type_name,
+        unique_type_id,
         member_descriptions,
         file_metadata,
         file_metadata,
@@ -2163,6 +2633,7 @@ fn vec_metadata(cx: &CrateContext,
 fn vec_slice_metadata(cx: &CrateContext,
                       vec_type: ty::t,
                       element_type: ty::t,
+                      unique_type_id: UniqueTypeId,
                       span: Span)
                    -> DICompositeType {
 
@@ -2205,6 +2676,7 @@ fn vec_slice_metadata(cx: &CrateContext,
         cx,
         slice_llvm_type,
         slice_type_name.as_slice(),
+        unique_type_id,
         member_descriptions,
         file_metadata,
         file_metadata,
@@ -2227,8 +2699,7 @@ fn subroutine_type_metadata(cx: &CrateContext,
     let loc = span_start(cx, span);
     let file_metadata = file_metadata(cx, loc.file.name.as_slice());
 
-    let mut signature_metadata: Vec<DIType> =
-        Vec::with_capacity(signature.inputs.len() + 1);
+    let mut signature_metadata: Vec<DIType> = Vec::with_capacity(signature.inputs.len() + 1);
 
     // return type
     signature_metadata.push(match ty::get(signature.output).sty {
@@ -2252,9 +2723,10 @@ fn subroutine_type_metadata(cx: &CrateContext,
 fn trait_metadata(cx: &CrateContext,
                   def_id: ast::DefId,
                   trait_type: ty::t,
-                  substs: &ty::substs,
+                  substs: &subst::Substs,
                   trait_store: ty::TraitStore,
-                  _: &ty::BuiltinBounds)
+                  _: &ty::BuiltinBounds,
+                  unique_type_id: UniqueTypeId)
                -> DIType {
     // The implementation provided here is a stub. It makes sure that the trait type is
     // assigned the correct name, size, namespace, and source location. But it does not describe
@@ -2263,13 +2735,11 @@ fn trait_metadata(cx: &CrateContext,
     let ident_string = token::get_name(last.name());
     let mut name = ppaux::trait_store_to_str(cx.tcx(), trait_store);
     name.push_str(ident_string.get());
+
     // Add type and region parameters
-    let name = ppaux::parameterized(cx.tcx(),
-                                    name.as_slice(),
-                                    &substs.regions,
-                                    substs.tps.as_slice(),
-                                    def_id,
-                                    true);
+    let trait_def = ty::lookup_trait_def(cx.tcx(), def_id);
+    let name = ppaux::parameterized(cx.tcx(), name.as_slice(),
+                                    substs, &trait_def.generics);
 
     let (containing_scope, definition_span) = get_namespace_and_span_for_item(cx, def_id);
 
@@ -2281,49 +2751,55 @@ fn trait_metadata(cx: &CrateContext,
     composite_type_metadata(cx,
                             trait_llvm_type,
                             name.as_slice(),
+                            unique_type_id,
                             [],
                             containing_scope,
                             file_metadata,
                             definition_span)
 }
 
+
 fn type_metadata(cx: &CrateContext,
                  t: ty::t,
                  usage_site_span: Span)
               -> DIType {
-    let cache_id = cache_id_for_type(t);
-
-    match debug_context(cx).created_types.borrow().find(&cache_id) {
-        Some(type_metadata) => return *type_metadata,
-        None => ()
-    }
-
-    fn create_pointer_to_box_metadata(cx: &CrateContext,
-                                      pointer_type: ty::t,
-                                      type_in_box: ty::t)
-                                   -> DIType {
-        let content_type_name = ppaux::ty_to_str(cx.tcx(), type_in_box);
-        let content_type_name = content_type_name.as_slice();
-        let content_llvm_type = type_of::type_of(cx, type_in_box);
-        let content_type_metadata = type_metadata(
-            cx,
-            type_in_box,
-            codemap::DUMMY_SP);
-
-        let box_metadata = boxed_type_metadata(
-            cx,
-            Some(content_type_name),
-            content_llvm_type,
-            content_type_metadata,
-            codemap::DUMMY_SP);
-
-        pointer_type_metadata(cx, pointer_type, box_metadata)
-    }
+    // Get the unique type id of this type.
+    let unique_type_id = {
+        let mut type_map = debug_context(cx).type_map.borrow_mut();
+        match type_map.find_metadata_for_type(t) {
+            Some(metadata) => {
+                return metadata;
+            },
+            None => {
+                let unique_type_id = type_map.get_unique_type_id_of_type(cx, t);
+                match type_map.find_metadata_for_unique_id(unique_type_id) {
+                    Some(metadata) => {
+                        type_map.register_type_with_metadata(cx, t, metadata);
+                        return metadata;
+                    },
+                    None => {
+                        // There really is no type metadata for this type, so proceed by creating
+                        // it
+                        unique_type_id
+                    }
+                }
+            }
+        }
+    };
 
     debug!("type_metadata: {:?}", ty::get(t));
 
+    macro_rules! return_if_created_in_meantime(
+        () => (
+            match debug_context(cx).type_map.borrow().find_metadata_for_unique_id(unique_type_id) {
+                Some(metadata) => return metadata,
+                None => { /* proceed normally */ }
+            };
+        )
+    )
+
     let sty = &ty::get(t).sty;
-    let type_metadata = match *sty {
+    let (type_metadata, should_already_be_stored_in_typemap) = match *sty {
         ty::ty_nil      |
         ty::ty_bot      |
         ty::ty_bool     |
@@ -2331,50 +2807,73 @@ fn type_metadata(cx: &CrateContext,
         ty::ty_int(_)   |
         ty::ty_uint(_)  |
         ty::ty_float(_) => {
-            basic_type_metadata(cx, t)
+            (basic_type_metadata(cx, t), false)
         }
         ty::ty_enum(def_id, _) => {
-            prepare_enum_metadata(cx, t, def_id, usage_site_span).finalize(cx)
+            let is_c_style_enum = match *adt::represent_type(cx, t) {
+                adt::CEnum(..) => true,
+                _ => false
+            };
+
+            (prepare_enum_metadata(cx, t, def_id, unique_type_id, usage_site_span).finalize(cx),
+             !is_c_style_enum)
         }
-        ty::ty_box(typ) => {
-            create_pointer_to_box_metadata(cx, t, typ)
+        ty::ty_box(pointee_type) => {
+            let box_content_metadata = at_box_metadata(cx, pointee_type, unique_type_id);
+            return_if_created_in_meantime!();
+            (pointer_type_metadata(cx, t, box_content_metadata), false)
         }
-        ty::ty_vec(ref mt, Some(len)) => fixed_vec_metadata(cx, mt.ty, len, usage_site_span),
-        ty::ty_uniq(typ) => {
-            match ty::get(typ).sty {
+        ty::ty_vec(ref mt, Some(len)) => {
+            (fixed_vec_metadata(cx, mt.ty, len, usage_site_span), false)
+        }
+        ty::ty_uniq(pointee_type) => {
+            (match ty::get(pointee_type).sty {
                 ty::ty_vec(ref mt, None) => {
-                    let vec_metadata = vec_metadata(cx, mt.ty, usage_site_span);
+                    let vec_metadata = heap_vec_metadata(cx,
+                                                         pointee_type,
+                                                         mt.ty,
+                                                         unique_type_id,
+                                                         usage_site_span);
+                    return_if_created_in_meantime!();
                     pointer_type_metadata(cx, t, vec_metadata)
                 }
                 ty::ty_str => {
                     let i8_t = ty::mk_i8();
-                    let vec_metadata = vec_metadata(cx, i8_t, usage_site_span);
+                    let vec_metadata = heap_vec_metadata(cx,
+                                                         pointee_type,
+                                                         i8_t,
+                                                         unique_type_id,
+                                                         usage_site_span);
                     pointer_type_metadata(cx, t, vec_metadata)
                 }
                 _ => {
-                    let pointee = type_metadata(cx, typ, usage_site_span);
-                    pointer_type_metadata(cx, t, pointee)
+                    let pointee_metadata = type_metadata(cx, pointee_type, usage_site_span);
+                    return_if_created_in_meantime!();
+                    pointer_type_metadata(cx, t, pointee_metadata)
                 }
-            }
+            }, false)
         }
         ty::ty_ptr(ref mt) | ty::ty_rptr(_, ref mt) => {
-            match ty::get(mt.ty).sty {
-                ty::ty_vec(ref mt, None) => vec_slice_metadata(cx, t, mt.ty, usage_site_span),
+            (match ty::get(mt.ty).sty {
+                ty::ty_vec(ref mt, None) => {
+                    vec_slice_metadata(cx, t, mt.ty, unique_type_id, usage_site_span)
+                }
                 ty::ty_str => {
                     let i8_t = ty::mk_i8();
-                    vec_slice_metadata(cx, t, i8_t, usage_site_span)
+                    vec_slice_metadata(cx, t, i8_t, unique_type_id, usage_site_span)
                 }
                 _ => {
                     let pointee = type_metadata(cx, mt.ty, usage_site_span);
+                    return_if_created_in_meantime!();
                     pointer_type_metadata(cx, t, pointee)
                 }
-            }
+            }, false)
         }
         ty::ty_bare_fn(ref barefnty) => {
-            subroutine_type_metadata(cx, &barefnty.sig, usage_site_span)
+            (subroutine_type_metadata(cx, &barefnty.sig, usage_site_span), false)
         }
         ty::ty_closure(ref closurety) => {
-            subroutine_type_metadata(cx, &closurety.sig, usage_site_span)
+            (subroutine_type_metadata(cx, &closurety.sig, usage_site_span), false)
         }
         ty::ty_trait(box ty::TyTrait {
                 def_id,
@@ -2382,25 +2881,60 @@ fn type_metadata(cx: &CrateContext,
                 store,
                 ref bounds
             }) => {
-            trait_metadata(cx, def_id, t, substs, store, bounds)
+            (trait_metadata(cx, def_id, t, substs, store, bounds, unique_type_id), false)
         }
         ty::ty_struct(def_id, ref substs) => {
-            prepare_struct_metadata(cx, t, def_id, substs, usage_site_span).finalize(cx)
+            let struct_metadata = prepare_struct_metadata(cx,
+                                                          t,
+                                                          def_id,
+                                                          substs,
+                                                          unique_type_id,
+                                                          usage_site_span).finalize(cx);
+            (struct_metadata, true)
         }
         ty::ty_tup(ref elements) => {
-            prepare_tuple_metadata(cx,
-                                   t,
-                                   elements.as_slice(),
-                                   usage_site_span).finalize(cx)
+            let tuple_metadata = prepare_tuple_metadata(cx,
+                                                        t,
+                                                        elements.as_slice(),
+                                                        unique_type_id,
+                                                        usage_site_span).finalize(cx);
+            (tuple_metadata, true)
         }
         _ => {
-            cx.sess().bug(format!("debuginfo: unexpected type in \
-                                   type_metadata: {:?}",
+            cx.sess().bug(format!("debuginfo: unexpected type in type_metadata: {:?}",
                                   sty).as_slice())
         }
     };
 
-    debug_context(cx).created_types.borrow_mut().insert(cache_id, type_metadata);
+    {
+        let mut type_map = debug_context(cx).type_map.borrow_mut();
+
+        if should_already_be_stored_in_typemap {
+            // Make sure that we already have a TypeMap entry entry for the ty::t.
+            if type_map.find_metadata_for_type(t).is_none() {
+                let unique_type_id_str = type_map.get_unique_type_id_as_string(unique_type_id);
+                let error_message = format!("Expected type metadata for ty::t '{}' to already be in
+                                            the TypeMap but it was not (unique type id = {})",
+                                            ppaux::ty_to_str(cx.tcx(), t),
+                                            unique_type_id_str.as_slice());
+                cx.sess().span_bug(usage_site_span, error_message.as_slice());
+            }
+
+            // Also make sure that we already have a TypeMap entry entry for the unique type id.
+            if type_map.find_metadata_for_unique_id(unique_type_id).is_none() {
+                let unique_type_id_str = type_map.get_unique_type_id_as_string(unique_type_id);
+                let error_message = format!("Expected type metadata for unique type id '{}' to
+                                            already be in the TypeMap but it was not. (ty::t = {})",
+                                            unique_type_id_str.as_slice(),
+                                            ppaux::ty_to_str(cx.tcx(), t));
+                cx.sess().span_bug(usage_site_span, error_message.as_slice());
+            }
+        } else {
+            type_map.register_type_with_metadata(cx, t, type_metadata);
+            type_map.register_unique_id_with_metadata(cx, unique_type_id, type_metadata);
+        }
+    }
+
     type_metadata
 }
 
@@ -2454,20 +2988,6 @@ fn set_debug_location(cx: &CrateContext, debug_location: DebugLocation) {
 //=-------------------------------------------------------------------------------------------------
 //  Utility Functions
 //=-------------------------------------------------------------------------------------------------
-
-fn cache_id_for_type(t: ty::t) -> uint {
-    ty::type_id(t)
-}
-
-// Used to avoid LLVM metadata uniquing problems. See `create_struct_stub()` and
-// `prepare_enum_metadata()`.
-fn generate_unique_type_id(prefix: &'static str) -> String {
-    unsafe {
-        static mut unique_id_counter: atomics::AtomicUint = atomics::INIT_ATOMIC_UINT;
-        format!("{}{}", prefix,
-                unique_id_counter.fetch_add(1, atomics::SeqCst))
-    }
-}
 
 /// Return codemap::Loc corresponding to the beginning of the span
 fn span_start(cx: &CrateContext, span: Span) -> codemap::Loc {
@@ -2528,7 +3048,7 @@ fn get_namespace_and_span_for_item(cx: &CrateContext, def_id: ast::DefId)
 // descriptors where necessary. These artificial scopes allow GDB to correctly handle name
 // shadowing.
 fn populate_scope_map(cx: &CrateContext,
-                      arg_pats: &[@ast::Pat],
+                      arg_pats: &[Gc<ast::Pat>],
                       fn_entry_block: &ast::Block,
                       fn_metadata: DISubprogram,
                       scope_map: &mut HashMap<ast::NodeId, DIScope>) {
@@ -2544,7 +3064,7 @@ fn populate_scope_map(cx: &CrateContext,
     // Push argument identifiers onto the stack so arguments integrate nicely with variable
     // shadowing.
     for &arg_pat in arg_pats.iter() {
-        pat_util::pat_bindings(def_map, arg_pat, |_, _, _, path_ref| {
+        pat_util::pat_bindings(def_map, &*arg_pat, |_, _, _, path_ref| {
             let ident = ast_util::path_to_ident(path_ref);
             scope_stack.push(ScopeStackEntry { scope_metadata: fn_metadata, ident: Some(ident) });
         })
@@ -2606,19 +3126,21 @@ fn populate_scope_map(cx: &CrateContext,
 
         // The interesting things here are statements and the concluding expression.
         for statement in block.stmts.iter() {
-            scope_map.insert(ast_util::stmt_id(*statement),
+            scope_map.insert(ast_util::stmt_id(&**statement),
                              scope_stack.last().unwrap().scope_metadata);
 
             match statement.node {
-                ast::StmtDecl(decl, _) => walk_decl(cx, decl, scope_stack, scope_map),
-                ast::StmtExpr(exp, _) |
-                ast::StmtSemi(exp, _) => walk_expr(cx, exp, scope_stack, scope_map),
+                ast::StmtDecl(ref decl, _) =>
+                    walk_decl(cx, &**decl, scope_stack, scope_map),
+                ast::StmtExpr(ref exp, _) |
+                ast::StmtSemi(ref exp, _) =>
+                    walk_expr(cx, &**exp, scope_stack, scope_map),
                 ast::StmtMac(..) => () // ignore macros (which should be expanded anyway)
             }
         }
 
         for exp in block.expr.iter() {
-            walk_expr(cx, *exp, scope_stack, scope_map);
+            walk_expr(cx, &**exp, scope_stack, scope_map);
         }
     }
 
@@ -2633,7 +3155,7 @@ fn populate_scope_map(cx: &CrateContext,
                 walk_pattern(cx, local.pat, scope_stack, scope_map);
 
                 for exp in local.init.iter() {
-                    walk_expr(cx, *exp, scope_stack, scope_map);
+                    walk_expr(cx, &**exp, scope_stack, scope_map);
                 }
             }
             _ => ()
@@ -2641,7 +3163,7 @@ fn populate_scope_map(cx: &CrateContext,
     }
 
     fn walk_pattern(cx: &CrateContext,
-                    pat: @ast::Pat,
+                    pat: Gc<ast::Pat>,
                     scope_stack: &mut Vec<ScopeStackEntry> ,
                     scope_map: &mut HashMap<ast::NodeId, DIScope>) {
 
@@ -2655,7 +3177,7 @@ fn populate_scope_map(cx: &CrateContext,
 
                 // Check if this is a binding. If so we need to put it on the scope stack and maybe
                 // introduce an artificial scope
-                if pat_util::pat_is_binding(def_map, pat) {
+                if pat_util::pat_is_binding(def_map, &*pat) {
 
                     let ident = ast_util::path_to_ident(path_ref);
 
@@ -2750,25 +3272,25 @@ fn populate_scope_map(cx: &CrateContext,
             ast::PatTup(ref sub_pats) => {
                 scope_map.insert(pat.id, scope_stack.last().unwrap().scope_metadata);
 
-                for &sub_pat in sub_pats.iter() {
-                    walk_pattern(cx, sub_pat, scope_stack, scope_map);
+                for sub_pat in sub_pats.iter() {
+                    walk_pattern(cx, sub_pat.clone(), scope_stack, scope_map);
                 }
             }
 
-            ast::PatBox(sub_pat) | ast::PatRegion(sub_pat) => {
+            ast::PatBox(ref sub_pat) | ast::PatRegion(ref sub_pat) => {
                 scope_map.insert(pat.id, scope_stack.last().unwrap().scope_metadata);
-                walk_pattern(cx, sub_pat, scope_stack, scope_map);
+                walk_pattern(cx, sub_pat.clone(), scope_stack, scope_map);
             }
 
-            ast::PatLit(exp) => {
+            ast::PatLit(ref exp) => {
                 scope_map.insert(pat.id, scope_stack.last().unwrap().scope_metadata);
-                walk_expr(cx, exp, scope_stack, scope_map);
+                walk_expr(cx, &**exp, scope_stack, scope_map);
             }
 
-            ast::PatRange(exp1, exp2) => {
+            ast::PatRange(ref exp1, ref exp2) => {
                 scope_map.insert(pat.id, scope_stack.last().unwrap().scope_metadata);
-                walk_expr(cx, exp1, scope_stack, scope_map);
-                walk_expr(cx, exp2, scope_stack, scope_map);
+                walk_expr(cx, &**exp1, scope_stack, scope_map);
+                walk_expr(cx, &**exp2, scope_stack, scope_map);
             }
 
             ast::PatVec(ref front_sub_pats, ref middle_sub_pats, ref back_sub_pats) => {
@@ -2807,72 +3329,74 @@ fn populate_scope_map(cx: &CrateContext,
             ast::ExprAgain(_) |
             ast::ExprPath(_)  => {}
 
-            ast::ExprVstore(sub_exp, _)   |
-            ast::ExprCast(sub_exp, _)     |
-            ast::ExprAddrOf(_, sub_exp)  |
-            ast::ExprField(sub_exp, _, _) |
-            ast::ExprParen(sub_exp)       => walk_expr(cx, sub_exp, scope_stack, scope_map),
+            ast::ExprVstore(ref sub_exp, _)   |
+            ast::ExprCast(ref sub_exp, _)     |
+            ast::ExprAddrOf(_, ref sub_exp)  |
+            ast::ExprField(ref sub_exp, _, _) |
+            ast::ExprParen(ref sub_exp) =>
+                walk_expr(cx, &**sub_exp, scope_stack, scope_map),
 
-            ast::ExprBox(place, sub_expr) => {
-                walk_expr(cx, place, scope_stack, scope_map);
-                walk_expr(cx, sub_expr, scope_stack, scope_map);
+            ast::ExprBox(ref place, ref sub_expr) => {
+                walk_expr(cx, &**place, scope_stack, scope_map);
+                walk_expr(cx, &**sub_expr, scope_stack, scope_map);
             }
 
             ast::ExprRet(exp_opt) => match exp_opt {
-                Some(sub_exp) => walk_expr(cx, sub_exp, scope_stack, scope_map),
+                Some(sub_exp) => walk_expr(cx, &*sub_exp, scope_stack, scope_map),
                 None => ()
             },
 
-            ast::ExprUnary(_, sub_exp) => {
-                walk_expr(cx, sub_exp, scope_stack, scope_map);
+            ast::ExprUnary(_, ref sub_exp) => {
+                walk_expr(cx, &**sub_exp, scope_stack, scope_map);
             }
 
-            ast::ExprAssignOp(_, lhs, rhs) |
-            ast::ExprIndex(lhs, rhs)        |
-            ast::ExprBinary(_, lhs, rhs)    => {
-                walk_expr(cx, lhs, scope_stack, scope_map);
-                walk_expr(cx, rhs, scope_stack, scope_map);
+            ast::ExprAssignOp(_, ref lhs, ref rhs) |
+            ast::ExprIndex(ref lhs, ref rhs)        |
+            ast::ExprBinary(_, ref lhs, ref rhs)    => {
+                walk_expr(cx, &**lhs, scope_stack, scope_map);
+                walk_expr(cx, &**rhs, scope_stack, scope_map);
             }
 
             ast::ExprVec(ref init_expressions) |
             ast::ExprTup(ref init_expressions) => {
                 for ie in init_expressions.iter() {
-                    walk_expr(cx, *ie, scope_stack, scope_map);
+                    walk_expr(cx, &**ie, scope_stack, scope_map);
                 }
             }
 
-            ast::ExprAssign(sub_exp1, sub_exp2) |
-            ast::ExprRepeat(sub_exp1, sub_exp2) => {
-                walk_expr(cx, sub_exp1, scope_stack, scope_map);
-                walk_expr(cx, sub_exp2, scope_stack, scope_map);
+            ast::ExprAssign(ref sub_exp1, ref sub_exp2) |
+            ast::ExprRepeat(ref sub_exp1, ref sub_exp2) => {
+                walk_expr(cx, &**sub_exp1, scope_stack, scope_map);
+                walk_expr(cx, &**sub_exp2, scope_stack, scope_map);
             }
 
-            ast::ExprIf(cond_exp, then_block, ref opt_else_exp) => {
-                walk_expr(cx, cond_exp, scope_stack, scope_map);
+            ast::ExprIf(ref cond_exp, ref then_block, ref opt_else_exp) => {
+                walk_expr(cx, &**cond_exp, scope_stack, scope_map);
 
                 with_new_scope(cx,
                                then_block.span,
                                scope_stack,
                                scope_map,
                                |cx, scope_stack, scope_map| {
-                    walk_block(cx, then_block, scope_stack, scope_map);
+                    walk_block(cx, &**then_block, scope_stack, scope_map);
                 });
 
                 match *opt_else_exp {
-                    Some(else_exp) => walk_expr(cx, else_exp, scope_stack, scope_map),
+                    Some(ref else_exp) =>
+                        walk_expr(cx, &**else_exp, scope_stack, scope_map),
                     _ => ()
                 }
             }
 
-            ast::ExprWhile(cond_exp, loop_body) => {
-                walk_expr(cx, cond_exp, scope_stack, scope_map);
+            ast::ExprWhile(ref cond_exp, ref loop_body) => {
+                walk_expr(cx, &**cond_exp, scope_stack, scope_map);
 
                 with_new_scope(cx,
                                loop_body.span,
                                scope_stack,
                                scope_map,
                                |cx, scope_stack, scope_map| {
-                    walk_block(cx, loop_body, scope_stack, scope_map);
+                    walk_block(cx, &**loop_body, scope_stack, scope_map);
                 })
             }
 
@@ -2886,48 +3410,48 @@ fn populate_scope_map(cx: &CrateContext,
                                               Found unexpanded macro.");
             }
 
-            ast::ExprLoop(block, _) |
-            ast::ExprBlock(block)   => {
+            ast::ExprLoop(ref block, _) |
+            ast::ExprBlock(ref block)   => {
                 with_new_scope(cx,
                                block.span,
                                scope_stack,
                                scope_map,
                                |cx, scope_stack, scope_map| {
-                    walk_block(cx, block, scope_stack, scope_map);
+                    walk_block(cx, &**block, scope_stack, scope_map);
                 })
             }
 
-            ast::ExprFnBlock(decl, block) |
-            ast::ExprProc(decl, block) => {
+            ast::ExprFnBlock(ref decl, ref block) |
+            ast::ExprProc(ref decl, ref block) => {
                 with_new_scope(cx,
                                block.span,
                                scope_stack,
                                scope_map,
                                |cx, scope_stack, scope_map| {
-                    for &ast::Arg { pat: pattern, .. } in decl.inputs.iter() {
-                        walk_pattern(cx, pattern, scope_stack, scope_map);
+                    for &ast::Arg { pat: ref pattern, .. } in decl.inputs.iter() {
+                        walk_pattern(cx, pattern.clone(), scope_stack, scope_map);
                     }
 
-                    walk_block(cx, block, scope_stack, scope_map);
+                    walk_block(cx, &**block, scope_stack, scope_map);
                 })
             }
 
-            ast::ExprCall(fn_exp, ref args) => {
-                walk_expr(cx, fn_exp, scope_stack, scope_map);
+            ast::ExprCall(ref fn_exp, ref args) => {
+                walk_expr(cx, &**fn_exp, scope_stack, scope_map);
 
                 for arg_exp in args.iter() {
-                    walk_expr(cx, *arg_exp, scope_stack, scope_map);
+                    walk_expr(cx, &**arg_exp, scope_stack, scope_map);
                 }
             }
 
             ast::ExprMethodCall(_, _, ref args) => {
                 for arg_exp in args.iter() {
-                    walk_expr(cx, *arg_exp, scope_stack, scope_map);
+                    walk_expr(cx, &**arg_exp, scope_stack, scope_map);
                 }
             }
 
-            ast::ExprMatch(discriminant_exp, ref arms) => {
-                walk_expr(cx, discriminant_exp, scope_stack, scope_map);
+            ast::ExprMatch(ref discriminant_exp, ref arms) => {
+                walk_expr(cx, &**discriminant_exp, scope_stack, scope_map);
 
                 // for each arm we have to first walk the pattern as these might introduce new
                 // artificial scopes. It should be sufficient to walk only one pattern per arm, as
@@ -2946,21 +3470,21 @@ fn populate_scope_map(cx: &CrateContext,
                         }
 
                         for guard_exp in arm_ref.guard.iter() {
-                            walk_expr(cx, *guard_exp, scope_stack, scope_map)
+                            walk_expr(cx, &**guard_exp, scope_stack, scope_map)
                         }
 
-                        walk_expr(cx, arm_ref.body, scope_stack, scope_map);
+                        walk_expr(cx, &*arm_ref.body, scope_stack, scope_map);
                     })
                 }
             }
 
             ast::ExprStruct(_, ref fields, ref base_exp) => {
-                for &ast::Field { expr: exp, .. } in fields.iter() {
-                    walk_expr(cx, exp, scope_stack, scope_map);
+                for &ast::Field { expr: ref exp, .. } in fields.iter() {
+                    walk_expr(cx, &**exp, scope_stack, scope_map);
                 }
 
                 match *base_exp {
-                    Some(exp) => walk_expr(cx, exp, scope_stack, scope_map),
+                    Some(ref exp) => walk_expr(cx, &**exp, scope_stack, scope_map),
                     None => ()
                 }
             }
@@ -2968,13 +3492,13 @@ fn populate_scope_map(cx: &CrateContext,
             ast::ExprInlineAsm(ast::InlineAsm { inputs: ref inputs,
                                                 outputs: ref outputs,
                                                 .. }) => {
-                // inputs, outputs: ~[(String, @expr)]
-                for &(_, exp) in inputs.iter() {
-                    walk_expr(cx, exp, scope_stack, scope_map);
+                // inputs, outputs: ~[(String, Gc<expr>)]
+                for &(_, ref exp) in inputs.iter() {
+                    walk_expr(cx, &**exp, scope_stack, scope_map);
                 }
 
-                for &(_, exp) in outputs.iter() {
-                    walk_expr(cx, exp, scope_stack, scope_map);
+                for &(_, ref exp) in outputs.iter() {
+                    walk_expr(cx, &**exp, scope_stack, scope_map);
                 }
             }
         }

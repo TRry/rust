@@ -38,12 +38,13 @@
 
 use any::Any;
 use comm::{Sender, Receiver, channel};
-use io::Writer;
+use io::{Writer, stdio};
 use kinds::{Send, marker};
 use option::{None, Some, Option};
 use owned::Box;
 use result::{Result, Ok, Err};
 use rt::local::Local;
+use rt::task;
 use rt::task::Task;
 use str::{Str, SendStr, IntoMaybeOwned};
 
@@ -53,26 +54,18 @@ use str::{Str, SendStr, IntoMaybeOwned};
 #[cfg(test)] use str::StrAllocating;
 #[cfg(test)] use string::String;
 
-/// Indicates the manner in which a task exited.
-///
-/// A task that completes without failing is considered to exit successfully.
-///
-/// If you wish for this result's delivery to block until all
-/// children tasks complete, recommend using a result future.
-pub type TaskResult = Result<(), Box<Any:Send>>;
-
 /// Task configuration options
 pub struct TaskOpts {
     /// Enable lifecycle notifications on the given channel
-    pub notify_chan: Option<Sender<TaskResult>>,
+    pub notify_chan: Option<Sender<task::Result>>,
     /// A name for the task-to-be, for identification in failure messages
     pub name: Option<SendStr>,
     /// The size of the stack for the spawned task
     pub stack_size: Option<uint>,
     /// Task-local stdout
-    pub stdout: Option<Box<Writer:Send>>,
+    pub stdout: Option<Box<Writer + Send>>,
     /// Task-local stderr
-    pub stderr: Option<Box<Writer:Send>>,
+    pub stderr: Option<Box<Writer + Send>>,
 }
 
 /**
@@ -90,8 +83,8 @@ pub struct TaskOpts {
 pub struct TaskBuilder {
     /// Options to spawn the new task with
     pub opts: TaskOpts,
-    gen_body: Option<proc(v: proc():Send):Send -> proc():Send>,
-    nocopy: Option<marker::NoCopy>,
+    gen_body: Option<proc(v: proc(): Send): Send -> proc(): Send>,
+    nocopy: marker::NoCopy,
 }
 
 impl TaskBuilder {
@@ -101,7 +94,7 @@ impl TaskBuilder {
         TaskBuilder {
             opts: TaskOpts::new(),
             gen_body: None,
-            nocopy: None,
+            nocopy: marker::NoCopy,
         }
     }
 
@@ -114,7 +107,7 @@ impl TaskBuilder {
     ///
     /// # Failure
     /// Fails if a future_result was already set for this task.
-    pub fn future_result(&mut self) -> Receiver<TaskResult> {
+    pub fn future_result(&mut self) -> Receiver<task::Result> {
         // FIXME (#3725): Once linked failure and notification are
         // handled in the library, I can imagine implementing this by just
         // registering an arbitrary number of task::on_exit handlers and
@@ -153,7 +146,7 @@ impl TaskBuilder {
      * existing body generator to the new body generator.
      */
     pub fn with_wrapper(mut self,
-                        wrapper: proc(v: proc():Send):Send -> proc():Send)
+                        wrapper: proc(v: proc(): Send): Send -> proc(): Send)
         -> TaskBuilder
     {
         self.gen_body = match self.gen_body.take() {
@@ -170,7 +163,7 @@ impl TaskBuilder {
      * the provided unique closure. The task has the properties and behavior
      * specified by the task_builder.
      */
-    pub fn spawn(mut self, f: proc():Send) {
+    pub fn spawn(mut self, f: proc(): Send) {
         let gen_body = self.gen_body.take();
         let f = match gen_body {
             Some(gen) => gen(f),
@@ -180,7 +173,22 @@ impl TaskBuilder {
             Some(t) => t,
             None => fail!("need a local task to spawn a new task"),
         };
-        t.spawn_sibling(self.opts, f);
+        let TaskOpts { notify_chan, name, stack_size, stdout, stderr } = self.opts;
+
+        let opts = task::TaskOpts {
+            on_exit: notify_chan.map(|c| proc(r) c.send(r)),
+            name: name,
+            stack_size: stack_size,
+        };
+        if stdout.is_some() || stderr.is_some() {
+            t.spawn_sibling(opts, proc() {
+                let _ = stdout.map(stdio::set_stdout);
+                let _ = stderr.map(stdio::set_stderr);
+                f();
+            });
+        } else {
+            t.spawn_sibling(opts, f);
+        }
     }
 
     /**
@@ -196,8 +204,8 @@ impl TaskBuilder {
      * # Failure
      * Fails if a future_result was already set for this task.
      */
-    pub fn try<T:Send>(mut self, f: proc():Send -> T)
-               -> Result<T, Box<Any:Send>> {
+    pub fn try<T: Send>(mut self, f: proc(): Send -> T)
+               -> Result<T, Box<Any + Send>> {
         let (tx, rx) = channel();
 
         let result = self.future_result();
@@ -239,7 +247,7 @@ impl TaskOpts {
 /// the provided unique closure.
 ///
 /// This function is equivalent to `TaskBuilder::new().spawn(f)`.
-pub fn spawn(f: proc():Send) {
+pub fn spawn(f: proc(): Send) {
     TaskBuilder::new().spawn(f)
 }
 
@@ -247,7 +255,7 @@ pub fn spawn(f: proc():Send) {
 /// the function or an error if the task failed
 ///
 /// This is equivalent to TaskBuilder::new().try
-pub fn try<T:Send>(f: proc():Send -> T) -> Result<T, Box<Any:Send>> {
+pub fn try<T: Send>(f: proc(): Send -> T) -> Result<T, Box<Any + Send>> {
     TaskBuilder::new().try(f)
 }
 
@@ -336,7 +344,7 @@ fn test_run_basic() {
 fn test_with_wrapper() {
     let (tx, rx) = channel();
     TaskBuilder::new().with_wrapper(proc(body) {
-        let result: proc():Send = proc() {
+        let result: proc(): Send = proc() {
             body();
             tx.send(());
         };
@@ -422,7 +430,7 @@ fn test_spawn_sched_childs_on_default_sched() {
 }
 
 #[cfg(test)]
-fn avoid_copying_the_body(spawnfn: |v: proc():Send|) {
+fn avoid_copying_the_body(spawnfn: |v: proc(): Send|) {
     let (tx, rx) = channel::<uint>();
 
     let x = box 1;
@@ -468,7 +476,7 @@ fn test_child_doesnt_ref_parent() {
     // (well, it would if the constant were 8000+ - I lowered it to be more
     // valgrind-friendly. try this at home, instead..!)
     static generations: uint = 16;
-    fn child_no(x: uint) -> proc():Send {
+    fn child_no(x: uint) -> proc(): Send {
         return proc() {
             if x < generations {
                 TaskBuilder::new().spawn(child_no(x+1));
@@ -514,10 +522,10 @@ fn test_try_fail_message_owned_str() {
 #[test]
 fn test_try_fail_message_any() {
     match try(proc() {
-        fail!(box 413u16 as Box<Any:Send>);
+        fail!(box 413u16 as Box<Any + Send>);
     }) {
         Err(e) => {
-            type T = Box<Any:Send>;
+            type T = Box<Any + Send>;
             assert!(e.is::<T>());
             let any = e.move::<T>().unwrap();
             assert!(any.is::<u16>());

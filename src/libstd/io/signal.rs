@@ -28,7 +28,7 @@ use mem::drop;
 use option::{Some, None};
 use owned::Box;
 use result::{Ok, Err};
-use rt::rtio::{IoFactory, LocalIo, RtioSignal};
+use rt::rtio::{IoFactory, LocalIo, RtioSignal, Callback};
 use slice::ImmutableVector;
 use vec::Vec;
 
@@ -82,7 +82,7 @@ pub enum Signum {
 /// ```
 pub struct Listener {
     /// A map from signums to handles to keep the handles in memory
-    handles: Vec<(Signum, Box<RtioSignal:Send>)>,
+    handles: Vec<(Signum, Box<RtioSignal + Send>)>,
     /// This is where all the handles send signums, which are received by
     /// the clients from the receiver.
     tx: Sender<Signum>,
@@ -122,17 +122,28 @@ impl Listener {
     /// If this function fails to register a signal handler, then an error will
     /// be returned.
     pub fn register(&mut self, signum: Signum) -> io::IoResult<()> {
+        struct SignalCallback {
+            signum: Signum,
+            tx: Sender<Signum>,
+        }
+        impl Callback for SignalCallback {
+            fn call(&mut self) { self.tx.send(self.signum) }
+        }
+
         if self.handles.iter().any(|&(sig, _)| sig == signum) {
             return Ok(()); // self is already listening to signum, so succeed
         }
         match LocalIo::maybe_raise(|io| {
-            io.signal(signum, self.tx.clone())
+            io.signal(signum as int, box SignalCallback {
+                signum: signum,
+                tx: self.tx.clone(),
+            })
         }) {
             Ok(handle) => {
                 self.handles.push((signum, handle));
                 Ok(())
             }
-            Err(e) => Err(e)
+            Err(e) => Err(io::IoError::from_rtio_error(e))
         }
     }
 

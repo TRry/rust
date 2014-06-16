@@ -35,6 +35,8 @@ pub struct VisSpace(pub Option<ast::Visibility>);
 pub struct FnStyleSpace(pub ast::FnStyle);
 /// Wrapper struct for properly emitting a method declaration.
 pub struct Method<'a>(pub &'a clean::SelfTy, pub &'a clean::FnDecl);
+/// Similar to VisSpace, but used for mutability
+pub struct MutableSpace(pub clean::Mutability);
 
 impl VisSpace {
     pub fn get(&self) -> Option<ast::Visibility> {
@@ -89,7 +91,6 @@ impl fmt::Show for clean::Generics {
 
 impl fmt::Show for clean::Lifetime {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        try!(f.write("'".as_bytes()));
         try!(f.write(self.get_ref().as_bytes()));
         Ok(())
     }
@@ -346,8 +347,7 @@ impl fmt::Show for clean::Type {
             clean::Self(..) => f.write("Self".as_bytes()),
             clean::Primitive(prim) => primitive_link(f, prim, prim.to_str()),
             clean::Closure(ref decl, ref region) => {
-                write!(f, "{style}{lifetimes}|{args}|{bounds}\
-                           {arrow, select, yes{ -&gt; {ret}} other{}}",
+                write!(f, "{style}{lifetimes}|{args}|{bounds}{arrow}",
                        style = FnStyleSpace(decl.fn_style),
                        lifetimes = if decl.lifetimes.len() == 0 {
                            "".to_string()
@@ -356,10 +356,9 @@ impl fmt::Show for clean::Type {
                        },
                        args = decl.decl.inputs,
                        arrow = match decl.decl.output {
-                           clean::Primitive(clean::Nil) => "no",
-                           _ => "yes",
+                           clean::Primitive(clean::Nil) => "".to_string(),
+                           _ => format!(" -&gt; {}", decl.decl.output),
                        },
-                       ret = decl.decl.output,
                        bounds = {
                            let mut ret = String::new();
                            match *region {
@@ -387,8 +386,7 @@ impl fmt::Show for clean::Type {
                        })
             }
             clean::Proc(ref decl) => {
-                write!(f, "{style}{lifetimes}proc({args}){bounds}\
-                           {arrow, select, yes{ -&gt; {ret}} other{}}",
+                write!(f, "{style}{lifetimes}proc({args}){bounds}{arrow}",
                        style = FnStyleSpace(decl.fn_style),
                        lifetimes = if decl.lifetimes.len() == 0 {
                            "".to_string()
@@ -407,10 +405,9 @@ impl fmt::Show for clean::Type {
                                m.collect::<Vec<String>>().connect(" + "))
                        },
                        arrow = match decl.decl.output {
-                           clean::Primitive(clean::Nil) => "no",
-                           _ => "yes",
-                       },
-                       ret = decl.decl.output)
+                           clean::Primitive(clean::Nil) => "".to_string(),
+                           _ => format!(" -&gt; {}", decl.decl.output)
+                       })
             }
             clean::BareFunction(ref decl) => {
                 write!(f, "{}{}fn{}{}",
@@ -438,24 +435,14 @@ impl fmt::Show for clean::Type {
             clean::Unique(ref t) => write!(f, "~{}", **t),
             clean::Managed(ref t) => write!(f, "@{}", **t),
             clean::RawPointer(m, ref t) => {
-                write!(f, "*{}{}",
-                       match m {
-                           clean::Mutable => "mut ",
-                           clean::Immutable => "",
-                       }, **t)
+                write!(f, "*{}{}", MutableSpace(m), **t)
             }
             clean::BorrowedRef{ lifetime: ref l, mutability, type_: ref ty} => {
                 let lt = match *l {
                     Some(ref l) => format!("{} ", *l),
                     _ => "".to_string(),
                 };
-                write!(f, "&amp;{}{}{}",
-                       lt,
-                       match mutability {
-                           clean::Mutable => "mut ",
-                           clean::Immutable => "",
-                       },
-                       **ty)
+                write!(f, "&amp;{}{}{}", lt, MutableSpace(mutability), **ty)
             }
         }
     }
@@ -476,13 +463,12 @@ impl fmt::Show for clean::Arguments {
 
 impl fmt::Show for clean::FnDecl {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "({args}){arrow, select, yes{ -&gt; {ret}} other{}}",
+        write!(f, "({args}){arrow}",
                args = self.inputs,
                arrow = match self.output {
-                   clean::Primitive(clean::Nil) => "no",
-                   _ => "yes"
-               },
-               ret = self.output)
+                   clean::Primitive(clean::Nil) => "".to_string(),
+                   _ => format!(" -&gt; {}", self.output),
+               })
     }
 }
 
@@ -494,17 +480,13 @@ impl<'a> fmt::Show for Method<'a> {
             clean::SelfStatic => {},
             clean::SelfValue => args.push_str("self"),
             clean::SelfOwned => args.push_str("~self"),
-            clean::SelfBorrowed(Some(ref lt), clean::Immutable) => {
-                args.push_str(format!("&amp;{} self", *lt).as_slice());
+            clean::SelfBorrowed(Some(ref lt), mtbl) => {
+                args.push_str(format!("&amp;{} {}self", *lt,
+                                      MutableSpace(mtbl)).as_slice());
             }
-            clean::SelfBorrowed(Some(ref lt), clean::Mutable) => {
-                args.push_str(format!("&amp;{} mut self", *lt).as_slice());
-            }
-            clean::SelfBorrowed(None, clean::Mutable) => {
-                args.push_str("&amp;mut self");
-            }
-            clean::SelfBorrowed(None, clean::Immutable) => {
-                args.push_str("&amp;self");
+            clean::SelfBorrowed(None, mtbl) => {
+                args.push_str(format!("&amp;{}self",
+                                      MutableSpace(mtbl)).as_slice());
             }
         }
         for (i, input) in d.inputs.values.iter().enumerate() {
@@ -514,14 +496,12 @@ impl<'a> fmt::Show for Method<'a> {
             }
             args.push_str(format!("{}", input.type_).as_slice());
         }
-        write!(f,
-               "({args}){arrow, select, yes{ -&gt; {ret}} other{}}",
+        write!(f, "({args}){arrow}",
                args = args,
                arrow = match d.output {
-                   clean::Primitive(clean::Nil) => "no",
-                   _ => "yes"
-               },
-               ret = d.output)
+                   clean::Primitive(clean::Nil) => "".to_string(),
+                   _ => format!(" -&gt; {}", d.output),
+               })
     }
 }
 
@@ -557,14 +537,14 @@ impl fmt::Show for clean::ViewPath {
                 write!(f, "use {}::*;", *src)
             }
             clean::ImportList(ref src, ref names) => {
-                try!(write!(f, "use {}::\\{", *src));
+                try!(write!(f, "use {}::{{", *src));
                 for (i, n) in names.iter().enumerate() {
                     if i > 0 {
                         try!(write!(f, ", "));
                     }
                     try!(write!(f, "{}", *n));
                 }
-                write!(f, "\\};")
+                write!(f, "}};")
             }
         }
     }
@@ -602,6 +582,15 @@ impl fmt::Show for clean::ViewListIdent {
                 resolved_path(f, did, &path, false)
             }
             _ => write!(f, "{}", self.name),
+        }
+    }
+}
+
+impl fmt::Show for MutableSpace {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            MutableSpace(clean::Immutable) => Ok(()),
+            MutableSpace(clean::Mutable) => write!(f, "mut "),
         }
     }
 }

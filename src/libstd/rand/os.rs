@@ -59,18 +59,17 @@ mod imp {
 }
 
 #[cfg(target_os = "ios")]
-#[link(name = "Security", kind = "framework")]
 mod imp {
     extern crate libc;
 
-    use container::Container;
-    use io::IoResult;
-    use mem::transmute;
-    use ops::Drop;
+    use collections::Collection;
+    use io::{IoResult};
+    use kinds::marker;
+    use mem;
     use os;
     use rand::Rng;
     use result::{Ok};
-    use self::libc::{c_int, size_t, c_uint};
+    use self::libc::{c_int, size_t};
     use slice::MutableVector;
 
     /// A random number generator that retrieves randomness straight from
@@ -82,18 +81,23 @@ mod imp {
     ///   service provider with the `PROV_RSA_FULL` type.
     /// - iOS: calls SecRandomCopyBytes as /dev/(u)random is sandboxed
     /// This does not block.
-    pub struct OsRng;
+    pub struct OsRng {
+        marker: marker::NoCopy
+    }
 
-    static kSecRandomDefault: c_uint = 0;
+    struct SecRandom;
 
+    static kSecRandomDefault: *SecRandom = 0 as *SecRandom;
+
+    #[link(name = "Security", kind = "framework")]
     extern "C" {
-        fn SecRandomCopyBytes(rnd: c_uint, count: size_t, bytes: *mut u8) -> c_int;
+        fn SecRandomCopyBytes(rnd: *SecRandom, count: size_t, bytes: *mut u8) -> c_int;
     }
 
     impl OsRng {
         /// Create a new `OsRng`.
         pub fn new() -> IoResult<OsRng> {
-            Ok(OsRng)
+            Ok(OsRng {marker: marker::NoCopy} )
         }
     }
 
@@ -101,12 +105,12 @@ mod imp {
         fn next_u32(&mut self) -> u32 {
             let mut v = [0u8, .. 4];
             self.fill_bytes(v);
-            unsafe { transmute(v) }
+            unsafe { mem::transmute(v) }
         }
         fn next_u64(&mut self) -> u64 {
             let mut v = [0u8, .. 8];
             self.fill_bytes(v);
-            unsafe { transmute(v) }
+            unsafe { mem::transmute(v) }
         }
         fn fill_bytes(&mut self, v: &mut [u8]) {
             let ret = unsafe {
@@ -117,18 +121,13 @@ mod imp {
             }
         }
     }
-
-    impl Drop for OsRng {
-        fn drop(&mut self) {
-        }
-    }
 }
 
 #[cfg(windows)]
 mod imp {
     extern crate libc;
 
-    use container::Container;
+    use core_collections::Collection;
     use io::{IoResult, IoError};
     use mem;
     use ops::Drop;

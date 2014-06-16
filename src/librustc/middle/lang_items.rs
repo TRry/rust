@@ -187,11 +187,11 @@ impl<'a> LanguageItemCollector<'a> {
 
 pub fn extract(attrs: &[ast::Attribute]) -> Option<InternedString> {
     for attribute in attrs.iter() {
-        match attribute.name_str_pair() {
-            Some((ref key, ref value)) if key.equiv(&("lang")) => {
-                return Some((*value).clone());
+        match attribute.value_str() {
+            Some(ref value) if attribute.check_name("lang") => {
+                return Some(value.clone());
             }
-            Some(..) | None => {}
+            _ => {}
         }
     }
 
@@ -239,6 +239,10 @@ lets_do_this! {
 
     DerefTraitLangItem,              "deref",                   deref_trait;
     DerefMutTraitLangItem,           "deref_mut",               deref_mut_trait;
+
+    FnTraitLangItem,                 "fn",                      fn_trait;
+    FnMutTraitLangItem,              "fn_mut",                  fn_mut_trait;
+    FnOnceTraitLangItem,             "fn_once",                 fn_once_trait;
 
     EqTraitLangItem,                 "eq",                      eq_trait;
     OrdTraitLangItem,                "ord",                     ord_trait;

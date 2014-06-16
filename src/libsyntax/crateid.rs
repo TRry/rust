@@ -42,9 +42,9 @@ impl fmt::Show for CrateId {
                 self.path
                     .as_slice()
                     .ends_with(format!("/{}", self.name).as_slice()) {
-            write!(f, "\\#{}", version)
+            write!(f, "#{}", version)
         } else {
-            write!(f, "\\#{}:{}", self.name, version)
+            write!(f, "#{}:{}", self.name, version)
         }
     }
 }

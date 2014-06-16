@@ -1,3 +1,9 @@
+// Do not compile anything here for iOS because split stacks
+// are disabled at all and do not need any runtime support.
+//
+// See also comments in librustrt/stack.rs about why it was
+// disabled and how it could be implemented in case of need.
+#if !defined(__APPLE__)
 // Mark stack as non-executable
 #if defined(__linux__) && defined(__ELF__)
 .section	.note.GNU-stack, "", %progbits
@@ -6,33 +12,15 @@
 .text
 .code 32
 .arm
-#if defined(__APPLE__)
-.align 2
-#else
 .align
-#endif
 
-#if defined(__APPLE__)
-  #define RECORD_SP_LIMIT _record_sp_limit
-  #define GET_SP_LIMIT    _get_sp_limit
-#else
-  #define RECORD_SP_LIMIT record_sp_limit
-  #define GET_SP_LIMIT    get_sp_limit
-#endif
-        
+#define RECORD_SP_LIMIT record_sp_limit
+#define GET_SP_LIMIT    get_sp_limit
+
 .globl 	RECORD_SP_LIMIT
 .globl	GET_SP_LIMIT
 
-// Apple implementation uses pthread_get_specific_direct
-// slot #149
-
 RECORD_SP_LIMIT:
-#if defined(__APPLE__)
-	mrc p15, #0, r3, c13, c0, #3
-    bic r3, r3, #3
-    str r0, [r3, #596]
-    mov pc, lr
-#else
 	// First, try to read TLS address from coprocessor
 	mrc p15, #0, r3, c13, c0, #3
 	cmp r3, #0
@@ -47,16 +35,9 @@ RECORD_SP_LIMIT:
 #endif // ANDROID
 
 	str r0, [r3]
-#endif // __APPLE__
 	mov pc, lr
 
 GET_SP_LIMIT:
-#if defined(__APPLE__)
-	mrc p15, #0, r3, c13, c0, #3
-    bic r3, r3, #3
-    ldr r0, [r3, #596]
-    mov pc, lr
-#else
 	// First, try to read TLS address from coprocessor
 	mrc p15, #0, r3, c13, c0, #3
 	cmp r3, #0
@@ -71,5 +52,5 @@ GET_SP_LIMIT:
 #endif  // __ANDROID__
 
 	ldr r0, [r3]
-#endif // __APPLE__
 	mov pc, lr
+#endif

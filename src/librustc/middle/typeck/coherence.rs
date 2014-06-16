@@ -17,12 +17,14 @@
 
 use metadata::csearch::{each_impl, get_impl_trait, each_implementation_for_trait};
 use metadata::csearch;
+use middle::subst;
+use middle::subst::{Substs};
 use middle::ty::get;
-use middle::ty::{ImplContainer, lookup_item_type, subst};
-use middle::ty::{substs, t, ty_bool, ty_char, ty_bot, ty_box, ty_enum, ty_err};
+use middle::ty::{ImplContainer, lookup_item_type};
+use middle::ty::{t, ty_bool, ty_char, ty_bot, ty_box, ty_enum, ty_err};
 use middle::ty::{ty_str, ty_vec, ty_float, ty_infer, ty_int, ty_nil};
 use middle::ty::{ty_param, ty_param_bounds_and_ty, ty_ptr};
-use middle::ty::{ty_rptr, ty_self, ty_struct, ty_trait, ty_tup};
+use middle::ty::{ty_rptr, ty_struct, ty_trait, ty_tup};
 use middle::ty::{ty_uint, ty_uniq, ty_bare_fn, ty_closure};
 use middle::ty::type_is_ty_var;
 use middle::subst::Subst;
@@ -33,15 +35,15 @@ use middle::typeck::infer::InferCtxt;
 use middle::typeck::infer::{new_infer_ctxt, resolve_ivar, resolve_type};
 use middle::typeck::infer;
 use util::ppaux::Repr;
-use syntax::ast::{Crate, DefId, DefStruct, DefTy};
+use middle::def::{DefStruct, DefTy};
+use syntax::ast::{Crate, DefId};
 use syntax::ast::{Item, ItemEnum, ItemImpl, ItemMod, ItemStruct};
 use syntax::ast::{LOCAL_CRATE, TraitRef, TyPath};
 use syntax::ast;
 use syntax::ast_map::NodeItem;
 use syntax::ast_map;
-use syntax::ast_util::{def_id_of_def, local_def};
-use syntax::codemap::Span;
-use syntax::owned_slice::OwnedSlice;
+use syntax::ast_util::{local_def};
+use syntax::codemap::{Span, DUMMY_SP};
 use syntax::parse::token;
 use syntax::visit;
 
@@ -50,9 +52,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 struct UniversalQuantificationResult {
-    monotype: t,
-    type_variables: Vec<ty::t> ,
-    type_param_defs: Rc<Vec<ty::TypeParameterDef> >
+    monotype: t
 }
 
 fn get_base_type(inference_context: &InferCtxt,
@@ -81,7 +81,7 @@ fn get_base_type(inference_context: &InferCtxt,
 
         ty_nil | ty_bot | ty_bool | ty_char | ty_int(..) | ty_uint(..) | ty_float(..) |
         ty_str(..) | ty_vec(..) | ty_bare_fn(..) | ty_closure(..) | ty_tup(..) |
-        ty_infer(..) | ty_param(..) | ty_self(..) | ty_err |
+        ty_infer(..) | ty_param(..) | ty_err |
         ty_box(_) | ty_uniq(_) | ty_ptr(_) | ty_rptr(_, _) => {
             debug!("(getting base type) no base type; found {:?}",
                    get(original_type).sty);
@@ -123,6 +123,14 @@ fn type_is_defined_in_local_crate(tcx: &ty::ctxt, original_type: t) -> bool {
             }
             ty_uniq(..) => {
                 match tcx.lang_items.owned_box() {
+                    Some(did) if did.krate == ast::LOCAL_CRATE => {
+                        found_nominal = true;
+                    }
+                    _ => {}
+                }
+            }
+            ty_box(..) => {
+                match tcx.lang_items.gc() {
                     Some(did) if did.krate == ast::LOCAL_CRATE => {
                         found_nominal = true;
                     }
@@ -203,8 +211,8 @@ impl<'a> visit::Visitor<()> for PrivilegedScopeVisitor<'a> {
                 // Then visit the module items.
                 visit::walk_mod(self, module_, ());
             }
-            ItemImpl(_, None, ast_ty, _) => {
-                if !self.cc.ast_type_is_defined_in_local_crate(ast_ty) {
+            ItemImpl(_, None, ref ast_ty, _) => {
+                if !self.cc.ast_type_is_defined_in_local_crate(&**ast_ty) {
                     // This is an error.
                     let session = &self.cc.crate_context.tcx.sess;
                     session.span_err(item.span,
@@ -330,7 +338,8 @@ impl<'a> CoherenceChecker<'a> {
     // Creates default method IDs and performs type substitutions for an impl
     // and trait pair. Then, for each provided method in the trait, inserts a
     // `ProvidedMethodInfo` instance into the `provided_method_sources` map.
-    fn instantiate_default_methods(&self, impl_id: DefId,
+    fn instantiate_default_methods(&self,
+                                   impl_id: DefId,
                                    trait_ref: &ty::TraitRef,
                                    all_methods: &mut Vec<DefId>) {
         let tcx = self.crate_context.tcx;
@@ -352,6 +361,7 @@ impl<'a> CoherenceChecker<'a> {
                 Rc::new(subst_receiver_types_in_method_ty(
                     tcx,
                     impl_id,
+                    &impl_poly_type,
                     trait_ref,
                     new_did,
                     &**trait_method,
@@ -360,17 +370,11 @@ impl<'a> CoherenceChecker<'a> {
             debug!("new_method_ty={}", new_method_ty.repr(tcx));
             all_methods.push(new_did);
 
-            // construct the polytype for the method based on the method_ty
-            let new_generics = ty::Generics {
-                type_param_defs:
-                    Rc::new(Vec::from_slice(impl_poly_type.generics.type_param_defs()).append(
-                            new_method_ty.generics.type_param_defs())),
-                region_param_defs:
-                    Rc::new(Vec::from_slice(impl_poly_type.generics.region_param_defs()).append(
-                            new_method_ty.generics.region_param_defs()))
-            };
+            // construct the polytype for the method based on the
+            // method_ty.  it will have all the generics from the
+            // impl, plus its own.
             let new_polytype = ty::ty_param_bounds_and_ty {
-                generics: new_generics,
+                generics: new_method_ty.generics.clone(),
                 ty: ty::mk_bare_fn(tcx, new_method_ty.fty.clone())
             };
             debug!("new_polytype={}", new_polytype.repr(tcx));
@@ -495,29 +499,15 @@ impl<'a> CoherenceChecker<'a> {
     // Converts a polytype to a monotype by replacing all parameters with
     // type variables. Returns the monotype and the type variables created.
     fn universally_quantify_polytype(&self, polytype: ty_param_bounds_and_ty)
-                                     -> UniversalQuantificationResult {
-        let region_parameters =
-            polytype.generics.region_param_defs().iter()
-            .map(|d| self.inference_context.next_region_var(
-                infer::BoundRegionInCoherence(d.name)))
-            .collect();
-
-        let bounds_count = polytype.generics.type_param_defs().len();
-        let type_parameters = self.inference_context.next_ty_vars(bounds_count);
-
-        let substitutions = substs {
-            regions: ty::NonerasedRegions(region_parameters),
-            self_ty: None,
-            tps: type_parameters
-        };
-        let monotype = subst(self.crate_context.tcx,
-                             &substitutions,
-                             polytype.ty);
+                                     -> UniversalQuantificationResult
+    {
+        let substitutions =
+            self.inference_context.fresh_substs_for_type(DUMMY_SP,
+                                                         &polytype.generics);
+        let monotype = polytype.ty.subst(self.crate_context.tcx, &substitutions);
 
         UniversalQuantificationResult {
-            monotype: monotype,
-            type_variables: substitutions.tps,
-            type_param_defs: polytype.generics.type_param_defs.clone()
+            monotype: monotype
         }
     }
 
@@ -544,7 +534,7 @@ impl<'a> CoherenceChecker<'a> {
     fn trait_ref_to_trait_def_id(&self, trait_ref: &TraitRef) -> DefId {
         let def_map = &self.crate_context.tcx.def_map;
         let trait_def = def_map.borrow().get_copy(&trait_ref.ref_id);
-        let trait_id = def_id_of_def(trait_def);
+        let trait_id = trait_def.def_id();
         return trait_id;
     }
 
@@ -727,69 +717,67 @@ impl<'a> CoherenceChecker<'a> {
 }
 
 pub fn make_substs_for_receiver_types(tcx: &ty::ctxt,
-                                      impl_id: ast::DefId,
                                       trait_ref: &ty::TraitRef,
                                       method: &ty::Method)
-                                      -> ty::substs {
+                                      -> subst::Substs
+{
     /*!
      * Substitutes the values for the receiver's type parameters
      * that are found in method, leaving the method's type parameters
-     * intact.  This is in fact a mildly complex operation,
-     * largely because of the hokey way that we concatenate the
-     * receiver and method generics.
+     * intact.
      */
 
-    let impl_polytype = ty::lookup_item_type(tcx, impl_id);
-    let num_impl_tps = impl_polytype.generics.type_param_defs().len();
-    let num_impl_regions = impl_polytype.generics.region_param_defs().len();
     let meth_tps: Vec<ty::t> =
-        method.generics.type_param_defs().iter().enumerate()
-              .map(|(i, t)| ty::mk_param(tcx, i + num_impl_tps, t.def_id))
+        method.generics.types.get_vec(subst::FnSpace)
+              .iter()
+              .map(|def| ty::mk_param_from_def(tcx, def))
               .collect();
     let meth_regions: Vec<ty::Region> =
-        method.generics.region_param_defs().iter().enumerate()
-              .map(|(i, l)| ty::ReEarlyBound(l.def_id.node, i + num_impl_regions, l.name))
+        method.generics.regions.get_vec(subst::FnSpace)
+              .iter()
+              .map(|def| ty::ReEarlyBound(def.def_id.node, def.space,
+                                          def.index, def.name))
               .collect();
-    let mut combined_tps = trait_ref.substs.tps.clone();
-    combined_tps.push_all_move(meth_tps);
-    let combined_regions = match &trait_ref.substs.regions {
-        &ty::ErasedRegions =>
-            fail!("make_substs_for_receiver_types: unexpected ErasedRegions"),
-
-        &ty::NonerasedRegions(ref rs) => {
-            let mut rs = rs.clone().into_vec();
-            rs.push_all_move(meth_regions);
-            ty::NonerasedRegions(OwnedSlice::from_vec(rs))
-        }
-    };
-
-    ty::substs {
-        regions: combined_regions,
-        self_ty: trait_ref.substs.self_ty,
-        tps: combined_tps
-    }
+    trait_ref.substs.clone().with_method(meth_tps, meth_regions)
 }
 
 fn subst_receiver_types_in_method_ty(tcx: &ty::ctxt,
                                      impl_id: ast::DefId,
+                                     impl_poly_type: &ty::ty_param_bounds_and_ty,
                                      trait_ref: &ty::TraitRef,
                                      new_def_id: ast::DefId,
                                      method: &ty::Method,
                                      provided_source: Option<ast::DefId>)
-                                     -> ty::Method {
+                                     -> ty::Method
+{
+    let combined_substs = make_substs_for_receiver_types(tcx, trait_ref, method);
 
-    let combined_substs = make_substs_for_receiver_types(
-        tcx, impl_id, trait_ref, method);
+    debug!("subst_receiver_types_in_method_ty: combined_substs={}",
+           combined_substs.repr(tcx));
+
+    let mut method_generics = method.generics.subst(tcx, &combined_substs);
+
+    // replace the type parameters declared on the trait with those
+    // from the impl
+    for &space in [subst::TypeSpace, subst::SelfSpace].iter() {
+        *method_generics.types.get_mut_vec(space) =
+            impl_poly_type.generics.types.get_vec(space).clone();
+        *method_generics.regions.get_mut_vec(space) =
+            impl_poly_type.generics.regions.get_vec(space).clone();
+    }
+
+    debug!("subst_receiver_types_in_method_ty: method_generics={}",
+           method_generics.repr(tcx));
+
+    let method_fty = method.fty.subst(tcx, &combined_substs);
+
+    debug!("subst_receiver_types_in_method_ty: method_ty={}",
+           method.fty.repr(tcx));
 
     ty::Method::new(
         method.ident,
-
-        // method types *can* appear in the generic bounds
-        method.generics.subst(tcx, &combined_substs),
-
-        // method types *can* appear in the fty
-        method.fty.subst(tcx, &combined_substs),
-
+        method_generics,
+        method_fty,
         method.explicit_self,
         method.vis,
         new_def_id,

@@ -13,7 +13,7 @@
 //! The DList allows pushing and popping elements at either end.
 //!
 //! DList implements the trait Deque. It should be imported with `use
-//! collections::deque::Deque`.
+//! collections::Deque`.
 
 // DList is constructed like a singly-linked list over the field `next`.
 // including the last link being None; each Node owns its `next` field.
@@ -24,11 +24,13 @@
 use core::prelude::*;
 
 use alloc::owned::Box;
+use core::default::Default;
+use core::fmt;
 use core::iter;
 use core::mem;
 use core::ptr;
 
-use deque::Deque;
+use {Collection, Mutable, Deque};
 
 /// A doubly-linked list.
 pub struct DList<T> {
@@ -124,7 +126,7 @@ fn link_with_prev<T>(mut next: Box<Node<T>>, prev: Rawlink<Node<T>>)
     Some(next)
 }
 
-impl<T> Container for DList<T> {
+impl<T> Collection for DList<T> {
     /// O(1)
     #[inline]
     fn is_empty(&self) -> bool {
@@ -259,6 +261,11 @@ impl<T> Deque<T> for DList<T> {
     fn pop_back(&mut self) -> Option<T> {
         self.pop_back_node().map(|box Node{value, ..}| value)
     }
+}
+
+impl<T> Default for DList<T> {
+    #[inline]
+    fn default() -> DList<T> { DList::new() }
 }
 
 impl<T> DList<T> {
@@ -608,6 +615,19 @@ impl<A: Clone> Clone for DList<A> {
     }
 }
 
+impl<A: fmt::Show> fmt::Show for DList<A> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        try!(write!(f, "["));
+
+        for (i, e) in self.iter().enumerate() {
+            if i != 0 { try!(write!(f, ", ")); }
+            try!(write!(f, "{}", *e));
+        }
+
+        write!(f, "]")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::prelude::*;
@@ -615,7 +635,7 @@ mod tests {
     use test::Bencher;
     use test;
 
-    use deque::Deque;
+    use Deque;
     use super::{DList, Node, ListInsertion};
     use vec::Vec;
 
@@ -1027,6 +1047,17 @@ mod tests {
         }
     }
 
+    #[test]
+    fn test_show() {
+        let list: DList<int> = range(0, 10).collect();
+        assert!(list.to_str().as_slice() == "[0, 1, 2, 3, 4, 5, 6, 7, 8, 9]");
+
+        let list: DList<&str> = vec!["just", "one", "test", "more"].iter()
+                                                                   .map(|&s| s)
+                                                                   .collect();
+        assert!(list.to_str().as_slice() == "[just, one, test, more]");
+    }
+
     #[cfg(test)]
     fn fuzz_test(sz: int) {
         let mut m: DList<int> = DList::new();
@@ -1131,7 +1162,7 @@ mod tests {
         let v = &[0, ..128];
         let m: DList<int> = v.iter().map(|&x|x).collect();
         b.iter(|| {
-            assert!(m.iter().len() == 128);
+            assert!(m.iter().count() == 128);
         })
     }
     #[bench]
@@ -1139,7 +1170,7 @@ mod tests {
         let v = &[0, ..128];
         let mut m: DList<int> = v.iter().map(|&x|x).collect();
         b.iter(|| {
-            assert!(m.mut_iter().len() == 128);
+            assert!(m.mut_iter().count() == 128);
         })
     }
     #[bench]
@@ -1147,7 +1178,7 @@ mod tests {
         let v = &[0, ..128];
         let m: DList<int> = v.iter().map(|&x|x).collect();
         b.iter(|| {
-            assert!(m.iter().rev().len() == 128);
+            assert!(m.iter().rev().count() == 128);
         })
     }
     #[bench]
@@ -1155,7 +1186,7 @@ mod tests {
         let v = &[0, ..128];
         let mut m: DList<int> = v.iter().map(|&x|x).collect();
         b.iter(|| {
-            assert!(m.mut_iter().rev().len() == 128);
+            assert!(m.mut_iter().rev().count() == 128);
         })
     }
 }

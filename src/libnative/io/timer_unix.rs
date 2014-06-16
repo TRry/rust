@@ -51,10 +51,10 @@ use std::mem;
 use std::os;
 use std::ptr;
 use std::rt::rtio;
+use std::rt::rtio::IoResult;
 use std::sync::atomics;
 use std::comm;
 
-use io::IoResult;
 use io::c;
 use io::file::FileDesc;
 use io::helper_thread::Helper;
@@ -67,7 +67,7 @@ pub struct Timer {
 }
 
 struct Inner {
-    tx: Option<Sender<()>>,
+    cb: Option<Box<rtio::Callback + Send>>,
     interval: u64,
     repeat: bool,
     target: u64,
@@ -93,6 +93,19 @@ pub fn now() -> u64 {
     }
 }
 
+
+// Note: although the last parameter isn't used there is no way now to
+// convert it to unit type, because LLVM dies in SjLj preparation
+// step (unfortunately iOS uses SjLJ exceptions)
+//
+// It's definitely a temporary workaround just to get it working.
+// So far it looks like an LLVM issue and it was reported:
+// http://llvm.org/bugs/show_bug.cgi?id=19855
+// Actually this issue is pretty common while compiling for armv7 iOS
+// and in most cases it is simply solved by using --opt-level=2 (or -O)
+//
+// For this specific case unfortunately turning optimizations wasn't
+// enough.
 fn helper(input: libc::c_int, messages: Receiver<Req>, _: int) {
     let mut set: c::fd_set = unsafe { mem::zeroed() };
 
@@ -119,13 +132,13 @@ fn helper(input: libc::c_int, messages: Receiver<Req>, _: int) {
         let mut timer = match active.shift() {
             Some(timer) => timer, None => return
         };
-        let tx = timer.tx.take_unwrap();
-        if tx.send_opt(()).is_ok() && timer.repeat {
-            timer.tx = Some(tx);
+        let mut cb = timer.cb.take_unwrap();
+        cb.call();
+        if timer.repeat {
+            timer.cb = Some(cb);
             timer.target += timer.interval;
             insert(timer, active);
         } else {
-            drop(tx);
             dead.push((timer.id, timer));
         }
     }
@@ -190,7 +203,7 @@ fn helper(input: libc::c_int, messages: Receiver<Req>, _: int) {
 
                 // drain the file descriptor
                 let mut buf = [0];
-                assert_eq!(fd.inner_read(buf).unwrap(), 1);
+                assert_eq!(fd.inner_read(buf).ok().unwrap(), 1);
             }
 
             -1 if os::errno() == libc::EINTR as int => {}
@@ -202,6 +215,8 @@ fn helper(input: libc::c_int, messages: Receiver<Req>, _: int) {
 
 impl Timer {
     pub fn new() -> IoResult<Timer> {
+        // See notes above regarding using int return value
+        // instead of ()
         unsafe { HELPER.boot(|| {0}, helper); }
 
         static mut ID: atomics::AtomicUint = atomics::INIT_ATOMIC_UINT;
@@ -209,7 +224,7 @@ impl Timer {
         Ok(Timer {
             id: id,
             inner: Some(box Inner {
-                tx: None,
+                cb: None,
                 interval: 0,
                 target: 0,
                 repeat: false,
@@ -245,38 +260,34 @@ impl Timer {
 impl rtio::RtioTimer for Timer {
     fn sleep(&mut self, msecs: u64) {
         let mut inner = self.inner();
-        inner.tx = None; // cancel any previous request
+        inner.cb = None; // cancel any previous request
         self.inner = Some(inner);
 
         Timer::sleep(msecs);
     }
 
-    fn oneshot(&mut self, msecs: u64) -> Receiver<()> {
+    fn oneshot(&mut self, msecs: u64, cb: Box<rtio::Callback + Send>) {
         let now = now();
         let mut inner = self.inner();
 
-        let (tx, rx) = channel();
         inner.repeat = false;
-        inner.tx = Some(tx);
+        inner.cb = Some(cb);
         inner.interval = msecs;
         inner.target = now + msecs;
 
         unsafe { HELPER.send(NewTimer(inner)); }
-        return rx;
     }
 
-    fn period(&mut self, msecs: u64) -> Receiver<()> {
+    fn period(&mut self, msecs: u64, cb: Box<rtio::Callback + Send>) {
         let now = now();
         let mut inner = self.inner();
 
-        let (tx, rx) = channel();
         inner.repeat = true;
-        inner.tx = Some(tx);
+        inner.cb = Some(cb);
         inner.interval = msecs;
         inner.target = now + msecs;
 
         unsafe { HELPER.send(NewTimer(inner)); }
-        return rx;
     }
 }
 

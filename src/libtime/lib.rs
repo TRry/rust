@@ -17,18 +17,15 @@
 #![license = "MIT/ASL2"]
 #![doc(html_logo_url = "http://www.rust-lang.org/logos/rust-logo-128x128-blk-v2.png",
        html_favicon_url = "http://www.rust-lang.org/favicon.ico",
-       html_root_url = "http://doc.rust-lang.org/")]
+       html_root_url = "http://doc.rust-lang.org/",
+       html_playground_url = "http://play.rust-lang.org/")]
 #![feature(phase)]
-#![deny(deprecated_owned_vector)]
 
 #[cfg(test)] extern crate debug;
-#[cfg(test)] #[phase(syntax, link)] extern crate log;
+#[cfg(test)] #[phase(plugin, link)] extern crate log;
 
 extern crate serialize;
 extern crate libc;
-#[cfg(target_os = "macos")]
-#[cfg(target_os = "ios")]
-extern crate sync;
 
 use std::io::BufReader;
 use std::num;
@@ -169,7 +166,7 @@ pub fn precise_time_ns() -> u64 {
     fn os_precise_time_ns() -> u64 {
         static mut TIMEBASE: libc::mach_timebase_info = libc::mach_timebase_info { numer: 0,
                                                                                    denom: 0 };
-        static mut ONCE: sync::one::Once = sync::one::ONCE_INIT;
+        static mut ONCE: std::sync::Once = std::sync::ONCE_INIT;
         unsafe {
             ONCE.doit(|| {
                 imp::mach_timebase_info(&mut TIMEBASE);

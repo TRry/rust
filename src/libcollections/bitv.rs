@@ -13,12 +13,15 @@
 use core::prelude::*;
 
 use core::cmp;
+use core::default::Default;
 use core::fmt;
 use core::iter::{Enumerate, Repeat, Map, Zip};
 use core::ops;
 use core::slice;
 use core::uint;
+use std::hash;
 
+use {Collection, Mutable, Set, MutableSet};
 use vec::Vec;
 
 #[deriving(Clone)]
@@ -34,12 +37,12 @@ fn small_mask(nbits: uint) -> uint {
 }
 
 impl SmallBitv {
-    pub fn new(bits: uint) -> SmallBitv {
+    fn new(bits: uint) -> SmallBitv {
         SmallBitv {bits: bits}
     }
 
     #[inline]
-    pub fn bits_op(&mut self,
+    fn bits_op(&mut self,
                    right_bits: uint,
                    nbits: uint,
                    f: |uint, uint| -> uint)
@@ -52,32 +55,32 @@ impl SmallBitv {
     }
 
     #[inline]
-    pub fn union(&mut self, s: &SmallBitv, nbits: uint) -> bool {
+    fn union(&mut self, s: &SmallBitv, nbits: uint) -> bool {
         self.bits_op(s.bits, nbits, |u1, u2| u1 | u2)
     }
 
     #[inline]
-    pub fn intersect(&mut self, s: &SmallBitv, nbits: uint) -> bool {
+    fn intersect(&mut self, s: &SmallBitv, nbits: uint) -> bool {
         self.bits_op(s.bits, nbits, |u1, u2| u1 & u2)
     }
 
     #[inline]
-    pub fn become(&mut self, s: &SmallBitv, nbits: uint) -> bool {
+    fn become(&mut self, s: &SmallBitv, nbits: uint) -> bool {
         self.bits_op(s.bits, nbits, |_u1, u2| u2)
     }
 
     #[inline]
-    pub fn difference(&mut self, s: &SmallBitv, nbits: uint) -> bool {
+    fn difference(&mut self, s: &SmallBitv, nbits: uint) -> bool {
         self.bits_op(s.bits, nbits, |u1, u2| u1 & !u2)
     }
 
     #[inline]
-    pub fn get(&self, i: uint) -> bool {
+    fn get(&self, i: uint) -> bool {
         (self.bits & (1 << i)) != 0
     }
 
     #[inline]
-    pub fn set(&mut self, i: uint, x: bool) {
+    fn set(&mut self, i: uint, x: bool) {
         if x {
             self.bits |= 1<<i;
         }
@@ -87,29 +90,29 @@ impl SmallBitv {
     }
 
     #[inline]
-    pub fn equals(&self, b: &SmallBitv, nbits: uint) -> bool {
+    fn equals(&self, b: &SmallBitv, nbits: uint) -> bool {
         let mask = small_mask(nbits);
         mask & self.bits == mask & b.bits
     }
 
     #[inline]
-    pub fn clear(&mut self) { self.bits = 0; }
+    fn clear(&mut self) { self.bits = 0; }
 
     #[inline]
-    pub fn set_all(&mut self) { self.bits = !0; }
+    fn set_all(&mut self) { self.bits = !0; }
 
     #[inline]
-    pub fn all(&self, nbits: uint) -> bool {
+    fn all(&self, nbits: uint) -> bool {
         small_mask(nbits) & !self.bits == 0
     }
 
     #[inline]
-    pub fn none(&self, nbits: uint) -> bool {
+    fn none(&self, nbits: uint) -> bool {
         small_mask(nbits) & self.bits == 0
     }
 
     #[inline]
-    pub fn negate(&mut self) { self.bits = !self.bits; }
+    fn negate(&mut self) { self.bits = !self.bits; }
 }
 
 #[deriving(Clone)]
@@ -134,12 +137,12 @@ fn big_mask(nbits: uint, elem: uint) -> uint {
 }
 
 impl BigBitv {
-    pub fn new(storage: Vec<uint>) -> BigBitv {
+    fn new(storage: Vec<uint>) -> BigBitv {
         BigBitv {storage: storage}
     }
 
     #[inline]
-    pub fn process(&mut self,
+    fn process(&mut self,
                    b: &BigBitv,
                    nbits: uint,
                    op: |uint, uint| -> uint)
@@ -163,37 +166,37 @@ impl BigBitv {
     }
 
     #[inline]
-    pub fn each_storage(&mut self, op: |v: &mut uint| -> bool) -> bool {
+    fn each_storage(&mut self, op: |v: &mut uint| -> bool) -> bool {
         self.storage.mut_iter().advance(|elt| op(elt))
     }
 
     #[inline]
-    pub fn negate(&mut self) {
+    fn negate(&mut self) {
         self.each_storage(|w| { *w = !*w; true });
     }
 
     #[inline]
-    pub fn union(&mut self, b: &BigBitv, nbits: uint) -> bool {
+    fn union(&mut self, b: &BigBitv, nbits: uint) -> bool {
         self.process(b, nbits, |w1, w2| w1 | w2)
     }
 
     #[inline]
-    pub fn intersect(&mut self, b: &BigBitv, nbits: uint) -> bool {
+    fn intersect(&mut self, b: &BigBitv, nbits: uint) -> bool {
         self.process(b, nbits, |w1, w2| w1 & w2)
     }
 
     #[inline]
-    pub fn become(&mut self, b: &BigBitv, nbits: uint) -> bool {
+    fn become(&mut self, b: &BigBitv, nbits: uint) -> bool {
         self.process(b, nbits, |_, w| w)
     }
 
     #[inline]
-    pub fn difference(&mut self, b: &BigBitv, nbits: uint) -> bool {
+    fn difference(&mut self, b: &BigBitv, nbits: uint) -> bool {
         self.process(b, nbits, |w1, w2| w1 & !w2)
     }
 
     #[inline]
-    pub fn get(&self, i: uint) -> bool {
+    fn get(&self, i: uint) -> bool {
         let w = i / uint::BITS;
         let b = i % uint::BITS;
         let x = 1 & self.storage.get(w) >> b;
@@ -201,7 +204,7 @@ impl BigBitv {
     }
 
     #[inline]
-    pub fn set(&mut self, i: uint, x: bool) {
+    fn set(&mut self, i: uint, x: bool) {
         let w = i / uint::BITS;
         let b = i % uint::BITS;
         let flag = 1 << b;
@@ -210,7 +213,7 @@ impl BigBitv {
     }
 
     #[inline]
-    pub fn equals(&self, b: &BigBitv, nbits: uint) -> bool {
+    fn equals(&self, b: &BigBitv, nbits: uint) -> bool {
         for (i, elt) in b.storage.iter().enumerate() {
             let mask = big_mask(nbits, i);
             if mask & *self.storage.get(i) != mask & *elt {
@@ -241,17 +244,17 @@ enum Op {Union, Intersect, Assign, Difference}
 /// bv.set(5, true);
 /// bv.set(7, true);
 /// println!("{}", bv.to_str());
-/// println!("total bits set to true: {}", bv.iter().count(|x| x));
+/// println!("total bits set to true: {}", bv.iter().filter(|x| *x).count());
 ///
 /// // flip all values in bitvector, producing non-primes less than 10
 /// bv.negate();
 /// println!("{}", bv.to_str());
-/// println!("total bits set to true: {}", bv.iter().count(|x| x));
+/// println!("total bits set to true: {}", bv.iter().filter(|x| *x).count());
 ///
 /// // reset bitvector to empty
 /// bv.clear();
 /// println!("{}", bv.to_str());
-/// println!("total bits set to true: {}", bv.iter().count(|x| x));
+/// println!("total bits set to true: {}", bv.iter().filter(|x| *x).count());
 /// ```
 #[deriving(Clone)]
 pub struct Bitv {
@@ -461,7 +464,7 @@ impl Bitv {
     /// bv.set(5, true);
     /// bv.set(8, true);
     /// // Count bits set to 1; result should be 5
-    /// println!("{}", bv.iter().count(|x| x));
+    /// println!("{}", bv.iter().filter(|x| *x).count());
     /// ```
     #[inline]
     pub fn iter<'a>(&'a self) -> Bits<'a> {
@@ -596,6 +599,20 @@ impl fmt::Show for Bitv {
     }
 }
 
+impl<S: hash::Writer> hash::Hash<S> for Bitv {
+    fn hash(&self, state: &mut S) {
+        self.nbits.hash(state);
+        match self.rep {
+            Small(ref s) => (s.bits & small_mask(self.nbits)).hash(state),
+            Big(ref b) => {
+                for (i, ele) in b.storage.iter().enumerate() {
+                    (ele & big_mask(self.nbits, i)).hash(state);
+                }
+            }
+        }
+    }
+}
+
 #[inline]
 fn iterate_bits(base: uint, bits: uint, f: |uint| -> bool) -> bool {
     if bits == 0 {
@@ -680,6 +697,11 @@ pub struct BitvSet {
     // there's an array of storage makes our lives a whole lot easier when
     // performing union/intersection/etc operations
     bitv: BigBitv
+}
+
+impl Default for BitvSet {
+    #[inline]
+    fn default() -> BitvSet { BitvSet::new() }
 }
 
 impl BitvSet {
@@ -821,7 +843,7 @@ impl cmp::PartialEq for BitvSet {
 
 impl fmt::Show for BitvSet {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        try!(write!(fmt, r"\{"));
+        try!(write!(fmt, "{{"));
         let mut first = true;
         for n in self.iter() {
             if !first {
@@ -830,11 +852,19 @@ impl fmt::Show for BitvSet {
             try!(write!(fmt, "{}", n));
             first = false;
         }
-        write!(fmt, r"\}")
+        write!(fmt, "}}")
     }
 }
 
-impl Container for BitvSet {
+impl<S: hash::Writer> hash::Hash<S> for BitvSet {
+    fn hash(&self, state: &mut S) {
+        for pos in self.iter() {
+            pos.hash(state);
+        }
+    }
+}
+
+impl Collection for BitvSet {
     #[inline]
     fn len(&self) -> uint { self.size }
 }
@@ -985,6 +1015,7 @@ mod tests {
     use std::rand::Rng;
     use test::Bencher;
 
+    use {Set, Mutable, MutableSet};
     use bitv::{Bitv, SmallBitv, BigBitv, BitvSet, from_bools, from_fn,
                from_bytes};
     use bitv;

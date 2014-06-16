@@ -12,7 +12,7 @@
 // unresolved type variables and replaces "ty_var" types with their
 // substitutions.
 
-
+use middle::def;
 use middle::pat_util;
 use middle::ty;
 use middle::ty_fold::{TypeFolder,TypeFoldable};
@@ -21,8 +21,8 @@ use middle::typeck::check::FnCtxt;
 use middle::typeck::infer::{force_all, resolve_all, resolve_region};
 use middle::typeck::infer::resolve_type;
 use middle::typeck::infer;
-use middle::typeck::impl_res;
 use middle::typeck::{MethodCall, MethodCallee};
+use middle::typeck::vtable_res;
 use middle::typeck::write_substs_to_tcx;
 use middle::typeck::write_ty_to_tcx;
 use util::ppaux::Repr;
@@ -52,10 +52,10 @@ pub fn resolve_type_vars_in_fn(fcx: &FnCtxt,
     let mut wbcx = WritebackCx::new(fcx);
     wbcx.visit_block(blk, ());
     for arg in decl.inputs.iter() {
-        wbcx.visit_pat(arg.pat, ());
+        wbcx.visit_pat(&*arg.pat, ());
 
         // Privacy needs the type for the whole pattern, not just each binding
-        if !pat_util::pat_is_binding(&fcx.tcx().def_map, arg.pat) {
+        if !pat_util::pat_is_binding(&fcx.tcx().def_map, &*arg.pat) {
             wbcx.visit_node_id(ResolvingPattern(arg.pat.span),
                                arg.pat.id);
         }
@@ -65,13 +65,13 @@ pub fn resolve_type_vars_in_fn(fcx: &FnCtxt,
 
 pub fn resolve_impl_res(infcx: &infer::InferCtxt,
                         span: Span,
-                        impl_res: &impl_res)
-                        -> impl_res {
+                        vtable_res: &vtable_res)
+                        -> vtable_res {
     let errors = Cell::new(false); // nobody cares
     let mut resolver = Resolver::from_infcx(infcx,
                                             &errors,
                                             ResolvingImplRes(span));
-    impl_res.resolve_in(&mut resolver)
+    vtable_res.resolve_in(&mut resolver)
 }
 
 ///////////////////////////////////////////////////////////////////////////
@@ -231,10 +231,10 @@ impl<'cx> WritebackCx<'cx> {
                         // bare functions to coerce to a closure to avoid
                         // constructing (slower) indirect call wrappers.
                         match self.tcx().def_map.borrow().find(&id) {
-                            Some(&ast::DefFn(..)) |
-                            Some(&ast::DefStaticMethod(..)) |
-                            Some(&ast::DefVariant(..)) |
-                            Some(&ast::DefStruct(_)) => {
+                            Some(&def::DefFn(..)) |
+                            Some(&def::DefStaticMethod(..)) |
+                            Some(&def::DefVariant(..)) |
+                            Some(&def::DefStruct(_)) => {
                             }
                             _ => {
                                 self.tcx().sess.span_err(
@@ -259,7 +259,14 @@ impl<'cx> WritebackCx<'cx> {
                         })
                     }
 
-                    adjustment => adjustment
+                    ty::AutoObject(trait_store, bb, def_id, substs) => {
+                        ty::AutoObject(
+                            self.resolve(&trait_store, reason),
+                            self.resolve(&bb, reason),
+                            def_id,
+                            self.resolve(&substs, reason)
+                        )
+                    }
                 };
                 debug!("Adjustments for node {}: {:?}", id, resolved_adjustment);
                 self.tcx().adjustments.borrow_mut().insert(
@@ -277,21 +284,11 @@ impl<'cx> WritebackCx<'cx> {
                 debug!("writeback::resolve_method_map_entry(call={:?}, entry={})",
                        method_call,
                        method.repr(self.tcx()));
-                let mut new_method = MethodCallee {
+                let new_method = MethodCallee {
                     origin: method.origin,
                     ty: self.resolve(&method.ty, reason),
                     substs: self.resolve(&method.substs, reason),
                 };
-
-                // Wack. For some reason I don't quite know, we always
-                // hard-code the self-ty and regions to these
-                // values. Changing this causes downstream errors I
-                // don't feel like investigating right now (in
-                // particular, self_ty is set to mk_err in some cases,
-                // probably for invocations on objects, and this
-                // causes encoding failures). -nmatsakis
-                new_method.substs.self_ty = None;
-                new_method.substs.regions = ty::ErasedRegions;
 
                 self.tcx().method_map.borrow_mut().insert(
                     method_call,

@@ -37,7 +37,7 @@ pub mod config;
 
 pub fn main_args(args: &[String]) -> int {
     let owned_args = args.to_owned();
-    monitor(proc() run_compiler(owned_args));
+    monitor(proc() run_compiler(owned_args.as_slice()));
     0
 }
 
@@ -176,8 +176,7 @@ fn describe_debug_flags() {
 fn describe_codegen_flags() {
     println!("\nAvailable codegen options:\n");
     let mut cg = config::basic_codegen_options();
-    for &(name, parser, desc, is_public) in config::CG_OPTIONS.iter() {
-        if !is_public { continue }
+    for &(name, parser, desc) in config::CG_OPTIONS.iter() {
         // we invoke the parser function on `None` to see if this option needs
         // an argument or not.
         let (width, extra) = if parser(&mut cg, None) {
@@ -190,7 +189,7 @@ fn describe_codegen_flags() {
     }
 }
 
-/// Process command line options. Emits messages as appropirate.If compilation
+/// Process command line options. Emits messages as appropriate. If compilation
 /// should continue, returns a getopts::Matches object parsed from args, otherwise
 /// returns None.
 pub fn handle_options(mut args: Vec<String>) -> Option<getopts::Matches> {
@@ -206,7 +205,7 @@ pub fn handle_options(mut args: Vec<String>) -> Option<getopts::Matches> {
         match getopts::getopts(args.as_slice(), config::optgroups().as_slice()) {
             Ok(m) => m,
             Err(f) => {
-                early_error(f.to_err_msg().as_slice());
+                early_error(f.to_str().as_slice());
             }
         };
 
@@ -350,8 +349,7 @@ pub fn early_error(msg: &str) -> ! {
 
 pub fn list_metadata(sess: &Session, path: &Path,
                      out: &mut io::Writer) -> io::IoResult<()> {
-    metadata::loader::list_file_metadata(
-        config::cfg_os_to_meta_os(sess.targ_cfg.os), path, out)
+    metadata::loader::list_file_metadata(sess.targ_cfg.os, path, out)
 }
 
 /// Run a procedure which will detect failures in the compiler and print nicer

@@ -63,7 +63,10 @@ independently:
 
 use driver::config;
 
+use middle::def;
 use middle::resolve;
+use middle::subst;
+use middle::subst::VecPerParamSpace;
 use middle::ty;
 use util::common::time;
 use util::ppaux::Repr;
@@ -71,7 +74,6 @@ use util::ppaux;
 use util::nodemap::{DefIdMap, FnvHashMap};
 
 use std::cell::RefCell;
-use std::rc::Rc;
 use syntax::codemap::Span;
 use syntax::print::pprust::*;
 use syntax::{ast, ast_map, abi};
@@ -85,9 +87,9 @@ pub mod coherence;
 pub mod variance;
 
 #[deriving(Clone, Encodable, Decodable, PartialEq, PartialOrd)]
-pub enum param_index {
-    param_numbered(uint),
-    param_self
+pub struct param_index {
+    pub space: subst::ParamSpace,
+    pub index: uint
 }
 
 #[deriving(Clone, Encodable, Decodable)]
@@ -144,7 +146,7 @@ pub struct MethodObject {
 pub struct MethodCallee {
     pub origin: MethodOrigin,
     pub ty: ty::t,
-    pub substs: ty::substs
+    pub substs: subst::Substs
 }
 
 #[deriving(Clone, PartialEq, Eq, Hash, Show)]
@@ -174,8 +176,9 @@ impl MethodCall {
 pub type MethodMap = RefCell<FnvHashMap<MethodCall, MethodCallee>>;
 
 pub type vtable_param_res = Vec<vtable_origin>;
+
 // Resolutions for bounds of all parameters, left to right, for a given path.
-pub type vtable_res = Vec<vtable_param_res>;
+pub type vtable_res = VecPerParamSpace<vtable_param_res>;
 
 #[deriving(Clone)]
 pub enum vtable_origin {
@@ -184,7 +187,7 @@ pub enum vtable_origin {
       from whence comes the vtable, and tys are the type substs.
       vtable_res is the vtable itself
      */
-    vtable_static(ast::DefId, ty::substs, vtable_res),
+    vtable_static(ast::DefId, subst::Substs, vtable_res),
 
     /*
       Dynamic vtable, comes from a parameter that has a bound on it:
@@ -195,6 +198,14 @@ pub enum vtable_origin {
       and the second is the bound number (identifying baz)
      */
     vtable_param(param_index, uint),
+
+    /*
+      Asked to determine the vtable for ty_err. This is the value used
+      for the vtables of `Self` in a virtual call like `foo.bar()`
+      where `foo` is of object type. The same value is also used when
+      type errors occur.
+     */
+    vtable_error,
 }
 
 impl Repr for vtable_origin {
@@ -211,6 +222,10 @@ impl Repr for vtable_origin {
             vtable_param(x, y) => {
                 format!("vtable_param({:?}, {:?})", x, y)
             }
+
+            vtable_error => {
+                format!("vtable_error")
+            }
         }
     }
 }
@@ -218,26 +233,7 @@ impl Repr for vtable_origin {
 pub type vtable_map = RefCell<FnvHashMap<MethodCall, vtable_res>>;
 
 
-// Information about the vtable resolutions for a trait impl.
-// Mostly the information is important for implementing default
-// methods.
-#[deriving(Clone)]
-pub struct impl_res {
-    // resolutions for any bounded params on the trait definition
-    pub trait_vtables: vtable_res,
-    // resolutions for the trait /itself/ (and for supertraits)
-    pub self_vtables: vtable_param_res
-}
-
-impl Repr for impl_res {
-    fn repr(&self, tcx: &ty::ctxt) -> String {
-        format!("impl_res \\{trait_vtables={}, self_vtables={}\\}",
-                self.trait_vtables.repr(tcx),
-                self.self_vtables.repr(tcx))
-    }
-}
-
-pub type impl_vtable_map = RefCell<DefIdMap<impl_res>>;
+pub type impl_vtable_map = RefCell<DefIdMap<vtable_res>>;
 
 pub struct CrateCtxt<'a> {
     // A mapping from method call sites to traits that have that method.
@@ -259,13 +255,12 @@ pub fn write_substs_to_tcx(tcx: &ty::ctxt,
                node_id,
                item_substs.repr(tcx));
 
-        assert!(item_substs.substs.tps.iter().
-                all(|t| !ty::type_needs_infer(*t)));
+        assert!(item_substs.substs.types.all(|t| !ty::type_needs_infer(*t)));
 
         tcx.item_substs.borrow_mut().insert(node_id, item_substs);
     }
 }
-pub fn lookup_def_tcx(tcx:&ty::ctxt, sp: Span, id: ast::NodeId) -> ast::Def {
+pub fn lookup_def_tcx(tcx:&ty::ctxt, sp: Span, id: ast::NodeId) -> def::Def {
     match tcx.def_map.borrow().find(&id) {
         Some(&x) => x,
         _ => {
@@ -275,14 +270,14 @@ pub fn lookup_def_tcx(tcx:&ty::ctxt, sp: Span, id: ast::NodeId) -> ast::Def {
 }
 
 pub fn lookup_def_ccx(ccx: &CrateCtxt, sp: Span, id: ast::NodeId)
-                   -> ast::Def {
+                   -> def::Def {
     lookup_def_tcx(ccx.tcx, sp, id)
 }
 
 pub fn no_params(t: ty::t) -> ty::ty_param_bounds_and_ty {
     ty::ty_param_bounds_and_ty {
-        generics: ty::Generics {type_param_defs: Rc::new(Vec::new()),
-                                region_param_defs: Rc::new(Vec::new())},
+        generics: ty::Generics {types: VecPerParamSpace::empty(),
+                                regions: VecPerParamSpace::empty()},
         ty: t
     }
 }

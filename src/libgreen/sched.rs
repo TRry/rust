@@ -10,11 +10,11 @@
 
 use std::mem;
 use std::rt::local::Local;
+use std::rt::mutex::NativeMutex;
 use std::rt::rtio::{RemoteCallback, PausableIdleCallback, Callback, EventLoop};
 use std::rt::task::BlockedTask;
 use std::rt::task::Task;
 use std::sync::deque;
-use std::unstable::mutex::NativeMutex;
 use std::raw;
 
 use std::rand::{XorShiftRng, Rng, Rand};
@@ -82,8 +82,8 @@ pub struct Scheduler {
     run_anything: bool,
     /// A fast XorShift rng for scheduler use
     rng: XorShiftRng,
-    /// A togglable idle callback
-    idle_callback: Option<Box<PausableIdleCallback:Send>>,
+    /// A toggleable idle callback
+    idle_callback: Option<Box<PausableIdleCallback + Send>>,
     /// A countdown that starts at a random value and is decremented
     /// every time a yield check is performed. When it hits 0 a task
     /// will yield.
@@ -100,7 +100,7 @@ pub struct Scheduler {
     //      destroyed before it's actually destroyed.
 
     /// The event loop used to drive the scheduler and perform I/O
-    pub event_loop: Box<EventLoop:Send>,
+    pub event_loop: Box<EventLoop + Send>,
 }
 
 /// An indication of how hard to work on a given operation, the difference
@@ -123,7 +123,7 @@ impl Scheduler {
     // * Initialization Functions
 
     pub fn new(pool_id: uint,
-               event_loop: Box<EventLoop:Send>,
+               event_loop: Box<EventLoop + Send>,
                work_queue: deque::Worker<Box<GreenTask>>,
                work_queues: Vec<deque::Stealer<Box<GreenTask>>>,
                sleeper_list: SleeperList,
@@ -136,7 +136,7 @@ impl Scheduler {
     }
 
     pub fn new_special(pool_id: uint,
-                       event_loop: Box<EventLoop:Send>,
+                       event_loop: Box<EventLoop + Send>,
                        work_queue: deque::Worker<Box<GreenTask>>,
                        work_queues: Vec<deque::Stealer<Box<GreenTask>>>,
                        sleeper_list: SleeperList,
@@ -183,7 +183,7 @@ impl Scheduler {
     pub fn bootstrap(mut ~self) {
 
         // Build an Idle callback.
-        let cb = box SchedRunner as Box<Callback:Send>;
+        let cb = box SchedRunner as Box<Callback + Send>;
         self.idle_callback = Some(self.event_loop.pausable_idle_callback(cb));
 
         // Create a task for the scheduler with an empty context.
@@ -231,7 +231,7 @@ impl Scheduler {
         // mutable reference to the event_loop to give it the "run"
         // command.
         unsafe {
-            let event_loop: *mut Box<EventLoop:Send> = &mut self.event_loop;
+            let event_loop: *mut Box<EventLoop + Send> = &mut self.event_loop;
             // Our scheduler must be in the task before the event loop
             // is started.
             stask.put_with_sched(self);
@@ -287,7 +287,7 @@ impl Scheduler {
 
         // After processing a message, we consider doing some more work on the
         // event loop. The "keep going" condition changes after the first
-        // iteration becase we don't want to spin here infinitely.
+        // iteration because we don't want to spin here infinitely.
         //
         // Once we start doing work we can keep doing work so long as the
         // iteration does something. Note that we don't want to starve the
@@ -904,7 +904,7 @@ pub enum SchedMessage {
 }
 
 pub struct SchedHandle {
-    remote: Box<RemoteCallback:Send>,
+    remote: Box<RemoteCallback + Send>,
     queue: msgq::Producer<SchedMessage>,
     pub sched_id: uint
 }
@@ -1022,7 +1022,7 @@ fn new_sched_rng() -> XorShiftRng {
 mod test {
     use rustuv;
 
-    use std::task::TaskOpts;
+    use std::rt::task::TaskOpts;
     use std::rt::task::Task;
     use std::rt::local::Local;
 
@@ -1475,7 +1475,7 @@ mod test {
 
     #[test]
     fn test_spawn_sched_blocking() {
-        use std::unstable::mutex::{StaticNativeMutex, NATIVE_MUTEX_INIT};
+        use std::rt::mutex::{StaticNativeMutex, NATIVE_MUTEX_INIT};
         static mut LOCK: StaticNativeMutex = NATIVE_MUTEX_INIT;
 
         // Testing that a task in one scheduler can block in foreign code

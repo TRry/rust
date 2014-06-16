@@ -25,24 +25,27 @@
 .global STACK_EXHAUSTED
 .global MORESTACK
 
-#if defined(__APPLE__)
-.private_extern MORESTACK
-#else
-.hidden MORESTACK
-#endif
-
-// r4 and r5 are scratch registers for __morestack due to llvm
-// ARMFrameLowering::adjustForSegmentedStacks() implementation.
-#if !defined(__APPLE__)
-   .type MORESTACK,%function
-#endif
-
+// Unfortunately LLVM yet doesn't support emitting correct debug
+// DWARF information for non-ELF targets so to make it compile
+// on iOS all that directives are simply commented out
 #if defined(__APPLE__)
 #define UNWIND @
 #else
 #define UNWIND
 #endif
 
+#if defined(__APPLE__)
+.private_extern MORESTACK
+#else
+.hidden MORESTACK
+#endif
+
+#if !defined(__APPLE__)
+   .type MORESTACK,%function
+#endif
+
+// r4 and r5 are scratch registers for __morestack due to llvm
+// ARMFrameLowering::adjustForSegmentedStacks() implementation.
 MORESTACK:
     UNWIND .fnstart
 

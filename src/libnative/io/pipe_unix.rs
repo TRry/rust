@@ -11,13 +11,12 @@
 use alloc::arc::Arc;
 use libc;
 use std::c_str::CString;
-use std::intrinsics;
-use std::io;
 use std::mem;
+use std::rt::mutex;
 use std::rt::rtio;
-use std::unstable::mutex;
+use std::rt::rtio::{IoResult, IoError};
 
-use super::{IoResult, retry};
+use super::retry;
 use super::net;
 use super::util;
 use super::c;
@@ -34,15 +33,17 @@ fn addr_to_sockaddr_un(addr: &CString) -> IoResult<(libc::sockaddr_storage, uint
     // the sun_path length is limited to SUN_LEN (with null)
     assert!(mem::size_of::<libc::sockaddr_storage>() >=
             mem::size_of::<libc::sockaddr_un>());
-    let mut storage: libc::sockaddr_storage = unsafe { intrinsics::init() };
+    let mut storage: libc::sockaddr_storage = unsafe { mem::zeroed() };
     let s: &mut libc::sockaddr_un = unsafe { mem::transmute(&mut storage) };
 
     let len = addr.len();
     if len > s.sun_path.len() - 1 {
-        return Err(io::IoError {
-            kind: io::InvalidInput,
-            desc: "path must be smaller than SUN_LEN",
-            detail: None,
+        #[cfg(unix)] use ERROR = libc::EINVAL;
+        #[cfg(windows)] use ERROR = libc::WSAEINVAL;
+        return Err(IoError {
+            code: ERROR as uint,
+            extra: 0,
+            detail: Some("path must be smaller than SUN_LEN".to_str()),
         })
     }
     s.sun_family = libc::AF_UNIX as libc::sa_family_t;
@@ -57,7 +58,10 @@ fn addr_to_sockaddr_un(addr: &CString) -> IoResult<(libc::sockaddr_storage, uint
 
 struct Inner {
     fd: fd_t,
-    lock: mutex::NativeMutex,
+
+    // Unused on Linux, where this lock is not necessary.
+    #[allow(dead_code)]
+    lock: mutex::NativeMutex
 }
 
 impl Inner {
@@ -175,8 +179,8 @@ impl rtio::RtioPipe for UnixStream {
         }
     }
 
-    fn clone(&self) -> Box<rtio::RtioPipe:Send> {
-        box UnixStream::new(self.inner.clone()) as Box<rtio::RtioPipe:Send>
+    fn clone(&self) -> Box<rtio::RtioPipe + Send> {
+        box UnixStream::new(self.inner.clone()) as Box<rtio::RtioPipe + Send>
     }
 
     fn close_write(&mut self) -> IoResult<()> {
@@ -225,9 +229,9 @@ impl UnixListener {
 }
 
 impl rtio::RtioUnixListener for UnixListener {
-    fn listen(~self) -> IoResult<Box<rtio::RtioUnixAcceptor:Send>> {
+    fn listen(~self) -> IoResult<Box<rtio::RtioUnixAcceptor + Send>> {
         self.native_listen(128).map(|a| {
-            box a as Box<rtio::RtioUnixAcceptor:Send>
+            box a as Box<rtio::RtioUnixAcceptor + Send>
         })
     }
 }
@@ -244,7 +248,7 @@ impl UnixAcceptor {
         if self.deadline != 0 {
             try!(util::await(self.fd(), Some(self.deadline), util::Readable));
         }
-        let mut storage: libc::sockaddr_storage = unsafe { intrinsics::init() };
+        let mut storage: libc::sockaddr_storage = unsafe { mem::zeroed() };
         let storagep = &mut storage as *mut libc::sockaddr_storage;
         let size = mem::size_of::<libc::sockaddr_storage>();
         let mut size = size as libc::socklen_t;
@@ -260,8 +264,8 @@ impl UnixAcceptor {
 }
 
 impl rtio::RtioUnixAcceptor for UnixAcceptor {
-    fn accept(&mut self) -> IoResult<Box<rtio::RtioPipe:Send>> {
-        self.native_accept().map(|s| box s as Box<rtio::RtioPipe:Send>)
+    fn accept(&mut self) -> IoResult<Box<rtio::RtioPipe + Send>> {
+        self.native_accept().map(|s| box s as Box<rtio::RtioPipe + Send>)
     }
     fn set_timeout(&mut self, timeout: Option<u64>) {
         self.deadline = timeout.map(|a| ::io::timer::now() + a).unwrap_or(0);

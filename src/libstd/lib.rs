@@ -101,9 +101,10 @@
 #![crate_type = "dylib"]
 #![doc(html_logo_url = "http://www.rust-lang.org/logos/rust-logo-128x128-blk-v2.png",
        html_favicon_url = "http://www.rust-lang.org/favicon.ico",
-       html_root_url = "http://doc.rust-lang.org/")]
-#![feature(macro_rules, globs, asm, managed_boxes, thread_local, link_args,
-           linkage, default_type_params, phase, concat_idents, quad_precision_float)]
+       html_root_url = "http://doc.rust-lang.org/",
+       html_playground_url = "http://play.rust-lang.org/")]
+#![feature(macro_rules, globs, managed_boxes,
+           linkage, default_type_params, phase)]
 
 // Don't link to std. We are std.
 #![no_std]
@@ -118,13 +119,15 @@
 #[cfg(test)] extern crate native;
 #[cfg(test)] extern crate green;
 #[cfg(test)] extern crate debug;
-#[cfg(test)] #[phase(syntax, link)] extern crate log;
+#[cfg(test)] #[phase(plugin, link)] extern crate log;
 
 extern crate alloc;
 extern crate core;
-extern crate libc;
-extern crate core_rand = "rand";
 extern crate core_collections = "collections";
+extern crate core_rand = "rand";
+extern crate core_sync = "sync";
+extern crate libc;
+extern crate rustrt;
 
 // Make std testable by not duplicating lang items. See #2912
 #[cfg(test)] extern crate realstd = "std";
@@ -132,6 +135,8 @@ extern crate core_collections = "collections";
 #[cfg(test)] pub use realstd::ops;
 #[cfg(test)] pub use realstd::cmp;
 #[cfg(test)] pub use realstd::ty;
+#[cfg(test)] pub use realstd::owned;
+#[cfg(test)] pub use realstd::gc;
 
 
 // NB: These reexports are in the order they should be listed in rustdoc
@@ -142,7 +147,6 @@ pub use core::cell;
 pub use core::char;
 pub use core::clone;
 #[cfg(not(test))] pub use core::cmp;
-pub use core::container;
 pub use core::default;
 pub use core::finally;
 pub use core::intrinsics;
@@ -166,6 +170,11 @@ pub use core_collections::slice;
 pub use core_collections::str;
 pub use core_collections::string;
 pub use core_collections::vec;
+
+pub use rustrt::c_str;
+pub use rustrt::local_data;
+
+pub use core_sync::comm;
 
 // Run tests with libgreen instead of libnative.
 //
@@ -214,6 +223,7 @@ pub mod rand;
 
 pub mod ascii;
 
+#[cfg(not(test))]
 pub mod gc;
 
 /* Common traits */
@@ -229,34 +239,22 @@ pub mod collections;
 /* Tasks and communication */
 
 pub mod task;
-pub mod comm;
-pub mod local_data;
 pub mod sync;
-
 
 /* Runtime and platform support */
 
-pub mod c_str;
 pub mod c_vec;
+pub mod dynamic_lib;
 pub mod os;
 pub mod io;
 pub mod path;
 pub mod fmt;
-pub mod cleanup;
-
-// Private APIs
-#[unstable]
-pub mod unstable;
 
 // FIXME #7809: This shouldn't be pub, and it should be reexported under 'unstable'
 // but name resolution doesn't work without it being pub.
 #[unstable]
 pub mod rt;
-
-#[doc(hidden)]
-pub fn issue_14344_workaround() { // FIXME #14344 force linkage to happen correctly
-    libc::issue_14344_workaround();
-}
+mod failure;
 
 // A curious inner-module that's not exported that contains the binding
 // 'std' so that macro-expanded references to std::error and such
@@ -280,4 +278,12 @@ mod std {
     #[cfg(test)] pub use os = realstd::os;
     // The test runner requires std::slice::Vector, so re-export std::slice just for it.
     #[cfg(test)] pub use slice;
+}
+
+#[deprecated]
+#[allow(missing_doc)]
+#[doc(hiden)]
+pub mod unstable {
+    #[deprecated = "use std::dynamic_lib"]
+    pub use dynamic_lib;
 }

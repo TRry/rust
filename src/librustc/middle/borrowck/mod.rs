@@ -14,6 +14,7 @@
 
 use middle::dataflow::DataFlowContext;
 use middle::dataflow::DataFlowOperator;
+use middle::def;
 use euv = middle::expr_use_visitor;
 use mc = middle::mem_categorization;
 use middle::ty;
@@ -22,6 +23,7 @@ use util::ppaux::{note_and_explain_region, Repr, UserString};
 use std::cell::{Cell};
 use std::ops::{BitOr, BitAnd};
 use std::rc::Rc;
+use std::gc::{Gc, GC};
 use std::string::String;
 use syntax::ast;
 use syntax::ast_map;
@@ -69,7 +71,7 @@ pub fn check_crate(tcx: &ty::ctxt,
                    krate: &ast::Crate) {
     let mut bccx = BorrowckCtxt {
         tcx: tcx,
-        stats: @BorrowStats {
+        stats: box(GC) BorrowStats {
             loaned_paths_same: Cell::new(0),
             loaned_paths_imm: Cell::new(0),
             stable_paths: Cell::new(0),
@@ -105,7 +107,7 @@ fn borrowck_item(this: &mut BorrowckCtxt, item: &ast::Item) {
     // flow dependent conditions.
     match item.node {
         ast::ItemStatic(_, _, ex) => {
-            gather_loans::gather_loans_in_static_initializer(this, ex);
+            gather_loans::gather_loans_in_static_initializer(this, &*ex);
         }
         _ => {
             visit::walk_item(this, item, ());
@@ -142,7 +144,7 @@ fn borrowck_fn(this: &mut BorrowckCtxt,
                                                       body);
 
     check_loans::check_loans(this, &loan_dfcx, flowed_moves,
-                             all_loans.as_slice(), body);
+                             all_loans.as_slice(), decl, body);
 
     visit::walk_fn(this, fk, decl, body, sp, ());
 }
@@ -154,7 +156,7 @@ pub struct BorrowckCtxt<'a> {
     tcx: &'a ty::ctxt,
 
     // Statistics:
-    stats: @BorrowStats
+    stats: Gc<BorrowStats>,
 }
 
 pub struct BorrowStats {
@@ -179,7 +181,6 @@ pub enum PartialTotal {
 pub struct Loan {
     index: uint,
     loan_path: Rc<LoanPath>,
-    cmt: mc::cmt,
     kind: ty::BorrowKind,
     restrictions: Vec<Restriction>,
     gen_scope: ast::NodeId,
@@ -399,7 +400,7 @@ impl<'a> BorrowckCtxt<'a> {
                    id: ast::NodeId,
                    span: Span,
                    ty: ty::t,
-                   def: ast::Def)
+                   def: def::Def)
                    -> mc::cmt {
         match self.mc().cat_def(id, span, ty, def) {
             Ok(c) => c,
@@ -412,11 +413,11 @@ impl<'a> BorrowckCtxt<'a> {
     pub fn cat_captured_var(&self,
                             closure_id: ast::NodeId,
                             closure_span: Span,
-                            upvar_def: ast::Def)
+                            upvar_def: def::Def)
                             -> mc::cmt {
         // Create the cmt for the variable being borrowed, from the
         // caller's perspective
-        let var_id = ast_util::def_id_of_def(upvar_def).node;
+        let var_id = upvar_def.def_id().node;
         let var_ty = ty::node_id_to_type(self.tcx, var_id);
         self.cat_def(closure_id, closure_span, var_ty, upvar_def)
     }
@@ -480,7 +481,7 @@ impl<'a> BorrowckCtxt<'a> {
             move_data::MoveExpr => {
                 let (expr_ty, expr_span) = match self.tcx.map.find(move.id) {
                     Some(ast_map::NodeExpr(expr)) => {
-                        (ty::expr_ty_adjusted(self.tcx, expr), expr.span)
+                        (ty::expr_ty_adjusted(self.tcx, &*expr), expr.span)
                     }
                     r => {
                         self.tcx.sess.bug(format!("MoveExpr({:?}) maps to \
@@ -512,7 +513,7 @@ impl<'a> BorrowckCtxt<'a> {
             move_data::Captured => {
                 let (expr_ty, expr_span) = match self.tcx.map.find(move.id) {
                     Some(ast_map::NodeExpr(expr)) => {
-                        (ty::expr_ty_adjusted(self.tcx, expr), expr.span)
+                        (ty::expr_ty_adjusted(self.tcx, &*expr), expr.span)
                     }
                     r => {
                         self.tcx.sess.bug(format!("Captured({:?}) maps to \

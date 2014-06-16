@@ -16,6 +16,7 @@ pub struct Layout {
     pub logo: String,
     pub favicon: String,
     pub krate: String,
+    pub playground_url: String,
 }
 
 pub struct Page<'a> {
@@ -42,7 +43,7 @@ r##"<!DOCTYPE html>
           rel='stylesheet' type='text/css'>
     <link rel="stylesheet" type="text/css" href="{root_path}main.css">
 
-    {favicon, select, none{} other{<link rel="shortcut icon" href="#">}}
+    {favicon}
 </head>
 <body>
     <!--[if lte IE 8]>
@@ -53,10 +54,7 @@ r##"<!DOCTYPE html>
     <![endif]-->
 
     <section class="sidebar">
-        {logo, select, none{} other{
-            <a href='{root_path}{krate}/index.html'><img src='#' alt='' width='100'></a>
-        }}
-
+        {logo}
         {sidebar}
     </section>
 
@@ -88,7 +86,7 @@ r##"<!DOCTYPE html>
                 <dd>Move up in search results</dd>
                 <dt>&darr;</dt>
                 <dd>Move down in search results</dd>
-                <dt>&\#9166;</dt>
+                <dt>&#9166;</dt>
                 <dd>Go to active search result</dd>
             </dl>
         </div>
@@ -108,27 +106,42 @@ r##"<!DOCTYPE html>
     </div>
 
     <script>
-        var rootPath = "{root_path}";
-        var currentCrate = "{krate}";
+        window.rootPath = "{root_path}";
+        window.currentCrate = "{krate}";
+        window.playgroundUrl = "{play_url}";
     </script>
     <script src="{root_path}jquery.js"></script>
     <script src="{root_path}main.js"></script>
+    {play_js}
     <script async src="{root_path}search-index.js"></script>
 </body>
 </html>"##,
     content   = *t,
     root_path = page.root_path,
     ty        = page.ty,
-    logo      = nonestr(layout.logo.as_slice()),
+    logo      = if layout.logo.len() == 0 {
+        "".to_string()
+    } else {
+        format!("<a href='{}{}/index.html'>\
+                 <img src='{}' alt='' width='100'></a>",
+                page.root_path, layout.krate,
+                layout.logo)
+    },
     title     = page.title,
-    favicon   = nonestr(layout.favicon.as_slice()),
+    favicon   = if layout.favicon.len() == 0 {
+        "".to_string()
+    } else {
+        format!(r#"<link rel="shortcut icon" href="{}">"#, layout.favicon)
+    },
     sidebar   = *sidebar,
     krate     = layout.krate,
+    play_url  = layout.playground_url,
+    play_js   = if layout.playground_url.len() == 0 {
+        "".to_string()
+    } else {
+        format!(r#"<script src="{}playpen.js"></script>"#, page.root_path)
+    },
     )
-}
-
-fn nonestr<'a>(s: &'a str) -> &'a str {
-    if s == "" { "none" } else { s }
 }
 
 pub fn redirect(dst: &mut io::Writer, url: &str) -> io::IoResult<()> {

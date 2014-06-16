@@ -774,6 +774,7 @@ fn point_from_direction(dir: Direction) -> Point {
 Enum variants may also be structs. For example:
 
 ~~~~
+# #![feature(struct_variant)]
 use std::f64;
 # struct Point { x: f64, y: f64 }
 # fn square(x: f64) -> f64 { x * x }
@@ -789,6 +790,7 @@ fn area(sh: Shape) -> f64 {
         }
     }
 }
+# fn main() {}
 ~~~~
 
 > *Note:* This feature of the compiler is currently gated behind the
@@ -1708,14 +1710,14 @@ having ownership of the box. It allows the creation of cycles, and the individua
 not have a destructor.
 
 ~~~
-use std::gc::Gc;
+use std::gc::GC;
 
 // A fixed-size array allocated in a garbage-collected box
-let x = Gc::new([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+let x = box(GC) [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 let y = x; // does not perform a move, unlike with `Rc`
 let z = x;
 
-assert!(*z.borrow() == [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+assert!(*z == [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
 ~~~
 
 With shared ownership, mutability cannot be inherited so the boxes are always immutable. However,
@@ -2457,7 +2459,7 @@ fn draw_all(shapes: &[Box<Drawable>]) {
 }
 ~~~~
 
-In this example, there is no type parameter. Instead, the `~Drawable`
+In this example, there is no type parameter. Instead, the `Box<Drawable>`
 type denotes any owned box value that implements the `Drawable` trait.
 To construct such a value, you use the `as` operator to cast a value
 to an object:
@@ -2516,8 +2518,8 @@ valid types:
 trait Foo {}
 trait Bar<T> {}
 
-fn sendable_foo(f: Box<Foo:Send>) { /* ... */ }
-fn shareable_bar<T: Share>(b: &Bar<T>: Share) { /* ... */ }
+fn sendable_foo(f: Box<Foo + Send>) { /* ... */ }
+fn shareable_bar<T: Share>(b: &Bar<T> + Share) { /* ... */ }
 ~~~
 
 When no colon is specified (such as the type `~Foo`), it is inferred that the
@@ -3046,6 +3048,7 @@ use farm::{chicken, cow};
 2. Import everything in a module with a wildcard:
 
 ~~~
+# #![feature(globs)]
 use farm::*;
 # mod farm {
 #     pub fn cow() { println!("Bat-chicken? What a stupid name!") }

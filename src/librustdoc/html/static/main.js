@@ -647,7 +647,6 @@
                 }
                 div.append($('<a>', {'href': '../' + crates[i] + '/index.html',
                                     'class': klass}).text(crates[i]));
-                div.append($('<br>'));
             }
             sidebar.append(div);
         }
@@ -678,7 +677,7 @@
         window.register_implementors(window.pending_implementors);
     }
 
-    // See documentaiton in html/render.rs for what this is doing.
+    // See documentation in html/render.rs for what this is doing.
     var query = getQueryStringParams();
     if (query['gotosrc']) {
         window.location = $('#src-' + query['gotosrc']).attr('href');

@@ -148,7 +148,7 @@
 //!
 //! ```
 //! #![feature(phase)]
-//! #[phase(syntax)] extern crate green;
+//! #[phase(plugin)] extern crate green;
 //!
 //! green_start!(main)
 //!
@@ -160,7 +160,7 @@
 //! # Using a scheduler pool
 //!
 //! ```rust
-//! use std::task::TaskOpts;
+//! use std::rt::task::TaskOpts;
 //! use green::{SchedPool, PoolConfig};
 //! use green::sched::{PinnedTask, TaskFromFriend};
 //!
@@ -203,14 +203,14 @@
 #![crate_type = "dylib"]
 #![doc(html_logo_url = "http://www.rust-lang.org/logos/rust-logo-128x128-blk-v2.png",
        html_favicon_url = "http://www.rust-lang.org/favicon.ico",
-       html_root_url = "http://doc.rust-lang.org/")]
+       html_root_url = "http://doc.rust-lang.org/",
+       html_playground_url = "http://play.rust-lang.org/")]
 
 // NB this does *not* include globs, please keep it that way.
 #![feature(macro_rules, phase)]
 #![allow(visible_private_types)]
-#![deny(deprecated_owned_vector)]
 
-#[cfg(test)] #[phase(syntax, link)] extern crate log;
+#[cfg(test)] #[phase(plugin, link)] extern crate log;
 #[cfg(test)] extern crate rustuv;
 extern crate libc;
 extern crate alloc;
@@ -220,10 +220,10 @@ use std::mem::replace;
 use std::os;
 use std::rt::rtio;
 use std::rt::thread::Thread;
+use std::rt::task::TaskOpts;
 use std::rt;
 use std::sync::atomics::{SeqCst, AtomicUint, INIT_ATOMIC_UINT};
 use std::sync::deque;
-use std::task::TaskOpts;
 
 use sched::{Shutdown, Scheduler, SchedHandle, TaskFromFriend, NewNeighbor};
 use sleeper_list::SleeperList;
@@ -248,7 +248,7 @@ pub mod task;
 ///
 /// ```
 /// #![feature(phase)]
-/// #[phase(syntax)] extern crate green;
+/// #[phase(plugin)] extern crate green;
 ///
 /// green_start!(main)
 ///
@@ -288,7 +288,7 @@ macro_rules! green_start( ($f:ident) => (
 /// The return value is used as the process return code. 0 on success, 101 on
 /// error.
 pub fn start(argc: int, argv: **u8,
-             event_loop_factory: fn() -> Box<rtio::EventLoop:Send>,
+             event_loop_factory: fn() -> Box<rtio::EventLoop + Send>,
              main: proc():Send) -> int {
     rt::init(argc, argv);
     let mut main = Some(main);
@@ -309,7 +309,7 @@ pub fn start(argc: int, argv: **u8,
 ///
 /// This function will not return until all schedulers in the associated pool
 /// have returned.
-pub fn run(event_loop_factory: fn() -> Box<rtio::EventLoop:Send>,
+pub fn run(event_loop_factory: fn() -> Box<rtio::EventLoop + Send>,
            main: proc():Send) -> int {
     // Create a scheduler pool and spawn the main task into this pool. We will
     // get notified over a channel when the main task exits.
@@ -318,7 +318,7 @@ pub fn run(event_loop_factory: fn() -> Box<rtio::EventLoop:Send>,
     let mut pool = SchedPool::new(cfg);
     let (tx, rx) = channel();
     let mut opts = TaskOpts::new();
-    opts.notify_chan = Some(tx);
+    opts.on_exit = Some(proc(r) tx.send(r));
     opts.name = Some("<main>".into_maybe_owned());
     pool.spawn(opts, main);
 
@@ -340,7 +340,7 @@ pub struct PoolConfig {
     pub threads: uint,
     /// A factory function used to create new event loops. If this is not
     /// specified then the default event loop factory is used.
-    pub event_loop_factory: fn() -> Box<rtio::EventLoop:Send>,
+    pub event_loop_factory: fn() -> Box<rtio::EventLoop + Send>,
 }
 
 impl PoolConfig {
@@ -365,7 +365,7 @@ pub struct SchedPool {
     stack_pool: StackPool,
     deque_pool: deque::BufferPool<Box<task::GreenTask>>,
     sleepers: SleeperList,
-    factory: fn() -> Box<rtio::EventLoop:Send>,
+    factory: fn() -> Box<rtio::EventLoop + Send>,
     task_state: TaskState,
     tasks_done: Receiver<()>,
 }

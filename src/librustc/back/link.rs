@@ -114,7 +114,7 @@ pub mod write {
     // which are *far* more efficient. This is obviously undesirable in some
     // cases, so if any sort of target feature is specified we don't append v7
     // to the feature list.
-
+    //
     // On iOS only armv7 and newer are supported. So it is useful to
     // get all hardware potential via VFP3 (hardware floating point)
     // and NEON (SIMD) instructions supported by LLVM.
@@ -396,7 +396,7 @@ pub mod write {
     }
 
     unsafe fn configure_llvm(sess: &Session) {
-        use sync::one::{Once, ONCE_INIT};
+        use std::sync::{Once, ONCE_INIT};
         static mut INIT: Once = ONCE_INIT;
 
         // Copy what clang does by turning on loop vectorization at O2 and
@@ -806,6 +806,10 @@ pub fn link_binary(sess: &Session,
                    id: &CrateId) -> Vec<Path> {
     let mut out_filenames = Vec::new();
     for &crate_type in sess.crate_types.borrow().iter() {
+        if invalid_output_for_target(sess, crate_type) {
+            sess.bug(format!("invalid output type `{}` for target os `{}`",
+                             crate_type, sess.targ_cfg.os).as_slice());
+        }
         let out_file = link_binary_output(sess, trans, crate_type, outputs, id);
         out_filenames.push(out_file);
     }
@@ -820,6 +824,32 @@ pub fn link_binary(sess: &Session,
     }
 
     out_filenames
+}
+
+
+/// Returns default crate type for target
+///
+/// Default crate type is used when crate type isn't provided neither
+/// through cmd line arguments nor through crate attributes
+///
+/// It is CrateTypeExecutable for all platforms but iOS as there is no
+/// way to run iOS binaries anyway without jailbreaking and
+/// interaction with Rust code through static library is the only
+/// option for now
+pub fn default_output_for_target(sess: &Session) -> config::CrateType {
+    match sess.targ_cfg.os {
+        abi::OsiOS => config::CrateTypeStaticlib,
+        _ => config::CrateTypeExecutable
+    }
+}
+
+/// Checks if target supports crate_type as output
+pub fn invalid_output_for_target(sess: &Session,
+                                 crate_type: config::CrateType) -> bool {
+    match (sess.targ_cfg.os, crate_type) {
+        (abi::OsiOS, config::CrateTypeDylib) => true,
+        _ => false
+    }
 }
 
 fn is_writeable(p: &Path) -> bool {
@@ -837,23 +867,18 @@ pub fn filename_for_input(sess: &Session, crate_type: config::CrateType,
             out_filename.with_filename(format!("lib{}.rlib", libname))
         }
         config::CrateTypeDylib => {
-            // There is no support of DyLibs on iOS
-            if sess.targ_cfg.os == abi::OsiOS {
-                out_filename.with_filename(format!("lib{}.a", libname))
-            } else {
-                let (prefix, suffix) = match sess.targ_cfg.os {
-                    abi::OsWin32 => (loader::WIN32_DLL_PREFIX, loader::WIN32_DLL_SUFFIX),
-                    abi::OsMacos => (loader::MACOS_DLL_PREFIX, loader::MACOS_DLL_SUFFIX),
-                    abi::OsLinux => (loader::LINUX_DLL_PREFIX, loader::LINUX_DLL_SUFFIX),
-                    abi::OsAndroid => (loader::ANDROID_DLL_PREFIX, loader::ANDROID_DLL_SUFFIX),
-                    abi::OsFreebsd => (loader::FREEBSD_DLL_PREFIX, loader::FREEBSD_DLL_SUFFIX),
-                    abi::OsiOS => unreachable!(),
-                };
-                out_filename.with_filename(format!("{}{}{}",
-                                                   prefix,
-                                                   libname,
-                                                   suffix))
-            }
+            let (prefix, suffix) = match sess.targ_cfg.os {
+                abi::OsWin32 => (loader::WIN32_DLL_PREFIX, loader::WIN32_DLL_SUFFIX),
+                abi::OsMacos => (loader::MACOS_DLL_PREFIX, loader::MACOS_DLL_SUFFIX),
+                abi::OsLinux => (loader::LINUX_DLL_PREFIX, loader::LINUX_DLL_SUFFIX),
+                abi::OsAndroid => (loader::ANDROID_DLL_PREFIX, loader::ANDROID_DLL_SUFFIX),
+                abi::OsFreebsd => (loader::FREEBSD_DLL_PREFIX, loader::FREEBSD_DLL_SUFFIX),
+                abi::OsiOS => unreachable!(),
+            };
+            out_filename.with_filename(format!("{}{}{}",
+                                               prefix,
+                                               libname,
+                                               suffix))
         }
         config::CrateTypeStaticlib => {
             out_filename.with_filename(format!("lib{}.a", libname))
@@ -904,14 +929,7 @@ fn link_binary_output(sess: &Session,
             link_natively(sess, trans, false, &obj_filename, &out_filename);
         }
         config::CrateTypeDylib => {
-            if sess.targ_cfg.os == abi::OsiOS {
-                sess.note(format!("No dylib for iOS -> saving static library {} to {}",
-                                  obj_filename.display(), out_filename.display()).as_slice());
-                link_staticlib(sess, &obj_filename, &out_filename);
-            }
-            else {
-                link_natively(sess, trans, true, &obj_filename, &out_filename);
-            }
+            link_natively(sess, trans, true, &obj_filename, &out_filename);
         }
     }
 
@@ -983,8 +1001,13 @@ fn link_rlib<'a>(sess: &'a Session,
 
             // For LTO purposes, the bytecode of this library is also inserted
             // into the archive.
+            //
+            // Note that we make sure that the bytecode filename in the archive
+            // is never exactly 16 bytes long by adding a 16 byte extension to
+            // it. This is to work around a bug in LLDB that would cause it to
+            // crash if the name of a file in an archive was exactly 16 bytes.
             let bc = obj_filename.with_extension("bc");
-            let bc_deflated = obj_filename.with_extension("bc.deflate");
+            let bc_deflated = obj_filename.with_extension("bytecode.deflate");
             match fs::File::open(&bc).read_to_end().and_then(|data| {
                 fs::File::create(&bc_deflated)
                     .write(match flate::deflate_bytes(data.as_slice()) {
@@ -1206,7 +1229,7 @@ fn link_args(cmd: &mut Command,
            sess.opts.optimize == config::Aggressive {
             cmd.arg("-Wl,-O1");
         }
-    } else if sess.targ_cfg.os == abi::OsMacos || sess.targ_cfg.os == abi::OsiOS{
+    } else if sess.targ_cfg.os == abi::OsMacos || sess.targ_cfg.os == abi::OsiOS {
         // The dead_strip option to the linker specifies that functions and data
         // unreachable by the entry point will be removed. This is quite useful
         // with Rust's compilation model of compiling libraries at a time into

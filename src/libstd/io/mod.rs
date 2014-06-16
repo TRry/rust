@@ -81,13 +81,18 @@ Some examples of obvious things you might want to do
 
 * Make a simple TCP client connection and request
 
-    ```rust,should_fail
+    ```rust
     # #![allow(unused_must_use)]
     use std::io::net::tcp::TcpStream;
 
+    # // connection doesn't fail if a server is running on 8080
+    # // locally, we still want to be type checking this code, so lets
+    # // just stop it running (#11576)
+    # if false {
     let mut socket = TcpStream::connect("127.0.0.1", 8080).unwrap();
     socket.write(bytes!("GET / HTTP/1.0\n\n"));
     let response = socket.read_to_end();
+    # }
     ```
 
 * Make a simple TCP server
@@ -214,7 +219,7 @@ responding to errors that may occur while attempting to read the numbers.
 #![deny(unused_must_use)]
 
 use char::Char;
-use container::Container;
+use collections::Collection;
 use fmt;
 use int;
 use iter::Iterator;
@@ -225,8 +230,9 @@ use option::{Option, Some, None};
 use os;
 use owned::Box;
 use result::{Ok, Err, Result};
+use rt::rtio;
 use slice::{Vector, MutableVector, ImmutableVector};
-use str::{StrSlice, StrAllocating};
+use str::{Str, StrSlice, StrAllocating};
 use str;
 use string::String;
 use uint;
@@ -303,6 +309,7 @@ impl IoError {
     /// struct is filled with an allocated string describing the error
     /// in more detail, retrieved from the operating system.
     pub fn from_errno(errno: uint, detail: bool) -> IoError {
+
         #[cfg(windows)]
         fn get_err(errno: i32) -> (IoErrorKind, &'static str) {
             match errno {
@@ -312,7 +319,8 @@ impl IoError {
                 libc::ERROR_INVALID_NAME => (InvalidInput, "invalid file name"),
                 libc::WSAECONNREFUSED => (ConnectionRefused, "connection refused"),
                 libc::WSAECONNRESET => (ConnectionReset, "connection reset"),
-                libc::WSAEACCES => (PermissionDenied, "permission denied"),
+                libc::ERROR_ACCESS_DENIED | libc::WSAEACCES =>
+                    (PermissionDenied, "permission denied"),
                 libc::WSAEWOULDBLOCK => {
                     (ResourceUnavailable, "resource temporarily unavailable")
                 }
@@ -323,6 +331,14 @@ impl IoError {
                 libc::ERROR_BROKEN_PIPE => (EndOfFile, "the pipe has ended"),
                 libc::ERROR_OPERATION_ABORTED =>
                     (TimedOut, "operation timed out"),
+                libc::WSAEINVAL => (InvalidInput, "invalid argument"),
+                libc::ERROR_CALL_NOT_IMPLEMENTED =>
+                    (IoUnavailable, "function not implemented"),
+                libc::ERROR_INVALID_HANDLE =>
+                    (MismatchedFileTypeForOperation,
+                     "invalid handle provided to function"),
+                libc::ERROR_NOTHING_TO_TERMINATE =>
+                    (InvalidInput, "no process to kill"),
 
                 // libuv maps this error code to EISDIR. we do too. if it is found
                 // to be incorrect, we can add in some more machinery to only
@@ -351,9 +367,17 @@ impl IoError {
                 libc::EADDRINUSE => (ConnectionRefused, "address in use"),
                 libc::ENOENT => (FileNotFound, "no such file or directory"),
                 libc::EISDIR => (InvalidInput, "illegal operation on a directory"),
+                libc::ENOSYS => (IoUnavailable, "function not implemented"),
+                libc::EINVAL => (InvalidInput, "invalid argument"),
+                libc::ENOTTY =>
+                    (MismatchedFileTypeForOperation,
+                     "file descriptor is not a TTY"),
+                libc::ETIMEDOUT => (TimedOut, "operation timed out"),
+                libc::ECANCELED => (TimedOut, "operation aborted"),
 
-                // These two constants can have the same value on some systems, but
-                // different values on others, so we can't use a match clause
+                // These two constants can have the same value on some systems,
+                // but different values on others, so we can't use a match
+                // clause
                 x if x == libc::EAGAIN || x == libc::EWOULDBLOCK =>
                     (ResourceUnavailable, "resource temporarily unavailable"),
 
@@ -365,8 +389,8 @@ impl IoError {
         IoError {
             kind: kind,
             desc: desc,
-            detail: if detail {
-                Some(os::error_string(errno))
+            detail: if detail && kind == OtherIoError {
+                Some(os::error_string(errno).as_slice().chars().map(|c| c.to_lowercase()).collect())
             } else {
                 None
             },
@@ -382,14 +406,28 @@ impl IoError {
     pub fn last_error() -> IoError {
         IoError::from_errno(os::errno() as uint, true)
     }
+
+    fn from_rtio_error(err: rtio::IoError) -> IoError {
+        let rtio::IoError { code, extra, detail } = err;
+        let mut ioerr = IoError::from_errno(code, false);
+        ioerr.detail = detail;
+        ioerr.kind = match ioerr.kind {
+            TimedOut if extra > 0 => ShortWrite(extra),
+            k => k,
+        };
+        return ioerr;
+    }
 }
 
 impl fmt::Show for IoError {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        try!(write!(fmt, "{}", self.desc));
-        match self.detail {
-            Some(ref s) => write!(fmt, " ({})", *s),
-            None => Ok(())
+        match *self {
+            IoError { kind: OtherIoError, desc: "unknown error", detail: Some(ref detail) } =>
+                write!(fmt, "{}", detail),
+            IoError { detail: None, desc, .. } =>
+                write!(fmt, "{}", desc),
+            IoError { detail: Some(ref detail), desc, .. } =>
+                write!(fmt, "{} ({})", desc, detail)
         }
     }
 }
@@ -448,6 +486,37 @@ pub enum IoErrorKind {
     ShortWrite(uint),
     /// The Reader returned 0 bytes from `read()` too many times.
     NoProgress,
+}
+
+/// A trait that lets you add a `detail` to an IoError easily
+trait UpdateIoError<T> {
+    /// Returns an IoError with updated description and detail
+    fn update_err(self, desc: &'static str, detail: |&IoError| -> String) -> Self;
+
+    /// Returns an IoError with updated detail
+    fn update_detail(self, detail: |&IoError| -> String) -> Self;
+
+    /// Returns an IoError with update description
+    fn update_desc(self, desc: &'static str) -> Self;
+}
+
+impl<T> UpdateIoError<T> for IoResult<T> {
+    fn update_err(self, desc: &'static str, detail: |&IoError| -> String) -> IoResult<T> {
+        self.map_err(|mut e| {
+            let detail = detail(&e);
+            e.desc = desc;
+            e.detail = Some(detail);
+            e
+        })
+    }
+
+    fn update_detail(self, detail: |&IoError| -> String) -> IoResult<T> {
+        self.map_err(|mut e| { e.detail = Some(detail(&e)); e })
+    }
+
+    fn update_desc(self, desc: &'static str) -> IoResult<T> {
+        self.map_err(|mut e| { e.desc = desc; e })
+    }
 }
 
 static NO_PROGRESS_LIMIT: uint = 1000;
@@ -881,7 +950,7 @@ impl<'a> Reader for &'a mut Reader {
 
 /// Returns a slice of `v` between `start` and `end`.
 ///
-/// Similar to `slice()` except this function only bounds the sclie on the
+/// Similar to `slice()` except this function only bounds the slice on the
 /// capacity of `v`, not the length.
 ///
 /// # Failure
@@ -1543,7 +1612,7 @@ pub fn standard_error(kind: IoErrorKind) -> IoError {
         ConnectionAborted => "connection aborted",
         NotConnected => "not connected",
         BrokenPipe => "broken pipe",
-        PathAlreadyExists => "file exists",
+        PathAlreadyExists => "file already exists",
         PathDoesntExist => "no such file",
         MismatchedFileTypeForOperation => "mismatched file type",
         ResourceUnavailable => "resource unavailable",

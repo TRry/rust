@@ -172,6 +172,7 @@ pub use funcs::bsd43::{shutdown};
 #[cfg(unix)] pub use consts::os::posix88::{ENOTCONN, ECONNABORTED, EADDRNOTAVAIL, EINTR};
 #[cfg(unix)] pub use consts::os::posix88::{EADDRINUSE, ENOENT, EISDIR, EAGAIN, EWOULDBLOCK};
 #[cfg(unix)] pub use consts::os::posix88::{ECANCELED, SIGINT, EINPROGRESS};
+#[cfg(unix)] pub use consts::os::posix88::{ENOSYS, ENOTTY, ETIMEDOUT};
 #[cfg(unix)] pub use consts::os::posix88::{SIGTERM, SIGKILL, SIGPIPE, PROT_NONE};
 #[cfg(unix)] pub use consts::os::posix01::{SIG_IGN};
 #[cfg(unix)] pub use consts::os::bsd44::{AF_UNIX};
@@ -195,7 +196,7 @@ pub use funcs::bsd43::{shutdown};
 #[cfg(windows)] pub use consts::os::c95::{WSAECONNREFUSED, WSAECONNRESET, WSAEACCES};
 #[cfg(windows)] pub use consts::os::c95::{WSAEWOULDBLOCK, WSAENOTCONN, WSAECONNABORTED};
 #[cfg(windows)] pub use consts::os::c95::{WSAEADDRNOTAVAIL, WSAEADDRINUSE, WSAEINTR};
-#[cfg(windows)] pub use consts::os::c95::{WSAEINPROGRESS};
+#[cfg(windows)] pub use consts::os::c95::{WSAEINPROGRESS, WSAEINVAL};
 #[cfg(windows)] pub use consts::os::extra::{ERROR_INSUFFICIENT_BUFFER};
 #[cfg(windows)] pub use consts::os::extra::{O_BINARY, O_NOINHERIT, PAGE_NOACCESS};
 #[cfg(windows)] pub use consts::os::extra::{PAGE_READONLY, PAGE_READWRITE, PAGE_EXECUTE};
@@ -205,6 +206,9 @@ pub use funcs::bsd43::{shutdown};
 #[cfg(windows)] pub use consts::os::extra::{ERROR_ALREADY_EXISTS, ERROR_NO_DATA};
 #[cfg(windows)] pub use consts::os::extra::{ERROR_FILE_NOT_FOUND, ERROR_INVALID_NAME};
 #[cfg(windows)] pub use consts::os::extra::{ERROR_BROKEN_PIPE, ERROR_INVALID_FUNCTION};
+#[cfg(windows)] pub use consts::os::extra::{ERROR_CALL_NOT_IMPLEMENTED};
+#[cfg(windows)] pub use consts::os::extra::{ERROR_NOTHING_TO_TERMINATE};
+#[cfg(windows)] pub use consts::os::extra::{ERROR_INVALID_HANDLE};
 #[cfg(windows)] pub use consts::os::extra::{TRUE, FALSE, INFINITE};
 #[cfg(windows)] pub use consts::os::extra::{PROCESS_TERMINATE, PROCESS_QUERY_INFORMATION};
 #[cfg(windows)] pub use consts::os::extra::{STILL_ACTIVE, DETACHED_PROCESS};
@@ -290,7 +294,7 @@ pub use types::os::arch::extra::{mach_timebase_info};
 extern {}
 
 /// A wrapper for a nullable pointer. Don't use this except for interacting
-/// with libc. Basically Option, but without the dependance on libstd.
+/// with libc. Basically Option, but without the dependence on libstd.
 // If/when libprim happens, this can be removed in favor of that
 pub enum Nullable<T> {
     Null,
@@ -1762,6 +1766,7 @@ pub mod consts {
             pub static ERROR_NO_DATA: c_int = 232;
             pub static ERROR_INVALID_ADDRESS : c_int = 487;
             pub static ERROR_PIPE_CONNECTED: c_int = 535;
+            pub static ERROR_NOTHING_TO_TERMINATE: c_int = 758;
             pub static ERROR_OPERATION_ABORTED: c_int = 995;
             pub static ERROR_IO_PENDING: c_int = 997;
             pub static ERROR_FILE_INVALID : c_int = 1006;
@@ -3497,7 +3502,7 @@ pub mod consts {
 
 
 pub mod funcs {
-    // Thankfull most of c95 is universally available and does not vary by OS
+    // Thankfully most of c95 is universally available and does not vary by OS
     // or anything. The same is not true of POSIX.
 
     pub mod c95 {
@@ -4216,6 +4221,7 @@ pub mod funcs {
     }
 
     #[cfg(target_os = "macos")]
+    #[cfg(target_os = "ios")]
     pub mod extra {
         use types::os::arch::c95::{c_char, c_int};
 
@@ -4223,10 +4229,6 @@ pub mod funcs {
             pub fn _NSGetExecutablePath(buf: *mut c_char, bufsize: *mut u32)
                                         -> c_int;
         }
-    }
-
-    #[cfg(target_os = "ios")]
-    pub mod extra {
     }
 
     #[cfg(target_os = "freebsd")]
