@@ -172,7 +172,7 @@ pub use funcs::bsd43::{shutdown};
 #[cfg(unix)] pub use consts::os::posix88::{ENOTCONN, ECONNABORTED, EADDRNOTAVAIL, EINTR};
 #[cfg(unix)] pub use consts::os::posix88::{EADDRINUSE, ENOENT, EISDIR, EAGAIN, EWOULDBLOCK};
 #[cfg(unix)] pub use consts::os::posix88::{ECANCELED, SIGINT, EINPROGRESS};
-#[cfg(unix)] pub use consts::os::posix88::{ENOSYS, ENOTTY, ETIMEDOUT};
+#[cfg(unix)] pub use consts::os::posix88::{ENOSYS, ENOTTY, ETIMEDOUT, EMFILE};
 #[cfg(unix)] pub use consts::os::posix88::{SIGTERM, SIGKILL, SIGPIPE, PROT_NONE};
 #[cfg(unix)] pub use consts::os::posix01::{SIG_IGN};
 #[cfg(unix)] pub use consts::os::bsd44::{AF_UNIX};
@@ -196,7 +196,7 @@ pub use funcs::bsd43::{shutdown};
 #[cfg(windows)] pub use consts::os::c95::{WSAECONNREFUSED, WSAECONNRESET, WSAEACCES};
 #[cfg(windows)] pub use consts::os::c95::{WSAEWOULDBLOCK, WSAENOTCONN, WSAECONNABORTED};
 #[cfg(windows)] pub use consts::os::c95::{WSAEADDRNOTAVAIL, WSAEADDRINUSE, WSAEINTR};
-#[cfg(windows)] pub use consts::os::c95::{WSAEINPROGRESS, WSAEINVAL};
+#[cfg(windows)] pub use consts::os::c95::{WSAEINPROGRESS, WSAEINVAL, WSAEMFILE};
 #[cfg(windows)] pub use consts::os::extra::{ERROR_INSUFFICIENT_BUFFER};
 #[cfg(windows)] pub use consts::os::extra::{O_BINARY, O_NOINHERIT, PAGE_NOACCESS};
 #[cfg(windows)] pub use consts::os::extra::{PAGE_READONLY, PAGE_READWRITE, PAGE_EXECUTE};
@@ -2592,7 +2592,7 @@ pub mod consts {
             pub static PROT_GROWSUP : c_int = 0x020000000;
 
             pub static MAP_TYPE : c_int = 0x000f;
-            pub static MAP_ANONONYMOUS : c_int = 0x0020;
+            pub static MAP_ANONYMOUS : c_int = 0x0020;
             pub static MAP_32BIT : c_int = 0x0040;
             pub static MAP_GROWSDOWN : c_int = 0x0100;
             pub static MAP_DENYWRITE : c_int = 0x0800;
@@ -2615,7 +2615,7 @@ pub mod consts {
             pub static PROT_GROWSUP : c_int = 0x02000000;
 
             pub static MAP_TYPE : c_int = 0x000f;
-            pub static MAP_ANONONYMOUS : c_int = 0x0800;
+            pub static MAP_ANONYMOUS : c_int = 0x0800;
             pub static MAP_GROWSDOWN : c_int = 0x01000;
             pub static MAP_DENYWRITE : c_int = 0x02000;
             pub static MAP_EXECUTABLE : c_int = 0x04000;
