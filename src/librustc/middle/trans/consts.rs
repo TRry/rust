@@ -43,6 +43,7 @@ pub fn const_lit(cx: &CrateContext, e: &ast::Expr, lit: ast::Lit)
     -> ValueRef {
     let _icx = push_ctxt("trans_lit");
     match lit.node {
+        ast::LitByte(b) => C_integral(Type::uint_from_ty(cx, ast::TyU8), b as u64, false),
         ast::LitChar(i) => C_integral(Type::char(cx), i as u64, false),
         ast::LitInt(i, t) => C_integral(Type::int_from_ty(cx, t), i as u64, true),
         ast::LitUint(u, t) => C_integral(Type::uint_from_ty(cx, t), u, false),
@@ -143,7 +144,9 @@ fn const_deref(cx: &CrateContext, v: ValueRef, t: ty::t, explicit: bool)
             let dv = match ty::get(t).sty {
                 ty::ty_ptr(mt) | ty::ty_rptr(_, mt) => {
                     match ty::get(mt.ty).sty {
-                        ty::ty_vec(_, None) | ty::ty_str => cx.sess().bug("unexpected slice"),
+                        ty::ty_vec(_, None) | ty::ty_str | ty::ty_trait(..) => {
+                            cx.sess().bug("unexpected unsized type")
+                        }
                         _ => const_deref_ptr(cx, v),
                     }
                 }

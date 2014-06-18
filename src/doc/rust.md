@@ -234,7 +234,7 @@ rule. A literal is a form of constant expression, so is evaluated (primarily)
 at compile time.
 
 ~~~~ {.ebnf .gram}
-literal : string_lit | char_lit | num_lit ;
+literal : string_lit | char_lit | byte_string_lit | byte_lit | num_lit ;
 ~~~~
 
 #### Character and string literals
@@ -244,17 +244,17 @@ char_lit : '\x27' char_body '\x27' ;
 string_lit : '"' string_body * '"' | 'r' raw_string ;
 
 char_body : non_single_quote
-          | '\x5c' [ '\x27' | common_escape ] ;
+          | '\x5c' [ '\x27' | common_escape | unicode_escape ] ;
 
 string_body : non_double_quote
-            | '\x5c' [ '\x22' | common_escape ] ;
+            | '\x5c' [ '\x22' | common_escape | unicode_escape ] ;
 raw_string : '"' raw_string_body '"' | '#' raw_string '#' ;
 
 common_escape : '\x5c'
               | 'n' | 'r' | 't' | '0'
               | 'x' hex_digit 2
-              | 'u' hex_digit 4
-              | 'U' hex_digit 8 ;
+unicode_escape : 'u' hex_digit 4
+               | 'U' hex_digit 8 ;
 
 hex_digit : 'a' | 'b' | 'c' | 'd' | 'e' | 'f'
           | 'A' | 'B' | 'C' | 'D' | 'E' | 'F'
@@ -294,7 +294,7 @@ the following forms:
     escaped in order to denote *itself*.
 
 Raw string literals do not process any escapes. They start with the character
-`U+0072` (`r`), followed zero or more of the character `U+0023` (`#`) and a
+`U+0072` (`r`), followed by zero or more of the character `U+0023` (`#`) and a
 `U+0022` (double-quote) character. The _raw string body_ is not defined in the
 EBNF grammar above: it can contain any sequence of Unicode characters and is
 terminated only by another `U+0022` (double-quote) character, followed by the
@@ -318,6 +318,65 @@ r##"foo #"# bar"##;                // foo #"# bar
 "\x52"; "R"; r"R";                 // R
 "\\x52"; r"\x52";                  // \x52
 ~~~~
+
+#### Byte and byte string literals
+
+~~~~ {.ebnf .gram}
+byte_lit : 'b' '\x27' byte_body '\x27' ;
+byte_string_lit : 'b' '"' string_body * '"' | 'b' 'r' raw_byte_string ;
+
+byte_body : ascii_non_single_quote
+          | '\x5c' [ '\x27' | common_escape ] ;
+
+byte_string_body : ascii_non_double_quote
+            | '\x5c' [ '\x22' | common_escape ] ;
+raw_byte_string : '"' raw_byte_string_body '"' | '#' raw_byte_string '#' ;
+
+~~~~
+
+A _byte literal_ is a single ASCII character (in the `U+0000` to `U+007F` range)
+enclosed within two `U+0027` (single-quote) characters,
+with the exception of `U+0027` itself,
+which must be _escaped_ by a preceding U+005C character (`\`),
+or a single _escape_.
+It is equivalent to a `u8` unsigned 8-bit integer _number literal_.
+
+A _byte string literal_ is a sequence of ASCII characters and _escapes_
+enclosed within two `U+0022` (double-quote) characters,
+with the exception of `U+0022` itself,
+which must be _escaped_ by a preceding `U+005C` character (`\`),
+or a _raw byte string literal_.
+It is equivalent to a `&'static [u8]` borrowed vectior unsigned 8-bit integers.
+
+Some additional _escapes_ are available in either byte or non-raw byte string
+literals. An escape starts with a `U+005C` (`\`) and continues with one of
+the following forms:
+
+  * An _byte escape_ escape starts with `U+0078` (`x`) and is
+    followed by exactly two _hex digits_. It denotes the byte
+    equal to the provided hex value.
+  * A _whitespace escape_ is one of the characters `U+006E` (`n`), `U+0072`
+    (`r`), or `U+0074` (`t`), denoting the bytes values `0x0A` (ASCII LF),
+    `0x0D` (ASCII CR) or `0x09` (ASCII HT) respectively.
+  * The _backslash escape_ is the character `U+005C` (`\`) which must be
+    escaped in order to denote its ASCII encoding `0x5C`.
+
+Raw byte string literals do not process any escapes.
+They start with the character `U+0072` (`r`),
+followed by `U+0062` (`b`),
+followed by zero or more of the character `U+0023` (`#`),
+and a `U+0022` (double-quote) character.
+The _raw string body_ is not defined in the EBNF grammar above:
+it can contain any sequence of ASCII characters and is
+terminated only by another `U+0022` (double-quote) character, followed by the
+same number of `U+0023` (`#`) characters that preceded the opening `U+0022`
+(double-quote) character.
+A raw byte string literal can not contain any non-ASCII byte.
+
+All characters contained in the raw string body represent their ASCII encoding,
+the characters `U+0022` (double-quote) (except when followed by at least as
+many `U+0023` (`#`) characters as were used to start the raw string literal) or
+`U+005C` (`\`) do not have any special meaning.
 
 #### Number literals
 
@@ -1829,8 +1888,6 @@ type int8_t = i8;
 
 ### Static-only attributes
 
-- `address_insignificant` - references to this static may alias with
-  references to other statics, potentially of unrelated type.
 - `thread_local` - on a `static mut`, this signals that the value of this
   static may change depending on the current thread. The exact consequences of
   this are implementation-defined.
@@ -2141,12 +2198,21 @@ These types help drive the compiler's analysis
 ### Inline attributes
 
 The inline attribute is used to suggest to the compiler to perform an inline
-expansion and place a copy of the function in the caller rather than generating
-code to call the function where it is defined.
+expansion and place a copy of the function or static in the caller rather than
+generating code to call the function or access the static where it is defined.
 
 The compiler automatically inlines functions based on internal heuristics.
 Incorrectly inlining functions can actually making the program slower, so it
 should be used with care.
+
+Immutable statics are always considered inlineable
+unless marked with `#[inline(never)]`.
+It is undefined
+whether two different inlineable statics
+have the same memory address.
+In other words,
+the compiler is free
+to collapse duplicate inlineable statics together.
 
 `#[inline]` and `#[inline(always)]` always causes the function to be serialized
 into crate metadata to allow cross-crate inlining.

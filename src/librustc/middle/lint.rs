@@ -805,6 +805,7 @@ fn check_type_limits(cx: &Context, e: &ast::Expr) {
                     } else { t };
                     let (min, max) = uint_ty_range(uint_type);
                     let lit_val: u64 = match lit.node {
+                        ast::LitByte(_v) => return,  // _v is u8, within range by definition
                         ast::LitInt(v, _) => v as u64,
                         ast::LitUint(v, _) => v,
                         ast::LitIntUnsuffixed(v) => v as u64,
@@ -980,9 +981,6 @@ fn check_heap_type(cx: &Context, span: Span, ty: ty::t) {
                     n_box += 1;
                 }
                 ty::ty_uniq(_) |
-                ty::ty_trait(box ty::TyTrait {
-                    store: ty::UniqTraitStore, ..
-                }) |
                 ty::ty_closure(box ty::ClosureTy {
                     store: ty::UniqTraitStore,
                     ..
@@ -1087,7 +1085,6 @@ fn check_unused_attribute(cx: &Context, attr: &ast::Attribute) {
 
         // FIXME: #14406 these are processed in trans, which happens after the
         // lint pass
-        "address_insignificant",
         "cold",
         "inline",
         "link",
