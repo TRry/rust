@@ -1,7 +1,6 @@
 [submodule "src/llvm"]
 	path = src/llvm
-	url = https://github.com/rust-lang/llvm.git
-	branch = master
+	url = https://github.com/vhbit/rust-llvm.git
 [submodule "src/libuv"]
 	path = src/libuv
 	url = https://github.com/rust-lang/libuv.git
