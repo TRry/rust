@@ -1,4 +1,4 @@
-// Copyright 2012-2014 The Rust Project Developers. See the COPYRIGHT
+// Copyright 2014 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
 //
@@ -8,23 +8,22 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// ignore-test FIXME: #3907
-// aux-build:trait_typedef_cc.rs
-extern crate trait_typedef_cc;
+#![feature(overloaded_calls)]
 
-type Foo = trait_typedef_cc::Foo;
+trait Foo {}
 
-struct S {
-    name: int
+struct Bar;
+
+impl<'a> std::ops::Fn<(&'a Foo,), ()> for Bar {
+    fn call(&self, _: (&'a Foo,)) {}
 }
 
-impl Foo for S {
-    fn bar() { }
-}
+struct Baz;
 
-pub fn main() {
-    let s = S {
-        name: 0
-    };
-    s.bar();
+impl Foo for Baz {}
+
+fn main() {
+    let bar = Bar;
+    let baz = &Baz;
+    bar(baz);
 }

@@ -464,7 +464,7 @@ pub enum Expr_ {
 
     ExprAssign(Gc<Expr>, Gc<Expr>),
     ExprAssignOp(BinOp, Gc<Expr>, Gc<Expr>),
-    ExprField(Gc<Expr>, Ident, Vec<P<Ty>>),
+    ExprField(Gc<Expr>, SpannedIdent, Vec<P<Ty>>),
     ExprIndex(Gc<Expr>, Gc<Expr>),
 
     /// Expression that looks like a "name". For example,
@@ -616,6 +616,7 @@ pub type Lit = Spanned<Lit_>;
 pub enum Lit_ {
     LitStr(InternedString, StrStyle),
     LitBinary(Rc<Vec<u8> >),
+    LitByte(u8),
     LitChar(char),
     LitInt(i64, IntTy),
     LitUint(u64, UintTy),
@@ -977,7 +978,7 @@ pub enum ViewItem_ {
     // ident: name used to refer to this crate in the code
     // optional (InternedString,StrStyle): if present, this is a location
     // (containing arbitrary characters) from which to fetch the crate sources
-    // For example, extern crate whatever = "github.com/mozilla/rust"
+    // For example, extern crate whatever = "github.com/rust-lang/rust"
     ViewItemExternCrate(Ident, Option<(InternedString,StrStyle)>, NodeId),
     ViewItemUse(Gc<ViewPath>),
 }

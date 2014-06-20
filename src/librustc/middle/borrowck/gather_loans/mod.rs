@@ -259,7 +259,7 @@ impl<'a> GatherLoanCtxt<'a> {
         // loan is safe.
         let restr = restrictions::compute_restrictions(
             self.bccx, borrow_span, cause,
-            cmt.clone(), loan_region, self.restriction_set(req_kind));
+            cmt.clone(), loan_region);
 
         // Create the loan record (if needed).
         let loan = match restr {
@@ -268,7 +268,7 @@ impl<'a> GatherLoanCtxt<'a> {
                 return;
             }
 
-            restrictions::SafeIf(loan_path, restrictions) => {
+            restrictions::SafeIf(loan_path, restricted_paths) => {
                 let loan_scope = match loan_region {
                     ty::ReScope(id) => id,
                     ty::ReFree(ref fr) => fr.scope_id,
@@ -314,7 +314,7 @@ impl<'a> GatherLoanCtxt<'a> {
                     gen_scope: gen_scope,
                     kill_scope: kill_scope,
                     span: borrow_span,
-                    restrictions: restrictions,
+                    restricted_paths: restricted_paths,
                     cause: cause,
                 }
             }
@@ -390,27 +390,13 @@ impl<'a> GatherLoanCtxt<'a> {
         }
     }
 
-    fn restriction_set(&self, req_kind: ty::BorrowKind) -> RestrictionSet {
-        match req_kind {
-            // If borrowing data as immutable, no mutation allowed:
-            ty::ImmBorrow => RESTR_MUTATE,
-
-            // If borrowing data as mutable, no mutation nor other
-            // borrows allowed:
-            ty::MutBorrow => RESTR_MUTATE | RESTR_FREEZE,
-
-            // If borrowing data as unique imm, no mutation nor other
-            // borrows allowed:
-            ty::UniqueImmBorrow => RESTR_MUTATE | RESTR_FREEZE,
-        }
-    }
-
     pub fn mark_loan_path_as_mutated(&self, loan_path: &LoanPath) {
         //! For mutable loans of content whose mutability derives
         //! from a local variable, mark the mutability decl as necessary.
 
         match *loan_path {
-            LpVar(local_id) => {
+            LpVar(local_id) |
+            LpUpvar(ty::UpvarId{ var_id: local_id, closure_expr_id: _ }) => {
                 self.tcx().used_mut_nodes.borrow_mut().insert(local_id);
             }
             LpExtend(ref base, mc::McInherited, _) => {
@@ -460,8 +446,8 @@ impl<'a> GatherLoanCtxt<'a> {
         //! with immutable `&` pointers, because borrows of such pointers
         //! do not require restrictions and hence do not cause a loan.
 
+        let lexical_scope = lp.kill_scope(self.bccx.tcx);
         let rm = &self.bccx.tcx.region_maps;
-        let lexical_scope = rm.var_scope(lp.node_id());
         if rm.is_subscope_of(lexical_scope, loan_scope) {
             lexical_scope
         } else {

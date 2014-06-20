@@ -24,6 +24,7 @@
 // build off of.
 
 #![crate_id = "test#0.11.0-pre"]
+#![experimental]
 #![comment = "Rust internal test library only used by rustc"]
 #![license = "MIT/ASL2"]
 #![crate_type = "rlib"]
@@ -1049,14 +1050,13 @@ pub fn run_test(opts: &TestOpts,
             if nocapture {
                 drop((stdout, stderr));
             } else {
-                task.opts.stdout = Some(box stdout as Box<Writer + Send>);
-                task.opts.stderr = Some(box stderr as Box<Writer + Send>);
+                task = task.stdout(box stdout as Box<Writer + Send>);
+                task = task.stderr(box stderr as Box<Writer + Send>);
             }
-            let result_future = task.future_result();
-            task.spawn(testfn);
+            let result_future = task.try_future(testfn);
 
             let stdout = reader.read_to_end().unwrap().move_iter().collect();
-            let task_result = result_future.recv();
+            let task_result = result_future.unwrap();
             let test_result = calc_result(&desc, task_result.is_ok());
             monitor_ch.send((desc.clone(), test_result, stdout));
         })

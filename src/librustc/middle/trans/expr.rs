@@ -65,8 +65,8 @@ use middle::ty::struct_fields;
 use middle::ty::{AutoBorrowObj, AutoDerefRef, AutoAddEnv, AutoObject, AutoUnsafe};
 use middle::ty::{AutoPtr, AutoBorrowVec, AutoBorrowVecRef};
 use middle::ty;
-use middle::typeck::MethodCall;
 use middle::typeck;
+use middle::typeck::MethodCall;
 use util::common::indenter;
 use util::ppaux::Repr;
 use util::nodemap::NodeMap;
@@ -389,7 +389,7 @@ fn trans_datum_unadjusted<'a>(bcx: &'a Block<'a>,
             trans_def(bcx, expr, bcx.def(expr.id))
         }
         ast::ExprField(ref base, ident, _) => {
-            trans_rec_field(bcx, &**base, ident)
+            trans_rec_field(bcx, &**base, ident.node)
         }
         ast::ExprIndex(ref base, ref idx) => {
             trans_index(bcx, expr, &**base, &**idx)
@@ -769,15 +769,12 @@ fn trans_rvalue_dps_unadjusted<'a>(bcx: &'a Block<'a>,
         }
         ast::ExprCast(ref val, _) => {
             // DPS output mode means this is a trait cast:
-            match ty::get(node_id_type(bcx, expr.id)).sty {
-                ty::ty_trait(..) => {
-                    let datum = unpack_datum!(bcx, trans(bcx, &**val));
-                    meth::trans_trait_cast(bcx, datum, expr.id, dest)
-                }
-                _ => {
-                    bcx.tcx().sess.span_bug(expr.span,
-                                            "expr_cast of non-trait");
-                }
+            if ty::type_is_trait(node_id_type(bcx, expr.id)) {
+                let datum = unpack_datum!(bcx, trans(bcx, &**val));
+                meth::trans_trait_cast(bcx, datum, expr.id, dest)
+            } else {
+                bcx.tcx().sess.span_bug(expr.span,
+                                        "expr_cast of non-trait");
             }
         }
         ast::ExprAssignOp(op, ref dst, ref src) => {
@@ -1181,7 +1178,7 @@ fn trans_unary<'a>(bcx: &'a Block<'a>,
         }
         ast::UnDeref => {
             let datum = unpack_datum!(bcx, trans(bcx, sub_expr));
-            deref_once(bcx, expr, datum, 0)
+            deref_once(bcx, expr, datum, method_call)
         }
     }
 }
@@ -1466,7 +1463,7 @@ fn trans_overloaded_call<'a>(
     // Evaluate and tuple the arguments.
     let tuple_type = ty::mk_tup(bcx.tcx(),
                                 args.iter()
-                                    .map(|e| expr_ty(bcx, &**e))
+                                    .map(|e| ty::expr_ty_adjusted(bcx.tcx(), &**e))
                                     .collect());
     let repr = adt::represent_type(bcx.ccx(), tuple_type);
     let numbered_fields: Vec<(uint, Gc<ast::Expr>)> =
@@ -1490,7 +1487,7 @@ fn trans_overloaded_call<'a>(
                       SaveIn(addr))
         }));
 
-    let method_call = typeck::MethodCall::expr(expr.id);
+    let method_call = MethodCall::expr(expr.id);
     let method_type = bcx.tcx()
                          .method_map
                          .borrow()
@@ -1578,7 +1575,7 @@ pub fn cast_type_kind(t: ty::t) -> cast_kind {
         ty::ty_float(..)   => cast_float,
         ty::ty_ptr(..)     => cast_pointer,
         ty::ty_rptr(_, mt) => match ty::get(mt.ty).sty{
-            ty::ty_vec(_, None) | ty::ty_str => cast_other,
+            ty::ty_vec(_, None) | ty::ty_str | ty::ty_trait(..) => cast_other,
             _ => cast_pointer,
         },
         ty::ty_bare_fn(..) => cast_pointer,
@@ -1740,8 +1737,9 @@ fn deref_multiple<'a>(bcx: &'a Block<'a>,
                       -> DatumBlock<'a, Expr> {
     let mut bcx = bcx;
     let mut datum = datum;
-    for i in range(1, times+1) {
-        datum = unpack_datum!(bcx, deref_once(bcx, expr, datum, i));
+    for i in range(0, times) {
+        let method_call = MethodCall::autoderef(expr.id, i);
+        datum = unpack_datum!(bcx, deref_once(bcx, expr, datum, method_call));
     }
     DatumBlock { bcx: bcx, datum: datum }
 }
@@ -1749,22 +1747,18 @@ fn deref_multiple<'a>(bcx: &'a Block<'a>,
 fn deref_once<'a>(bcx: &'a Block<'a>,
                   expr: &ast::Expr,
                   datum: Datum<Expr>,
-                  derefs: uint)
+                  method_call: MethodCall)
                   -> DatumBlock<'a, Expr> {
     let ccx = bcx.ccx();
 
-    debug!("deref_once(expr={}, datum={}, derefs={})",
+    debug!("deref_once(expr={}, datum={}, method_call={})",
            expr.repr(bcx.tcx()),
            datum.to_str(ccx),
-           derefs);
+           method_call);
 
     let mut bcx = bcx;
 
     // Check for overloaded deref.
-    let method_call = MethodCall {
-        expr_id: expr.id,
-        autoderef: derefs as u32
-    };
     let method_ty = ccx.tcx.method_map.borrow()
                        .find(&method_call).map(|method| method.ty);
     let datum = match method_ty {
@@ -1774,11 +1768,10 @@ fn deref_once<'a>(bcx: &'a Block<'a>,
             // converts from the `Shaht<T>` pointer that we have into
             // a `&T` pointer.  We can then proceed down the normal
             // path (below) to dereference that `&T`.
-            let datum = if derefs == 0 {
-                datum
-            } else {
-                // Always perform an AutoPtr when applying an overloaded auto-deref.
-                unpack_datum!(bcx, auto_ref(bcx, datum, expr))
+            let datum = match method_call.adjustment {
+                // Always perform an AutoPtr when applying an overloaded auto-deref
+                typeck::AutoDeref(_) => unpack_datum!(bcx, auto_ref(bcx, datum, expr)),
+                _ => datum
             };
             let val = unpack_result!(bcx, trans_overloaded_op(bcx, expr, method_call,
                                                               datum, None, None));
@@ -1794,8 +1787,8 @@ fn deref_once<'a>(bcx: &'a Block<'a>,
     let r = match ty::get(datum.ty).sty {
         ty::ty_uniq(content_ty) => {
             match ty::get(content_ty).sty {
-                ty::ty_vec(_, None) | ty::ty_str
-                    => bcx.tcx().sess.span_bug(expr.span, "unexpected ~[T]"),
+                ty::ty_vec(_, None) | ty::ty_str | ty::ty_trait(..)
+                    => bcx.tcx().sess.span_bug(expr.span, "unexpected unsized box"),
                 _ => deref_owned_pointer(bcx, expr, datum, content_ty),
             }
         }
@@ -1812,8 +1805,8 @@ fn deref_once<'a>(bcx: &'a Block<'a>,
         ty::ty_ptr(ty::mt { ty: content_ty, .. }) |
         ty::ty_rptr(_, ty::mt { ty: content_ty, .. }) => {
             match ty::get(content_ty).sty {
-                ty::ty_vec(_, None) | ty::ty_str
-                    => bcx.tcx().sess.span_bug(expr.span, "unexpected &[T]"),
+                ty::ty_vec(_, None) | ty::ty_str | ty::ty_trait(..)
+                    => bcx.tcx().sess.span_bug(expr.span, "unexpected unsized reference"),
                 _ => {
                     assert!(!ty::type_needs_drop(bcx.tcx(), datum.ty));
 
@@ -1837,8 +1830,8 @@ fn deref_once<'a>(bcx: &'a Block<'a>,
         }
     };
 
-    debug!("deref_once(expr={}, derefs={}, result={})",
-           expr.id, derefs, r.datum.to_str(ccx));
+    debug!("deref_once(expr={}, method_call={}, result={})",
+           expr.id, method_call, r.datum.to_str(ccx));
 
     return r;
 

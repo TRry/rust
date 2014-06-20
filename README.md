@@ -46,8 +46,8 @@ documentation.
 
 [installer]: http://www.rust-lang.org/install.html
 [tutorial]: http://doc.rust-lang.org/tutorial.html
-[wiki-start]: https://github.com/mozilla/rust/wiki/Note-getting-started-developing-Rust
-[win-wiki]: https://github.com/mozilla/rust/wiki/Using-Rust-on-Windows
+[wiki-start]: https://github.com/rust-lang/rust/wiki/Note-getting-started-developing-Rust
+[win-wiki]: https://github.com/rust-lang/rust/wiki/Using-Rust-on-Windows
 
 ## Building from Source
 
@@ -70,7 +70,7 @@ documentation.
 
     Or to build from the [repo] do:
 
-        $ git clone https://github.com/mozilla/rust.git
+        $ git clone https://github.com/rust-lang/rust.git
         $ cd rust
 
     Now that you have Rust's source code, you can configure and build it:
@@ -90,7 +90,7 @@ documentation.
 3. Read the [tutorial].
 4. Enjoy!
 
-[repo]: https://github.com/mozilla/rust
+[repo]: https://github.com/rust-lang/rust
 [tarball]: http://static.rust-lang.org/dist/rust-nightly.tar.gz
 [tutorial]: http://doc.rust-lang.org/tutorial.html
 
@@ -115,7 +115,7 @@ swap, it will take a very long time to build.
 
 There is a lot more documentation in the [wiki].
 
-[wiki]: https://github.com/mozilla/rust/wiki
+[wiki]: https://github.com/rust-lang/rust/wiki
 
 ## License
 

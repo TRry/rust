@@ -172,7 +172,7 @@ pub use funcs::bsd43::{shutdown};
 #[cfg(unix)] pub use consts::os::posix88::{ENOTCONN, ECONNABORTED, EADDRNOTAVAIL, EINTR};
 #[cfg(unix)] pub use consts::os::posix88::{EADDRINUSE, ENOENT, EISDIR, EAGAIN, EWOULDBLOCK};
 #[cfg(unix)] pub use consts::os::posix88::{ECANCELED, SIGINT, EINPROGRESS};
-#[cfg(unix)] pub use consts::os::posix88::{ENOSYS, ENOTTY, ETIMEDOUT};
+#[cfg(unix)] pub use consts::os::posix88::{ENOSYS, ENOTTY, ETIMEDOUT, EMFILE};
 #[cfg(unix)] pub use consts::os::posix88::{SIGTERM, SIGKILL, SIGPIPE, PROT_NONE};
 #[cfg(unix)] pub use consts::os::posix01::{SIG_IGN};
 #[cfg(unix)] pub use consts::os::bsd44::{AF_UNIX};
@@ -196,7 +196,7 @@ pub use funcs::bsd43::{shutdown};
 #[cfg(windows)] pub use consts::os::c95::{WSAECONNREFUSED, WSAECONNRESET, WSAEACCES};
 #[cfg(windows)] pub use consts::os::c95::{WSAEWOULDBLOCK, WSAENOTCONN, WSAECONNABORTED};
 #[cfg(windows)] pub use consts::os::c95::{WSAEADDRNOTAVAIL, WSAEADDRINUSE, WSAEINTR};
-#[cfg(windows)] pub use consts::os::c95::{WSAEINPROGRESS, WSAEINVAL};
+#[cfg(windows)] pub use consts::os::c95::{WSAEINPROGRESS, WSAEINVAL, WSAEMFILE};
 #[cfg(windows)] pub use consts::os::extra::{ERROR_INSUFFICIENT_BUFFER};
 #[cfg(windows)] pub use consts::os::extra::{O_BINARY, O_NOINHERIT, PAGE_NOACCESS};
 #[cfg(windows)] pub use consts::os::extra::{PAGE_READONLY, PAGE_READWRITE, PAGE_EXECUTE};
@@ -2057,7 +2057,7 @@ pub mod consts {
             pub static MAP_FIXED : c_int = 0x0010;
             pub static MAP_ANON : c_int = 0x0020;
 
-            pub static MAP_FAILED : *c_void = -1 as *c_void;
+            pub static MAP_FAILED : *mut c_void = -1 as *mut c_void;
 
             pub static MCL_CURRENT : c_int = 0x0001;
             pub static MCL_FUTURE : c_int = 0x0002;
@@ -2268,7 +2268,7 @@ pub mod consts {
             pub static MAP_FIXED : c_int = 0x0010;
             pub static MAP_ANON : c_int = 0x0800;
 
-            pub static MAP_FAILED : *c_void = -1 as *c_void;
+            pub static MAP_FAILED : *mut c_void = -1 as *mut c_void;
 
             pub static MCL_CURRENT : c_int = 0x0001;
             pub static MCL_FUTURE : c_int = 0x0002;
@@ -2592,7 +2592,7 @@ pub mod consts {
             pub static PROT_GROWSUP : c_int = 0x020000000;
 
             pub static MAP_TYPE : c_int = 0x000f;
-            pub static MAP_ANONONYMOUS : c_int = 0x0020;
+            pub static MAP_ANONYMOUS : c_int = 0x0020;
             pub static MAP_32BIT : c_int = 0x0040;
             pub static MAP_GROWSDOWN : c_int = 0x0100;
             pub static MAP_DENYWRITE : c_int = 0x0800;
@@ -2615,7 +2615,7 @@ pub mod consts {
             pub static PROT_GROWSUP : c_int = 0x02000000;
 
             pub static MAP_TYPE : c_int = 0x000f;
-            pub static MAP_ANONONYMOUS : c_int = 0x0800;
+            pub static MAP_ANONYMOUS : c_int = 0x0800;
             pub static MAP_GROWSDOWN : c_int = 0x01000;
             pub static MAP_DENYWRITE : c_int = 0x02000;
             pub static MAP_EXECUTABLE : c_int = 0x04000;
@@ -2804,7 +2804,7 @@ pub mod consts {
             pub static MAP_FIXED : c_int = 0x0010;
             pub static MAP_ANON : c_int = 0x1000;
 
-            pub static MAP_FAILED : *c_void = -1 as *c_void;
+            pub static MAP_FAILED : *mut c_void = -1 as *mut c_void;
 
             pub static MCL_CURRENT : c_int = 0x0001;
             pub static MCL_FUTURE : c_int = 0x0002;
@@ -3192,7 +3192,7 @@ pub mod consts {
             pub static MAP_FIXED : c_int = 0x0010;
             pub static MAP_ANON : c_int = 0x1000;
 
-            pub static MAP_FAILED : *c_void = -1 as *c_void;
+            pub static MAP_FAILED : *mut c_void = -1 as *mut c_void;
 
             pub static MCL_CURRENT : c_int = 0x0001;
             pub static MCL_FUTURE : c_int = 0x0002;
@@ -3951,19 +3951,19 @@ pub mod funcs {
                 pub fn mlockall(flags: c_int) -> c_int;
                 pub fn munlockall() -> c_int;
 
-                pub fn mmap(addr: *c_void,
+                pub fn mmap(addr: *mut c_void,
                             len: size_t,
                             prot: c_int,
                             flags: c_int,
                             fd: c_int,
                             offset: off_t)
                             -> *mut c_void;
-                pub fn munmap(addr: *c_void, len: size_t) -> c_int;
+                pub fn munmap(addr: *mut c_void, len: size_t) -> c_int;
 
-                pub fn mprotect(addr: *c_void, len: size_t, prot: c_int)
+                pub fn mprotect(addr: *mut c_void, len: size_t, prot: c_int)
                                 -> c_int;
 
-                pub fn msync(addr: *c_void, len: size_t, flags: c_int)
+                pub fn msync(addr: *mut c_void, len: size_t, flags: c_int)
                              -> c_int;
                 pub fn shm_open(name: *c_char, oflag: c_int, mode: mode_t)
                                 -> c_int;
@@ -4208,9 +4208,9 @@ pub mod funcs {
 
         extern {
             pub fn getdtablesize() -> c_int;
-            pub fn madvise(addr: *c_void, len: size_t, advice: c_int)
+            pub fn madvise(addr: *mut c_void, len: size_t, advice: c_int)
                            -> c_int;
-            pub fn mincore(addr: *c_void, len: size_t, vec: *c_uchar)
+            pub fn mincore(addr: *mut c_void, len: size_t, vec: *mut c_uchar)
                            -> c_int;
         }
     }

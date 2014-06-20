@@ -32,6 +32,7 @@
 use clone::Clone;
 use collections::Collection;
 use fmt;
+use io::{IoResult, IoError};
 use iter::Iterator;
 use libc::{c_void, c_int};
 use libc;
@@ -56,6 +57,16 @@ use libc::c_char;
 #[cfg(windows)]
 use str::OwnedStr;
 
+/// Get the number of cores available
+pub fn num_cpus() -> uint {
+    unsafe {
+        return rust_get_num_cpus();
+    }
+
+    extern {
+        fn rust_get_num_cpus() -> libc::uintptr_t;
+    }
+}
 
 pub static TMPBUF_SZ : uint = 1000u;
 static BUF_BYTES : uint = 2048u;
@@ -513,40 +524,50 @@ pub fn split_paths<T: BytesContainer>(unparsed: T) -> Vec<Path> {
 pub struct Pipe {
     /// A file descriptor representing the reading end of the pipe. Data written
     /// on the `out` file descriptor can be read from this file descriptor.
-    pub input: c_int,
+    pub reader: c_int,
     /// A file descriptor representing the write end of the pipe. Data written
     /// to this file descriptor can be read from the `input` file descriptor.
-    pub out: c_int,
+    pub writer: c_int,
 }
 
-/// Creates a new low-level OS in-memory pipe represented as a Pipe struct.
-#[cfg(unix)]
-pub fn pipe() -> Pipe {
-    unsafe {
-        let mut fds = Pipe {input: 0,
-                            out: 0};
-        assert_eq!(libc::pipe(&mut fds.input), 0);
-        return Pipe {input: fds.input, out: fds.out};
+/// Creates a new low-level OS in-memory pipe.
+///
+/// This function can fail to succeed if there are no more resources available
+/// to allocate a pipe.
+///
+/// This function is also unsafe as there is no destructor associated with the
+/// `Pipe` structure will return. If it is not arranged for the returned file
+/// descriptors to be closed, the file descriptors will leak. For safe handling
+/// of this scenario, use `std::io::PipeStream` instead.
+pub unsafe fn pipe() -> IoResult<Pipe> {
+    return _pipe();
+
+    #[cfg(unix)]
+    unsafe fn _pipe() -> IoResult<Pipe> {
+        let mut fds = [0, ..2];
+        match libc::pipe(fds.as_mut_ptr()) {
+            0 => Ok(Pipe { reader: fds[0], writer: fds[1] }),
+            _ => Err(IoError::last_error()),
+        }
     }
-}
 
-/// Creates a new low-level OS in-memory pipe represented as a Pipe struct.
-#[cfg(windows)]
-pub fn pipe() -> Pipe {
-    unsafe {
+    #[cfg(windows)]
+    unsafe fn _pipe() -> IoResult<Pipe> {
         // Windows pipes work subtly differently than unix pipes, and their
         // inheritance has to be handled in a different way that I do not
         // fully understand. Here we explicitly make the pipe non-inheritable,
         // which means to pass it to a subprocess they need to be duplicated
         // first, as in std::run.
-        let mut fds = Pipe {input: 0,
-                    out: 0};
-        let res = libc::pipe(&mut fds.input, 1024 as ::libc::c_uint,
-                             (libc::O_BINARY | libc::O_NOINHERIT) as c_int);
-        assert_eq!(res, 0);
-        assert!((fds.input != -1 && fds.input != 0 ));
-        assert!((fds.out != -1 && fds.input != 0));
-        return Pipe {input: fds.input, out: fds.out};
+        let mut fds = [0, ..2];
+        match libc::pipe(fds.as_mut_ptr(), 1024 as ::libc::c_uint,
+                         (libc::O_BINARY | libc::O_NOINHERIT) as c_int) {
+            0 => {
+                assert!(fds[0] != -1 && fds[0] != 0);
+                assert!(fds[1] != -1 && fds[1] != 0);
+                Ok(Pipe { reader: fds[0], writer: fds[1] })
+            }
+            _ => Err(IoError::last_error()),
+        }
     }
 }
 
@@ -1317,7 +1338,6 @@ impl MemoryMap {
     /// `ErrZeroLength`.
     pub fn new(min_len: uint, options: &[MapOption]) -> Result<MemoryMap, MapError> {
         use libc::off_t;
-        use cmp::Equiv;
 
         if min_len == 0 {
             return Err(ErrZeroLength)
@@ -1350,10 +1370,10 @@ impl MemoryMap {
         if fd == -1 && !custom_flags { flags |= libc::MAP_ANON; }
 
         let r = unsafe {
-            libc::mmap(addr as *c_void, len as libc::size_t, prot, flags, fd,
-                       offset)
+            libc::mmap(addr as *mut c_void, len as libc::size_t, prot, flags,
+                       fd, offset)
         };
-        if r.equiv(&libc::MAP_FAILED) {
+        if r == libc::MAP_FAILED {
             Err(match errno() as c_int {
                 libc::EACCES => ErrFdNotAvail,
                 libc::EBADF => ErrInvalidFd,
@@ -1389,8 +1409,8 @@ impl Drop for MemoryMap {
         if self.len == 0 { /* workaround for dummy_stack */ return; }
 
         unsafe {
-            // FIXME: what to do if this fails?
-            let _ = libc::munmap(self.data as *c_void, self.len as libc::size_t);
+            // `munmap` only fails due to logic errors
+            libc::munmap(self.data as *mut c_void, self.len as libc::size_t);
         }
     }
 }
@@ -1749,6 +1769,11 @@ mod tests {
                                      .collect::<String>());
         assert!(getenv(n.as_slice()).is_none());
         n
+    }
+
+    #[test]
+    fn test_num_cpus() {
+        assert!(os::num_cpus() > 0);
     }
 
     #[test]
