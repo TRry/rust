@@ -1,4 +1,4 @@
-// Copyright 2012-2014 The Rust Project Developers. See the COPYRIGHT
+// Copyright 2014 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
 //
@@ -8,23 +8,18 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// ignore-test FIXME: #3907
-// aux-build:trait_typedef_cc.rs
-extern crate trait_typedef_cc;
+// #14399
+// We'd previously ICE if we had a method call whose return
+// value was coerced to a trait object. (v.clone() returns Box<B1>
+// which is coerced to Box<A>).
 
-type Foo = trait_typedef_cc::Foo;
+#[deriving(Clone)]
+struct B1;
 
-struct S {
-    name: int
-}
+trait A {}
+impl A for B1 {}
 
-impl Foo for S {
-    fn bar() { }
-}
-
-pub fn main() {
-    let s = S {
-        name: 0
-    };
-    s.bar();
+fn main() {
+    let v = box B1;
+    let _c: Box<A> = v.clone();
 }
