@@ -1940,12 +1940,13 @@ interpreted:
   enum representation in C is undefined, and this may be incorrect when the C
   code is compiled with certain flags.
 - `simd` - on certain tuple structs, derive the arithmetic operators, which
-  lower to the target's SIMD instructions, if any.
+  lower to the target's SIMD instructions, if any; the `simd` feature gate
+  is necessary to use this attribute.
 - `static_assert` - on statics whose type is `bool`, terminates compilation
   with an error if it is not initialized to `true`.
 - `unsafe_destructor` - allow implementations of the "drop" language item
   where the type it is implemented for does not implement the "send" language
-  item.
+  item; the `unsafe_destructor` feature gate is needed to use this attribute
 - `unsafe_no_drop_flag` - on structs, remove the flag that prevents
   destructors from being run twice. Destructors might be run multiple times on
   the same object with this attribute.
@@ -2269,7 +2270,7 @@ impl<T: PartialEq> PartialEq for Foo<T> {
 
 Supported traits for `deriving` are:
 
-* Comparison traits: `PartialEq`, `TotalEq`, `PartialOrd`, `TotalOrd`.
+* Comparison traits: `PartialEq`, `Eq`, `PartialOrd`, `Ord`.
 * Serialization: `Encodable`, `Decodable`. These require `serialize`.
 * `Clone`, to create `T` from `&T` via a copy.
 * `Hash`, to iterate over the bytes in a data type.
@@ -2300,28 +2301,43 @@ One can indicate the stability of an API using the following attributes:
 These levels are directly inspired by
 [Node.js' "stability index"](http://nodejs.org/api/documentation.html).
 
-There are lints for disallowing items marked with certain levels:
-`deprecated`, `experimental` and `unstable`; the first two will warn
-by default. Items with not marked with a stability are considered to
-be unstable for the purposes of the lint. One can give an optional
+Stability levels are inherited, so an items's stability attribute is the
+default stability for everything nested underneath it.
+
+There are lints for disallowing items marked with certain levels: `deprecated`,
+`experimental` and `unstable`. For now, only `deprecated` warns by default, but
+this will change once the standard library has been stabilized.
+Stability levels are meant to be promises at the crate
+ level, so these lints only apply when referencing
+items from an _external_ crate, not to items defined within the
+current crate. Items with no stability level are considered
+to be unstable for the purposes of the lint. One can give an optional
 string that will be displayed when the lint flags the use of an item.
 
-~~~~ {.ignore}
-#![warn(unstable)]
+For example, if we define one crate called `stability_levels`:
 
+~~~~ {.ignore}
 #[deprecated="replaced by `best`"]
-fn bad() {
+pub fn bad() {
     // delete everything
 }
 
-fn better() {
+pub fn better() {
     // delete fewer things
 }
 
 #[stable]
-fn best() {
+pub fn best() {
     // delete nothing
 }
+~~~~
+
+then the lints will work as follows for a client crate:
+
+~~~~ {.ignore}
+#![warn(unstable)]
+extern crate stability_levels;
+use stability_levels::{bad, better, best};
 
 fn main() {
     bad(); // "warning: use of deprecated item: replaced by `best`"

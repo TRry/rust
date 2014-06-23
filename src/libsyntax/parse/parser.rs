@@ -706,6 +706,16 @@ impl<'a> Parser<'a> {
                 let lo = span.lo + BytePos(1);
                 self.replace_token(token::GT, lo, span.hi)
             }
+            token::BINOPEQ(token::SHR) => {
+                let span = self.span;
+                let lo = span.lo + BytePos(1);
+                self.replace_token(token::GE, lo, span.hi)
+            }
+            token::GE => {
+                let span = self.span;
+                let lo = span.lo + BytePos(1);
+                self.replace_token(token::EQ, lo, span.hi)
+            }
             _ => {
                 let gt_str = Parser::token_to_str(&token::GT);
                 let this_token_str = self.this_token_to_str();
@@ -726,7 +736,9 @@ impl<'a> Parser<'a> {
         let mut first = true;
         let mut v = Vec::new();
         while self.token != token::GT
-            && self.token != token::BINOP(token::SHR) {
+            && self.token != token::BINOP(token::SHR)
+            && self.token != token::GE
+            && self.token != token::BINOPEQ(token::SHR) {
             match sep {
               Some(ref t) => {
                 if first { first = false; }
@@ -1646,6 +1658,12 @@ impl<'a> Parser<'a> {
             let bounds = {
                 if self.eat(&token::BINOP(token::PLUS)) {
                     let (_, bounds) = self.parse_ty_param_bounds(false);
+                    if bounds.len() == 0 {
+                        let last_span = self.last_span;
+                        self.span_err(last_span,
+                                      "at least one type parameter bound \
+                                       must be specified after the `+`");
+                    }
                     Some(bounds)
                 } else {
                     None
