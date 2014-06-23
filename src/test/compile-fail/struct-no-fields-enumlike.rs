@@ -1,4 +1,4 @@
-// Copyright 2013-2014 The Rust Project Developers. See the COPYRIGHT
+// Copyright 2014 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
 //
@@ -8,11 +8,6 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// aux-build:struct_variant_xc_aux.rs
-extern crate struct_variant_xc_aux;
+struct Foo(); //~ ERROR unit-like struct definition should be written as `struct Foo;`
 
-use struct_variant_xc_aux::StructVariant;
-
-pub fn main() {
-    let _ = StructVariant { arg: 1 };
-}
+fn main() {}
