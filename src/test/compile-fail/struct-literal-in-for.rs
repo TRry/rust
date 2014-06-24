@@ -8,13 +8,21 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use zoo::fly; //~ ERROR: function `fly` is private
-
-mod zoo {
-    fn fly() {}
+struct Foo {
+    x: int,
 }
 
+impl Foo {
+    fn hi(&self) -> bool {
+        true
+    }
+}
 
 fn main() {
-    fly();
+    for x in Foo {
+        x: 3    //~ ERROR expected one of `;`, `}`
+    }.hi() {
+        println!("yo");
+    }
 }
+

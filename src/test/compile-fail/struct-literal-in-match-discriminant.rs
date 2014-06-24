@@ -8,11 +8,17 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// issue #516
+struct Foo {
+    x: int,
+}
 
 fn main() {
-    let x = true;
-    let y = 1;
-    let z = x + y;
-    //~^ ERROR binary operation `+` cannot be applied to type `bool`
+    match Foo {
+        x: 3    //~ ERROR expected `=>`
+    } {
+        Foo {
+            x: x
+        } => {}
+    }
 }
+

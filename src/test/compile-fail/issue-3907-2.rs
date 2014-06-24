@@ -1,4 +1,4 @@
-// Copyright 2012 The Rust Project Developers. See the COPYRIGHT
+// Copyright 2013-2014 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
 //
@@ -8,6 +8,13 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// error-pattern:quux
-fn my_err(s: String) -> ! { println!("{}", s); fail!("quux"); }
-fn main() { 3u == my_err("bye".to_string()); }
+// aux-build:issue_3907.rs
+extern crate issue_3907;
+
+type Foo = issue_3907::Foo; //~ ERROR: reference to trait
+
+struct S {
+    name: int
+}
+
+fn main() {}

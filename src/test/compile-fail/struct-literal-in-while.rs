@@ -1,4 +1,4 @@
-// Copyright 2012-2014 The Rust Project Developers. See the COPYRIGHT
+// Copyright 2012 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
 //
@@ -8,8 +8,21 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use x = m::f; //~ ERROR unresolved import `m::f`. There is no `f` in `m`
+struct Foo {
+    x: int,
+}
 
-mod m {}
+impl Foo {
+    fn hi(&self) -> bool {
+        true
+    }
+}
 
-fn main() {}
+fn main() {
+    while Foo {
+        x: 3    //~ ERROR expected one of `;`, `}`
+    }.hi() {
+        println!("yo");
+    }
+}
+
