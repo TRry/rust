@@ -168,6 +168,7 @@ AR_arm-apple-ios = $(shell xcrun -find -sdk iphoneos ar)
 endif
 CFG_LIB_NAME_arm-apple-ios = lib$(1).a
 CFG_LIB_GLOB_arm-apple-ios = lib$(1)-*.a
+CFG_LIB_SKIP_INSTALL_arm-apple-ios = 1 #lib$(1)-*.a
 CFG_STATIC_LIB_NAME_arm-apple-ios=lib$(1).a
 CFG_LIB_DSYM_GLOB_arm-apple-ios = lib$(1)-*.a.dSYM
 CFG_CFLAGS_arm-apple-ios := -arch armv7 -mfpu=vfp3 $(CFG_IOS_FLAGS)
@@ -203,7 +204,8 @@ CPP_i386-apple-ios = $(shell xcrun -find -sdk iphonesimulator clang++)
 AR_i386-apple-ios = $(shell xcrun -find -sdk iphonesimulator ar)
 endif
 CFG_LIB_NAME_i386-apple-ios = lib$(1).a
-CFG_LIB_GLOB_i386-apple-ios = lib$(1)-*.dylib
+CFG_LIB_GLOB_i386-apple-ios = lib$(1)-*.a
+CFG_LIB_SKIP_INSTALL_i386-apple-ios = 1 #lib$(1)-*.a
 CFG_STATIC_LIB_NAME_i386-apple-ios=lib$(1).a
 CFG_LIB_DSYM_GLOB_i386-apple-ios = lib$(1)-*.dylib.dSYM
 CFG_CFLAGS_i386-apple-ios = $(CFG_IOSSIM_FLAGS)
