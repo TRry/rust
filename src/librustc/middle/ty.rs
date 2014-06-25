@@ -14,7 +14,7 @@ use back::svh::Svh;
 use driver::session::Session;
 use metadata::csearch;
 use mc = middle::mem_categorization;
-use middle::lint;
+use lint;
 use middle::const_eval;
 use middle::def;
 use middle::dependency_format;
@@ -367,8 +367,8 @@ pub struct ctxt {
 
     pub dependency_formats: RefCell<dependency_format::Dependencies>,
 
-    pub node_lint_levels: RefCell<HashMap<(ast::NodeId, lint::Lint),
-                                          (lint::Level, lint::LintSource)>>,
+    pub node_lint_levels: RefCell<HashMap<(ast::NodeId, lint::LintId),
+                                          lint::LevelSource>>,
 
     /// The types that must be asserted to be the same size for `transmute`
     /// to be valid. We gather up these restrictions in the intrinsicck pass
@@ -850,17 +850,23 @@ impl CLike for BuiltinBound {
 }
 
 #[deriving(Clone, PartialEq, Eq, Hash)]
-pub struct TyVid(pub uint);
+pub struct TyVid {
+    pub index: uint
+}
 
 #[deriving(Clone, PartialEq, Eq, Hash)]
-pub struct IntVid(pub uint);
+pub struct IntVid {
+    pub index: uint
+}
 
 #[deriving(Clone, PartialEq, Eq, Hash)]
-pub struct FloatVid(pub uint);
+pub struct FloatVid {
+    pub index: uint
+}
 
 #[deriving(Clone, PartialEq, Eq, Encodable, Decodable, Hash)]
 pub struct RegionVid {
-    pub id: uint
+    pub index: uint
 }
 
 #[deriving(Clone, PartialEq, Eq, Hash)]
@@ -893,47 +899,27 @@ impl cmp::PartialEq for InferRegion {
     }
 }
 
-pub trait Vid {
-    fn to_uint(&self) -> uint;
-}
-
-impl Vid for TyVid {
-    fn to_uint(&self) -> uint { let TyVid(v) = *self; v }
-}
-
 impl fmt::Show for TyVid {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result{
-        write!(f, "<generic #{}>", self.to_uint())
+        write!(f, "<generic #{}>", self.index)
     }
-}
-
-impl Vid for IntVid {
-    fn to_uint(&self) -> uint { let IntVid(v) = *self; v }
 }
 
 impl fmt::Show for IntVid {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "<generic integer #{}>", self.to_uint())
+        write!(f, "<generic integer #{}>", self.index)
     }
-}
-
-impl Vid for FloatVid {
-    fn to_uint(&self) -> uint { let FloatVid(v) = *self; v }
 }
 
 impl fmt::Show for FloatVid {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "<generic float #{}>", self.to_uint())
+        write!(f, "<generic float #{}>", self.index)
     }
-}
-
-impl Vid for RegionVid {
-    fn to_uint(&self) -> uint { self.id }
 }
 
 impl fmt::Show for RegionVid {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        self.id.fmt(f)
+        write!(f, "'<generic lifetime #{}>", self.index)
     }
 }
 
@@ -4196,6 +4182,12 @@ pub fn eval_repeat_count<T: ExprTyProvider>(tcx: &T, count_expr: &ast::Expr) -> 
             tcx.ty_ctxt().sess.span_err(count_expr.span,
                                         "expected positive integer for \
                                          repeat count but found binary array");
+            return 0;
+        }
+        const_eval::const_nil => {
+            tcx.ty_ctxt().sess.span_err(count_expr.span,
+                                        "expected positive integer for \
+                                         repeat count but found ()");
             return 0;
         }
       },

@@ -61,6 +61,7 @@ fn get_base_type(inference_context: &InferCtxt,
                  -> Option<t> {
     let resolved_type;
     match resolve_type(inference_context,
+                       Some(span),
                        original_type,
                        resolve_ivar) {
         Ok(resulting_type) if !type_is_ty_var(resulting_type) => {
@@ -519,7 +520,8 @@ impl<'a> CoherenceChecker<'a> {
     fn can_unify_universally_quantified<'a>(&self,
                                             a: &'a UniversalQuantificationResult,
                                             b: &'a UniversalQuantificationResult)
-                                            -> bool {
+                                            -> bool
+    {
         infer::can_mk_subty(&self.inference_context,
                             a.monotype,
                             b.monotype).is_ok()

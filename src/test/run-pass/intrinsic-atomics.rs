@@ -8,6 +8,8 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+#![feature(intrinsics)]
+
 mod rusti {
     extern "rust-intrinsic" {
         pub fn atomic_cxchg<T>(dst: *mut T, old: T, src: T) -> T;
@@ -36,7 +38,7 @@ mod rusti {
 
 pub fn main() {
     unsafe {
-        let mut x = box 1;
+        let mut x = box 1i;
 
         assert_eq!(rusti::atomic_load(&*x), 1);
         *x = 5;

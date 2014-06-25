@@ -324,7 +324,7 @@ pub fn replace<T>(dest: &mut T, mut src: T) -> T {
 /// ```
 /// use std::cell::RefCell;
 ///
-/// let x = RefCell::new(1);
+/// let x = RefCell::new(1i);
 ///
 /// let mut mutable_borrow = x.borrow_mut();
 /// *mutable_borrow = 1;
@@ -404,6 +404,7 @@ mod tests {
     #[cfg(target_arch = "x86")]
     #[cfg(target_arch = "arm")]
     #[cfg(target_arch = "mips")]
+    #[cfg(target_arch = "mipsel")]
     fn size_of_32() {
         assert_eq!(size_of::<uint>(), 4u);
         assert_eq!(size_of::<*uint>(), 4u);
@@ -435,6 +436,7 @@ mod tests {
     #[cfg(target_arch = "x86")]
     #[cfg(target_arch = "arm")]
     #[cfg(target_arch = "mips")]
+    #[cfg(target_arch = "mipsel")]
     fn align_of_32() {
         assert_eq!(align_of::<uint>(), 4u);
         assert_eq!(align_of::<*uint>(), 4u);
@@ -456,8 +458,8 @@ mod tests {
 
     #[test]
     fn test_swap() {
-        let mut x = 31337;
-        let mut y = 42;
+        let mut x = 31337i;
+        let mut y = 42i;
         swap(&mut x, &mut y);
         assert_eq!(x, 42);
         assert_eq!(y, 31337);
@@ -481,7 +483,7 @@ mod tests {
         trait Foo {}
         impl Foo for int {}
 
-        let a = box 100 as Box<Foo>;
+        let a = box 100i as Box<Foo>;
         unsafe {
             let x: raw::TraitObject = transmute(a);
             assert!(*(x.data as *int) == 100);

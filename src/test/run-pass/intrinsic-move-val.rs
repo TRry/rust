@@ -8,6 +8,8 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+#![feature(intrinsics)]
+
 use std::mem::transmute;
 
 mod rusti {
@@ -19,7 +21,7 @@ mod rusti {
 
 pub fn main() {
     unsafe {
-        let x = box 1;
+        let x = box 1i;
         let mut y = rusti::init();
         let mut z: *uint = transmute(&x);
         rusti::move_val_init(&mut y, x);

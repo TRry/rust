@@ -160,7 +160,7 @@ block_comment_body : [block_comment | character] * ;
 line_comment : "//" non_eol * ;
 ~~~~
 
-Comments in Rust code follow the general C++ style of line and block-comment forms. 
+Comments in Rust code follow the general C++ style of line and block-comment forms.
 Nested block comments are supported.
 
 Line comments beginning with exactly _three_ slashes (`///`), and block
@@ -955,11 +955,12 @@ use std::option::{Some, None};
 # fn foo<T>(_: T){}
 
 fn main() {
-    // Equivalent to 'std::iter::range_step(0, 10, 2);'
-    range_step(0, 10, 2);
+    // Equivalent to 'std::iter::range_step(0u, 10u, 2u);'
+    range_step(0u, 10u, 2u);
 
-    // Equivalent to 'foo(vec![std::option::Some(1.0), std::option::None]);'
-    foo(vec![Some(1.0), None]);
+    // Equivalent to 'foo(vec![std::option::Some(1.0f64),
+    // std::option::None]);'
+    foo(vec![Some(1.0f64), None]);
 }
 ~~~~
 
@@ -1475,7 +1476,7 @@ to pointers to the trait name, used as a type.
 ~~~~
 # trait Shape { }
 # impl Shape for int { }
-# let mycircle = 0;
+# let mycircle = 0i;
 let myshape: Box<Shape> = box mycircle as Box<Shape>;
 ~~~~
 
@@ -3563,10 +3564,11 @@ There are four varieties of pointer in Rust:
 
 * Raw pointers (`*`)
   : Raw pointers are pointers without safety or liveness guarantees.
-    Raw pointers are written `*content`,
-    for example `*int` means a raw pointer to an integer.
-    Copying or dropping a raw pointer has no effect on the lifecycle of any other value.
-    Dereferencing a raw pointer or converting it to any other pointer type is an [`unsafe` operation](#unsafe-functions).
+    Raw pointers are written as `*const T` or `*mut T`,
+    for example `*const int` means a raw pointer to an integer.
+    Copying or dropping a raw pointer has no effect on the lifecycle of any
+    other value.  Dereferencing a raw pointer or converting it to any other
+    pointer type is an [`unsafe` operation](#unsafe-functions).
     Raw pointers are generally discouraged in Rust code;
     they exist to support interoperability with foreign code,
     and writing performance-critical or low-level functions.
@@ -3612,7 +3614,7 @@ and no-return value closure has type `proc()`.
 An example of creating and calling a closure:
 
 ```rust
-let captured_var = 10;
+let captured_var = 10i;
 
 let closure_no_args = || println!("captured_var={}", captured_var);
 
@@ -3684,7 +3686,7 @@ fn print(a: Box<Printable>) {
 }
 
 fn main() {
-   print(box 10 as Box<Printable>);
+   print(box 10i as Box<Printable>);
 }
 ~~~~
 
