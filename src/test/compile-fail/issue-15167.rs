@@ -1,4 +1,4 @@
-// Copyright 2013 The Rust Project Developers. See the COPYRIGHT
+// Copyright 2014 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
 //
@@ -8,10 +8,14 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#![deny(unnecessary_allocation)]
+// macro f should not be able to inject a reference to 'n'.
 
-fn f(_: &int) {}
+#![feature(macro_rules)]
 
-fn main() {
-    f(box 1); //~ ERROR unnecessary allocation, use & instead
+macro_rules! f(() => (n))
+
+fn main() -> (){
+    for n in range(0, 1) {
+        println!("{}", f!()); //~ ERROR unresolved name `n`
+    }
 }
