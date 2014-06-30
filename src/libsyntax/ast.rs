@@ -401,6 +401,7 @@ pub enum Decl_ {
     DeclItem(Gc<Item>),
 }
 
+/// represents one arm of a 'match'
 #[deriving(Clone, PartialEq, Eq, Encodable, Decodable, Hash)]
 pub struct Arm {
     pub attrs: Vec<Attribute>,
@@ -675,8 +676,7 @@ pub enum IntTy {
 
 impl fmt::Show for IntTy {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}",
-               ast_util::int_ty_to_str(*self, None, ast_util::AutoSuffix))
+        write!(f, "{}", ast_util::int_ty_to_str(*self, None))
     }
 }
 
@@ -691,8 +691,7 @@ pub enum UintTy {
 
 impl fmt::Show for UintTy {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}",
-               ast_util::uint_ty_to_str(*self, None, ast_util::AutoSuffix))
+        write!(f, "{}", ast_util::uint_ty_to_str(*self, None))
     }
 }
 
@@ -700,7 +699,6 @@ impl fmt::Show for UintTy {
 pub enum FloatTy {
     TyF32,
     TyF64,
-    TyF128
 }
 
 impl fmt::Show for FloatTy {
@@ -838,6 +836,7 @@ impl Arg {
     }
 }
 
+// represents the header (not the body) of a function declaration
 #[deriving(Clone, PartialEq, Eq, Encodable, Decodable, Hash)]
 pub struct FnDecl {
     pub inputs: Vec<Arg>,

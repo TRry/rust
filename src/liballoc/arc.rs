@@ -39,7 +39,7 @@ use heap::deallocate;
 ///     let numbers = Vec::from_fn(100, |i| i as f32);
 ///     let shared_numbers = Arc::new(numbers);
 ///
-///     for _ in range(0, 10) {
+///     for _ in range(0u, 10) {
 ///         let child_numbers = shared_numbers.clone();
 ///
 ///         spawn(proc() {
@@ -110,6 +110,7 @@ impl<T: Share + Send> Arc<T> {
     }
 }
 
+#[unstable]
 impl<T: Share + Send> Clone for Arc<T> {
     /// Duplicate an atomically reference counted wrapper.
     ///
@@ -236,6 +237,7 @@ impl<T: Share + Send> Weak<T> {
     }
 }
 
+#[unstable]
 impl<T: Share + Send> Clone for Weak<T> {
     #[inline]
     fn clone(&self) -> Weak<T> {
@@ -374,14 +376,14 @@ mod tests {
 
     #[test]
     fn test_live() {
-        let x = Arc::new(5);
+        let x = Arc::new(5i);
         let y = x.downgrade();
         assert!(y.upgrade().is_some());
     }
 
     #[test]
     fn test_dead() {
-        let x = Arc::new(5);
+        let x = Arc::new(5i);
         let y = x.downgrade();
         drop(x);
         assert!(y.upgrade().is_none());

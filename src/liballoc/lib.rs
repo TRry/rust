@@ -69,7 +69,7 @@
        html_root_url = "http://doc.rust-lang.org/")]
 
 #![no_std]
-#![feature(phase, unsafe_destructor)]
+#![feature(lang_items, phase, unsafe_destructor)]
 
 #[phase(plugin, link)]
 extern crate core;

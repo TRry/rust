@@ -133,7 +133,7 @@ Check it out:
 ```
 
 fn dangling() -> Box<int> {
-    let i = box 1234;
+    let i = box 1234i;
     return i;
 }
 
@@ -143,8 +143,8 @@ fn add_one() -> int {
 }
 ```
 
-Now instead of a stack allocated `1234`,
-we have a heap allocated `box 1234`.
+Now instead of a stack allocated `1234i`,
+we have a heap allocated `box 1234i`.
 Whereas `&` borrows a pointer to existing memory,
 creating an owned box allocates memory on the heap and places a value in it,
 giving you the sole pointer to that memory.
@@ -152,7 +152,7 @@ You can roughly compare these two lines:
 
 ```
 // Rust
-let i = box 1234;
+let i = box 1234i;
 ```
 
 ```cpp
@@ -198,7 +198,7 @@ Typically, tasks do not share memory but instead communicate amongst each other 
 
 ```
 fn main() {
-    let numbers = vec![1,2,3];
+    let numbers = vec![1i, 2i, 3i];
 
     let (tx, rx)  = channel();
     tx.send(numbers);
@@ -237,7 +237,7 @@ try to modify the previous example to continue using the variable `numbers`:
 
 ```ignore
 fn main() {
-    let numbers = vec![1,2,3];
+    let numbers = vec![1i, 2i, 3i];
 
     let (tx, rx)  = channel();
     tx.send(numbers);
@@ -267,9 +267,9 @@ Let's see an example that uses the `clone` method to create copies of the data:
 
 ```
 fn main() {
-    let numbers = vec![1,2,3];
+    let numbers = vec![1i, 2i, 3i];
 
-    for num in range(0, 3) {
+    for num in range(0u, 3) {
         let (tx, rx)  = channel();
         // Use `clone` to send a *copy* of the array
         tx.send(numbers.clone());
@@ -300,10 +300,10 @@ Here's some code:
 use std::sync::Arc;
 
 fn main() {
-    let numbers = vec![1,2,3];
+    let numbers = vec![1i, 2i, 3i];
     let numbers = Arc::new(numbers);
 
-    for num in range(0, 3) {
+    for num in range(0u, 3) {
         let (tx, rx)  = channel();
         tx.send(numbers.clone());
 
@@ -346,10 +346,10 @@ and modify it to mutate the shared state:
 use std::sync::{Arc, Mutex};
 
 fn main() {
-    let numbers = vec![1,2,3];
+    let numbers = vec![1i, 2i, 3i];
     let numbers_lock = Arc::new(Mutex::new(numbers));
 
-    for num in range(0, 3) {
+    for num in range(0u, 3) {
         let (tx, rx)  = channel();
         tx.send(numbers_lock.clone());
 

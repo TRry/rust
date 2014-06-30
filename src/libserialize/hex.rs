@@ -104,7 +104,7 @@ impl<'a> FromHex for &'a str {
     fn from_hex(&self) -> Result<Vec<u8>, FromHexError> {
         // This may be an overestimate if there is any whitespace
         let mut b = Vec::with_capacity(self.len() / 2);
-        let mut modulus = 0;
+        let mut modulus = 0i;
         let mut buf = 0u8;
 
         for (idx, byte) in self.bytes().enumerate() {
@@ -173,14 +173,14 @@ mod tests {
 
     #[test]
     pub fn test_to_hex_all_bytes() {
-        for i in range(0, 256) {
+        for i in range(0u, 256) {
             assert_eq!([i as u8].to_hex(), format!("{:02x}", i as uint));
         }
     }
 
     #[test]
     pub fn test_from_hex_all_bytes() {
-        for i in range(0, 256) {
+        for i in range(0u, 256) {
             assert_eq!(format!("{:02x}", i as uint).as_slice()
                                                    .from_hex()
                                                    .unwrap()

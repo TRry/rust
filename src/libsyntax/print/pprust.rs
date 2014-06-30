@@ -243,7 +243,7 @@ pub fn arg_to_str(arg: &ast::Arg) -> String {
 
 pub fn visibility_qualified(vis: ast::Visibility, s: &str) -> String {
     match vis {
-        ast::Public => format!("pub {}", s).to_string(),
+        ast::Public => format!("pub {}", s),
         ast::Inherited => s.to_string()
     }
 }
@@ -479,7 +479,11 @@ impl<'a> State<'a> {
             }
             ast::TyPtr(ref mt) => {
                 try!(word(&mut self.s, "*"));
-                try!(self.print_mt(mt));
+                match mt.mutbl {
+                    ast::MutMutable => try!(self.word_nbsp("mut")),
+                    ast::MutImmutable => try!(self.word_nbsp("const")),
+                }
+                try!(self.print_type(&*mt.ty));
             }
             ast::TyRptr(ref lifetime, ref mt) => {
                 try!(word(&mut self.s, "&"));
@@ -994,7 +998,7 @@ impl<'a> State<'a> {
 
     pub fn print_outer_attributes(&mut self,
                                   attrs: &[ast::Attribute]) -> IoResult<()> {
-        let mut count = 0;
+        let mut count = 0u;
         for attr in attrs.iter() {
             match attr.node.style {
                 ast::AttrOuter => {
@@ -1012,7 +1016,7 @@ impl<'a> State<'a> {
 
     pub fn print_inner_attributes(&mut self,
                                   attrs: &[ast::Attribute]) -> IoResult<()> {
-        let mut count = 0;
+        let mut count = 0u;
         for attr in attrs.iter() {
             match attr.node.style {
                 ast::AttrInner => {
@@ -2319,13 +2323,11 @@ impl<'a> State<'a> {
             }
             ast::LitInt(i, t) => {
                 word(&mut self.s,
-                     ast_util::int_ty_to_str(t, Some(i),
-                                             ast_util::AutoSuffix).as_slice())
+                     ast_util::int_ty_to_str(t, Some(i)).as_slice())
             }
             ast::LitUint(u, t) => {
                 word(&mut self.s,
-                     ast_util::uint_ty_to_str(t, Some(u),
-                                              ast_util::ForceSuffix).as_slice())
+                     ast_util::uint_ty_to_str(t, Some(u)).as_slice())
             }
             ast::LitIntUnsuffixed(i) => {
                 word(&mut self.s, format!("{}", i).as_slice())

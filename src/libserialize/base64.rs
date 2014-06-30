@@ -208,7 +208,7 @@ impl<'a> FromBase64 for &'a str {
     fn from_base64(&self) -> Result<Vec<u8>, FromBase64Error> {
         let mut r = Vec::new();
         let mut buf: u32 = 0;
-        let mut modulus = 0;
+        let mut modulus = 0i;
 
         let mut it = self.bytes().enumerate();
         for (idx, byte) in it {
@@ -336,7 +336,7 @@ mod tests {
     fn test_base64_random() {
         use std::rand::{task_rng, random, Rng};
 
-        for _ in range(0, 1000) {
+        for _ in range(0u, 1000) {
             let times = task_rng().gen_range(1u, 100);
             let v = Vec::from_fn(times, |_| random::<u8>());
             assert_eq!(v.as_slice()

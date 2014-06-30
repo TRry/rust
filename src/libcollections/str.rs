@@ -661,7 +661,7 @@ pub mod raw {
     pub use core::str::raw::{slice_unchecked};
 
     /// Create a Rust string from a *u8 buffer of the given length
-    pub unsafe fn from_buf_len(buf: *u8, len: uint) -> String {
+    pub unsafe fn from_buf_len(buf: *const u8, len: uint) -> String {
         let mut result = String::new();
         result.push_bytes(mem::transmute(Slice {
             data: buf,
@@ -671,7 +671,7 @@ pub mod raw {
     }
 
     /// Create a Rust string from a null-terminated C string
-    pub unsafe fn from_c_str(c_string: *i8) -> String {
+    pub unsafe fn from_c_str(c_string: *const i8) -> String {
         let mut buf = String::new();
         let mut len = 0;
         while *c_string.offset(len) != 0 {
@@ -1103,7 +1103,7 @@ mod tests {
         assert_eq!("bc", unsafe {raw::slice_bytes("abc", 1, 3)});
         assert_eq!("", unsafe {raw::slice_bytes("abc", 1, 1)});
         fn a_million_letter_a() -> String {
-            let mut i = 0;
+            let mut i = 0u;
             let mut rs = String::new();
             while i < 100000 {
                 rs.push_str("aaaaaaaaaa");
@@ -1112,7 +1112,7 @@ mod tests {
             rs
         }
         fn half_a_million_letter_a() -> String {
-            let mut i = 0;
+            let mut i = 0u;
             let mut rs = String::new();
             while i < 100000 {
                 rs.push_str("aaaaa");
@@ -1220,7 +1220,7 @@ mod tests {
         assert_eq!("华", data.slice(30, 33));
 
         fn a_million_letter_x() -> String {
-            let mut i = 0;
+            let mut i = 0u;
             let mut rs = String::new();
             while i < 100000 {
                 rs.push_str("华华华华华华华华华华");
@@ -1229,7 +1229,7 @@ mod tests {
             rs
         }
         fn half_a_million_letter_x() -> String {
-            let mut i = 0;
+            let mut i = 0u;
             let mut rs = String::new();
             while i < 100000 {
                 rs.push_str("华华华华华");

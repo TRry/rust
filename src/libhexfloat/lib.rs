@@ -77,12 +77,12 @@ fn hex_float_lit_err(s: &str) -> Option<(uint, String)> {
     if chars.next() != Some('x') {
         return Some((i, "Expected 'x'".to_string()));
     } i+=1;
-    let mut d_len = 0;
+    let mut d_len = 0i;
     for _ in chars.take_while(|c| c.is_digit_radix(16)) { chars.next(); i+=1; d_len += 1;}
     if chars.next() != Some('.') {
         return Some((i, "Expected '.'".to_string()));
     } i+=1;
-    let mut f_len = 0;
+    let mut f_len = 0i;
     for _ in chars.take_while(|c| c.is_digit_radix(16)) { chars.next(); i+=1; f_len += 1;}
     if d_len == 0 && f_len == 0 {
         return Some((i, "Expected digits before or after decimal \
@@ -92,7 +92,7 @@ fn hex_float_lit_err(s: &str) -> Option<(uint, String)> {
         return Some((i, "Expected 'p'".to_string()));
     } i+=1;
     if chars.peek() == Some(&'-') { chars.next(); i+= 1 }
-    let mut e_len = 0;
+    let mut e_len = 0i;
     for _ in chars.take_while(|c| c.is_digit()) { chars.next(); i+=1; e_len += 1}
     if e_len == 0 {
         return Some((i, "Expected exponent digits".to_string()));
@@ -112,7 +112,6 @@ pub fn expand_syntax_ext(cx: &mut ExtCtxt, sp: Span, tts: &[ast::TokenTree])
         Some(Ident{ident, span}) => match token::get_ident(ident).get() {
             "f32" => Some(ast::TyF32),
             "f64" => Some(ast::TyF64),
-            "f128" => Some(ast::TyF128),
             _ => {
                 cx.span_err(span, "invalid floating point type in hexfloat!");
                 None

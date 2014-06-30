@@ -15,9 +15,9 @@ use metadata::csearch;
 use metadata::decoder::{DefLike, DlDef, DlField, DlImpl};
 use middle::def::*;
 use middle::lang_items::LanguageItems;
-use middle::lint::{UnnecessaryQualification, UnusedImports};
 use middle::pat_util::pat_bindings;
 use middle::subst::{ParamSpace, FnSpace, TypeSpace};
+use lint;
 use util::nodemap::{NodeMap, DefIdSet, FnvHashMap};
 
 use syntax::ast::*;
@@ -770,7 +770,6 @@ impl PrimitiveTypeTable {
         table.intern("char",    TyChar);
         table.intern("f32",     TyFloat(TyF32));
         table.intern("f64",     TyFloat(TyF64));
-        table.intern("f128",    TyFloat(TyF128));
         table.intern("int",     TyInt(TyI));
         table.intern("i8",      TyInt(TyI8));
         table.intern("i16",     TyInt(TyI16));
@@ -1966,7 +1965,7 @@ impl<'a> Resolver<'a> {
     /// Resolves all imports for the crate. This method performs the fixed-
     /// point iteration.
     fn resolve_imports(&mut self) {
-        let mut i = 0;
+        let mut i = 0u;
         let mut prev_unresolved_imports = 0;
         loop {
             debug!("(resolving imports) iteration {}, {} imports left",
@@ -4632,7 +4631,7 @@ impl<'a> Resolver<'a> {
             match (def, unqualified_def) {
                 (Some((d, _)), Some((ud, _))) if d == ud => {
                     self.session
-                        .add_lint(UnnecessaryQualification,
+                        .add_lint(lint::builtin::UNNECESSARY_QUALIFICATION,
                                   id,
                                   path.span,
                                   "unnecessary qualification".to_string());
@@ -5487,7 +5486,7 @@ impl<'a> Resolver<'a> {
                         if !self.used_imports.contains(&(id, TypeNS)) &&
                            !self.used_imports.contains(&(id, ValueNS)) {
                             self.session
-                                .add_lint(UnusedImports,
+                                .add_lint(lint::builtin::UNUSED_IMPORTS,
                                           id,
                                           p.span,
                                           "unused import".to_string());
@@ -5511,7 +5510,7 @@ impl<'a> Resolver<'a> {
 
         if !self.used_imports.contains(&(id, TypeNS)) &&
            !self.used_imports.contains(&(id, ValueNS)) {
-            self.session.add_lint(UnusedImports,
+            self.session.add_lint(lint::builtin::UNUSED_IMPORTS,
                                   id,
                                   span,
                                   "unused import".to_string());

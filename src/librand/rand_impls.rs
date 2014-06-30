@@ -203,6 +203,8 @@ tuple_impl!{A, B, C, D, E, F, G}
 tuple_impl!{A, B, C, D, E, F, G, H}
 tuple_impl!{A, B, C, D, E, F, G, H, I}
 tuple_impl!{A, B, C, D, E, F, G, H, I, J}
+tuple_impl!{A, B, C, D, E, F, G, H, I, J, K}
+tuple_impl!{A, B, C, D, E, F, G, H, I, J, K, L}
 
 impl<T:Rand> Rand for Option<T> {
     #[inline]
@@ -244,7 +246,7 @@ mod tests {
         // this is unlikely to catch an incorrect implementation that
         // generates exactly 0 or 1, but it keeps it sane.
         let mut rng = task_rng();
-        for _ in range(0, 1_000) {
+        for _ in range(0u, 1_000) {
             // strict inequalities
             let Open01(f) = rng.gen::<Open01<f64>>();
             assert!(0.0 < f && f < 1.0);
@@ -257,7 +259,7 @@ mod tests {
     #[test]
     fn rand_closed() {
         let mut rng = task_rng();
-        for _ in range(0, 1_000) {
+        for _ in range(0u, 1_000) {
             // strict inequalities
             let Closed01(f) = rng.gen::<Closed01<f64>>();
             assert!(0.0 <= f && f <= 1.0);

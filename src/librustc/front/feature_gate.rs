@@ -18,8 +18,10 @@
 //! Features are enabled in programs via the crate-level attributes of
 //! `#![feature(...)]` with a comma-separated list of features.
 
-use middle::lint;
+use lint;
 
+use syntax::abi::RustIntrinsic;
+use syntax::ast::NodeId;
 use syntax::ast;
 use syntax::attr;
 use syntax::attr::AttrMetaMethods;
@@ -51,6 +53,8 @@ static KNOWN_FEATURES: &'static [(&'static str, Status)] = &[
     ("trace_macros", Active),
     ("concat_idents", Active),
     ("unsafe_destructor", Active),
+    ("intrinsics", Active),
+    ("lang_items", Active),
 
     ("simd", Active),
     ("default_type_params", Active),
@@ -60,7 +64,7 @@ static KNOWN_FEATURES: &'static [(&'static str, Status)] = &[
     ("overloaded_calls", Active),
     ("unboxed_closure_sugar", Active),
 
-    ("quad_precision_float", Active),
+    ("quad_precision_float", Removed),
 
     // A temporary feature gate used to enable parser extensions needed
     // to bootstrap fix for #5723.
@@ -87,7 +91,6 @@ enum Status {
 /// A set of features to be used by later passes.
 pub struct Features {
     pub default_type_params: Cell<bool>,
-    pub quad_precision_float: Cell<bool>,
     pub issue_5723_bootstrap: Cell<bool>,
     pub overloaded_calls: Cell<bool>,
 }
@@ -96,7 +99,6 @@ impl Features {
     pub fn new() -> Features {
         Features {
             default_type_params: Cell::new(false),
-            quad_precision_float: Cell::new(false),
             issue_5723_bootstrap: Cell::new(false),
             overloaded_calls: Cell::new(false),
         }
@@ -187,12 +189,17 @@ impl<'a> Visitor<()> for Context<'a> {
                 }
             }
 
-            ast::ItemForeignMod(..) => {
+            ast::ItemForeignMod(ref foreign_module) => {
                 if attr::contains_name(i.attrs.as_slice(), "link_args") {
                     self.gate_feature("link_args", i.span,
                                       "the `link_args` attribute is not portable \
                                        across platforms, it is recommended to \
                                        use `#[link(name = \"foo\")]` instead")
+                }
+                if foreign_module.abi == RustIntrinsic {
+                    self.gate_feature("intrinsics",
+                                      i.span,
+                                      "intrinsics are subject to change")
                 }
             }
 
@@ -283,14 +290,10 @@ impl<'a> Visitor<()> for Context<'a> {
     }
 
     fn visit_foreign_item(&mut self, i: &ast::ForeignItem, _: ()) {
-        match i.node {
-            ast::ForeignItemFn(..) | ast::ForeignItemStatic(..) => {
-                if attr::contains_name(i.attrs.as_slice(), "linkage") {
-                    self.gate_feature("linkage", i.span,
-                                      "the `linkage` attribute is experimental \
-                                       and not portable across platforms")
-                }
-            }
+        if attr::contains_name(i.attrs.as_slice(), "linkage") {
+            self.gate_feature("linkage", i.span,
+                              "the `linkage` attribute is experimental \
+                               and not portable across platforms")
         }
         visit::walk_foreign_item(self, i, ())
     }
@@ -338,6 +341,32 @@ impl<'a> Visitor<()> for Context<'a> {
         }
         visit::walk_generics(self, generics, ());
     }
+
+    fn visit_attribute(&mut self, attr: &ast::Attribute, _: ()) {
+        if attr::contains_name([*attr], "lang") {
+            self.gate_feature("lang_items",
+                              attr.span,
+                              "language items are subject to change");
+        }
+    }
+
+    fn visit_fn(&mut self,
+                fn_kind: &visit::FnKind,
+                fn_decl: &ast::FnDecl,
+                block: &ast::Block,
+                span: Span,
+                _: NodeId,
+                (): ()) {
+        match *fn_kind {
+            visit::FkItemFn(_, _, _, ref abi) if *abi == RustIntrinsic => {
+                self.gate_feature("intrinsics",
+                                  span,
+                                  "intrinsics are subject to change")
+            }
+            _ => {}
+        }
+        visit::walk_fn(self, fn_kind, fn_decl, block, span, ());
+    }
 }
 
 pub fn check_crate(sess: &Session, krate: &ast::Crate) {
@@ -378,7 +407,7 @@ pub fn check_crate(sess: &Session, krate: &ast::Crate) {
                                                      directive not necessary");
                         }
                         None => {
-                            sess.add_lint(lint::UnknownFeatures,
+                            sess.add_lint(lint::builtin::UNKNOWN_FEATURES,
                                           ast::CRATE_NODE_ID,
                                           mi.span,
                                           "unknown feature".to_string());
@@ -394,7 +423,6 @@ pub fn check_crate(sess: &Session, krate: &ast::Crate) {
     sess.abort_if_errors();
 
     sess.features.default_type_params.set(cx.has_feature("default_type_params"));
-    sess.features.quad_precision_float.set(cx.has_feature("quad_precision_float"));
     sess.features.issue_5723_bootstrap.set(cx.has_feature("issue_5723_bootstrap"));
     sess.features.overloaded_calls.set(cx.has_feature("overloaded_calls"));
 }

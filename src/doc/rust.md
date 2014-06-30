@@ -160,7 +160,7 @@ block_comment_body : [block_comment | character] * ;
 line_comment : "//" non_eol * ;
 ~~~~
 
-Comments in Rust code follow the general C++ style of line and block-comment forms. 
+Comments in Rust code follow the general C++ style of line and block-comment forms.
 Nested block comments are supported.
 
 Line comments beginning with exactly _three_ slashes (`///`), and block
@@ -346,7 +346,7 @@ enclosed within two `U+0022` (double-quote) characters,
 with the exception of `U+0022` itself,
 which must be _escaped_ by a preceding `U+005C` character (`\`),
 or a _raw byte string literal_.
-It is equivalent to a `&'static [u8]` borrowed vectior unsigned 8-bit integers.
+It is equivalent to a `&'static [u8]` borrowed vector of unsigned 8-bit integers.
 
 Some additional _escapes_ are available in either byte or non-raw byte string
 literals. An escape starts with a `U+005C` (`\`) and continues with one of
@@ -442,17 +442,14 @@ of integer literal suffix:
 The type of an _unsuffixed_ integer literal is determined by type inference.
 If an integer type can be _uniquely_ determined from the surrounding program
 context, the unsuffixed integer literal has that type.  If the program context
-underconstrains the type, the unsuffixed integer literal's type is `int`; if
-the program context overconstrains the type, it is considered a static type
-error.
+underconstrains the type, it is considered a static type error;
+if the program context overconstrains the type,
+it is also considered a static type error.
 
 Examples of integer literals of various forms:
 
 ~~~~
-123; 0xff00;                       // type determined by program context
-                                   // defaults to int in absence of type
-                                   // information
-
+123i;                              // type int
 123u;                              // type uint
 123_u;                             // type uint
 0xff_u8;                           // type u8
@@ -469,8 +466,10 @@ A _floating-point literal_ has one of two forms:
   second decimal literal.
 * A single _decimal literal_ followed by an _exponent_.
 
-By default, a floating-point literal has a generic type, but will fall back to
-`f64`. A floating-point literal may be followed (immediately, without any
+By default, a floating-point literal has a generic type,
+and, like integer literals, the type must be uniquely determined
+from the context.
+A floating-point literal may be followed (immediately, without any
 spaces) by a _floating-point suffix_, which changes the type of the literal.
 There are two floating-point suffixes: `f32`, and `f64` (the 32-bit and 64-bit
 floating point types).
@@ -478,8 +477,8 @@ floating point types).
 Examples of floating-point literals of various forms:
 
 ~~~~
-123.0;                             // type f64
-0.1;                               // type f64
+123.0f64;                          // type f64
+0.1f64;                            // type f64
 0.1f32;                            // type f32
 12E+99_f64;                        // type f64
 ~~~~
@@ -955,11 +954,12 @@ use std::option::{Some, None};
 # fn foo<T>(_: T){}
 
 fn main() {
-    // Equivalent to 'std::iter::range_step(0, 10, 2);'
-    range_step(0, 10, 2);
+    // Equivalent to 'std::iter::range_step(0u, 10u, 2u);'
+    range_step(0u, 10u, 2u);
 
-    // Equivalent to 'foo(vec![std::option::Some(1.0), std::option::None]);'
-    foo(vec![Some(1.0), None]);
+    // Equivalent to 'foo(vec![std::option::Some(1.0f64),
+    // std::option::None]);'
+    foo(vec![Some(1.0f64), None]);
 }
 ~~~~
 
@@ -1475,7 +1475,7 @@ to pointers to the trait name, used as a type.
 ~~~~
 # trait Shape { }
 # impl Shape for int { }
-# let mycircle = 0;
+# let mycircle = 0i;
 let myshape: Box<Shape> = box mycircle as Box<Shape>;
 ~~~~
 
@@ -1613,7 +1613,7 @@ extern crate libc;
 use libc::{c_char, FILE};
 
 extern {
-    fn fopen(filename: *c_char, mode: *c_char) -> *FILE;
+    fn fopen(filename: *const c_char, mode: *const c_char) -> *mut FILE;
 }
 # fn main() {}
 ~~~~
@@ -2699,9 +2699,9 @@ must be a constant expression that can be evaluated at compile time, such
 as a [literal](#literals) or a [static item](#static-items).
 
 ~~~~
-[1, 2, 3, 4];
+[1i, 2, 3, 4];
 ["a", "b", "c", "d"];
-[0, ..128];             // vector with 128 zeros
+[0i, ..128];             // vector with 128 zeros
 [0u8, 0u8, 0u8, 0u8];
 ~~~~
 
@@ -2880,7 +2880,7 @@ equals sign (`=`) and an [rvalue](#lvalues-rvalues-and-temporaries) expression.
 Evaluating an assignment expression [either copies or moves](#moved-and-copied-types) its right-hand operand to its left-hand operand.
 
 ~~~~
-# let mut x = 0;
+# let mut x = 0i;
 # let y = 0;
 
 x = y;
@@ -2931,7 +2931,7 @@ paren_expr : '(' expr ')' ;
 An example of a parenthesized expression:
 
 ~~~~
-let x = (2 + 3) * 4;
+let x: int = (2 + 3) * 4;
 ~~~~
 
 
@@ -3015,7 +3015,7 @@ conditional expression evaluates to `false`, the `while` expression completes.
 An example:
 
 ~~~~
-let mut i = 0;
+let mut i = 0u;
 
 while i < 10 {
     println!("hello");
@@ -3261,7 +3261,7 @@ Patterns can also dereference pointers by using the `&`,
 on `x: &int` are equivalent:
 
 ~~~~
-# let x = &3;
+# let x = &3i;
 let y = match *x { 0 => "zero", _ => "some" };
 let z = match x { &0 => "zero", _ => "some" };
 
@@ -3284,7 +3284,7 @@ A range of values may be specified with `..`.
 For example:
 
 ~~~~
-# let x = 2;
+# let x = 2i;
 
 let message = match x {
   0 | 1  => "not many",
@@ -3563,10 +3563,11 @@ There are four varieties of pointer in Rust:
 
 * Raw pointers (`*`)
   : Raw pointers are pointers without safety or liveness guarantees.
-    Raw pointers are written `*content`,
-    for example `*int` means a raw pointer to an integer.
-    Copying or dropping a raw pointer has no effect on the lifecycle of any other value.
-    Dereferencing a raw pointer or converting it to any other pointer type is an [`unsafe` operation](#unsafe-functions).
+    Raw pointers are written as `*const T` or `*mut T`,
+    for example `*const int` means a raw pointer to an integer.
+    Copying or dropping a raw pointer has no effect on the lifecycle of any
+    other value.  Dereferencing a raw pointer or converting it to any other
+    pointer type is an [`unsafe` operation](#unsafe-functions).
     Raw pointers are generally discouraged in Rust code;
     they exist to support interoperability with foreign code,
     and writing performance-critical or low-level functions.
@@ -3612,7 +3613,7 @@ and no-return value closure has type `proc()`.
 An example of creating and calling a closure:
 
 ```rust
-let captured_var = 10;
+let captured_var = 10i;
 
 let closure_no_args = || println!("captured_var={}", captured_var);
 
@@ -3684,7 +3685,7 @@ fn print(a: Box<Printable>) {
 }
 
 fn main() {
-   print(box 10 as Box<Printable>);
+   print(box 10i as Box<Printable>);
 }
 ~~~~
 

@@ -364,7 +364,8 @@ impl TwoWaySearcher {
             period = period2;
         }
 
-        let byteset = needle.iter().fold(0, |a, &b| (1 << (b & 0x3f)) | a);
+        let byteset = needle.iter()
+                            .fold(0, |a, &b| (1 << ((b & 0x3f) as uint)) | a);
 
         if needle.slice_to(critPos) == needle.slice_from(needle.len() - critPos) {
             TwoWaySearcher {
@@ -396,7 +397,9 @@ impl TwoWaySearcher {
             }
 
             // Quickly skip by large portions unrelated to our substring
-            if (self.byteset >> (haystack[self.position + needle.len() - 1] & 0x3f)) & 1 == 0 {
+            if (self.byteset >>
+                    ((haystack[self.position + needle.len() - 1] & 0x3f)
+                     as uint)) & 1 == 0 {
                 self.position += needle.len();
                 continue 'search;
             }
@@ -565,10 +568,10 @@ Section: Comparing strings
 #[inline]
 fn eq_slice_(a: &str, b: &str) -> bool {
     #[allow(ctypes)]
-    extern { fn memcmp(s1: *i8, s2: *i8, n: uint) -> i32; }
+    extern { fn memcmp(s1: *const i8, s2: *const i8, n: uint) -> i32; }
     a.len() == b.len() && unsafe {
-        memcmp(a.as_ptr() as *i8,
-               b.as_ptr() as *i8,
+        memcmp(a.as_ptr() as *const i8,
+               b.as_ptr() as *const i8,
                a.len()) == 0
     }
 }
@@ -576,15 +579,7 @@ fn eq_slice_(a: &str, b: &str) -> bool {
 /// Bytewise slice equality
 /// NOTE: This function is (ab)used in rustc::middle::trans::_match
 /// to compare &[u8] byte slices that are not necessarily valid UTF-8.
-#[cfg(not(test))]
 #[lang="str_eq"]
-#[inline]
-pub fn eq_slice(a: &str, b: &str) -> bool {
-    eq_slice_(a, b)
-}
-
-/// Bytewise slice equality
-#[cfg(test)]
 #[inline]
 pub fn eq_slice(a: &str, b: &str) -> bool {
     eq_slice_(a, b)
@@ -885,8 +880,8 @@ pub mod raw {
     /// Form a slice from a C string. Unsafe because the caller must ensure the
     /// C string has the static lifetime, or else the return value may be
     /// invalidated later.
-    pub unsafe fn c_str_to_static_slice(s: *i8) -> &'static str {
-        let s = s as *u8;
+    pub unsafe fn c_str_to_static_slice(s: *const i8) -> &'static str {
+        let s = s as *const u8;
         let mut curr = s;
         let mut len = 0u;
         while *curr != 0u8 {
@@ -931,7 +926,6 @@ pub mod raw {
 Section: Trait implementations
 */
 
-#[cfg(not(test))]
 #[allow(missing_doc)]
 pub mod traits {
     use cmp::{Ord, Ordering, Less, Equal, Greater, PartialEq, PartialOrd, Equiv, Eq};
@@ -976,9 +970,6 @@ pub mod traits {
         fn equiv(&self, other: &S) -> bool { eq_slice(*self, other.as_slice()) }
     }
 }
-
-#[cfg(test)]
-pub mod traits {}
 
 /// Any string that can be represented as a slice
 pub trait Str {
@@ -1615,7 +1606,7 @@ pub trait StrSlice<'a> {
     /// The caller must ensure that the string outlives this pointer,
     /// and that it is not reallocated (e.g. by pushing to the
     /// string).
-    fn as_ptr(&self) -> *u8;
+    fn as_ptr(&self) -> *const u8;
 }
 
 impl<'a> StrSlice<'a> for &'a str {
@@ -1961,7 +1952,7 @@ impl<'a> StrSlice<'a> for &'a str {
     }
 
     #[inline]
-    fn as_ptr(&self) -> *u8 {
+    fn as_ptr(&self) -> *const u8 {
         self.repr().data
     }
 }

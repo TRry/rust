@@ -104,8 +104,8 @@
        html_root_url = "http://doc.rust-lang.org/",
        html_playground_url = "http://play.rust-lang.org/")]
 
-#![feature(macro_rules, globs, managed_boxes)]
-#![feature(linkage, default_type_params, phase, unsafe_destructor)]
+#![feature(macro_rules, globs, managed_boxes, linkage)]
+#![feature(default_type_params, phase, lang_items, unsafe_destructor)]
 
 // Don't link to std. We are std.
 #![no_std]
@@ -183,7 +183,7 @@ pub use core_sync::comm;
 //        threading mode than the default by reaching into the auto-generated
 //        '__test' module.
 #[cfg(test)] #[start]
-fn start(argc: int, argv: **u8) -> int {
+fn start(argc: int, argv: *const *const u8) -> int {
     green::start(argc, argv, rustuv::event_loop, __test::main)
 }
 

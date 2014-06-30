@@ -295,8 +295,8 @@ impl<S: Spawner> TaskBuilder<S> {
         let (tx_done, rx_done) = channel(); // signal that task has exited
         let (tx_retv, rx_retv) = channel(); // return value from task
 
-        let on_exit = proc(res) { tx_done.send(res) };
-        self.spawn_internal(proc() { tx_retv.send(f()) },
+        let on_exit = proc(res) { let _ = tx_done.send_opt(res); };
+        self.spawn_internal(proc() { let _ = tx_retv.send_opt(f()); },
                             Some(on_exit));
 
         Future::from_fn(proc() {
@@ -511,10 +511,10 @@ mod test {
         let (tx, rx) = channel::<uint>();
 
         let x = box 1;
-        let x_in_parent = (&*x) as *int as uint;
+        let x_in_parent = (&*x) as *const int as uint;
 
         spawnfn(proc() {
-            let x_in_child = (&*x) as *int as uint;
+            let x_in_child = (&*x) as *const int as uint;
             tx.send(x_in_child);
         });
 
@@ -630,9 +630,11 @@ mod test {
         let mut reader = ChanReader::new(rx);
         let stdout = ChanWriter::new(tx);
 
-        TaskBuilder::new().stdout(box stdout as Box<Writer + Send>).try(proc() {
-            print!("Hello, world!");
-        }).unwrap();
+        let r = TaskBuilder::new().stdout(box stdout as Box<Writer + Send>)
+                                  .try(proc() {
+                print!("Hello, world!");
+            });
+        assert!(r.is_ok());
 
         let output = reader.read_to_str().unwrap();
         assert_eq!(output, "Hello, world!".to_string());
@@ -640,4 +642,15 @@ mod test {
 
     // NOTE: the corresponding test for stderr is in run-pass/task-stderr, due
     // to the test harness apparently interfering with stderr configuration.
+}
+
+#[test]
+fn task_abort_no_kill_runtime() {
+    use std::io::timer;
+    use mem;
+
+    let tb = TaskBuilder::new();
+    let rx = tb.try_future(proc() {});
+    mem::drop(rx);
+    timer::sleep(1000);
 }

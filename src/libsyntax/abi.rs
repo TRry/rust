@@ -41,7 +41,8 @@ pub enum Architecture {
     X86,
     X86_64,
     Arm,
-    Mips
+    Mips,
+    Mipsel
 }
 
 static IntelBits: u32 = (1 << (X86 as uint)) | (1 << (X86_64 as uint));
@@ -149,7 +150,7 @@ impl Abi {
 
 impl Architecture {
     fn bit(&self) -> u32 {
-        1 << (*self as u32)
+        1 << (*self as uint)
     }
 }
 
@@ -197,11 +198,11 @@ fn indices_are_correct() {
         assert_eq!(i, abi_data.abi.index());
     }
 
-    let bits = 1 << (X86 as u32);
-    let bits = bits | 1 << (X86_64 as u32);
+    let bits = 1 << (X86 as uint);
+    let bits = bits | 1 << (X86_64 as uint);
     assert_eq!(IntelBits, bits);
 
-    let bits = 1 << (Arm as u32);
+    let bits = 1 << (Arm as uint);
     assert_eq!(ArmBits, bits);
 }
 

@@ -1051,7 +1051,7 @@ mod test {
         let initial_msg =   "food-is-yummy";
         let overwrite_msg =    "-the-bar!!";
         let final_msg =     "foo-the-bar!!";
-        let seek_idx = 3;
+        let seek_idx = 3i;
         let mut read_mem = [0, .. 13];
         let tmpdir = tmpdir();
         let filename = &tmpdir.join("file_rt_io_file_test_seek_and_write.txt");
@@ -1164,7 +1164,7 @@ mod test {
         let dir = &tmpdir.join("di_readdir");
         check!(mkdir(dir, io::UserRWX));
         let prefix = "foo";
-        for n in range(0,3) {
+        for n in range(0i,3) {
             let f = dir.join(format!("{}.txt", n));
             let mut w = check!(File::create(&f));
             let msg_str = format!("{}{}", prefix, n.to_str());

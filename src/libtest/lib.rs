@@ -403,7 +403,7 @@ pub fn parse_opts(args: &[String]) -> Option<OptRes> {
     let save_metrics = save_metrics.map(|s| Path::new(s));
 
     let test_shard = matches.opt_str("test-shard");
-    let test_shard = opt_shard(test_shard.map(|x| x.to_string()));
+    let test_shard = opt_shard(test_shard);
 
     let mut nocapture = matches.opt_present("nocapture");
     if !nocapture {
@@ -474,7 +474,7 @@ pub enum TestResult {
 }
 
 enum OutputLocation<T> {
-    Pretty(Box<term::Terminal<Box<Writer + Send>> + Send>),
+    Pretty(Box<term::Terminal<term::WriterWrapper> + Send>),
     Raw(T),
 }
 
@@ -658,11 +658,11 @@ impl<T: Writer> ConsoleTestState<T> {
     }
 
     pub fn write_metric_diff(&mut self, diff: &MetricDiff) -> io::IoResult<()> {
-        let mut noise = 0;
-        let mut improved = 0;
-        let mut regressed = 0;
-        let mut added = 0;
-        let mut removed = 0;
+        let mut noise = 0u;
+        let mut improved = 0u;
+        let mut regressed = 0u;
+        let mut added = 0u;
+        let mut removed = 0u;
 
         for (k, v) in diff.iter() {
             match *v {
@@ -756,7 +756,7 @@ pub fn fmt_metrics(mm: &MetricMap) -> String {
         .map(|(k,v)| format!("{}: {} (+/- {})", *k,
                              v.value as f64, v.noise as f64))
         .collect();
-    v.connect(", ").to_string()
+    v.connect(", ")
 }
 
 pub fn fmt_bench_samples(bs: &BenchSamples) -> String {

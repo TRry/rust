@@ -114,6 +114,7 @@ pub enum Nonterminal {
     NtPat( Gc<ast::Pat>),
     NtExpr(Gc<ast::Expr>),
     NtTy(  P<ast::Ty>),
+    // see IDENT, above, for meaning of bool in NtIdent:
     NtIdent(Box<ast::Ident>, bool),
     NtMeta(Gc<ast::MetaItem>), // stuff inside brackets for attributes
     NtPath(Box<ast::Path>),
@@ -212,10 +213,8 @@ pub fn to_str(t: &Token) -> String {
           res.push_char('\'');
           res
       }
-      LIT_INT(i, t) => ast_util::int_ty_to_str(t, Some(i),
-                                               ast_util::ForceSuffix),
-      LIT_UINT(u, t) => ast_util::uint_ty_to_str(t, Some(u),
-                                                 ast_util::ForceSuffix),
+      LIT_INT(i, t) => ast_util::int_ty_to_str(t, Some(i)),
+      LIT_UINT(u, t) => ast_util::uint_ty_to_str(t, Some(u)),
       LIT_INT_UNSUFFIXED(i) => { (i as u64).to_str() }
       LIT_FLOAT(s, t) => {
         let mut body = String::from_str(get_ident(s).get());
@@ -512,11 +511,11 @@ declare_special_idents_and_keywords! {
         (40,                         Continue,   "continue");
         (41,                         Proc,       "proc");
         (42,                         Box,        "box");
+        (43,                         Const,      "const");
 
         'reserved:
-        (43,                         Alignof,    "alignof");
-        (44,                         Be,         "be");
-        (45,                         Const,      "const");
+        (44,                         Alignof,    "alignof");
+        (45,                         Be,         "be");
         (46,                         Offsetof,   "offsetof");
         (47,                         Priv,       "priv");
         (48,                         Pure,       "pure");

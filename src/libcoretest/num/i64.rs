@@ -8,13 +8,4 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#![feature(quad_precision_float)]
-
-static x: f128 = 1.0 + 2.0;
-
-fn foo(a: f128) -> f128 { a }
-
-pub fn main() {
-    let y = x;
-    foo(y);
-}
+int_module!(i64, i64)

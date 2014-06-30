@@ -69,7 +69,8 @@ pub fn run(input: &str,
     }));
     let krate = driver::phase_1_parse_input(&sess, cfg, &input);
     let (krate, _) = driver::phase_2_configure_and_expand(&sess, krate,
-                                                          &from_str("rustdoc-test").unwrap());
+            &from_str("rustdoc-test").unwrap())
+        .expect("phase_2_configure_and_expand aborted in rustdoc!");
 
     let ctx = box(GC) core::DocContext {
         krate: krate,
@@ -139,7 +140,14 @@ fn runtest(test: &str, cratename: &str, libs: HashSet<Path>, should_fail: bool,
     let old = io::stdio::set_stderr(box w1);
     spawn(proc() {
         let mut p = io::ChanReader::new(rx);
-        let mut err = old.unwrap_or(box io::stderr() as Box<Writer + Send>);
+        let mut err = match old {
+            Some(old) => {
+                // Chop off the `Send` bound.
+                let old: Box<Writer> = old;
+                old
+            }
+            None => box io::stderr() as Box<Writer>,
+        };
         io::util::copy(&mut p, &mut err).unwrap();
     });
     let emitter = diagnostic::EmitterWriter::new(box w2);

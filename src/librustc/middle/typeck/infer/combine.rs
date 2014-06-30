@@ -57,8 +57,7 @@ use middle::typeck::infer::{ToUres};
 use middle::typeck::infer::glb::Glb;
 use middle::typeck::infer::lub::Lub;
 use middle::typeck::infer::sub::Sub;
-use middle::typeck::infer::to_str::InferStr;
-use middle::typeck::infer::unify::InferCtxtMethods;
+use middle::typeck::infer::unify::InferCtxtMethodsForSimplyUnifiableTypes;
 use middle::typeck::infer::{InferCtxt, cres, ures};
 use middle::typeck::infer::{TypeTrace};
 use util::common::indent;
@@ -85,16 +84,13 @@ pub trait Combine {
     fn tys(&self, a: ty::t, b: ty::t) -> cres<ty::t>;
 
     fn tps(&self,
-           space: subst::ParamSpace,
+           _: subst::ParamSpace,
            as_: &[ty::t],
            bs: &[ty::t])
-           -> cres<Vec<ty::t>>
-    {
-        // FIXME(#5781) -- In general, we treat variance a bit wrong
-        // here. For historical reasons, we treat Self as
-        // contravariant and other tps as invariant. Both are wrong:
-        // Self may or may not be contravariant, and other tps do not
-        // need to be invariant.
+           -> cres<Vec<ty::t>> {
+        // FIXME -- In general, we treat variance a bit wrong
+        // here. For historical reasons, we treat tps and Self
+        // as invariant. This is overly conservative.
 
         if as_.len() != bs.len() {
             return Err(ty::terr_ty_param_size(expected_found(self,
@@ -102,24 +98,11 @@ pub trait Combine {
                                                              bs.len())));
         }
 
-        match space {
-            subst::SelfSpace => {
-                result::fold(as_
-                             .iter()
-                             .zip(bs.iter())
-                             .map(|(a, b)| self.contratys(*a, *b)),
-                             Vec::new(),
-                             |mut v, a| { v.push(a); v })
-            }
-
-            subst::TypeSpace | subst::FnSpace => {
-                try!(result::fold_(as_
-                                  .iter()
-                                  .zip(bs.iter())
-                                  .map(|(a, b)| eq_tys(self, *a, *b))));
-                Ok(Vec::from_slice(as_))
-            }
-        }
+        try!(result::fold_(as_
+                          .iter()
+                          .zip(bs.iter())
+                          .map(|(a, b)| eq_tys(self, *a, *b))));
+        Ok(Vec::from_slice(as_))
     }
 
     fn substs(&self,
@@ -263,7 +246,7 @@ pub trait Combine {
                     a: ty::TraitStore,
                     b: ty::TraitStore)
                     -> cres<ty::TraitStore> {
-        debug!("{}.trait_stores(a={:?}, b={:?})", self.tag(), a, b);
+        debug!("{}.trait_stores(a={}, b={})", self.tag(), a, b);
 
         match (a, b) {
             (ty::RegionTraitStore(a_r, a_m),
@@ -409,8 +392,8 @@ pub fn super_tys<C:Combine>(this: &C, a: ty::t, b: ty::t) -> cres<ty::t> {
         tcx.sess.bug(
             format!("{}: bot and var types should have been handled ({},{})",
                     this.tag(),
-                    a.inf_str(this.infcx()),
-                    b.inf_str(this.infcx())).as_slice());
+                    a.repr(this.infcx().tcx),
+                    b.repr(this.infcx().tcx)).as_slice());
       }
 
         // Relate integral variables to other types

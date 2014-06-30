@@ -8,6 +8,8 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+// no-pretty-expanded FIXME #15189
+
 extern crate debug;
 
 use std::task;

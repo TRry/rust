@@ -16,7 +16,7 @@ use lib::llvm::{Float, Double, X86_FP80, PPC_FP128, FP128};
 use middle::trans::context::CrateContext;
 
 use syntax::ast;
-use syntax::abi::{X86, X86_64, Arm, Mips};
+use syntax::abi::{X86, X86_64, Arm, Mips, Mipsel};
 
 use std::c_str::ToCStr;
 use std::mem;
@@ -88,10 +88,6 @@ impl Type {
         ty!(llvm::LLVMDoubleTypeInContext(ccx.llcx))
     }
 
-    pub fn f128(ccx: &CrateContext) -> Type {
-        ty!(llvm::LLVMFP128TypeInContext(ccx.llcx))
-    }
-
     pub fn bool(ccx: &CrateContext) -> Type {
         Type::i1(ccx)
     }
@@ -106,7 +102,7 @@ impl Type {
 
     pub fn int(ccx: &CrateContext) -> Type {
         match ccx.tcx.sess.targ_cfg.arch {
-            X86 | Arm | Mips => Type::i32(ccx),
+            X86 | Arm | Mips | Mipsel => Type::i32(ccx),
             X86_64 => Type::i64(ccx)
         }
     }
@@ -135,7 +131,6 @@ impl Type {
         match t {
             ast::TyF32 => Type::f32(ccx),
             ast::TyF64 => Type::f64(ccx),
-            ast::TyF128 => Type::f128(ccx)
         }
     }
 
