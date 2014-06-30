@@ -8,31 +8,23 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// aux-build:lang-item-public.rs
-// ignore-android
-// ignore-win32 #13361
+// Issue #5781. Tests that subtyping is handled properly in trait matching.
 
-#![no_std]
-
-extern crate lang_lib = "lang-item-public";
-
-#[cfg(target_os = "linux")]
-#[link(name = "c")]
-extern {}
-
-#[cfg(target_os = "android")]
-#[link(name = "c")]
-extern {}
-
-#[cfg(target_os = "freebsd")]
-#[link(name = "execinfo")]
-extern {}
-
-#[cfg(target_os = "macos")]
-#[link(name = "System")]
-extern {}
-
-#[start]
-fn main(_: int, _: *const *const u8) -> int {
-    1 % 1
+trait Make<'a> {
+    fn make(x: &'a mut int) -> Self;
 }
+
+impl<'a> Make<'a> for &'a mut int {
+    fn make(x: &'a mut int) -> &'a mut int {
+        x
+    }
+}
+
+fn f() -> &'static mut int {
+    let mut x = 1;
+    let y: &'static mut int = Make::make(&mut x);   //~ ERROR `x` does not live long enough
+    y
+}
+
+fn main() {}
+
