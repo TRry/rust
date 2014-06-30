@@ -531,7 +531,7 @@ fn spawn_process_os(cfg: ProcessConfig,
         assert_eq!(ret, 0);
     }
 
-    let dirp = cfg.cwd.map(|c| c.with_ref(|p| p)).unwrap_or(ptr::null());
+    let dirp = cfg.cwd.map(|c| c.as_ptr()).unwrap_or(ptr::null());
 
     let cfg = unsafe {
         mem::transmute::<ProcessConfig,ProcessConfig<'static>>(cfg)
@@ -633,7 +633,7 @@ fn spawn_process_os(cfg: ProcessConfig,
                         } else {
                             libc::O_RDWR
                         };
-                        devnull.with_ref(|p| libc::open(p, flags, 0))
+                        libc::open(devnull.as_ptr(), flags, 0)
                     }
                     Some(obj) => {
                         let fd = obj.fd();
@@ -715,8 +715,8 @@ fn with_argv<T>(prog: &CString, args: &[CString],
     // larger than the lifetime of our invocation of cb, but this is
     // technically unsafe as the callback could leak these pointers
     // out of our scope.
-    ptrs.push(prog.with_ref(|buf| buf));
-    ptrs.extend(args.iter().map(|tmp| tmp.with_ref(|buf| buf)));
+    ptrs.push(prog.as_ptr());
+    ptrs.extend(args.iter().map(|tmp| tmp.as_ptr()));
 
     // Add a terminating null pointer (required by libc).
     ptrs.push(ptr::null());
@@ -1136,7 +1136,7 @@ fn waitpid(pid: pid_t, deadline: u64) -> IoResult<rtio::ProcessExit> {
     // which will wake up the other end at some point, so we just allow this
     // signal to be coalesced with the pending signals on the pipe.
     extern fn sigchld_handler(_signum: libc::c_int) {
-        let msg = 1;
+        let msg = 1i;
         match unsafe {
             libc::write(WRITE_FD, &msg as *const _ as *const libc::c_void, 1)
         } {
