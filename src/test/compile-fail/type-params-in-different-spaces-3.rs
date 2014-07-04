@@ -8,7 +8,11 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// no-prefer-dynamic
+trait Tr {
+    fn test<X>(u: X) -> Self {
+        u   //~ ERROR mismatched types
+    }
+}
 
-#![crate_id = "url#0.11.0"]
-#![crate_type = "rlib"]
+fn main() {}
+

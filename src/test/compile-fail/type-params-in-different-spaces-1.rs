@@ -8,7 +8,18 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// no-prefer-dynamic
+use std::num::Num;
 
-#![crate_id = "url#0.11.0"]
-#![crate_type = "rlib"]
+trait BrokenAdd: Num {
+    fn broken_add<T>(&self, rhs: T) -> Self {
+        *self + rhs //~ ERROR mismatched types
+    }
+}
+
+impl<T: Num> BrokenAdd for T {}
+
+pub fn main() {
+    let foo: u8 = 0u8;
+    let x: u8 = foo.broken_add("hello darkness my old friend".to_string());
+    println!("{}", x);
+}

@@ -1079,7 +1079,7 @@ pub enum Primitive {
     F32, F64,
     Char,
     Bool,
-    Nil,
+    Unit,
     Str,
     Slice,
     PrimitiveTuple,
@@ -1110,7 +1110,7 @@ impl Primitive {
             "u32" => Some(U32),
             "u64" => Some(U64),
             "bool" => Some(Bool),
-            "nil" => Some(Nil),
+            "unit" => Some(Unit),
             "char" => Some(Char),
             "str" => Some(Str),
             "f32" => Some(F32),
@@ -1159,7 +1159,7 @@ impl Primitive {
             Str => "str",
             Bool => "bool",
             Char => "char",
-            Nil => "()",
+            Unit => "()",
             Slice => "slice",
             PrimitiveTuple => "tuple",
         }
@@ -1167,7 +1167,7 @@ impl Primitive {
 
     pub fn to_url_str(&self) -> &'static str {
         match *self {
-            Nil => "nil",
+            Unit => "unit",
             other => other.to_str(),
         }
     }
@@ -1184,7 +1184,7 @@ impl Clean<Type> for ast::Ty {
     fn clean(&self) -> Type {
         use syntax::ast::*;
         match self.node {
-            TyNil => Primitive(Nil),
+            TyNil => Primitive(Unit),
             TyPtr(ref m) => RawPointer(m.mutbl.clean(), box m.ty.clean()),
             TyRptr(ref l, ref m) =>
                 BorrowedRef {lifetime: l.clean(), mutability: m.mutbl.clean(),
@@ -1214,7 +1214,7 @@ impl Clean<Type> for ty::t {
     fn clean(&self) -> Type {
         match ty::get(*self).sty {
             ty::ty_bot => Bottom,
-            ty::ty_nil => Primitive(Nil),
+            ty::ty_nil => Primitive(Unit),
             ty::ty_bool => Primitive(Bool),
             ty::ty_char => Primitive(Char),
             ty::ty_int(ast::TyI) => Primitive(Int),
@@ -1583,8 +1583,6 @@ impl Clean<PathSegment> for ast::PathSegment {
 }
 
 fn path_to_str(p: &ast::Path) -> String {
-    use syntax::parse::token;
-
     let mut s = String::new();
     let mut first = true;
     for i in p.segments.iter().map(|x| token::get_ident(x.identifier)) {
@@ -1739,7 +1737,7 @@ pub struct ViewItem {
 
 impl Clean<Vec<Item>> for ast::ViewItem {
     fn clean(&self) -> Vec<Item> {
-        // We consider inlining the documentation of `pub use` statments, but we
+        // We consider inlining the documentation of `pub use` statements, but we
         // forcefully don't inline if this is not public or if the
         // #[doc(no_inline)] attribute is present.
         let denied = self.vis != ast::Public || self.attrs.iter().any(|a| {
@@ -1953,7 +1951,7 @@ fn name_from_pat(p: &ast::Pat) -> String {
     match p.node {
         PatWild => "_".to_string(),
         PatWildMulti => "..".to_string(),
-        PatIdent(_, ref p, _) => path_to_str(p),
+        PatIdent(_, ref p, _) => token::get_ident(p.node).get().to_string(),
         PatEnum(ref p, _) => path_to_str(p),
         PatStruct(..) => fail!("tried to get argument name from pat_struct, \
                                 which is not allowed in function arguments"),

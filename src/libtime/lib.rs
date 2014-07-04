@@ -10,7 +10,7 @@
 
 //! Simple time handling.
 
-#![crate_id = "time#0.11.0-pre"]
+#![crate_id = "time#0.11.0"]
 #![experimental]
 
 #![crate_type = "rlib"]
@@ -18,7 +18,7 @@
 #![license = "MIT/ASL2"]
 #![doc(html_logo_url = "http://www.rust-lang.org/logos/rust-logo-128x128-blk-v2.png",
        html_favicon_url = "http://www.rust-lang.org/favicon.ico",
-       html_root_url = "http://doc.rust-lang.org/",
+       html_root_url = "http://doc.rust-lang.org/0.11.0/",
        html_playground_url = "http://play.rust-lang.org/")]
 #![feature(phase)]
 
@@ -330,7 +330,7 @@ impl Tm {
      * Returns a time string formatted according to RFC 822.
      *
      * local: "Thu, 22 Mar 2012 07:53:18 PST"
-     * utc:   "Thu, 22 Mar 2012 14:53:18 UTC"
+     * utc:   "Thu, 22 Mar 2012 14:53:18 GMT"
      */
     pub fn rfc822(&self) -> String {
         if self.tm_gmtoff == 0_i32 {
@@ -351,7 +351,8 @@ impl Tm {
     }
 
     /**
-     * Returns a time string formatted according to ISO 8601.
+     * Returns a time string formatted according to RFC 3999. RFC 3999 is
+     * compatible with ISO 8601.
      *
      * local: "2012-02-22T07:53:18-07:00"
      * utc:   "2012-02-22T14:53:18Z"

@@ -8,7 +8,27 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// no-prefer-dynamic
+// We only want to assert that this doesn't ICE, we don't particularly care
+// about whether it nor it fails to compile.
 
-#![crate_id = "url#0.11.0"]
-#![crate_type = "rlib"]
+// error-pattern:
+
+#![feature(macro_rules)]
+
+macro_rules! foo{
+    () => {{
+        macro_rules! bar{() => (())}
+        1
+    }}
+}
+
+pub fn main() {
+    foo!();
+
+    assert!({one! two()});
+
+    // regardless of whether nested macro_rules works, the following should at
+    // least throw a conventional error.
+    assert!({one! two});
+}
+
