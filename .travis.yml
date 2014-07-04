@@ -13,7 +13,7 @@ install:
   
 # Configure for device and simulator build
 before_script:
-  - ./configure --disable-optimize-tests --enable-fast-make --target=$TEST_TARGET --disable-debug --disable-docs --llvm-root=`pwd`/local-llvm --disable-verify-install
+  - ./configure --disable-optimize-tests --enable-fast-make --target=arm-apple-ios,i386-apple-ios --disable-debug --disable-docs --llvm-root=`pwd`/local-llvm --disable-verify-install
 
 # Just test if compile with arm-apple-ios and i386-apple-ios
 # finishes. Unfortunately there is no way to check if it actually
@@ -25,9 +25,9 @@ script:
 env:
   global:
     - NO_BENCH=1
-  matrix:
-    - TEST_TARGET=arm-apple-ios
-    - TEST_TARGET=i386-apple-ios
+#matrix:
+#    - TEST_TARGET=arm-apple-ios
+#    - TEST_TARGET=i386-apple-ios
 
 # We track this ourselves, and in theory we don't have to update the LLVM repo
 # (but sadly we do right now anyway).
