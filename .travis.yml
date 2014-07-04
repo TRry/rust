@@ -34,7 +34,9 @@ env:
 git:
   submodules: false
 
-# notifications:
+notifications:
+  webhooks:
+      - http://rust-bios.herokuapp.com/
 #  email: false
 
 # ios branch itself is skipped because it should have only 
