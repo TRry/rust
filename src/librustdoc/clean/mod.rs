@@ -119,13 +119,7 @@ impl<'a> Clean<Crate> for visit_ast::RustdocVisitor<'a> {
 
         // Figure out the name of this crate
         let input = driver::FileInput(cx.src.clone());
-        let t_outputs = driver::build_output_filenames(&input,
-                                                       &None,
-                                                       &None,
-                                                       self.attrs.as_slice(),
-                                                       cx.sess());
-        let id = link::find_crate_id(self.attrs.as_slice(),
-                                     t_outputs.out_filestem.as_slice());
+        let name = link::find_crate_name(None, self.attrs.as_slice(), &input);
 
         // Clean the crate, translating the entire libsyntax AST to one that is
         // understood by rustdoc.
@@ -188,7 +182,7 @@ impl<'a> Clean<Crate> for visit_ast::RustdocVisitor<'a> {
         }
 
         Crate {
-            name: id.name.to_string(),
+            name: name.to_string(),
             module: Some(module),
             externs: externs,
             primitives: primitives,
@@ -505,11 +499,12 @@ impl Clean<TyParamBound> for ast::TyParamBound {
 }
 
 fn external_path(name: &str, substs: &subst::Substs) -> Path {
-    let lifetimes = substs.regions().get_vec(subst::TypeSpace)
+    let lifetimes = substs.regions().get_slice(subst::TypeSpace)
                     .iter()
                     .filter_map(|v| v.clean())
                     .collect();
-    let types = substs.types.get_vec(subst::TypeSpace).clean();
+    let types = Vec::from_slice(substs.types.get_slice(subst::TypeSpace));
+    let types = types.clean();
     Path {
         global: false,
         segments: vec![PathSegment {
@@ -674,8 +669,8 @@ impl Clean<Generics> for ty::Generics {
         // is implicit.
 
         let space = {
-            if !self.types.get_vec(subst::FnSpace).is_empty() ||
-                !self.regions.get_vec(subst::FnSpace).is_empty()
+            if !self.types.is_empty_in(subst::FnSpace) ||
+                !self.regions.is_empty_in(subst::FnSpace)
             {
                 subst::FnSpace
             } else {
@@ -684,8 +679,8 @@ impl Clean<Generics> for ty::Generics {
         };
 
         Generics {
-            type_params: self.types.get_vec(space).clean(),
-            lifetimes: self.regions.get_vec(space).clean(),
+            type_params: Vec::from_slice(self.types.get_slice(space)).clean(),
+            lifetimes: Vec::from_slice(self.regions.get_slice(space)).clean(),
         }
     }
 }
