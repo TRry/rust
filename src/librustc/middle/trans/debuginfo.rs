@@ -554,7 +554,7 @@ impl TypeMap {
 
             // Maybe check that there is no self type here.
 
-            let tps = substs.types.get_vec(subst::TypeSpace);
+            let tps = substs.types.get_slice(subst::TypeSpace);
             if tps.len() > 0 {
                 output.push_char('<');
 
@@ -1377,9 +1377,9 @@ pub fn create_function_debug_context(cx: &CrateContext,
         }
 
         // Handle other generic parameters
-        let actual_types = param_substs.substs.types.get_vec(subst::FnSpace);
+        let actual_types = param_substs.substs.types.get_slice(subst::FnSpace);
         for (index, &ast::TyParam{ ident: ident, .. }) in generics.ty_params.iter().enumerate() {
-            let actual_type = *actual_types.get(index);
+            let actual_type = actual_types[index];
             // Add actual type name to <...> clause of function name
             let actual_type_name = compute_debuginfo_type_name(cx,
                                                                actual_type,
@@ -1496,7 +1496,7 @@ fn compile_unit_metadata(cx: &CrateContext) {
     });
 
     fn fallback_path(cx: &CrateContext) -> CString {
-        cx.link_meta.crateid.name.as_slice().to_c_str()
+        cx.link_meta.crate_name.as_slice().to_c_str()
     }
 }
 
@@ -3972,7 +3972,7 @@ impl NamespaceTreeNode {
 }
 
 fn crate_root_namespace<'a>(cx: &'a CrateContext) -> &'a str {
-    cx.link_meta.crateid.name.as_slice()
+    cx.link_meta.crate_name.as_slice()
 }
 
 fn namespace_for_item(cx: &CrateContext, def_id: ast::DefId) -> Rc<NamespaceTreeNode> {

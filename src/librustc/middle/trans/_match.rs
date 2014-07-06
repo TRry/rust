@@ -206,7 +206,6 @@ use middle::trans::cleanup::CleanupMethods;
 use middle::trans::common::*;
 use middle::trans::consts;
 use middle::trans::controlflow;
-use middle::trans::datum;
 use middle::trans::datum::*;
 use middle::trans::expr::Dest;
 use middle::trans::expr;
@@ -227,10 +226,8 @@ use syntax::ast::Ident;
 use syntax::codemap::Span;
 use syntax::parse::token::InternedString;
 
-// An option identifying a literal: either a unit-like struct or an
-// expression.
+// An option identifying a literal: either an expression or a DefId of a static expression.
 enum Lit {
-    UnitLikeStructLit(ast::NodeId),    // the node ID of the pattern
     ExprLit(Gc<ast::Expr>),
     ConstLit(ast::DefId),              // the def ID of the constant
 }
@@ -253,14 +250,12 @@ enum Opt {
 fn lit_to_expr(tcx: &ty::ctxt, a: &Lit) -> Gc<ast::Expr> {
     match *a {
         ExprLit(existing_a_expr) => existing_a_expr,
-        ConstLit(a_const) => const_eval::lookup_const_by_id(tcx, a_const).unwrap(),
-        UnitLikeStructLit(_) => fail!("lit_to_expr: unexpected struct lit"),
+        ConstLit(a_const) => const_eval::lookup_const_by_id(tcx, a_const).unwrap()
     }
 }
 
 fn opt_eq(tcx: &ty::ctxt, a: &Opt, b: &Opt) -> bool {
     match (a, b) {
-        (&lit(UnitLikeStructLit(a)), &lit(UnitLikeStructLit(b))) => a == b,
         (&lit(a), &lit(b)) => {
             let a_expr = lit_to_expr(tcx, &a);
             let b_expr = lit_to_expr(tcx, &b);
@@ -301,11 +296,6 @@ fn trans_opt<'a>(bcx: &'a Block<'a>, o: &Opt) -> opt_result<'a> {
             let lit_datum = unpack_datum!(bcx, lit_datum.to_appropriate_datum(bcx));
             return single_result(Result::new(bcx, lit_datum.val));
         }
-        lit(UnitLikeStructLit(pat_id)) => {
-            let struct_ty = ty::node_id_to_type(bcx.tcx(), pat_id);
-            let datum = datum::rvalue_scratch_datum(bcx, struct_ty, "");
-            return single_result(Result::new(bcx, datum.val));
-        }
         lit(l @ ConstLit(ref def_id)) => {
             let lit_ty = ty::node_id_to_type(bcx.tcx(), lit_to_expr(bcx.tcx(), &l).id);
             let (llval, _) = consts::get_const_val(bcx.ccx(), *def_id);
@@ -337,9 +327,6 @@ fn variant_opt(bcx: &Block, pat_id: ast::NodeId) -> Opt {
         def::DefVariant(enum_id, var_id, _) => {
             let variant = ty::enum_variant_with_id(ccx.tcx(), enum_id, var_id);
             var(variant.disr_val, adt::represent_node(bcx, pat_id), var_id)
-        }
-        def::DefFn(..) | def::DefStruct(_) => {
-            lit(UnitLikeStructLit(pat_id))
         }
         _ => {
             ccx.sess().bug("non-variant or struct in variant_opt()");
@@ -559,7 +546,6 @@ fn enter_opt<'a, 'b>(
     let _indenter = indenter();
 
     let ctor = match opt {
-        &lit(UnitLikeStructLit(_)) => check_match::Single,
         &lit(x) => check_match::ConstantValue(const_eval::eval_const_expr(
             bcx.tcx(), lit_to_expr(bcx.tcx(), &x))),
         &range(ref lo, ref hi) => check_match::ConstantRange(
@@ -664,11 +650,10 @@ fn get_options(bcx: &Block, m: &[Match], col: uint) -> Vec<Opt> {
                 add_to_set(ccx.tcx(), &mut found, lit(ExprLit(l)));
             }
             ast::PatIdent(..) => {
-                // This is one of: an enum variant, a unit-like struct, or a
-                // variable binding.
+                // This is either an enum variant or a variable binding.
                 let opt_def = ccx.tcx.def_map.borrow().find_copy(&cur.id);
                 match opt_def {
-                    Some(def::DefVariant(..)) | Some(def::DefStruct(..)) => {
+                    Some(def::DefVariant(..)) => {
                         add_to_set(ccx.tcx(), &mut found,
                                    variant_opt(bcx, cur.id));
                     }
@@ -796,9 +781,9 @@ fn extract_vec_elems<'a>(
 // matches should fit that sort of pattern or NONE (however, some of the
 // matches may be wildcards like _ or identifiers).
 macro_rules! any_pat (
-    ($m:expr, $pattern:pat) => (
+    ($m:expr, $col:expr, $pattern:pat) => (
         ($m).iter().any(|br| {
-            match br.pats.get(col).node {
+            match br.pats.get($col).node {
                 $pattern => true,
                 _ => false
             }
@@ -807,11 +792,11 @@ macro_rules! any_pat (
 )
 
 fn any_uniq_pat(m: &[Match], col: uint) -> bool {
-    any_pat!(m, ast::PatBox(_))
+    any_pat!(m, col, ast::PatBox(_))
 }
 
 fn any_region_pat(m: &[Match], col: uint) -> bool {
-    any_pat!(m, ast::PatRegion(_))
+    any_pat!(m, col, ast::PatRegion(_))
 }
 
 fn any_irrefutable_adt_pat(bcx: &Block, m: &[Match], col: uint) -> bool {
@@ -819,7 +804,7 @@ fn any_irrefutable_adt_pat(bcx: &Block, m: &[Match], col: uint) -> bool {
         let pat = *br.pats.get(col);
         match pat.node {
             ast::PatTup(_) => true,
-            ast::PatStruct(_, _, _) | ast::PatEnum(_, _) =>
+            ast::PatEnum(..) | ast::PatIdent(_, _, None) | ast::PatStruct(..) =>
                 match bcx.tcx().def_map.borrow().find(&pat.id) {
                     Some(&def::DefFn(..)) |
                     Some(&def::DefStruct(..)) => true,
@@ -962,8 +947,8 @@ fn compare_values<'a>(
     }
 }
 
-fn insert_lllocals<'a>(mut bcx: &'a Block<'a>,
-                       bindings_map: &BindingsMap)
+fn insert_lllocals<'a>(mut bcx: &'a Block<'a>, bindings_map: &BindingsMap,
+                       cs: Option<cleanup::ScopeId>)
                        -> &'a Block<'a> {
     /*!
      * For each binding in `data.bindings_map`, adds an appropriate entry into
@@ -990,6 +975,10 @@ fn insert_lllocals<'a>(mut bcx: &'a Block<'a>,
         };
 
         let datum = Datum::new(llval, binding_info.ty, Lvalue);
+        match cs {
+            Some(cs) => bcx.fcx.schedule_drop_and_zero_mem(cs, llval, binding_info.ty),
+            _ => {}
+        }
 
         debug!("binding {:?} to {}",
                binding_info.id,
@@ -1021,7 +1010,7 @@ fn compile_guard<'a, 'b>(
            vec_map_to_str(vals, |v| bcx.val_to_str(*v)));
     let _indenter = indenter();
 
-    let mut bcx = insert_lllocals(bcx, &data.bindings_map);
+    let mut bcx = insert_lllocals(bcx, &data.bindings_map, None);
 
     let val = unpack_datum!(bcx, expr::trans(bcx, guard_expr));
     let val = val.to_llbool(bcx);
@@ -1475,9 +1464,11 @@ fn trans_match_inner<'a>(scope_cx: &'a Block<'a>,
     for arm_data in arm_datas.iter() {
         let mut bcx = arm_data.bodycx;
 
-        // insert bindings into the lllocals map
-        bcx = insert_lllocals(bcx, &arm_data.bindings_map);
+        // insert bindings into the lllocals map and add cleanups
+        let cs = fcx.push_custom_cleanup_scope();
+        bcx = insert_lllocals(bcx, &arm_data.bindings_map, Some(cleanup::CustomScope(cs)));
         bcx = expr::trans_into(bcx, &*arm_data.arm.body, dest);
+        bcx = fcx.pop_and_trans_custom_cleanup_scope(bcx, cs);
         arm_cxs.push(bcx);
     }
 
