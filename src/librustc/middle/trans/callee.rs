@@ -277,10 +277,9 @@ pub fn trans_unboxing_shim(bcx: &Block,
                           &empty_param_substs,
                           None,
                           &block_arena);
-    init_function(&fcx, false, return_type);
+    let mut bcx = init_function(&fcx, false, return_type);
 
     // Create the substituted versions of the self type.
-    let mut bcx = fcx.entry_bcx.borrow().clone().unwrap();
     let arg_scope = fcx.push_custom_cleanup_scope();
     let arg_scope_id = cleanup::CustomScope(arg_scope);
     let boxed_arg_types = ty::ty_fn_args(boxed_function_type);
@@ -346,7 +345,7 @@ pub fn trans_unboxing_shim(bcx: &Block,
                            }).bcx;
 
     bcx = fcx.pop_and_trans_custom_cleanup_scope(bcx, arg_scope);
-    finish_fn(&fcx, bcx);
+    finish_fn(&fcx, bcx, return_type);
 
     llfn
 }
@@ -758,7 +757,7 @@ pub fn trans_call_inner<'a>(
                 if !type_of::return_uses_outptr(bcx.ccx(), ret_ty) &&
                     !type_is_zero_size(bcx.ccx(), ret_ty)
                 {
-                    Store(bcx, llret, llretslot);
+                    store_ty(bcx, llret, llretslot, ret_ty)
                 }
             }
             None => {}

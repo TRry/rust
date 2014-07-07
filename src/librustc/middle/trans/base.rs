@@ -538,8 +538,8 @@ pub fn compare_scalar_values<'a>(
         // We don't need to do actual comparisons for nil.
         // () == () holds but () < () does not.
         match op {
-          ast::BiEq | ast::BiLe | ast::BiGe => return C_i1(cx.ccx(), true),
-          ast::BiNe | ast::BiLt | ast::BiGt => return C_i1(cx.ccx(), false),
+          ast::BiEq | ast::BiLe | ast::BiGe => return C_bool(cx.ccx(), true),
+          ast::BiNe | ast::BiLt | ast::BiGt => return C_bool(cx.ccx(), false),
           // refinements would be nice
           _ => die(cx)
         }
@@ -958,8 +958,40 @@ pub fn need_invoke(bcx: &Block) -> bool {
 
 pub fn load_if_immediate(cx: &Block, v: ValueRef, t: ty::t) -> ValueRef {
     let _icx = push_ctxt("load_if_immediate");
-    if type_is_immediate(cx.ccx(), t) { return Load(cx, v); }
+    if type_is_immediate(cx.ccx(), t) { return load_ty(cx, v, t); }
     return v;
+}
+
+pub fn load_ty(cx: &Block, ptr: ValueRef, t: ty::t) -> ValueRef {
+    /*!
+     * Helper for loading values from memory. Does the necessary conversion if
+     * the in-memory type differs from the type used for SSA values. Also
+     * handles various special cases where the type gives us better information
+     * about what we are loading.
+     */
+    if type_is_zero_size(cx.ccx(), t) {
+        C_undef(type_of::type_of(cx.ccx(), t))
+    } else if ty::type_is_bool(t) {
+        Trunc(cx, LoadRangeAssert(cx, ptr, 0, 2, lib::llvm::False), Type::i1(cx.ccx()))
+    } else if ty::type_is_char(t) {
+        // a char is a unicode codepoint, and so takes values from 0
+        // to 0x10FFFF inclusive only.
+        LoadRangeAssert(cx, ptr, 0, 0x10FFFF + 1, lib::llvm::False)
+    } else {
+        Load(cx, ptr)
+    }
+}
+
+pub fn store_ty(cx: &Block, v: ValueRef, dst: ValueRef, t: ty::t) {
+    /*!
+     * Helper for storing values in memory. Does the necessary conversion if
+     * the in-memory type differs from the type used for SSA values.
+     */
+    if ty::type_is_bool(t) {
+        Store(cx, ZExt(cx, v, Type::i8(cx.ccx())), dst);
+    } else {
+        Store(cx, v, dst);
+    };
 }
 
 pub fn ignore_lhs(_bcx: &Block, local: &ast::Local) -> bool {
@@ -1013,7 +1045,7 @@ pub fn call_memcpy(cx: &Block, dst: ValueRef, src: ValueRef, n_bytes: ValueRef, 
     let dst_ptr = PointerCast(cx, dst, Type::i8p(ccx));
     let size = IntCast(cx, n_bytes, ccx.int_type);
     let align = C_i32(ccx, align as i32);
-    let volatile = C_i1(ccx, false);
+    let volatile = C_bool(ccx, false);
     Call(cx, memcpy, [dst_ptr, src_ptr, size, align, volatile], []);
 }
 
@@ -1058,7 +1090,7 @@ fn memzero(b: &Builder, llptr: ValueRef, ty: Type) {
     let llzeroval = C_u8(ccx, 0);
     let size = machine::llsize_of(ccx, ty);
     let align = C_i32(ccx, llalign_of_min(ccx, ty) as i32);
-    let volatile = C_i1(ccx, false);
+    let volatile = C_bool(ccx, false);
     b.call(llintrinsicfn, [llptr, llzeroval, size, align, volatile], []);
 }
 
@@ -1112,8 +1144,7 @@ pub fn make_return_pointer(fcx: &FunctionContext, output_type: ty::t)
             llvm::LLVMGetParam(fcx.llfn, 0)
         } else {
             let lloutputtype = type_of::type_of(fcx.ccx, output_type);
-            let bcx = fcx.entry_bcx.borrow().clone().unwrap();
-            Alloca(bcx, lloutputtype, "__make_return_pointer")
+            AllocaFcx(fcx, lloutputtype, "__make_return_pointer")
         }
     }
 }
@@ -1154,7 +1185,6 @@ pub fn new_fn_ctxt<'a>(ccx: &'a CrateContext,
           llfn: llfndecl,
           llenv: None,
           llretptr: Cell::new(None),
-          entry_bcx: RefCell::new(None),
           alloca_insert_pt: Cell::new(None),
           llreturn: Cell::new(None),
           personality: Cell::new(None),
@@ -1184,10 +1214,8 @@ pub fn new_fn_ctxt<'a>(ccx: &'a CrateContext,
 /// and allocating space for the return pointer.
 pub fn init_function<'a>(fcx: &'a FunctionContext<'a>,
                          skip_retptr: bool,
-                         output_type: ty::t) {
+                         output_type: ty::t) -> &'a Block<'a> {
     let entry_bcx = fcx.new_temp_block("entry-block");
-
-    *fcx.entry_bcx.borrow_mut() = Some(entry_bcx);
 
     // Use a dummy instruction as the insertion point for all allocas.
     // This is later removed in FunctionContext::cleanup.
@@ -1210,6 +1238,8 @@ pub fn init_function<'a>(fcx: &'a FunctionContext<'a>,
             fcx.llretptr.set(Some(make_return_pointer(fcx, substd_output_type)));
         }
     }
+
+    entry_bcx
 }
 
 // NB: must keep 4 fns in sync:
@@ -1284,8 +1314,13 @@ fn copy_args_to_allocas<'a>(fcx: &FunctionContext<'a>,
 // Ties up the llstaticallocas -> llloadenv -> lltop edges,
 // and builds the return block.
 pub fn finish_fn<'a>(fcx: &'a FunctionContext<'a>,
-                     last_bcx: &'a Block<'a>) {
+                     last_bcx: &'a Block<'a>,
+                     retty: ty::t) {
     let _icx = push_ctxt("finish_fn");
+
+    // This shouldn't need to recompute the return type,
+    // as new_fn_ctxt did it already.
+    let substd_retty = retty.substp(fcx.ccx.tcx(), fcx.param_substs);
 
     let ret_cx = match fcx.llreturn.get() {
         Some(llreturn) => {
@@ -1296,13 +1331,13 @@ pub fn finish_fn<'a>(fcx: &'a FunctionContext<'a>,
         }
         None => last_bcx
     };
-    build_return_block(fcx, ret_cx);
+    build_return_block(fcx, ret_cx, substd_retty);
     debuginfo::clear_source_location(fcx);
     fcx.cleanup();
 }
 
 // Builds the return block for a function.
-pub fn build_return_block(fcx: &FunctionContext, ret_cx: &Block) {
+pub fn build_return_block(fcx: &FunctionContext, ret_cx: &Block, retty: ty::t) {
     // Return the value if this function immediate; otherwise, return void.
     if fcx.llretptr.get().is_none() || fcx.caller_expects_out_pointer {
         return RetVoid(ret_cx);
@@ -1320,12 +1355,15 @@ pub fn build_return_block(fcx: &FunctionContext, ret_cx: &Block) {
                 retptr.erase_from_parent();
             }
 
-            retval
+            if ty::type_is_bool(retty) {
+                Trunc(ret_cx, retval, Type::i1(fcx.ccx))
+            } else {
+                retval
+            }
         }
         // Otherwise, load the return value from the ret slot
-        None => Load(ret_cx, fcx.llretptr.get().unwrap())
+        None => load_ty(ret_cx, fcx.llretptr.get().unwrap(), retty)
     };
-
 
     Ret(ret_cx, retval);
 }
@@ -1364,15 +1402,11 @@ pub fn trans_closure(ccx: &CrateContext,
                           param_substs,
                           Some(body.span),
                           &arena);
-    init_function(&fcx, false, output_type);
+    let mut bcx = init_function(&fcx, false, output_type);
 
     // cleanup scope for the incoming arguments
     let arg_scope = fcx.push_custom_cleanup_scope();
 
-    // Create the first basic block in the function and keep a handle on it to
-    //  pass to finish_fn later.
-    let bcx_top = fcx.entry_bcx.borrow().clone().unwrap();
-    let mut bcx = bcx_top;
     let block_ty = node_id_type(bcx, body.id);
 
     // Set up arguments to the function.
@@ -1428,7 +1462,7 @@ pub fn trans_closure(ccx: &CrateContext,
     }
 
     // Insert the mandatory first few basic blocks before lltop.
-    finish_fn(&fcx, bcx);
+    finish_fn(&fcx, bcx, output_type);
 }
 
 // trans_fn: creates an LLVM function corresponding to a source language
@@ -1499,13 +1533,11 @@ fn trans_enum_variant_or_tuple_like_struct(ccx: &CrateContext,
     let arena = TypedArena::new();
     let fcx = new_fn_ctxt(ccx, llfndecl, ctor_id, false, result_ty,
                           param_substs, None, &arena);
-    init_function(&fcx, false, result_ty);
+    let bcx = init_function(&fcx, false, result_ty);
 
     let arg_tys = ty::ty_fn_args(ctor_ty);
 
     let arg_datums = create_datums_for_fn_args(&fcx, arg_tys.as_slice());
-
-    let bcx = fcx.entry_bcx.borrow().clone().unwrap();
 
     if !type_is_zero_size(fcx.ccx, result_ty) {
         let repr = adt::represent_type(ccx, result_ty);
@@ -1520,7 +1552,7 @@ fn trans_enum_variant_or_tuple_like_struct(ccx: &CrateContext,
         }
     }
 
-    finish_fn(&fcx, bcx);
+    finish_fn(&fcx, bcx, result_ty);
 }
 
 fn trans_enum_def(ccx: &CrateContext, enum_definition: &ast::EnumDef,
