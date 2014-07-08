@@ -1629,6 +1629,76 @@ fn try_overloaded_deref(fcx: &FnCtxt,
     }
 }
 
+fn try_overloaded_index(fcx: &FnCtxt,
+                        method_call: Option<MethodCall>,
+                        expr: &ast::Expr,
+                        base_expr: Gc<ast::Expr>,
+                        base_ty: ty::t,
+                        index_expr: Gc<ast::Expr>,
+                        lvalue_pref: LvaluePreference)
+                        -> Option<ty::mt> {
+    // Try `IndexMut` first, if preferred.
+    let method = match (lvalue_pref, fcx.tcx().lang_items.index_mut_trait()) {
+        (PreferMutLvalue, Some(trait_did)) => {
+            method::lookup_in_trait(fcx,
+                                    expr.span,
+                                    Some(&*base_expr),
+                                    token::intern("index_mut"),
+                                    trait_did,
+                                    base_ty,
+                                    [],
+                                    DontAutoderefReceiver,
+                                    IgnoreStaticMethods)
+        }
+        _ => None,
+    };
+
+    // Otherwise, fall back to `Index`.
+    let method = match (method, fcx.tcx().lang_items.index_trait()) {
+        (None, Some(trait_did)) => {
+            method::lookup_in_trait(fcx,
+                                    expr.span,
+                                    Some(&*base_expr),
+                                    token::intern("index"),
+                                    trait_did,
+                                    base_ty,
+                                    [],
+                                    DontAutoderefReceiver,
+                                    IgnoreStaticMethods)
+        }
+        (method, _) => method,
+    };
+
+    // Regardless of whether the lookup succeeds, check the method arguments
+    // so that we have *some* type for each argument.
+    let method_type = match method {
+        Some(ref method) => method.ty,
+        None => ty::mk_err()
+    };
+    check_method_argument_types(fcx,
+                                expr.span,
+                                method_type,
+                                expr,
+                                [base_expr, index_expr],
+                                DoDerefArgs,
+                                DontTupleArguments);
+
+    match method {
+        Some(method) => {
+            let ref_ty = ty::ty_fn_ret(method.ty);
+            match method_call {
+                Some(method_call) => {
+                    fcx.inh.method_map.borrow_mut().insert(method_call,
+                                                           method);
+                }
+                None => {}
+            }
+            ty::deref(ref_ty, true)
+        }
+        None => None,
+    }
+}
+
 fn check_method_argument_types(fcx: &FnCtxt,
                                sp: Span,
                                method_fn_ty: ty::t,
@@ -3296,17 +3366,34 @@ fn check_expr_with_unifier(fcx: &FnCtxt,
         // Resolve the path.
         let def = tcx.def_map.borrow().find(&id).map(|i| *i);
         match def {
-            Some(def::DefStruct(type_def_id)) => {
-                check_struct_constructor(fcx, id, expr.span, type_def_id,
-                                         fields.as_slice(), base_expr);
-            }
             Some(def::DefVariant(enum_id, variant_id, _)) => {
                 check_struct_enum_variant(fcx, id, expr.span, enum_id,
                                           variant_id, fields.as_slice());
             }
+            Some(def) => {
+                // Verify that this was actually a struct.
+                let typ = ty::lookup_item_type(fcx.ccx.tcx, def.def_id());
+                match ty::get(typ.ty).sty {
+                    ty::ty_struct(struct_did, _) => {
+                        check_struct_constructor(fcx,
+                                                 id,
+                                                 expr.span,
+                                                 struct_did,
+                                                 fields.as_slice(),
+                                                 base_expr);
+                    }
+                    _ => {
+                        tcx.sess
+                           .span_err(path.span,
+                                     format!("`{}` does not name a structure",
+                                             pprust::path_to_str(
+                                                 path)).as_slice())
+                    }
+                }
+            }
             _ => {
                 tcx.sess.span_bug(path.span,
-                                  "structure constructor does not name a structure type");
+                                  "structure constructor wasn't resolved")
             }
         }
       }
@@ -3323,7 +3410,7 @@ fn check_expr_with_unifier(fcx: &FnCtxt,
           } else if ty::type_is_error(idx_t) || ty::type_is_bot(idx_t) {
               fcx.write_ty(id, idx_t);
           } else {
-              let (base_t, autoderefs, field_ty) =
+              let (_, autoderefs, field_ty) =
                 autoderef(fcx, expr.span, raw_base_t, Some(base.id),
                           lvalue_pref, |base_t, _| ty::index(base_t));
               match field_ty {
@@ -3333,27 +3420,33 @@ fn check_expr_with_unifier(fcx: &FnCtxt,
                       fcx.write_autoderef_adjustment(base.id, autoderefs);
                   }
                   None => {
-                      let resolved = structurally_resolved_type(fcx,
-                                                                expr.span,
-                                                                raw_base_t);
-                      let ret_ty = lookup_op_method(fcx,
-                                                    expr,
-                                                    resolved,
-                                                    token::intern("index"),
-                                                    tcx.lang_items.index_trait(),
-                                                    [base.clone(), idx.clone()],
-                                                    AutoderefReceiver,
-                                                    || {
-                        fcx.type_error_message(expr.span,
-                                               |actual| {
-                                                    format!("cannot index a \
-                                                             value of type \
-                                                             `{}`", actual)
-                                               },
-                                               base_t,
-                                               None);
-                      });
-                      fcx.write_ty(id, ret_ty);
+                      // This is an overloaded method.
+                      let base_t = structurally_resolved_type(fcx,
+                                                              expr.span,
+                                                              raw_base_t);
+                      let method_call = MethodCall::expr(expr.id);
+                      match try_overloaded_index(fcx,
+                                                 Some(method_call),
+                                                 expr,
+                                                 *base,
+                                                 base_t,
+                                                 *idx,
+                                                 lvalue_pref) {
+                          Some(mt) => fcx.write_ty(id, mt.ty),
+                          None => {
+                                fcx.type_error_message(expr.span,
+                                                       |actual| {
+                                                        format!("cannot \
+                                                                 index a \
+                                                                 value of \
+                                                                 type `{}`",
+                                                                actual)
+                                                       },
+                                                       base_t,
+                                                       None);
+                                fcx.write_ty(id, ty::mk_err())
+                          }
+                      }
                   }
               }
           }

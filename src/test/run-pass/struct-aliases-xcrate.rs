@@ -1,4 +1,4 @@
-// Copyright 2012-2014 The Rust Project Developers. See the COPYRIGHT
+// Copyright 2012 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
 //
@@ -8,16 +8,24 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// aux-build:issue2378a.rs
-// aux-build:issue2378b.rs
+// aux-build:xcrate_struct_aliases.rs
+extern crate xcrate_struct_aliases;
 
-extern crate issue2378a;
-extern crate issue2378b;
+use xcrate_struct_aliases::{S, S2};
 
-use issue2378a::{just};
-use issue2378b::{two_maybes};
-
-pub fn main() {
-    let x = two_maybes{a: just(3i), b: just(5i)};
-    assert_eq!(x[0u], (3, 5));
+fn main() {
+    let s = S2 {
+        x: 1,
+        y: 2,
+    };
+    match s {
+        S2 {
+            x: x,
+            y: y
+        } => {
+            assert_eq!(x, 1);
+            assert_eq!(y, 2);
+        }
+    }
 }
+

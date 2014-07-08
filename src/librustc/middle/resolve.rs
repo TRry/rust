@@ -307,7 +307,7 @@ enum BareIdentifierPatternResolution {
 #[deriving(PartialEq)]
 enum DuplicateCheckingMode {
     ForbidDuplicateModules,
-    ForbidDuplicateTypes,
+    ForbidDuplicateTypesAndModules,
     ForbidDuplicateValues,
     ForbidDuplicateTypesAndValues,
     OverwriteDuplicates
@@ -792,10 +792,9 @@ impl PrimitiveTypeTable {
 
 fn namespace_error_to_str(ns: NamespaceError) -> &'static str {
     match ns {
-        NoError     => "",
-        ModuleError => "module",
-        TypeError   => "type",
-        ValueError  => "value",
+        NoError                 => "",
+        ModuleError | TypeError => "type or module",
+        ValueError              => "value",
     }
 }
 
@@ -1033,9 +1032,12 @@ impl<'a> Resolver<'a> {
                         }
                         Some(TypeNS)
                     }
-                    ForbidDuplicateTypes => {
+                    ForbidDuplicateTypesAndModules => {
                         match child.def_for_namespace(TypeNS) {
-                            Some(DefMod(_)) | None => {}
+                            None => {}
+                            Some(_) if child.get_module_if_available()
+                                            .map(|m| m.kind.get()) ==
+                                       Some(ImplModuleKind) => {}
                             Some(_) => duplicate_type = TypeError
                         }
                         Some(TypeNS)
@@ -1177,7 +1179,10 @@ impl<'a> Resolver<'a> {
             // These items live in the type namespace.
             ItemTy(..) => {
                 let name_bindings =
-                    self.add_child(ident, parent.clone(), ForbidDuplicateTypes, sp);
+                    self.add_child(ident,
+                                   parent.clone(),
+                                   ForbidDuplicateTypesAndModules,
+                                   sp);
 
                 name_bindings.define_type
                     (DefTy(local_def(item.id)), sp, is_public);
@@ -1186,7 +1191,10 @@ impl<'a> Resolver<'a> {
 
             ItemEnum(ref enum_definition, _) => {
                 let name_bindings =
-                    self.add_child(ident, parent.clone(), ForbidDuplicateTypes, sp);
+                    self.add_child(ident,
+                                   parent.clone(),
+                                   ForbidDuplicateTypesAndModules,
+                                   sp);
 
                 name_bindings.define_type
                     (DefTy(local_def(item.id)), sp, is_public);
@@ -1206,7 +1214,7 @@ impl<'a> Resolver<'a> {
                 // Adding to both Type and Value namespaces or just Type?
                 let (forbid, ctor_id) = match struct_def.ctor_id {
                     Some(ctor_id)   => (ForbidDuplicateTypesAndValues, Some(ctor_id)),
-                    None            => (ForbidDuplicateTypes, None)
+                    None            => (ForbidDuplicateTypesAndModules, None)
                 };
 
                 let name_bindings = self.add_child(ident, parent.clone(), forbid, sp);
@@ -1327,7 +1335,10 @@ impl<'a> Resolver<'a> {
 
             ItemTrait(_, _, _, ref methods) => {
                 let name_bindings =
-                    self.add_child(ident, parent.clone(), ForbidDuplicateTypes, sp);
+                    self.add_child(ident,
+                                   parent.clone(),
+                                   ForbidDuplicateTypesAndModules,
+                                   sp);
 
                 // Add all the methods within to a new module.
                 let parent_link = self.get_parent_link(parent.clone(), ident);
@@ -4470,17 +4481,7 @@ impl<'a> Resolver<'a> {
 
                 PatStruct(ref path, _, _) => {
                     match self.resolve_path(pat_id, path, TypeNS, false) {
-                        Some((DefTy(class_id), lp))
-                                if self.structs.contains_key(&class_id) => {
-                            let class_def = DefStruct(class_id);
-                            self.record_def(pattern.id, (class_def, lp));
-                        }
-                        Some(definition @ (DefStruct(class_id), _)) => {
-                            assert!(self.structs.contains_key(&class_id));
-                            self.record_def(pattern.id, definition);
-                        }
-                        Some(definition @ (DefVariant(_, variant_id, _), _))
-                                if self.structs.contains_key(&variant_id) => {
+                        Some(definition) => {
                             self.record_def(pattern.id, definition);
                         }
                         result => {
@@ -5200,17 +5201,11 @@ impl<'a> Resolver<'a> {
             }
 
             ExprStruct(ref path, _, _) => {
-                // Resolve the path to the structure it goes to.
+                // Resolve the path to the structure it goes to. We don't
+                // check to ensure that the path is actually a structure; that
+                // is checked later during typeck.
                 match self.resolve_path(expr.id, path, TypeNS, false) {
-                    Some((DefTy(class_id), lp)) | Some((DefStruct(class_id), lp))
-                            if self.structs.contains_key(&class_id) => {
-                        let class_def = DefStruct(class_id);
-                        self.record_def(expr.id, (class_def, lp));
-                    }
-                    Some(definition @ (DefVariant(_, class_id, _), _))
-                            if self.structs.contains_key(&class_id) => {
-                        self.record_def(expr.id, definition);
-                    }
+                    Some(definition) => self.record_def(expr.id, definition),
                     result => {
                         debug!("(resolving expression) didn't find struct \
                                 def: {:?}", result);

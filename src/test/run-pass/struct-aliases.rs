@@ -8,16 +8,26 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#![crate_type = "lib"]
+struct S {
+    x: int,
+    y: int,
+}
 
-extern crate issue2378a;
+type S2 = S;
 
-use issue2378a::maybe;
-
-pub struct two_maybes<T> {pub a: maybe<T>, pub b: maybe<T>}
-
-impl<T:Clone> Index<uint,(T,T)> for two_maybes<T> {
-    fn index(&self, idx: &uint) -> (T, T) {
-        (self.a[*idx], self.b[*idx])
+fn main() {
+    let s = S2 {
+        x: 1,
+        y: 2,
+    };
+    match s {
+        S2 {
+            x: x,
+            y: y
+        } => {
+            assert_eq!(x, 1);
+            assert_eq!(y, 2);
+        }
     }
 }
+

@@ -8,8 +8,10 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-enum a { b, c }
+pub struct S {
+    pub x: int,
+    pub y: int,
+}
 
-enum a { d, e } //~ ERROR duplicate definition of type or module `a`
+pub type S2 = S;
 
-fn main() {}

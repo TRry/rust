@@ -413,25 +413,24 @@ fn expand_nested_bindings<'a, 'b>(
     let _indenter = indenter();
 
     m.iter().map(|br| {
-        match br.pats.get(col).node {
-            ast::PatIdent(_, ref path1, Some(inner)) => {
-                let pats = Vec::from_slice(br.pats.slice(0u, col))
-                           .append((vec!(inner))
-                                   .append(br.pats.slice(col + 1u, br.pats.len())).as_slice());
+        let mut bound_ptrs = br.bound_ptrs.clone();
+        let mut pat = *br.pats.get(col);
+        loop {
+            pat = match pat.node {
+                ast::PatIdent(_, ref path, Some(inner)) => {
+                    bound_ptrs.push((path.node, val));
+                    inner.clone()
+                },
+                _ => break
+            }
+        }
 
-                let mut bound_ptrs = br.bound_ptrs.clone();
-                bound_ptrs.push((path1.node, val));
-                Match {
-                    pats: pats,
-                    data: &*br.data,
-                    bound_ptrs: bound_ptrs
-                }
-            }
-            _ => Match {
-                pats: br.pats.clone(),
-                data: &*br.data,
-                bound_ptrs: br.bound_ptrs.clone()
-            }
+        let mut pats = br.pats.clone();
+        *pats.get_mut(col) = pat;
+        Match {
+            pats: pats,
+            data: &*br.data,
+            bound_ptrs: bound_ptrs
         }
     }).collect()
 }
@@ -804,12 +803,19 @@ fn any_irrefutable_adt_pat(bcx: &Block, m: &[Match], col: uint) -> bool {
         let pat = *br.pats.get(col);
         match pat.node {
             ast::PatTup(_) => true,
-            ast::PatEnum(..) | ast::PatIdent(_, _, None) | ast::PatStruct(..) =>
+            ast::PatStruct(..) => {
+                match bcx.tcx().def_map.borrow().find(&pat.id) {
+                    Some(&def::DefVariant(..)) => false,
+                    _ => true,
+                }
+            }
+            ast::PatEnum(..) | ast::PatIdent(_, _, None) => {
                 match bcx.tcx().def_map.borrow().find(&pat.id) {
                     Some(&def::DefFn(..)) |
                     Some(&def::DefStruct(..)) => true,
                     _ => false
-                },
+                }
+            }
             _ => false
         }
     })
