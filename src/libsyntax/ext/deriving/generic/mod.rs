@@ -191,6 +191,7 @@ use codemap;
 use codemap::Span;
 use owned_slice::OwnedSlice;
 use parse::token::InternedString;
+use parse::token::special_idents;
 
 use self::ty::*;
 
@@ -406,8 +407,8 @@ impl<'a> TraitDef<'a> {
 
             cx.typaram(self.span,
                        ty_param.ident,
-                       ty_param.sized,
                        OwnedSlice::from_vec(bounds),
+                       ty_param.unbound.clone(),
                        None)
         }));
         let trait_generics = Generics {
@@ -617,7 +618,8 @@ impl<'a> MethodDef<'a> {
 
         let self_arg = match explicit_self.node {
             ast::SelfStatic => None,
-            _ => Some(ast::Arg::new_self(trait_.span, ast::MutImmutable))
+            // creating fresh self id
+            _ => Some(ast::Arg::new_self(trait_.span, ast::MutImmutable, special_idents::self_))
         };
         let args = {
             let args = arg_types.move_iter().map(|(name, ty)| {

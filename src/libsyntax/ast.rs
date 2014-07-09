@@ -14,7 +14,7 @@ use codemap::{Span, Spanned, DUMMY_SP};
 use abi::Abi;
 use ast_util;
 use owned_slice::OwnedSlice;
-use parse::token::{InternedString, special_idents, str_to_ident};
+use parse::token::{InternedString, str_to_ident};
 use parse::token;
 
 use std::fmt;
@@ -184,8 +184,8 @@ pub enum TyParamBound {
 pub struct TyParam {
     pub ident: Ident,
     pub id: NodeId,
-    pub sized: Sized,
     pub bounds: OwnedSlice<TyParamBound>,
+    pub unbound: Option<TyParamBound>,
     pub default: Option<P<Ty>>,
     pub span: Span
 }
@@ -681,7 +681,7 @@ pub enum IntTy {
 
 impl fmt::Show for IntTy {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", ast_util::int_ty_to_str(*self, None))
+        write!(f, "{}", ast_util::int_ty_to_string(*self, None))
     }
 }
 
@@ -696,7 +696,7 @@ pub enum UintTy {
 
 impl fmt::Show for UintTy {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", ast_util::uint_ty_to_str(*self, None))
+        write!(f, "{}", ast_util::uint_ty_to_string(*self, None))
     }
 }
 
@@ -708,7 +708,7 @@ pub enum FloatTy {
 
 impl fmt::Show for FloatTy {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", ast_util::float_ty_to_str(*self))
+        write!(f, "{}", ast_util::float_ty_to_string(*self))
     }
 }
 
@@ -824,8 +824,8 @@ pub struct Arg {
 }
 
 impl Arg {
-    pub fn new_self(span: Span, mutability: Mutability) -> Arg {
-        let path = Spanned{span:span,node:special_idents::self_};
+    pub fn new_self(span: Span, mutability: Mutability, self_ident: Ident) -> Arg {
+        let path = Spanned{span:span,node:self_ident};
         Arg {
             // HACK(eddyb) fake type for the self argument.
             ty: P(Ty {
@@ -874,16 +874,18 @@ pub enum RetStyle {
     Return, // everything else
 }
 
+/// Represents the kind of 'self' associated with a method
 #[deriving(Clone, PartialEq, Eq, Encodable, Decodable, Hash)]
 pub enum ExplicitSelf_ {
-    SelfStatic,                                // no self
-    SelfValue,                                 // `self`
-    SelfRegion(Option<Lifetime>, Mutability),  // `&'lt self`, `&'lt mut self`
-    SelfUniq                                   // `~self`
+    SelfStatic,                                       // no self
+    SelfValue(Ident),                                 // `self`
+    SelfRegion(Option<Lifetime>, Mutability, Ident),  // `&'lt self`, `&'lt mut self`
+    SelfUniq(Ident),                                  // `~self`
 }
 
 pub type ExplicitSelf = Spanned<ExplicitSelf_>;
 
+// Represents a method declaration
 #[deriving(PartialEq, Eq, Encodable, Decodable, Hash)]
 pub struct Method {
     pub ident: Ident,
@@ -1042,12 +1044,6 @@ impl Visibility {
 }
 
 #[deriving(Clone, PartialEq, Eq, Encodable, Decodable, Hash)]
-pub enum Sized {
-    DynSize,
-    StaticSize,
-}
-
-#[deriving(Clone, PartialEq, Eq, Encodable, Decodable, Hash)]
 pub struct StructField_ {
     pub kind: StructFieldKind,
     pub id: NodeId,
@@ -1115,7 +1111,11 @@ pub enum Item_ {
     ItemEnum(EnumDef, Generics),
     ItemStruct(Gc<StructDef>, Generics),
     /// Represents a Trait Declaration
-    ItemTrait(Generics, Sized, Vec<TraitRef> , Vec<TraitMethod> ),
+    ItemTrait(Generics,
+              Option<TyParamBound>, // (optional) default bound not required for Self.
+                                    // Currently, only Sized makes sense here.
+              Vec<TraitRef> ,
+              Vec<TraitMethod>),
     ItemImpl(Generics,
              Option<TraitRef>, // (optional) trait this impl implements
              P<Ty>, // self

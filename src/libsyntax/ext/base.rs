@@ -264,8 +264,15 @@ pub enum SyntaxExtension {
     /// A function-like syntax extension that has an extra ident before
     /// the block.
     ///
-    /// `macro_rules!` is an `IdentTT`.
     IdentTT(Box<IdentMacroExpander + 'static>, Option<Span>),
+
+    /// An ident macro that has two properties:
+    /// - it adds a macro definition to the environment, and
+    /// - the definition it adds doesn't introduce any new
+    ///   identifiers.
+    ///
+    /// `macro_rules!` is a LetSyntaxTT
+    LetSyntaxTT(Box<IdentMacroExpander + 'static>, Option<Span>),
 }
 
 pub type NamedSyntaxExtension = (Name, SyntaxExtension);
@@ -300,7 +307,7 @@ pub fn syntax_expander_table() -> SyntaxEnv {
 
     let mut syntax_expanders = SyntaxEnv::new();
     syntax_expanders.insert(intern("macro_rules"),
-                            IdentTT(box BasicIdentMacroExpander {
+                            LetSyntaxTT(box BasicIdentMacroExpander {
                                 expander: ext::tt::macro_rules::add_new_extension,
                                 span: None,
                             },
@@ -533,7 +540,7 @@ impl<'a> ExtCtxt<'a> {
 /// Extract a string literal from the macro expanded version of `expr`,
 /// emitting `err_msg` if `expr` is not a string literal. This does not stop
 /// compilation on error, merely emits a non-fatal error and returns None.
-pub fn expr_to_str(cx: &mut ExtCtxt, expr: Gc<ast::Expr>, err_msg: &str)
+pub fn expr_to_string(cx: &mut ExtCtxt, expr: Gc<ast::Expr>, err_msg: &str)
                    -> Option<(InternedString, ast::StrStyle)> {
     // we want to be able to handle e.g. concat("foo", "bar")
     let expr = cx.expand_expr(expr);

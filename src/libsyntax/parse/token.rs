@@ -76,6 +76,7 @@ pub enum Token {
     RBRACE,
     POUND,
     DOLLAR,
+    QUESTION,
 
     /* Literals */
     LIT_BYTE(u8),
@@ -140,7 +141,7 @@ impl fmt::Show for Nonterminal {
     }
 }
 
-pub fn binop_to_str(o: BinOp) -> &'static str {
+pub fn binop_to_string(o: BinOp) -> &'static str {
     match o {
       PLUS => "+",
       MINUS => "-",
@@ -155,7 +156,7 @@ pub fn binop_to_str(o: BinOp) -> &'static str {
     }
 }
 
-pub fn to_str(t: &Token) -> String {
+pub fn to_string(t: &Token) -> String {
     match *t {
       EQ => "=".to_string(),
       LT => "<".to_string(),
@@ -168,9 +169,9 @@ pub fn to_str(t: &Token) -> String {
       TILDE => "~".to_string(),
       OROR => "||".to_string(),
       ANDAND => "&&".to_string(),
-      BINOP(op) => binop_to_str(op).to_string(),
+      BINOP(op) => binop_to_string(op).to_string(),
       BINOPEQ(op) => {
-          let mut s = binop_to_str(op).to_string();
+          let mut s = binop_to_string(op).to_string();
           s.push_str("=");
           s
       }
@@ -195,6 +196,7 @@ pub fn to_str(t: &Token) -> String {
       RBRACE => "}".to_string(),
       POUND => "#".to_string(),
       DOLLAR => "$".to_string(),
+      QUESTION => "?".to_string(),
 
       /* Literals */
       LIT_BYTE(b) => {
@@ -213,15 +215,15 @@ pub fn to_str(t: &Token) -> String {
           res.push_char('\'');
           res
       }
-      LIT_INT(i, t) => ast_util::int_ty_to_str(t, Some(i)),
-      LIT_UINT(u, t) => ast_util::uint_ty_to_str(t, Some(u)),
-      LIT_INT_UNSUFFIXED(i) => { (i as u64).to_str() }
+      LIT_INT(i, t) => ast_util::int_ty_to_string(t, Some(i)),
+      LIT_UINT(u, t) => ast_util::uint_ty_to_string(t, Some(u)),
+      LIT_INT_UNSUFFIXED(i) => { (i as u64).to_string() }
       LIT_FLOAT(s, t) => {
         let mut body = String::from_str(get_ident(s).get());
         if body.as_slice().ends_with(".") {
             body.push_char('0');  // `10.f` is not a float literal
         }
-        body.push_str(ast_util::float_ty_to_str(t).as_slice());
+        body.push_str(ast_util::float_ty_to_string(t).as_slice());
         body
       }
       LIT_FLOAT_UNSUFFIXED(s) => {
@@ -260,8 +262,8 @@ pub fn to_str(t: &Token) -> String {
       EOF => "<eof>".to_string(),
       INTERPOLATED(ref nt) => {
         match nt {
-            &NtExpr(ref e) => ::print::pprust::expr_to_str(&**e),
-            &NtMeta(ref e) => ::print::pprust::meta_item_to_str(&**e),
+            &NtExpr(ref e) => ::print::pprust::expr_to_string(&**e),
+            &NtMeta(ref e) => ::print::pprust::meta_item_to_string(&**e),
             _ => {
                 let mut s = "an interpolated ".to_string();
                 match *nt {
@@ -363,10 +365,6 @@ pub fn is_plain_ident(t: &Token) -> bool {
     match *t { IDENT(_, false) => true, _ => false }
 }
 
-pub fn is_bar(t: &Token) -> bool {
-    match *t { BINOP(OR) | OROR => true, _ => false }
-}
-
 // Get the first "argument"
 macro_rules! first {
     ( $first:expr, $( $remainder:expr, )* ) => ( $first )
@@ -407,6 +405,11 @@ macro_rules! declare_special_idents_and_keywords {(
         $( pub static $si_static: Ident = Ident { name: $si_name, ctxt: 0 }; )*
     }
 
+    pub mod special_names {
+        use ast::Name;
+        $( pub static $si_static: Name =  $si_name; )*
+    }
+
     /**
      * All the valid words that have meaning in the Rust language.
      *
@@ -415,7 +418,7 @@ macro_rules! declare_special_idents_and_keywords {(
      * the language and may not appear as identifiers.
      */
     pub mod keywords {
-        use ast::Ident;
+        use ast::Name;
 
         pub enum Keyword {
             $( $sk_variant, )*
@@ -423,10 +426,10 @@ macro_rules! declare_special_idents_and_keywords {(
         }
 
         impl Keyword {
-            pub fn to_ident(&self) -> Ident {
+            pub fn to_name(&self) -> Name {
                 match *self {
-                    $( $sk_variant => Ident { name: $sk_name, ctxt: 0 }, )*
-                    $( $rk_variant => Ident { name: $rk_name, ctxt: 0 }, )*
+                    $( $sk_variant => $sk_name, )*
+                    $( $rk_variant => $rk_name, )*
                 }
             }
         }
@@ -434,7 +437,7 @@ macro_rules! declare_special_idents_and_keywords {(
 
     fn mk_fresh_ident_interner() -> IdentInterner {
         // The indices here must correspond to the numbers in
-        // special_idents, in Keyword to_ident(), and in static
+        // special_idents, in Keyword to_name(), and in static
         // constants below.
         let mut init_vec = Vec::new();
         $(init_vec.push($si_str);)*
@@ -445,7 +448,7 @@ macro_rules! declare_special_idents_and_keywords {(
 }}
 
 // If the special idents get renumbered, remember to modify these two as appropriate
-static SELF_KEYWORD_NAME: Name = 1;
+pub static SELF_KEYWORD_NAME: Name = 1;
 static STATIC_KEYWORD_NAME: Name = 2;
 
 // NB: leaving holes in the ident table is bad! a different ident will get
@@ -691,7 +694,7 @@ pub fn gensym_ident(s: &str) -> ast::Ident {
 }
 
 // create a fresh name that maps to the same string as the old one.
-// note that this guarantees that str_ptr_eq(ident_to_str(src),interner_get(fresh_name(src)));
+// note that this guarantees that str_ptr_eq(ident_to_string(src),interner_get(fresh_name(src)));
 // that is, that the new name and the old one are connected to ptr_eq strings.
 pub fn fresh_name(src: &ast::Ident) -> Name {
     let interner = get_ident_interner();
@@ -700,7 +703,7 @@ pub fn fresh_name(src: &ast::Ident) -> Name {
     // good error messages and uses of struct names in ambiguous could-be-binding
     // locations. Also definitely destroys the guarantee given above about ptr_eq.
     /*let num = rand::task_rng().gen_uint_range(0,0xffff);
-    gensym(format!("{}_{}",ident_to_str(src),num))*/
+    gensym(format!("{}_{}",ident_to_string(src),num))*/
 }
 
 // create a fresh mark.
@@ -712,7 +715,7 @@ pub fn fresh_mark() -> Mrk {
 
 pub fn is_keyword(kw: keywords::Keyword, tok: &Token) -> bool {
     match *tok {
-        token::IDENT(sid, false) => { kw.to_ident().name == sid.name }
+        token::IDENT(sid, false) => { kw.to_name() == sid.name }
         _ => { false }
     }
 }
