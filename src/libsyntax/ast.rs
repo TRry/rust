@@ -58,7 +58,14 @@ impl Ident {
 
 impl Show for Ident {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "\"{}\"#{}", token::get_ident(*self).get(), self.ctxt)
+        write!(f, "{}#{}", self.name, self.ctxt)
+    }
+}
+
+impl Show for Name {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let Name(nm) = *self;
+        write!(f, "\"{}\"({})", token::get_name(*self).get(), nm)
     }
 }
 
@@ -106,7 +113,7 @@ pub static ILLEGAL_CTXT : SyntaxContext = 1;
 
 /// A name is a part of an identifier, representing a string or gensym. It's
 /// the result of interning.
-#[deriving(Eq, Ord, PartialEq, PartialOrd, Hash, Encodable, Decodable, Clone, Show)]
+#[deriving(Eq, Ord, PartialEq, PartialOrd, Hash, Encodable, Decodable, Clone)]
 pub struct Name(pub u32);
 
 impl Name {
@@ -249,6 +256,7 @@ pub struct Crate {
     pub attrs: Vec<Attribute>,
     pub config: CrateConfig,
     pub span: Span,
+    pub exported_macros: Vec<Span>
 }
 
 pub type MetaItem = Spanned<MetaItem_>;
@@ -1245,6 +1253,7 @@ mod test {
                 hi: BytePos(20),
                 expn_info: None,
             },
+            exported_macros: Vec::new(),
         };
         // doesn't matter which encoder we use....
         let _f = &e as &serialize::Encodable<json::Encoder, io::IoError>;

@@ -8,22 +8,8 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#![crate_id = "foo#0.1"]
+// compile-flags:--crate-name crate-name-attr-used -F unused-attribute
 
-//! Very docs
+#![crate_name = "test"]
 
-pub mod bar {
-
-    /// So correct
-    pub mod baz {
-        /// Much detail
-        pub fn baz() { }
-    }
-
-    /// *wow*
-    pub trait Doge { }
-
-    pub struct Foo { x: int, y: uint }
-
-    pub fn prawns((a, b): (int, uint), Foo { x, y }: Foo) { }
-}
+fn main() {}
