@@ -8,17 +8,16 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-/* Any copyright is dedicated to the Public Domain.
- * http://creativecommons.org/publicdomain/zero/1.0/ */
+#![feature(macro_rules)]
 
-// Tests that the new `box` syntax works with unique pointers and GC pointers.
+struct A;
 
-use std::gc::{Gc, GC};
-use std::boxed::{Box, HEAP};
+macro_rules! make_thirteen_method {() => (pub fn thirteen(&self)->int {13})}
+impl A { make_thirteen_method!() }
 
-pub fn main() {
-    let x: Gc<int> = box(HEAP) 2;  //~ ERROR mismatched types
-    let y: Gc<int> = box(HEAP)(1 + 2);  //~ ERROR mismatched types
-    let z: Box<int> = box(GC)(4 + 5);   //~ ERROR mismatched types
+fn main() {
+    assert_eq!(A.thirteen(),13);
 }
+
+
 
