@@ -1264,15 +1264,244 @@ do that with `match`.
 
 ## Match
 
+Often, a simple `if`/`else` isn't enough, because you have more than two
+possible options. And `else` conditions can get incredibly complicated. So
+what's the solution?
+
+Rust has a keyword, `match`, that allows you to replace complicated `if`/`else`
+groupings with something more powerful. Check it out:
+
+```rust
+let x = 5i;
+
+match x {
+    1 => println!("one"),
+    2 => println!("two"),
+    3 => println!("three"),
+    4 => println!("four"),
+    5 => println!("five"),
+    _ => println!("something else"),
+}
+```
+
+`match` takes an expression, and then branches based on its value. Each 'arm' of
+the branch is of the form `val => expression`. When the value matches, that arm's
+expression will be evaluated. It's called `match` because of the term 'pattern
+matching,' which `match` is an implementation of.
+
+So what's the big advantage here? Well, there are a few. First of all, `match`
+does 'exhaustiveness checking.' Do you see that last arm, the one with the
+underscore (`_`)? If we remove that arm, Rust will give us an error:
+
+```{ignore,notrust}
+error: non-exhaustive patterns: `_` not covered
+```
+
+In other words, Rust is trying to tell us we forgot a value. Because `x` is an
+integer, Rust knows that it can have a number of different values. For example,
+`6i`. But without the `_`, there is no arm that could match, and so Rust refuses
+to compile. `_` is sort of like a catch-all arm. If none of the other arms match,
+the arm with `_` will. And since we have this catch-all arm, we now have an arm
+for every possible value of `x`, and so our program will now compile.
+
+`match` statements also destructure enums, as well. Remember this code from the
+section on enums?
+
+```{rust}
+let x = 5i;
+let y = 10i;
+
+let ordering = x.cmp(&y);
+
+if ordering == Less {
+    println!("less");
+} else if ordering == Greater {
+    println!("greater");
+} else if ordering == Equal {
+    println!("equal");
+}
+```
+
+We can re-write this as a `match`:
+
+```{rust}
+let x = 5i;
+let y = 10i;
+
+match x.cmp(&y) {
+    Less    => println!("less"),
+    Greater => println!("greater"),
+    Equal   => println!("equal"),
+}
+```
+
+This version has way less noise, and it also checks exhaustively to make sure
+that we have covered all possible variants of `Ordering`. With our `if`/`else`
+version, if we had forgotten the `Greater` case, for example, our program would
+have happily compiled. If we forget in the `match`, it will not. Rust helps us
+make sure to cover all of our bases.
+
+`match` is also an expression, which means we can use it on the right hand side
+of a `let` binding. We could also implement the previous line like this:
+
+```
+let x = 5i;
+let y = 10i;
+
+let result = match x.cmp(&y) {
+    Less    => "less",
+    Greater => "greater",
+    Equal   => "equal",
+};
+
+println!("{}", result);
+```
+
+In this case, it doesn't make a lot of sense, as we are just making a temporary
+string where we don't need to, but sometimes, it's a nice pattern.
+
 ## Looping
 
-for
+Looping is the last basic construct that we haven't learned yet in Rust. Rust has
+two main looping constructs: `for` and `while`.
 
-while
+### `for`
 
-loop
+The `for` loop is used to loop a particular number of times. Rust's `for` loops
+work a bit differently than in other systems languages, however. Rust's `for`
+loop doesn't look like this C `for` loop:
 
-break/continue
+```{ignore,c}
+for (x = 0; x < 10; x++) {
+    printf( "%d\n", x );
+}
+```
+
+It looks like this:
+
+```{rust}
+for x in range(0i, 10i) {
+    println!("{:d}", x);
+}
+```
+
+In slightly more abstract terms,
+
+```{ignore,notrust}
+for var in expression {
+    code
+}
+```
+
+The expression is an iterator, which we will discuss in more depth later in the
+guide. The iterator gives back a series of elements. Each element is one
+iteration of the loop. That value is then bound to the name `var`, which is
+valid for the loop body. Once the body is over, the next value is fetched from
+the iterator, and we loop another time. When there are no more values, the
+`for` loop is over.
+
+In our example, the `range` function is a function, provided by Rust, that
+takes a start and an end position, and gives an iterator over those values. The
+upper bound is exclusive, though, so our loop will print `0` through `9`, not
+`10`.
+
+Rust does not have the "C style" `for` loop on purpose. Manually controlling
+each element of the loop is complicated and error prone, even for experienced C
+developers. There's an old joke that goes, "There are two hard problems in
+computer science: naming things, cache invalidation, and off-by-one errors."
+The joke, of course, being that the setup says "two hard problems" but then
+lists three things. This happens quite a bit with "C style" `for` loops.
+
+We'll talk more about `for` when we cover **vector**s, later in the Guide.
+
+### `while`
+
+The other kind of looping construct in Rust is the `while` loop. It looks like
+this:
+
+```{rust}
+let mut x = 5u;
+let mut done = false;
+
+while !done {
+    x += x - 3;
+    println!("{}", x);
+    if x % 5 == 0 { done = true; }
+}
+```
+
+`while` loops are the correct choice when you're not sure how many times
+you need to loop. 
+
+If you need an infinite loop, you may be tempted to write this:
+
+```{rust,ignore}
+while true {
+```
+
+Rust has a dedicated keyword, `loop`, to handle this case:
+
+```{rust,ignore}
+loop {
+```
+
+Rust's control-flow analysis treats this construct differently than a
+`while true`, since we know that it will always loop. The details of what
+that _means_ aren't super important to understand at this stage, but in
+general, the more information we can give to the compiler, the better it
+can do with safety and code generation. So you should always prefer
+`loop` when you plan to loop infinitely.
+
+### Ending iteration early
+
+Let's take a look at that `while` loop we had earlier:
+
+```{rust}
+let mut x = 5u;
+let mut done = false;
+
+while !done {
+    x += x - 3;
+    println!("{}", x);
+    if x % 5 == 0 { done = true; }
+}
+```
+
+We had to keep a dedicated `mut` boolean variable binding, `done`, to know
+when we should skip out of the loop. Rust has two keywords to help us with
+modifying iteration: `break` and `continue`.
+
+In this case, we can write the loop in a better way with `break`:
+
+```{rust}
+let mut x = 5u;
+
+loop {
+    x += x - 3;
+    println!("{}", x);
+    if x % 5 == 0 { break; }
+}
+```
+
+We now loop forever with `loop`, and use `break` to break out early.
+
+`continue` is similar, but instead of ending the loop, goes to the next
+iteration: This will only print the odd numbers:
+
+```
+for x in range(0i, 10i) {
+    if x % 2 == 0 { continue; }
+
+    println!("{:d}", x);
+}
+```
+
+Both `continue` and `break` are valid in both kinds of loops.
+
+We have now learned all of the most basic Rust concepts. We're ready to start
+building our guessing game, but we need to know how to do one last thing first:
+get input from the keyboard. You can't have a guessing game without the ability
+to guess!
 
 ## Guessing Game: complete
 
