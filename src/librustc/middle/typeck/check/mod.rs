@@ -764,7 +764,12 @@ fn check_method_body(ccx: &CrateCtxt,
 
     let fty = ty::node_id_to_type(ccx.tcx, method.id);
 
-    check_bare_fn(ccx, method.pe_fn_decl(), method.pe_body(), method.id, fty, param_env);
+    check_bare_fn(ccx,
+                  &*method.pe_fn_decl(),
+                  &*method.pe_body(),
+                  method.id,
+                  fty,
+                  param_env);
 }
 
 fn check_impl_methods_against_trait(ccx: &CrateCtxt,
@@ -862,19 +867,26 @@ fn compare_impl_method(tcx: &ty::ctxt,
     // inscrutable, particularly for cases where one method has no
     // self.
     match (&trait_m.explicit_self, &impl_m.explicit_self) {
-        (&ast::SelfStatic, &ast::SelfStatic) => {}
-        (&ast::SelfStatic, _) => {
-            span_err!(tcx.sess, impl_m_span, E0047,
-                "method `{}` has a `{}` declaration in the impl, but not in the trait",
-                token::get_ident(trait_m.ident),
-                pprust::explicit_self_to_string(impl_m.explicit_self));
+        (&ty::StaticExplicitSelfCategory,
+         &ty::StaticExplicitSelfCategory) => {}
+        (&ty::StaticExplicitSelfCategory, _) => {
+            tcx.sess.span_err(
+                impl_m_span,
+                format!("method `{}` has a `{}` declaration in the impl, \
+                        but not in the trait",
+                        token::get_ident(trait_m.ident),
+                        ppaux::explicit_self_category_to_str(
+                            &impl_m.explicit_self)).as_slice());
             return;
         }
-        (_, &ast::SelfStatic) => {
-            span_err!(tcx.sess, impl_m_span, E0048,
-                "method `{}` has a `{}` declaration in the trait, but not in the impl",
-                token::get_ident(trait_m.ident),
-                pprust::explicit_self_to_string(trait_m.explicit_self));
+        (_, &ty::StaticExplicitSelfCategory) => {
+            tcx.sess.span_err(
+                impl_m_span,
+                format!("method `{}` has a `{}` declaration in the trait, \
+                        but not in the impl",
+                        token::get_ident(trait_m.ident),
+                        ppaux::explicit_self_category_to_str(
+                            &trait_m.explicit_self)).as_slice());
             return;
         }
         _ => {
@@ -2363,7 +2375,7 @@ fn check_expr_with_unifier(fcx: &FnCtxt,
 
         if ty::type_is_integral(lhs_t) && ast_util::is_shift_binop(op) {
             // Shift is a special case: rhs must be uint, no matter what lhs is
-            check_expr_has_type(fcx, rhs, ty::mk_uint());
+            check_expr_has_type(fcx, &*rhs, ty::mk_uint());
             fcx.write_ty(expr.id, lhs_t);
             return;
         }
@@ -2950,7 +2962,7 @@ fn check_expr_with_unifier(fcx: &FnCtxt,
       }
 
       ast::ExprLit(lit) => {
-        let typ = check_lit(fcx, lit, expected);
+        let typ = check_lit(fcx, &*lit, expected);
         fcx.write_ty(id, typ);
       }
       ast::ExprBinary(op, ref lhs, ref rhs) => {
@@ -3157,8 +3169,11 @@ fn check_expr_with_unifier(fcx: &FnCtxt,
         fcx.write_bot(id);
       }
       ast::ExprParen(a) => {
-        check_expr_with_expectation_and_lvalue_pref(fcx, a, expected, lvalue_pref);
-        fcx.write_ty(id, fcx.expr_ty(a));
+        check_expr_with_expectation_and_lvalue_pref(fcx,
+                                                    &*a,
+                                                    expected,
+                                                    lvalue_pref);
+        fcx.write_ty(id, fcx.expr_ty(&*a));
       }
       ast::ExprAssign(ref lhs, ref rhs) => {
         check_expr_with_lvalue_pref(fcx, &**lhs, PreferMutLvalue);
@@ -3319,8 +3334,8 @@ fn check_expr_with_unifier(fcx: &FnCtxt,
                 Some(ref fs) if i < fs.len() => ExpectHasType(*fs.get(i)),
                 _ => NoExpectation
             };
-            check_expr_with_expectation(fcx, *e, opt_hint);
-            let t = fcx.expr_ty(*e);
+            check_expr_with_expectation(fcx, &**e, opt_hint);
+            let t = fcx.expr_ty(&**e);
             err_field = err_field || ty::type_is_error(t);
             bot_field = bot_field || ty::type_is_bot(t);
             t
@@ -3667,8 +3682,8 @@ fn check_block_with_expected(fcx: &FnCtxt,
                              e.span,
                              "unreachable expression".to_string());
             }
-            check_expr_with_expectation(fcx, e, expected);
-              let ety = fcx.expr_ty(e);
+            check_expr_with_expectation(fcx, &*e, expected);
+              let ety = fcx.expr_ty(&*e);
               fcx.write_ty(blk.id, ety);
               if any_err {
                   fcx.write_error(blk.id);
@@ -4787,3 +4802,4 @@ pub fn check_intrinsic_type(ccx: &CrateCtxt, it: &ast::ForeignItem) {
             });
     }
 }
+

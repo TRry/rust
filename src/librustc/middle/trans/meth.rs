@@ -68,8 +68,13 @@ pub fn trans_impl(ccx: &CrateContext,
     for method in methods.iter() {
         if method.pe_generics().ty_params.len() == 0u {
             let llfn = get_item_val(ccx, method.id);
-            trans_fn(ccx, method.pe_fn_decl(), method.pe_body(),
-                     llfn, &param_substs::empty(), method.id, []);
+            trans_fn(ccx,
+                     &*method.pe_fn_decl(),
+                     &*method.pe_body(),
+                     llfn,
+                     &param_substs::empty(),
+                     method.id,
+                     []);
         } else {
             let mut v = TransItemVisitor{ ccx: ccx };
             visit::walk_method_helper(&mut v, &**method, ());
@@ -502,15 +507,12 @@ fn emit_vtable_methods(bcx: &Block,
                                                        ExprId(0),
                                                        substs.clone(),
                                                        vtables.clone());
-            match m.explicit_self {
-                ast::SelfValue(_) => {
-                    fn_ref = trans_unboxing_shim(bcx,
-                                                 fn_ref,
-                                                 &*m,
-                                                 m_id,
-                                                 substs.clone());
-                },
-                _ => {}
+            if m.explicit_self == ty::ByValueExplicitSelfCategory {
+                fn_ref = trans_unboxing_shim(bcx,
+                                             fn_ref,
+                                             &*m,
+                                             m_id,
+                                             substs.clone());
             }
             fn_ref
         }

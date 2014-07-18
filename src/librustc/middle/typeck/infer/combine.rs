@@ -111,7 +111,11 @@ pub trait Combine {
               b_subst: &subst::Substs)
               -> cres<subst::Substs>
     {
-        let variances = ty::item_variances(self.infcx().tcx, item_def_id);
+        let variances = if self.infcx().tcx.variance_computed.get() {
+            Some(ty::item_variances(self.infcx().tcx, item_def_id))
+        } else {
+            None
+        };
         let mut substs = subst::Substs::empty();
 
         for &space in subst::ParamSpace::all().iter() {
@@ -121,7 +125,18 @@ pub trait Combine {
 
             let a_regions = a_subst.regions().get_slice(space);
             let b_regions = b_subst.regions().get_slice(space);
-            let r_variances = variances.regions.get_slice(space);
+
+            let mut invariance = Vec::new();
+            let r_variances = match variances {
+                Some(ref variances) => variances.regions.get_slice(space),
+                None => {
+                    for _ in a_regions.iter() {
+                        invariance.push(ty::Invariant);
+                    }
+                    invariance.as_slice()
+                }
+            };
+
             let regions = if_ok!(relate_region_params(self,
                                                       item_def_id,
                                                       r_variances,
@@ -537,7 +552,7 @@ pub fn super_tys<C:Combine>(this: &C, a: ty::t, b: ty::t) -> cres<ty::t> {
       }
 
       (&ty::ty_closure(ref a_fty), &ty::ty_closure(ref b_fty)) => {
-        this.closure_tys(*a_fty, *b_fty).and_then(|fty| {
+        this.closure_tys(&**a_fty, &**b_fty).and_then(|fty| {
             Ok(ty::mk_closure(tcx, fty))
         })
       }
