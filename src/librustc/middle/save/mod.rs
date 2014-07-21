@@ -842,7 +842,8 @@ impl <'l> DxrVisitor<'l> {
         let method_map = self.analysis.ty_cx.method_map.borrow();
         let method_callee = method_map.get(&typeck::MethodCall::expr(ex.id));
         let (def_id, decl_id) = match method_callee.origin {
-            typeck::MethodStatic(def_id) => {
+            typeck::MethodStatic(def_id) |
+            typeck::MethodStaticUnboxedClosure(def_id) => {
                 // method invoked on an object with a concrete type (not a static method)
                 let decl_id = ty::trait_method_of_method(&self.analysis.ty_cx, def_id);
 
@@ -1119,16 +1120,23 @@ impl<'l> Visitor<DxrVisitorEnv> for DxrVisitor<'l> {
                     }
                     ast::ViewPathList(ref path, ref list, _) => {
                         for plid in list.iter() {
-                            match self.lookup_type_ref(plid.node.id) {
-                                Some(id) => match self.lookup_def_kind(plid.node.id, plid.span) {
-                                    Some(kind) => self.fmt.ref_str(kind,
-                                                                   plid.span,
-                                                                   Some(plid.span),
-                                                                   id,
-                                                                   e.cur_scope),
-                                    None => (),
+                            match plid.node {
+                                ast::PathListIdent { id, .. } => {
+                                    match self.lookup_type_ref(id) {
+                                        Some(def_id) =>
+                                            match self.lookup_def_kind(id, plid.span) {
+                                                Some(kind) => {
+                                                    self.fmt.ref_str(
+                                                        kind, plid.span,
+                                                        Some(plid.span),
+                                                        def_id, e.cur_scope);
+                                                }
+                                                None => ()
+                                            },
+                                        None => ()
+                                    }
                                 },
-                                None => ()
+                                ast::PathListMod { .. } => ()
                             }
                         }
 

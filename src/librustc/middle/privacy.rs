@@ -21,7 +21,7 @@ use lint;
 use middle::resolve;
 use middle::ty;
 use middle::typeck::{MethodCall, MethodMap, MethodOrigin, MethodParam};
-use middle::typeck::{MethodStatic, MethodObject};
+use middle::typeck::{MethodStatic, MethodStaticUnboxedClosure, MethodObject};
 use util::nodemap::{NodeMap, NodeSet};
 
 use syntax::ast;
@@ -772,6 +772,7 @@ impl<'a> PrivacyVisitor<'a> {
             MethodStatic(method_id) => {
                 self.check_static_method(span, method_id, ident)
             }
+            MethodStaticUnboxedClosure(_) => {}
             // Trait methods are always all public. The only controlling factor
             // is whether the trait itself is accessible or not.
             MethodParam(MethodParam { trait_id: trait_id, .. }) |
@@ -900,21 +901,29 @@ impl<'a> Visitor<()> for PrivacyVisitor<'a> {
             ast::ViewItemUse(ref vpath) => {
                 match vpath.node {
                     ast::ViewPathSimple(..) | ast::ViewPathGlob(..) => {}
-                    ast::ViewPathList(_, ref list, _) => {
+                    ast::ViewPathList(ref prefix, ref list, _) => {
                         for pid in list.iter() {
-                            debug!("privacy - list {}", pid.node.id);
-                            let seg = ast::PathSegment {
-                                identifier: pid.node.name,
-                                lifetimes: Vec::new(),
-                                types: OwnedSlice::empty(),
-                            };
-                            let segs = vec!(seg);
-                            let path = ast::Path {
-                                global: false,
-                                span: pid.span,
-                                segments: segs,
-                            };
-                            self.check_path(pid.span, pid.node.id, &path);
+                            match pid.node {
+                                ast::PathListIdent { id, name } => {
+                                    debug!("privacy - ident item {}", id);
+                                    let seg = ast::PathSegment {
+                                        identifier: name,
+                                        lifetimes: Vec::new(),
+                                        types: OwnedSlice::empty(),
+                                    };
+                                    let segs = vec![seg];
+                                    let path = ast::Path {
+                                        global: false,
+                                        span: pid.span,
+                                        segments: segs,
+                                    };
+                                    self.check_path(pid.span, id, &path);
+                                }
+                                ast::PathListMod { id } => {
+                                    debug!("privacy - mod item {}", id);
+                                    self.check_path(pid.span, id, prefix);
+                                }
+                            }
                         }
                     }
                 }

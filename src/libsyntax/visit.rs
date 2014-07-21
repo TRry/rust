@@ -186,7 +186,12 @@ pub fn walk_view_item<E: Clone, V: Visitor<E>>(visitor: &mut V, vi: &ViewItem, e
                 }
                 ViewPathList(ref path, ref list, _) => {
                     for id in list.iter() {
-                        visitor.visit_ident(id.span, id.node.name, env.clone())
+                        match id.node {
+                            PathListIdent { name, .. } => {
+                                visitor.visit_ident(id.span, name, env.clone());
+                            }
+                            PathListMod { .. } => ()
+                        }
                     }
                     walk_path(visitor, path, env.clone());
                 }
@@ -562,7 +567,7 @@ pub fn walk_method_helper<E: Clone, V: Visitor<E>>(visitor: &mut V,
                                                    method: &Method,
                                                    env: E) {
     match method.node {
-        MethDecl(ident, ref generics, _, _, decl, body, _) => {
+        MethDecl(ident, ref generics, _, _, _, decl, body, _) => {
             visitor.visit_ident(method.span, ident, env.clone());
             visitor.visit_fn(&FkMethod(ident, generics, method),
                              &*decl,
@@ -594,7 +599,7 @@ pub fn walk_fn<E: Clone, V: Visitor<E>>(visitor: &mut V,
         FkMethod(_, generics, method) => {
             visitor.visit_generics(generics, env.clone());
             match method.node {
-                MethDecl(_, _, ref explicit_self, _, _, _, _) =>
+                MethDecl(_, _, _, ref explicit_self, _, _, _, _) =>
                     visitor.visit_explicit_self(explicit_self, env.clone()),
                 MethMac(ref mac) =>
                     visitor.visit_mac(mac, env.clone())
@@ -783,6 +788,14 @@ pub fn walk_expr<E: Clone, V: Visitor<E>>(visitor: &mut V, expression: &Expr, en
             }
         }
         ExprFnBlock(ref function_declaration, ref body) => {
+            visitor.visit_fn(&FkFnBlock,
+                             &**function_declaration,
+                             &**body,
+                             expression.span,
+                             expression.id,
+                             env.clone())
+        }
+        ExprUnboxedFn(ref function_declaration, ref body) => {
             visitor.visit_fn(&FkFnBlock,
                              &**function_declaration,
                              &**body,
