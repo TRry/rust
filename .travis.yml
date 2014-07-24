@@ -8,7 +8,7 @@ os:
 
 install:
   - curl -L -O https://github.com/vhbit/rust-llvm/releases/download/travis002/long_travis.py
-  - curl -L -O https://github.com/vhbit/rust-llvm/releases/download/travis002/llvm-snapshot.tar.gz
+  - curl -L -O https://github.com/vhbit/rust-llvm/releases/download/travis003/llvm-snapshot.tar.gz
   - tar xzf llvm-snapshot.tar.gz
   
 # Configure for device and simulator build
