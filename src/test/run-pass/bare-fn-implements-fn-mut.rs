@@ -8,19 +8,30 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// macro f should not be able to inject a reference to 'n'.
-//
-// Ignored because `for` loops are not hygienic yet; they will require special
-// handling since they introduce a new pattern binding position.
+#![feature(overloaded_calls)]
 
-// ignore-test
+use std::ops::FnMut;
 
-#![feature(macro_rules)]
-
-macro_rules! f(() => (n))
-
-fn main() -> (){
-    for n in range(0i, 1) {
-        println!("{}", f!()); //~ ERROR unresolved name `n`
-    }
+fn call_f<F:FnMut<(),()>>(mut f: F) {
+    f();
 }
+
+fn f() {
+    println!("hello");
+}
+
+fn call_g<G:FnMut<(String,String),String>>(mut g: G, x: String, y: String)
+          -> String {
+    g(x, y)
+}
+
+fn g(x: String, y: String) -> String {
+    x.append(y.as_slice())
+}
+
+fn main() {
+    call_f(f);
+    assert_eq!(call_g(g, "foo".to_string(), "bar".to_string()).as_slice(),
+               "foobar");
+}
+

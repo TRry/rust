@@ -1,4 +1,4 @@
-// Copyright 2013 The Rust Project Developers. See the COPYRIGHT
+// Copyright 2012-2014 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
 //
@@ -8,10 +8,17 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-fn main() {
-    let mut xs: Vec<int> = vec!();
+// Regression test for #15896. It used to ICE rustc.
 
-    for x in xs.mut_iter() {
-        xs.push(1i) //~ ERROR cannot borrow `xs`
-    }
+fn main() {
+    enum R { REB(()) }
+    struct Tau { t: uint }
+    enum E { B(R, Tau) }
+
+    let e = B(REB(()), Tau { t: 3 });
+    let u = match e {
+        B(
+          Tau{t: x},    //~ ERROR mismatched types
+          _) => x,
+    };
 }
