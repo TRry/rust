@@ -1,4 +1,4 @@
-// Copyright 2012 The Rust Project Developers. See the COPYRIGHT
+// Copyright 2014 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
 //
@@ -8,19 +8,11 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+// This is testing that users can't access the runtime crate.
 
-use std::gc::{Gc, GC};
-
-// error-pattern:fail
-
-fn fold_local() -> Gc<Vec<int>> {
-    box(GC) vec!(0,0,0,0,0,0)
+mod m {
+    // The rt has been called both 'native' and 'rt'
+    use native; //~ ERROR unresolved import
 }
 
-fn fold_remote() -> Gc<Vec<int>> {
-    fail!();
-}
-
-fn main() {
-    let _lss = (fold_local(), fold_remote());
-}
+fn main() { }

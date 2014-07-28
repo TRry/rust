@@ -8,19 +8,23 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+// Tests that the trait matching code takes lifetime parameters into account.
+// (Issue #15517.)
 
-use std::gc::{Gc, GC};
-
-// error-pattern:fail
-
-fn fold_local() -> Gc<Vec<int>> {
-    box(GC) vec!(0,0,0,0,0,0)
+struct Foo<'a,'b> {
+    x: &'a int,
+    y: &'b int,
 }
 
-fn fold_remote() -> Gc<Vec<int>> {
-    fail!();
+trait Tr {
+    fn foo(x: Self) {}
 }
 
-fn main() {
-    let _lss = (fold_local(), fold_remote());
+impl<'a,'b> Tr for Foo<'a,'b> {
+    fn foo(x: Foo<'b,'a>) {
+        //~^ ERROR method not compatible with trait
+        //~^^ ERROR method not compatible with trait
+    }
 }
+
+fn main(){}
