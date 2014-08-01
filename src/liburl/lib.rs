@@ -11,7 +11,7 @@
 //! Types/fns concerning URLs (see RFC 3986)
 
 #![crate_name = "url"]
-#![experimental]
+#![deprecated="This is being removed. Use rust-url instead. http://servo.github.io/rust-url/"]
 #![crate_type = "rlib"]
 #![crate_type = "dylib"]
 #![license = "MIT/ASL2"]
@@ -35,6 +35,7 @@ use std::path::BytesContainer;
 /// # Example
 ///
 /// ```rust
+/// # #![allow(deprecated)]
 /// use url::Url;
 ///
 /// let raw = "https://username@example.com:8080/foo/bar?baz=qux#quz";
@@ -214,6 +215,7 @@ fn encode_inner<T: BytesContainer>(c: T, full_url: bool) -> String {
 /// # Example
 ///
 /// ```rust
+/// # #![allow(deprecated)]
 /// use url::encode;
 ///
 /// let url = encode("https://example.com/Rust (programming language)");
@@ -241,6 +243,7 @@ pub type DecodeResult<T> = Result<T, String>;
 /// # Example
 ///
 /// ```rust
+/// # #![allow(deprecated)]
 /// use url::decode;
 ///
 /// let url = decode("https://example.com/Rust%20(programming%20language)");
@@ -391,7 +394,7 @@ pub fn decode_form_urlencoded(s: &[u8])
     }
 }
 
-fn split_char_first<'a>(s: &'a str, c: char) -> (&'a str, &'a str) {
+fn split_char_first(s: &str, c: char) -> (&str, &str) {
     let mut iter = s.splitn(c, 1);
 
     match (iter.next(), iter.next()) {
@@ -428,6 +431,7 @@ fn query_from_str(rawquery: &str) -> DecodeResult<Query> {
 /// # Example
 ///
 /// ```rust
+/// # #![allow(deprecated)]
 /// let query = vec![("title".to_string(), "The Village".to_string()),
 ///                  ("north".to_string(), "52.91".to_string()),
 ///                  ("west".to_string(), "4.10".to_string())];
@@ -453,6 +457,7 @@ pub fn query_to_str(query: &Query) -> String {
 /// # Example
 ///
 /// ```rust
+/// # #![allow(deprecated)]
 /// use url::get_scheme;
 ///
 /// let scheme = match get_scheme("https://example.com/") {
@@ -461,7 +466,7 @@ pub fn query_to_str(query: &Query) -> String {
 /// };
 /// println!("Scheme in use: {}.", scheme); // Scheme in use: https.
 /// ```
-pub fn get_scheme<'a>(rawurl: &'a str) -> DecodeResult<(&'a str, &'a str)> {
+pub fn get_scheme(rawurl: &str) -> DecodeResult<(&str, &str)> {
     for (i,c) in rawurl.chars().enumerate() {
         let result = match c {
             'A' .. 'Z'
@@ -488,8 +493,8 @@ pub fn get_scheme<'a>(rawurl: &'a str) -> DecodeResult<(&'a str, &'a str)> {
 }
 
 // returns userinfo, host, port, and unparsed part, or an error
-fn get_authority<'a>(rawurl: &'a str) ->
-    DecodeResult<(Option<UserInfo>, &'a str, Option<u16>, &'a str)> {
+fn get_authority(rawurl: &str) ->
+    DecodeResult<(Option<UserInfo>, &str, Option<u16>, &str)> {
     enum State {
         Start, // starting state
         PassHostPort, // could be in user or port
@@ -657,8 +662,7 @@ fn get_authority<'a>(rawurl: &'a str) ->
 
 
 // returns the path and unparsed part of url, or an error
-fn get_path<'a>(rawurl: &'a str, is_authority: bool)
-                                            -> DecodeResult<(String, &'a str)> {
+fn get_path(rawurl: &str, is_authority: bool) -> DecodeResult<(String, &str)> {
     let len = rawurl.len();
     let mut end = len;
     for (i,c) in rawurl.chars().enumerate() {

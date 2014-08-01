@@ -8,14 +8,13 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#![no_std]
-#![feature(lang_items)]
+// ignore-tidy-linelength
 
-#[lang="fail_"]
-fn fail(_: &(&'static str, &'static str, uint)) -> ! { loop {} }
+#![deny(deprecated)]
 
-#[lang = "stack_exhausted"]
-extern fn stack_exhausted() {}
+extern crate url;
 
-#[lang = "eh_personality"]
-extern fn eh_personality() {}
+fn main() {
+    let _ = url::Url::parse("http://example.com");
+    //~^ ERROR use of deprecated item: This is being removed. Use rust-url instead. http://servo.github.io/rust-url/
+}
