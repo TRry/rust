@@ -143,7 +143,7 @@
 
 use cmp::{PartialEq, Eq, Ord};
 use default::Default;
-use slice::Vector;
+use slice::Slice;
 use iter::{Iterator, DoubleEndedIterator, FromIterator, ExactSize};
 use mem;
 use slice;
@@ -244,7 +244,7 @@ impl<T> Option<T> {
         }
     }
 
-    /// Moves a value out of an option type and returns it, consuming the `Option`.
+    /// Returns the inner `T` of a `Some(T)`.
     ///
     /// # Failure
     ///
@@ -518,7 +518,7 @@ impl<T: Default> Option<T> {
 // Trait implementations
 /////////////////////////////////////////////////////////////////////////////
 
-impl<T> Vector<T> for Option<T> {
+impl<T> Slice<T> for Option<T> {
     /// Convert from `Option<T>` to `&[T]` (without copying)
     #[inline]
     fn as_slice<'a>(&'a self) -> &'a [T] {

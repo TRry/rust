@@ -45,13 +45,19 @@ use middle::trans::adt;
 use middle::trans::build::*;
 use middle::trans::builder::{Builder, noname};
 use middle::trans::callee;
+use middle::trans::cleanup::{CleanupMethods, ScopeId};
 use middle::trans::cleanup;
-use middle::trans::cleanup::CleanupMethods;
-use middle::trans::common::*;
+use middle::trans::common::{Block, C_bool, C_bytes, C_i32, C_integral, C_nil};
+use middle::trans::common::{C_null, C_struct, C_u64, C_u8, C_uint, C_undef};
+use middle::trans::common::{CrateContext, ExternMap, FunctionContext};
+use middle::trans::common::{NodeInfo, Result, SubstP, monomorphize_type};
+use middle::trans::common::{node_id_type, param_substs, return_type_is_void};
+use middle::trans::common::{tydesc_info, type_is_immediate};
+use middle::trans::common::{type_is_zero_size, val_ty};
+use middle::trans::common;
 use middle::trans::consts;
 use middle::trans::controlflow;
 use middle::trans::datum;
-// use middle::trans::datum::{Datum, Lvalue, Rvalue, ByRef, ByValue};
 use middle::trans::debuginfo;
 use middle::trans::expr;
 use middle::trans::foreign;
@@ -81,7 +87,7 @@ use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::{i8, i16, i32, i64};
 use syntax::abi::{X86, X86_64, Arm, Mips, Mipsel, Rust, RustCall};
-use syntax::abi::{RustIntrinsic, Abi};
+use syntax::abi::{RustIntrinsic, Abi, OsWindows};
 use syntax::ast_util::{local_def, is_local};
 use syntax::attr::AttrMetaMethods;
 use syntax::attr;
@@ -171,7 +177,7 @@ impl<'a> Drop for StatRecorder<'a> {
 }
 
 // only use this for foreign function ABIs and glue, use `decl_rust_fn` for Rust functions
-fn decl_fn(ccx: &CrateContext, name: &str, cc: llvm::CallConv,
+pub fn decl_fn(ccx: &CrateContext, name: &str, cc: llvm::CallConv,
            ty: Type, output: ty::t) -> ValueRef {
 
     let llfn: ValueRef = name.with_c_str(|buf| {
@@ -252,6 +258,31 @@ fn get_extern_rust_fn(ccx: &CrateContext, fn_ty: ty::t, name: &str, did: ast::De
     f
 }
 
+pub fn self_type_for_unboxed_closure(ccx: &CrateContext,
+                                     closure_id: ast::DefId)
+                                     -> ty::t {
+    let unboxed_closure_type = ty::mk_unboxed_closure(ccx.tcx(),
+                                                      closure_id,
+                                                      ty::ReStatic);
+    let unboxed_closures = ccx.tcx.unboxed_closures.borrow();
+    let unboxed_closure = unboxed_closures.get(&closure_id);
+    match unboxed_closure.kind {
+        ty::FnUnboxedClosureKind => {
+            ty::mk_imm_rptr(&ccx.tcx, ty::ReStatic, unboxed_closure_type)
+        }
+        ty::FnMutUnboxedClosureKind => {
+            ty::mk_mut_rptr(&ccx.tcx, ty::ReStatic, unboxed_closure_type)
+        }
+        ty::FnOnceUnboxedClosureKind => unboxed_closure_type,
+    }
+}
+
+pub fn kind_for_unboxed_closure(ccx: &CrateContext, closure_id: ast::DefId)
+                                -> ty::UnboxedClosureKind {
+    let unboxed_closures = ccx.tcx.unboxed_closures.borrow();
+    unboxed_closures.get(&closure_id).kind
+}
+
 pub fn decl_rust_fn(ccx: &CrateContext, fn_ty: ty::t, name: &str) -> ValueRef {
     let (inputs, output, abi, env) = match ty::get(fn_ty).sty {
         ty::ty_bare_fn(ref f) => {
@@ -260,12 +291,12 @@ pub fn decl_rust_fn(ccx: &CrateContext, fn_ty: ty::t, name: &str) -> ValueRef {
         ty::ty_closure(ref f) => {
             (f.sig.inputs.clone(), f.sig.output, f.abi, Some(Type::i8p(ccx)))
         }
-        ty::ty_unboxed_closure(closure_did) => {
-            let unboxed_closure_types = ccx.tcx
-                                           .unboxed_closure_types
-                                           .borrow();
-            let function_type = unboxed_closure_types.get(&closure_did);
-            let llenvironment_type = type_of(ccx, fn_ty).ptr_to();
+        ty::ty_unboxed_closure(closure_did, _) => {
+            let unboxed_closures = ccx.tcx.unboxed_closures.borrow();
+            let unboxed_closure = unboxed_closures.get(&closure_did);
+            let function_type = unboxed_closure.closure_type.clone();
+            let self_type = self_type_for_unboxed_closure(ccx, closure_did);
+            let llenvironment_type = type_of_explicit_arg(ccx, self_type);
             (function_type.sig.inputs.clone(),
              function_type.sig.output,
              RustCall,
@@ -691,7 +722,7 @@ pub fn iter_structural_ty<'r,
               }
           })
       }
-      ty::ty_unboxed_closure(def_id) => {
+      ty::ty_unboxed_closure(def_id, _) => {
           let repr = adt::represent_type(cx.ccx(), t);
           let upvars = ty::unboxed_closure_upvars(cx.tcx(), def_id);
           for (i, upvar) in upvars.iter().enumerate() {
@@ -1032,7 +1063,7 @@ pub fn store_ty(cx: &Block, v: ValueRef, dst: ValueRef, t: ty::t) {
 
 pub fn ignore_lhs(_bcx: &Block, local: &ast::Local) -> bool {
     match local.pat.node {
-        ast::PatWild => true, _ => false
+        ast::PatWild(ast::PatWildSingle) => true, _ => false
     }
 }
 
@@ -1049,7 +1080,7 @@ pub fn raw_block<'a>(
                  is_lpad: bool,
                  llbb: BasicBlockRef)
                  -> &'a Block<'a> {
-    Block::new(llbb, is_lpad, None, fcx)
+    common::Block::new(llbb, is_lpad, None, fcx)
 }
 
 pub fn with_cond<'a>(
@@ -1122,7 +1153,7 @@ pub fn memcpy_ty(bcx: &Block, dst: ValueRef, src: ValueRef, t: ty::t) {
         let llalign = llalign_of_min(ccx, llty);
         call_memcpy(bcx, dst, src, llsz, llalign as u32);
     } else {
-        Store(bcx, Load(bcx, src), dst);
+        store_ty(bcx, Load(bcx, src), dst, t);
     }
 }
 
@@ -1210,15 +1241,136 @@ pub fn arrayalloca(cx: &Block, ty: Type, v: ValueRef) -> ValueRef {
     p
 }
 
-// Creates and returns space for, or returns the argument representing, the
-// slot where the return value of the function must go.
-pub fn make_return_pointer(fcx: &FunctionContext, output_type: ty::t)
-                           -> ValueRef {
-    if type_of::return_uses_outptr(fcx.ccx, output_type) {
-        get_param(fcx.llfn, 0)
+// Creates the alloca slot which holds the pointer to the slot for the final return value
+pub fn make_return_slot_pointer(fcx: &FunctionContext, output_type: ty::t) -> ValueRef {
+    let lloutputtype = type_of::type_of(fcx.ccx, output_type);
+
+    // We create an alloca to hold a pointer of type `output_type`
+    // which will hold the pointer to the right alloca which has the
+    // final ret value
+    if fcx.needs_ret_allocas {
+        // Let's create the stack slot
+        let slot = AllocaFcx(fcx, lloutputtype.ptr_to(), "llretslotptr");
+
+        // and if we're using an out pointer, then store that in our newly made slot
+        if type_of::return_uses_outptr(fcx.ccx, output_type) {
+            let outptr = get_param(fcx.llfn, 0);
+
+            let b = fcx.ccx.builder();
+            b.position_before(fcx.alloca_insert_pt.get().unwrap());
+            b.store(outptr, slot);
+        }
+
+        slot
+
+    // But if there are no nested returns, we skip the indirection and have a single
+    // retslot
     } else {
-        let lloutputtype = type_of::type_of(fcx.ccx, output_type);
-        AllocaFcx(fcx, lloutputtype, "__make_return_pointer")
+        if type_of::return_uses_outptr(fcx.ccx, output_type) {
+            get_param(fcx.llfn, 0)
+        } else {
+            AllocaFcx(fcx, lloutputtype, "sret_slot")
+        }
+    }
+}
+
+struct CheckForNestedReturnsVisitor {
+    found: bool
+}
+
+impl Visitor<bool> for CheckForNestedReturnsVisitor {
+    fn visit_expr(&mut self, e: &ast::Expr, in_return: bool) {
+        match e.node {
+            ast::ExprRet(..) if in_return => {
+                self.found = true;
+                return;
+            }
+            ast::ExprRet(..) => visit::walk_expr(self, e, true),
+            _ => visit::walk_expr(self, e, in_return)
+        }
+    }
+}
+
+fn has_nested_returns(tcx: &ty::ctxt, id: ast::NodeId) -> bool {
+    match tcx.map.find(id) {
+        Some(ast_map::NodeItem(i)) => {
+            match i.node {
+                ast::ItemFn(_, _, _, _, blk) => {
+                    let mut explicit = CheckForNestedReturnsVisitor { found: false };
+                    let mut implicit = CheckForNestedReturnsVisitor { found: false };
+                    visit::walk_item(&mut explicit, &*i, false);
+                    visit::walk_expr_opt(&mut implicit, blk.expr, true);
+                    explicit.found || implicit.found
+                }
+                _ => tcx.sess.bug("unexpected item variant in has_nested_returns")
+            }
+        }
+        Some(ast_map::NodeTraitItem(trait_method)) => {
+            match *trait_method {
+                ast::ProvidedMethod(m) => {
+                    match m.node {
+                        ast::MethDecl(_, _, _, _, _, _, blk, _) => {
+                            let mut explicit = CheckForNestedReturnsVisitor { found: false };
+                            let mut implicit = CheckForNestedReturnsVisitor { found: false };
+                            visit::walk_method_helper(&mut explicit, &*m, false);
+                            visit::walk_expr_opt(&mut implicit, blk.expr, true);
+                            explicit.found || implicit.found
+                        }
+                        ast::MethMac(_) => tcx.sess.bug("unexpanded macro")
+                    }
+                }
+                ast::RequiredMethod(_) => {
+                    tcx.sess.bug("unexpected variant: required trait method \
+                                  in has_nested_returns")
+                }
+            }
+        }
+        Some(ast_map::NodeImplItem(ref ii)) => {
+            match **ii {
+                ast::MethodImplItem(ref m) => {
+                    match m.node {
+                        ast::MethDecl(_, _, _, _, _, _, blk, _) => {
+                            let mut explicit = CheckForNestedReturnsVisitor {
+                                found: false,
+                            };
+                            let mut implicit = CheckForNestedReturnsVisitor {
+                                found: false,
+                            };
+                            visit::walk_method_helper(&mut explicit,
+                                                      &**m,
+                                                      false);
+                            visit::walk_expr_opt(&mut implicit,
+                                                 blk.expr,
+                                                 true);
+                            explicit.found || implicit.found
+                        }
+                        ast::MethMac(_) => tcx.sess.bug("unexpanded macro")
+                    }
+                }
+            }
+        }
+        Some(ast_map::NodeExpr(e)) => {
+            match e.node {
+                ast::ExprFnBlock(_, _, blk) |
+                ast::ExprProc(_, blk) |
+                ast::ExprUnboxedFn(_, _, _, blk) => {
+                    let mut explicit = CheckForNestedReturnsVisitor { found: false };
+                    let mut implicit = CheckForNestedReturnsVisitor { found: false };
+                    visit::walk_expr(&mut explicit, &*e, false);
+                    visit::walk_expr_opt(&mut implicit, blk.expr, true);
+                    explicit.found || implicit.found
+                }
+                _ => tcx.sess.bug("unexpected expr variant in has_nested_returns")
+            }
+        }
+
+        Some(ast_map::NodeVariant(..)) | Some(ast_map::NodeStructCtor(..)) => false,
+
+        // glue, shims, etc
+        None if id == ast::DUMMY_NODE_ID => false,
+
+        _ => tcx.sess.bug(format!("unexpected variant in has_nested_returns: {}",
+                                  tcx.map.path_to_string(id)).as_slice())
     }
 }
 
@@ -1238,8 +1390,7 @@ pub fn new_fn_ctxt<'a>(ccx: &'a CrateContext,
                        output_type: ty::t,
                        param_substs: &'a param_substs,
                        sp: Option<Span>,
-                       block_arena: &'a TypedArena<Block<'a>>,
-                       handle_items: HandleItemsFlag)
+                       block_arena: &'a TypedArena<Block<'a>>)
                        -> FunctionContext<'a> {
     param_substs.validate();
 
@@ -1254,13 +1405,15 @@ pub fn new_fn_ctxt<'a>(ccx: &'a CrateContext,
     let substd_output_type = output_type.substp(ccx.tcx(), param_substs);
     let uses_outptr = type_of::return_uses_outptr(ccx, substd_output_type);
     let debug_context = debuginfo::create_function_debug_context(ccx, id, param_substs, llfndecl);
+    let nested_returns = has_nested_returns(ccx.tcx(), id);
 
     let mut fcx = FunctionContext {
           llfn: llfndecl,
           llenv: None,
-          llretptr: Cell::new(None),
+          llretslotptr: Cell::new(None),
           alloca_insert_pt: Cell::new(None),
           llreturn: Cell::new(None),
+          needs_ret_allocas: nested_returns,
           personality: Cell::new(None),
           caller_expects_out_pointer: uses_outptr,
           llargs: RefCell::new(NodeMap::new()),
@@ -1272,8 +1425,7 @@ pub fn new_fn_ctxt<'a>(ccx: &'a CrateContext,
           block_arena: block_arena,
           ccx: ccx,
           debug_context: debug_context,
-          scopes: RefCell::new(Vec::new()),
-          handle_items: handle_items,
+          scopes: RefCell::new(Vec::new())
     };
 
     if has_env {
@@ -1303,12 +1455,12 @@ pub fn init_function<'a>(fcx: &'a FunctionContext<'a>,
 
     if !return_type_is_void(fcx.ccx, substd_output_type) {
         // If the function returns nil/bot, there is no real return
-        // value, so do not set `llretptr`.
+        // value, so do not set `llretslotptr`.
         if !skip_retptr || fcx.caller_expects_out_pointer {
-            // Otherwise, we normally allocate the llretptr, unless we
+            // Otherwise, we normally allocate the llretslotptr, unless we
             // have been instructed to skip it for immediate return
             // values.
-            fcx.llretptr.set(Some(make_return_pointer(fcx, substd_output_type)));
+            fcx.llretslotptr.set(Some(make_return_slot_pointer(fcx, substd_output_type)));
         }
     }
 
@@ -1353,6 +1505,8 @@ pub fn create_datums_for_fn_args(fcx: &FunctionContext,
 /// Creates rvalue datums for each of the incoming function arguments and
 /// tuples the arguments. These will later be stored into appropriate lvalue
 /// datums.
+///
+/// FIXME(pcwalton): Reduce the amount of code bloat this is responsible for.
 fn create_datums_for_fn_args_under_call_abi<
         'a>(
         mut bcx: &'a Block<'a>,
@@ -1533,13 +1687,18 @@ pub fn finish_fn<'a>(fcx: &'a FunctionContext<'a>,
 
 // Builds the return block for a function.
 pub fn build_return_block(fcx: &FunctionContext, ret_cx: &Block, retty: ty::t) {
-    // Return the value if this function immediate; otherwise, return void.
-    if fcx.llretptr.get().is_none() || fcx.caller_expects_out_pointer {
+    if fcx.llretslotptr.get().is_none() ||
+       (!fcx.needs_ret_allocas && fcx.caller_expects_out_pointer) {
         return RetVoid(ret_cx);
     }
 
-    let retptr = Value(fcx.llretptr.get().unwrap());
-    let retval = match retptr.get_dominating_store(ret_cx) {
+    let retslot = if fcx.needs_ret_allocas {
+        Load(ret_cx, fcx.llretslotptr.get().unwrap())
+    } else {
+        fcx.llretslotptr.get().unwrap()
+    };
+    let retptr = Value(retslot);
+    match retptr.get_dominating_store(ret_cx) {
         // If there's only a single store to the ret slot, we can directly return
         // the value that was stored and omit the store and the alloca
         Some(s) => {
@@ -1550,17 +1709,29 @@ pub fn build_return_block(fcx: &FunctionContext, ret_cx: &Block, retty: ty::t) {
                 retptr.erase_from_parent();
             }
 
-            if ty::type_is_bool(retty) {
+            let retval = if ty::type_is_bool(retty) {
                 Trunc(ret_cx, retval, Type::i1(fcx.ccx))
             } else {
                 retval
+            };
+
+            if fcx.caller_expects_out_pointer {
+                store_ty(ret_cx, retval, get_param(fcx.llfn, 0), retty);
+                return RetVoid(ret_cx);
+            } else {
+                return Ret(ret_cx, retval);
             }
         }
-        // Otherwise, load the return value from the ret slot
-        None => load_ty(ret_cx, fcx.llretptr.get().unwrap(), retty)
-    };
-
-    Ret(ret_cx, retval);
+        // Otherwise, copy the return value to the ret slot
+        None => {
+            if fcx.caller_expects_out_pointer {
+                memcpy_ty(ret_cx, get_param(fcx.llfn, 0), retslot, retty);
+                return RetVoid(ret_cx);
+            } else {
+                return Ret(ret_cx, load_ty(ret_cx, retslot, retty));
+            }
+        }
+    }
 }
 
 #[deriving(Clone, Eq, PartialEq)]
@@ -1584,8 +1755,8 @@ pub fn trans_closure(ccx: &CrateContext,
                      abi: Abi,
                      has_env: bool,
                      is_unboxed_closure: IsUnboxedClosureFlag,
-                     maybe_load_env: <'a> |&'a Block<'a>| -> &'a Block<'a>,
-                     handle_items: HandleItemsFlag) {
+                     maybe_load_env: <'a>|&'a Block<'a>, ScopeId|
+                                         -> &'a Block<'a>) {
     ccx.stats.n_closures.set(ccx.stats.n_closures.get() + 1);
 
     let _icx = push_ctxt("trans_closure");
@@ -1602,8 +1773,7 @@ pub fn trans_closure(ccx: &CrateContext,
                           output_type,
                           param_substs,
                           Some(body.span),
-                          &arena,
-                          handle_items);
+                          &arena);
     let mut bcx = init_function(&fcx, false, output_type);
 
     // cleanup scope for the incoming arguments
@@ -1651,17 +1821,17 @@ pub fn trans_closure(ccx: &CrateContext,
         }
     };
 
-    bcx = maybe_load_env(bcx);
+    bcx = maybe_load_env(bcx, cleanup::CustomScope(arg_scope));
 
     // Up until here, IR instructions for this function have explicitly not been annotated with
     // source code location, so we don't step into call setup code. From here on, source location
     // emitting should be enabled.
     debuginfo::start_emitting_source_locations(&fcx);
 
-    let dest = match fcx.llretptr.get() {
-        Some(e) => {expr::SaveIn(e)}
+    let dest = match fcx.llretslotptr.get() {
+        Some(_) => expr::SaveIn(fcx.get_ret_slot(bcx, block_ty, "iret_slot")),
         None => {
-            assert!(type_is_zero_size(bcx.ccx(), block_ty))
+            assert!(type_is_zero_size(bcx.ccx(), block_ty));
             expr::Ignore
         }
     };
@@ -1671,6 +1841,13 @@ pub fn trans_closure(ccx: &CrateContext,
     // trans_mod, trans_item, et cetera) and those that do
     // (trans_block, trans_expr, et cetera).
     bcx = controlflow::trans_block(bcx, body, dest);
+
+    match dest {
+        expr::SaveIn(slot) if fcx.needs_ret_allocas => {
+            Store(bcx, slot, fcx.llretslotptr.get().unwrap());
+        }
+        _ => {}
+    }
 
     match fcx.llreturn.get() {
         Some(_) => {
@@ -1705,8 +1882,7 @@ pub fn trans_fn(ccx: &CrateContext,
                 llfndecl: ValueRef,
                 param_substs: &param_substs,
                 id: ast::NodeId,
-                attrs: &[ast::Attribute],
-                handle_items: HandleItemsFlag) {
+                attrs: &[ast::Attribute]) {
     let _s = StatRecorder::new(ccx, ccx.tcx.map.path_to_string(id).to_string());
     debug!("trans_fn(param_substs={})", param_substs.repr(ccx.tcx()));
     let _icx = push_ctxt("trans_fn");
@@ -1726,8 +1902,7 @@ pub fn trans_fn(ccx: &CrateContext,
                   abi,
                   false,
                   NotUnboxedClosure,
-                  |bcx| bcx,
-                  handle_items);
+                  |bcx, _| bcx);
 }
 
 pub fn trans_enum_variant(ccx: &CrateContext,
@@ -1778,12 +1953,10 @@ pub fn trans_named_tuple_constructor<'a>(mut bcx: &'a Block<'a>,
     };
 
     if !type_is_zero_size(ccx, result_ty) {
-        let repr = adt::represent_type(ccx, result_ty);
-
         match args {
             callee::ArgExprs(exprs) => {
                 let fields = exprs.iter().map(|x| *x).enumerate().collect::<Vec<_>>();
-                bcx = expr::trans_adt(bcx, &*repr, disr, fields.as_slice(),
+                bcx = expr::trans_adt(bcx, result_ty, disr, fields.as_slice(),
                                       None, expr::SaveIn(llresult));
             }
             _ => ccx.sess().bug("expected expr as arguments for variant/struct tuple constructor")
@@ -1833,24 +2006,27 @@ fn trans_enum_variant_or_tuple_like_struct(ccx: &CrateContext,
 
     let arena = TypedArena::new();
     let fcx = new_fn_ctxt(ccx, llfndecl, ctor_id, false, result_ty,
-                          param_substs, None, &arena, TranslateItems);
+                          param_substs, None, &arena);
     let bcx = init_function(&fcx, false, result_ty);
+
+    assert!(!fcx.needs_ret_allocas);
 
     let arg_tys = ty::ty_fn_args(ctor_ty);
 
     let arg_datums = create_datums_for_fn_args(&fcx, arg_tys.as_slice());
 
     if !type_is_zero_size(fcx.ccx, result_ty) {
+        let dest = fcx.get_ret_slot(bcx, result_ty, "eret_slot");
         let repr = adt::represent_type(ccx, result_ty);
         for (i, arg_datum) in arg_datums.move_iter().enumerate() {
             let lldestptr = adt::trans_field_ptr(bcx,
                                                  &*repr,
-                                                 fcx.llretptr.get().unwrap(),
+                                                 dest,
                                                  disr,
                                                  i);
             arg_datum.store_to(bcx, lldestptr);
         }
-        adt::trans_set_discr(bcx, &*repr, fcx.llretptr.get().unwrap(), disr);
+        adt::trans_set_discr(bcx, &*repr, dest, disr);
     }
 
     finish_fn(&fcx, bcx, result_ty);
@@ -1922,29 +2098,39 @@ pub fn trans_item(ccx: &CrateContext, item: &ast::Item) {
     let _icx = push_ctxt("trans_item");
     match item.node {
       ast::ItemFn(ref decl, _fn_style, abi, ref generics, ref body) => {
-        if abi != Rust {
-            let llfndecl = get_item_val(ccx, item.id);
-            foreign::trans_rust_fn_with_foreign_abi(
-                ccx, &**decl, &**body, item.attrs.as_slice(), llfndecl, item.id);
-        } else if !generics.is_type_parameterized() {
+        if !generics.is_type_parameterized() {
             let llfn = get_item_val(ccx, item.id);
-            trans_fn(ccx,
-                     &**decl,
-                     &**body,
-                     llfn,
-                     &param_substs::empty(),
-                     item.id,
-                     item.attrs.as_slice(),
-                     TranslateItems);
-        } else {
-            // Be sure to travel more than just one layer deep to catch nested
-            // items in blocks and such.
-            let mut v = TransItemVisitor{ ccx: ccx };
-            v.visit_block(&**body, ());
+            if abi != Rust {
+                foreign::trans_rust_fn_with_foreign_abi(ccx,
+                                                        &**decl,
+                                                        &**body,
+                                                        item.attrs.as_slice(),
+                                                        llfn,
+                                                        &param_substs::empty(),
+                                                        item.id,
+                                                        None);
+            } else {
+                trans_fn(ccx,
+                         &**decl,
+                         &**body,
+                         llfn,
+                         &param_substs::empty(),
+                         item.id,
+                         item.attrs.as_slice());
+            }
         }
+
+        // Be sure to travel more than just one layer deep to catch nested
+        // items in blocks and such.
+        let mut v = TransItemVisitor{ ccx: ccx };
+        v.visit_block(&**body, ());
       }
-      ast::ItemImpl(ref generics, _, _, ref ms) => {
-        meth::trans_impl(ccx, item.ident, ms.as_slice(), generics, item.id);
+      ast::ItemImpl(ref generics, _, _, ref impl_items) => {
+        meth::trans_impl(ccx,
+                         item.ident,
+                         impl_items.as_slice(),
+                         generics,
+                         item.id);
       }
       ast::ItemMod(ref m) => {
         trans_mod(ccx, m);
@@ -2052,11 +2238,11 @@ pub fn get_fn_llvm_attributes(ccx: &CrateContext, fn_ty: ty::t)
     let (fn_sig, abi, has_env) = match ty::get(fn_ty).sty {
         ty::ty_closure(ref f) => (f.sig.clone(), f.abi, true),
         ty::ty_bare_fn(ref f) => (f.sig.clone(), f.abi, false),
-        ty::ty_unboxed_closure(closure_did) => {
-            let unboxed_closure_types = ccx.tcx
-                                           .unboxed_closure_types
-                                           .borrow();
-            let function_type = unboxed_closure_types.get(&closure_did);
+        ty::ty_unboxed_closure(closure_did, _) => {
+            let unboxed_closures = ccx.tcx.unboxed_closures.borrow();
+            let function_type = unboxed_closures.get(&closure_did)
+                                                .closure_type
+                                                .clone();
             (function_type.sig.clone(), RustCall, true)
         }
         _ => fail!("expected closure or function.")
@@ -2098,7 +2284,7 @@ pub fn get_fn_llvm_attributes(ccx: &CrateContext, fn_ty: ty::t)
         match ty::get(ret_ty).sty {
             // `~` pointer return values never alias because ownership
             // is transferred
-            ty::ty_uniq(it)  if match ty::get(it).sty {
+            ty::ty_uniq(it) if match ty::get(it).sty {
                 ty::ty_str | ty::ty_vec(..) | ty::ty_trait(..) => true, _ => false
             } => {}
             ty::ty_uniq(_) => {
@@ -2174,14 +2360,20 @@ pub fn get_fn_llvm_attributes(ccx: &CrateContext, fn_ty: ty::t)
             }
 
             // `&mut` pointer parameters never alias other parameters, or mutable global data
-            // `&` pointer parameters never alias either (for LLVM's purposes) as long as the
-            // interior is safe
+            //
+            // `&T` where `T` contains no `UnsafeCell<U>` is immutable, and can be marked as both
+            // `readonly` and `noalias`, as LLVM's definition of `noalias` is based solely on
+            // memory dependencies rather than pointer equality
             ty::ty_rptr(b, mt) if mt.mutbl == ast::MutMutable ||
                                   !ty::type_contents(ccx.tcx(), mt.ty).interior_unsafe() => {
 
                 let llsz = llsize_of_real(ccx, type_of::type_of(ccx, mt.ty));
                 attrs.arg(idx, llvm::NoAliasAttribute)
                      .arg(idx, llvm::DereferenceableAttribute(llsz));
+
+                if mt.mutbl == ast::MutImmutable {
+                    attrs.arg(idx, llvm::ReadOnlyAttribute);
+                }
 
                 match b {
                     ReLateBound(_, BrAnon(_)) => {
@@ -2254,6 +2446,13 @@ pub fn create_entry_wrapper(ccx: &CrateContext,
                                &ccx.int_type);
 
         let llfn = decl_cdecl_fn(ccx, "main", llfty, ty::mk_nil());
+
+        // FIXME: #16581: Marking a symbol in the executable with `dllexport`
+        // linkage forces MinGW's linker to output a `.reloc` section for ASLR
+        if ccx.sess().targ_cfg.os == OsWindows {
+            unsafe { llvm::LLVMRustSetDLLExportStorageClass(llfn) }
+        }
+
         let llbb = "top".with_c_str(|buf| {
             unsafe {
                 llvm::LLVMAppendBasicBlockInContext(ccx.llcx, llfn, buf)
@@ -2451,21 +2650,23 @@ pub fn get_item_val(ccx: &CrateContext, id: ast::NodeId) -> ValueRef {
             v
         }
 
-        ast_map::NodeTraitMethod(trait_method) => {
-            debug!("get_item_val(): processing a NodeTraitMethod");
+        ast_map::NodeTraitItem(trait_method) => {
+            debug!("get_item_val(): processing a NodeTraitItem");
             match *trait_method {
-                ast::Required(_) => {
+                ast::RequiredMethod(_) => {
                     ccx.sess().bug("unexpected variant: required trait method in \
                                    get_item_val()");
                 }
-                ast::Provided(m) => {
+                ast::ProvidedMethod(m) => {
                     register_method(ccx, id, &*m)
                 }
             }
         }
 
-        ast_map::NodeMethod(m) => {
-            register_method(ccx, id, &*m)
+        ast_map::NodeImplItem(ii) => {
+            match *ii {
+                ast::MethodImplItem(m) => register_method(ccx, id, &*m),
+            }
         }
 
         ast_map::NodeForeignItem(ni) => {

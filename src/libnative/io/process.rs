@@ -80,7 +80,7 @@ impl Process {
                 rtio::Ignored => { ret.push(None); Ok(None) }
                 rtio::InheritFd(fd) => {
                     ret.push(None);
-                    Ok(Some(file::FileDesc::new(fd, true)))
+                    Ok(Some(file::FileDesc::new(fd, false)))
                 }
                 rtio::CreatePipe(readable, _writable) => {
                     let (reader, writer) = try!(pipe());
@@ -148,8 +148,8 @@ impl rtio::RtioProcess for Process {
     }
 
     fn kill(&mut self, signum: int) -> IoResult<()> {
-        #[cfg(unix)] use ERROR = libc::EINVAL;
-        #[cfg(windows)] use ERROR = libc::ERROR_NOTHING_TO_TERMINATE;
+        #[cfg(unix)] use libc::EINVAL as ERROR;
+        #[cfg(windows)] use libc::ERROR_NOTHING_TO_TERMINATE as ERROR;
 
         // On linux (and possibly other unices), a process that has exited will
         // continue to accept signals because it is "defunct". The delivery of
@@ -192,8 +192,8 @@ impl Drop for Process {
 }
 
 fn pipe() -> IoResult<(file::FileDesc, file::FileDesc)> {
-    #[cfg(unix)] use ERROR = libc::EMFILE;
-    #[cfg(windows)] use ERROR = libc::WSAEMFILE;
+    #[cfg(unix)] use libc::EMFILE as ERROR;
+    #[cfg(windows)] use libc::WSAEMFILE as ERROR;
     struct Closer { fd: libc::c_int }
 
     let os::Pipe { reader, writer } = match unsafe { os::pipe() } {
@@ -359,13 +359,13 @@ fn spawn_process_os(cfg: ProcessConfig,
                                               libc::OPEN_EXISTING,
                                               0,
                                               ptr::mut_null());
-                    if *slot == INVALID_HANDLE_VALUE as libc::HANDLE {
+                    if *slot == INVALID_HANDLE_VALUE {
                         return Err(super::last_error())
                     }
                 }
                 Some(ref fd) => {
                     let orig = get_osfhandle(fd.fd()) as HANDLE;
-                    if orig == INVALID_HANDLE_VALUE as HANDLE {
+                    if orig == INVALID_HANDLE_VALUE {
                         return Err(super::last_error())
                     }
                     if DuplicateHandle(cur_proc, orig, cur_proc, slot,
@@ -450,9 +450,9 @@ fn zeroed_startupinfo() -> libc::types::os::arch::extra::STARTUPINFO {
         wShowWindow: 0,
         cbReserved2: 0,
         lpReserved2: ptr::mut_null(),
-        hStdInput: libc::INVALID_HANDLE_VALUE as libc::HANDLE,
-        hStdOutput: libc::INVALID_HANDLE_VALUE as libc::HANDLE,
-        hStdError: libc::INVALID_HANDLE_VALUE as libc::HANDLE,
+        hStdInput: libc::INVALID_HANDLE_VALUE,
+        hStdOutput: libc::INVALID_HANDLE_VALUE,
+        hStdError: libc::INVALID_HANDLE_VALUE,
     }
 }
 
@@ -479,7 +479,10 @@ fn make_command_line(prog: &CString, args: &[CString]) -> String {
     return cmd;
 
     fn append_arg(cmd: &mut String, arg: &str) {
-        let quote = arg.chars().any(|c| c == ' ' || c == '\t');
+        // If an argument has 0 characters then we need to quote it to ensure
+        // that it actually gets passed through on the command line or otherwise
+        // it will be dropped entirely when parsed on the other end.
+        let quote = arg.chars().any(|c| c == ' ' || c == '\t') || arg.len() == 0;
         if quote {
             cmd.push_char('"');
         }

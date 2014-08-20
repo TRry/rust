@@ -14,7 +14,7 @@ extern crate test;
 extern crate libc;
 
 mod any;
-mod atomics;
+mod atomic;
 mod cell;
 mod char;
 mod cmp;
@@ -28,4 +28,6 @@ mod option;
 mod ptr;
 mod raw;
 mod result;
+mod slice;
+mod str;
 mod tuple;

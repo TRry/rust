@@ -26,6 +26,8 @@ pub struct Page<'a> {
     pub title: &'a str,
     pub ty: &'a str,
     pub root_path: &'a str,
+    pub description: &'a str,
+    pub keywords: &'a str
 }
 
 pub fn render<T: fmt::Show, S: fmt::Show>(
@@ -38,7 +40,9 @@ r##"<!DOCTYPE html>
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="The {krate} library documentation.">
+    <meta name="generator" content="rustdoc">
+    <meta name="description" content="{description}">
+    <meta name="keywords" content="{keywords}">
 
     <title>{title}</title>
 
@@ -47,7 +51,7 @@ r##"<!DOCTYPE html>
     {favicon}
     {in_header}
 </head>
-<body>
+<body class="rustdoc">
     <!--[if lte IE 8]>
     <div class="warning">
         This old browser is unsupported and will most likely display funky
@@ -102,7 +106,7 @@ r##"<!DOCTYPE html>
             </p>
             <p>
                 Accepted types are: <code>fn</code>, <code>mod</code>,
-                <code>struct</code> (or <code>str</code>), <code>enum</code>,
+                <code>struct</code>, <code>enum</code>,
                 <code>trait</code>, <code>typedef</code> (or
                 <code>tdef</code>).
             </p>
@@ -134,6 +138,8 @@ r##"<!DOCTYPE html>
                 layout.logo)
     },
     title     = page.title,
+    description = page.description,
+    keywords = page.keywords,
     favicon   = if layout.favicon.len() == 0 {
         "".to_string()
     } else {

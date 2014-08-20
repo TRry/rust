@@ -100,6 +100,40 @@ pub enum Ordering {
    Greater = 1i,
 }
 
+impl Ordering {
+    /// Reverse the `Ordering`, so that `Less` becomes `Greater` and
+    /// vice versa.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// assert_eq!(Less.reverse(), Greater);
+    /// assert_eq!(Equal.reverse(), Equal);
+    /// assert_eq!(Greater.reverse(), Less);
+    ///
+    ///
+    /// let mut data = &mut [2u, 10, 5, 8];
+    ///
+    /// // sort the array from largest to smallest.
+    /// data.sort_by(|a, b| a.cmp(b).reverse());
+    ///
+    /// assert_eq!(data, &mut [10u, 8, 5, 2]);
+    /// ```
+    #[inline]
+    #[experimental]
+    pub fn reverse(self) -> Ordering {
+        unsafe {
+            // this compiles really nicely (to a single instruction);
+            // an explicit match has a pile of branches and
+            // comparisons.
+            //
+            // NB. it is safe because of the explicit discriminants
+            // given above.
+            ::mem::transmute::<_, Ordering>(-(self as i8))
+        }
+    }
+}
+
 /// Trait for types that form a [total order](
 /// https://en.wikipedia.org/wiki/Total_order).
 ///
@@ -239,7 +273,7 @@ mod impls {
               Less, Greater, Equal};
     use option::{Option, Some, None};
 
-    macro_rules! eq_impl(
+    macro_rules! partial_eq_impl(
         ($($t:ty)*) => ($(
             #[unstable = "Trait is unstable."]
             impl PartialEq for $t {
@@ -259,18 +293,18 @@ mod impls {
         fn ne(&self, _other: &()) -> bool { false }
     }
 
-    eq_impl!(bool char uint u8 u16 u32 u64 int i8 i16 i32 i64 f32 f64)
+    partial_eq_impl!(bool char uint u8 u16 u32 u64 int i8 i16 i32 i64 f32 f64)
 
-    macro_rules! totaleq_impl(
+    macro_rules! eq_impl(
         ($($t:ty)*) => ($(
             #[unstable = "Trait is unstable."]
             impl Eq for $t {}
         )*)
     )
 
-    totaleq_impl!(() bool char uint u8 u16 u32 u64 int i8 i16 i32 i64)
+    eq_impl!(() bool char uint u8 u16 u32 u64 int i8 i16 i32 i64)
 
-    macro_rules! ord_impl(
+    macro_rules! partial_ord_impl(
         ($($t:ty)*) => ($(
             #[unstable = "Trait is unstable."]
             impl PartialOrd for $t {
@@ -311,9 +345,9 @@ mod impls {
         }
     }
 
-    ord_impl!(char uint u8 u16 u32 u64 int i8 i16 i32 i64 f32 f64)
+    partial_ord_impl!(char uint u8 u16 u32 u64 int i8 i16 i32 i64 f32 f64)
 
-    macro_rules! totalord_impl(
+    macro_rules! ord_impl(
         ($($t:ty)*) => ($(
             #[unstable = "Trait is unstable."]
             impl Ord for $t {
@@ -341,7 +375,7 @@ mod impls {
         }
     }
 
-    totalord_impl!(char uint u8 u16 u32 u64 int i8 i16 i32 i64)
+    ord_impl!(char uint u8 u16 u32 u64 int i8 i16 i32 i64)
 
     // & pointers
     #[unstable = "Trait is unstable."]

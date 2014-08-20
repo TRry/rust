@@ -48,15 +48,23 @@ mod m {
     }
 
     #[cfg(target_arch = "x86_64")]
+    #[cfg(target_arch = "arm")]
     pub mod m {
         pub fn align() -> uint { 8u }
         pub fn size() -> uint { 16u }
     }
 }
 
-#[cfg(target_os = "win32")]
+#[cfg(target_os = "windows")]
+/* NOTE: Remove after snapshot */#[cfg(stage0, target_os = "win32")]
 mod m {
     #[cfg(target_arch = "x86")]
+    pub mod m {
+        pub fn align() -> uint { 8u }
+        pub fn size() -> uint { 16u }
+    }
+
+    #[cfg(target_arch = "x86_64")]
     pub mod m {
         pub fn align() -> uint { 8u }
         pub fn size() -> uint { 16u }

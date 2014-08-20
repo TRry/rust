@@ -226,7 +226,7 @@ pub use funcs::bsd43::{shutdown};
 #[cfg(windows)] pub use consts::os::extra::{FILE_FLAG_BACKUP_SEMANTICS, INVALID_HANDLE_VALUE};
 #[cfg(windows)] pub use consts::os::extra::{MOVEFILE_REPLACE_EXISTING};
 #[cfg(windows)] pub use consts::os::extra::{GENERIC_READ, GENERIC_WRITE};
-#[cfg(windows)] pub use consts::os::extra::{VOLUME_NAME_DOS, FILE_ATTRIBUTE_NORMAL};
+#[cfg(windows)] pub use consts::os::extra::{VOLUME_NAME_DOS};
 #[cfg(windows)] pub use consts::os::extra::{PIPE_ACCESS_DUPLEX, FILE_FLAG_FIRST_PIPE_INSTANCE};
 #[cfg(windows)] pub use consts::os::extra::{FILE_FLAG_OVERLAPPED, PIPE_TYPE_BYTE};
 #[cfg(windows)] pub use consts::os::extra::{PIPE_READMODE_BYTE, PIPE_WAIT};
@@ -255,10 +255,10 @@ pub use funcs::bsd43::{shutdown};
 #[cfg(windows)] pub use funcs::extra::kernel32::{UnmapViewOfFile, CloseHandle};
 #[cfg(windows)] pub use funcs::extra::kernel32::{WaitForSingleObject, GetSystemTimeAsFileTime};
 #[cfg(windows)] pub use funcs::extra::kernel32::{QueryPerformanceCounter};
-#[cfg(windows)] pub use funcs::extra::kernel32::{WaitForSingleObject, QueryPerformanceFrequency};
+#[cfg(windows)] pub use funcs::extra::kernel32::{QueryPerformanceFrequency};
 #[cfg(windows)] pub use funcs::extra::kernel32::{GetExitCodeProcess, TerminateProcess};
 #[cfg(windows)] pub use funcs::extra::kernel32::{ReadFile, WriteFile, SetFilePointerEx};
-#[cfg(windows)] pub use funcs::extra::kernel32::{FlushFileBuffers, SetEndOfFile, CreateFileW};
+#[cfg(windows)] pub use funcs::extra::kernel32::{SetEndOfFile, CreateFileW};
 #[cfg(windows)] pub use funcs::extra::kernel32::{CreateDirectoryW, FindFirstFileW};
 #[cfg(windows)] pub use funcs::extra::kernel32::{FindNextFileW, FindClose, DeleteFileW};
 #[cfg(windows)] pub use funcs::extra::kernel32::{CreateHardLinkW, CreateEventW};
@@ -304,7 +304,7 @@ extern {}
 // If/when libprim happens, this can be removed in favor of that
 pub enum Nullable<T> {
     Null,
-    Some(T)
+    NotNull(T)
 }
 
 pub mod types {
@@ -1138,22 +1138,21 @@ pub mod types {
         }
     }
 
-    #[cfg(target_os = "win32")]
+    #[cfg(target_os = "windows")]
+    #[cfg(stage0, target_os = "win32")] // NOTE: Remove after snapshot
     pub mod os {
         pub mod common {
             pub mod posix01 {
-                use types::os::arch::c95::{c_short, time_t, suseconds_t,
-                                                 c_long};
+                use types::os::arch::c95::{c_short, time_t, c_long};
                 use types::os::arch::extra::{int64, time64_t};
                 use types::os::arch::posix88::{dev_t, ino_t};
-                use types::os::arch::posix88::mode_t;
 
                 // pub Note: this is the struct called stat64 in win32. Not stat,
                 // nor stati64.
                 pub struct stat {
                     pub st_dev: dev_t,
                     pub st_ino: ino_t,
-                    pub st_mode: mode_t,
+                    pub st_mode: u16,
                     pub st_nlink: c_short,
                     pub st_uid: c_short,
                     pub st_gid: c_short,
@@ -1171,8 +1170,8 @@ pub mod types {
                 }
 
                 pub struct timeval {
-                    pub tv_sec: time_t,
-                    pub tv_usec: suseconds_t,
+                    pub tv_sec: c_long,
+                    pub tv_usec: c_long,
                 }
 
                 pub struct timespec {
@@ -1186,7 +1185,7 @@ pub mod types {
             pub mod bsd44 {
                 use types::os::arch::c95::{c_char, c_int, c_uint, size_t};
 
-                pub type SOCKET = c_uint;
+                pub type SOCKET = uint;
                 pub type socklen_t = c_int;
                 pub type sa_family_t = u16;
                 pub type in_port_t = u16;
@@ -1197,6 +1196,7 @@ pub mod types {
                 }
                 pub struct sockaddr_storage {
                     pub ss_family: sa_family_t,
+                    pub __ss_pad1: [u8, ..6],
                     pub __ss_align: i64,
                     pub __ss_pad2: [u8, ..112],
                 }
@@ -1293,12 +1293,9 @@ pub mod types {
             pub mod posix88 {
                 pub type off_t = i32;
                 pub type dev_t = u32;
-                pub type ino_t = i16;
+                pub type ino_t = u16;
 
-                #[cfg(target_arch = "x86")]
-                pub type pid_t = i32;
-                #[cfg(target_arch = "x86_64")]
-                pub type pid_t = i64;
+                pub type pid_t = u32;
 
                 pub type useconds_t = u32;
                 pub type mode_t = u16;
@@ -1415,7 +1412,7 @@ pub mod types {
                     pub dwPageSize: DWORD,
                     pub lpMinimumApplicationAddress: LPVOID,
                     pub lpMaximumApplicationAddress: LPVOID,
-                    pub dwActiveProcessorMask: DWORD,
+                    pub dwActiveProcessorMask: uint,
                     pub dwNumberOfProcessors: DWORD,
                     pub dwProcessorType: DWORD,
                     pub dwAllocationGranularity: DWORD,
@@ -1461,7 +1458,7 @@ pub mod types {
 
                 pub struct WSAPROTOCOLCHAIN {
                     pub ChainLen: c_int,
-                    pub ChainEntries: [DWORD, ..MAX_PROTOCOL_CHAIN],
+                    pub ChainEntries: [DWORD, ..MAX_PROTOCOL_CHAIN as uint],
                 }
 
                 pub type LPWSAPROTOCOLCHAIN = *mut WSAPROTOCOLCHAIN;
@@ -1486,7 +1483,7 @@ pub mod types {
                     pub iSecurityScheme: c_int,
                     pub dwMessageSize: DWORD,
                     pub dwProviderReserved: DWORD,
-                    pub szProtocol: [u8, ..WSAPROTOCOL_LEN+1],
+                    pub szProtocol: [u8, ..(WSAPROTOCOL_LEN as uint) + 1u],
                 }
 
                 pub type LPWSAPROTOCOL_INFO = *mut WSAPROTOCOL_INFO;
@@ -1807,7 +1804,8 @@ pub mod consts {
     // Consts tend to vary per OS so we pull their definitions out
     // into this module.
 
-    #[cfg(target_os = "win32")]
+    #[cfg(target_os = "windows")]
+    #[cfg(stage0, target_os = "win32")] // NOTE: Remove after snapshot
     pub mod os {
         pub mod c95 {
             use types::os::arch::c95::{c_int, c_uint};
@@ -1950,7 +1948,7 @@ pub mod consts {
         }
         pub mod extra {
             use types::os::arch::c95::c_int;
-            use types::os::arch::extra::{WORD, DWORD, BOOL};
+            use types::os::arch::extra::{WORD, DWORD, BOOL, HANDLE};
 
             pub static TRUE : BOOL = 1;
             pub static FALSE : BOOL = 0;
@@ -1979,7 +1977,7 @@ pub mod consts {
             pub static ERROR_IO_PENDING: c_int = 997;
             pub static ERROR_FILE_INVALID : c_int = 1006;
             pub static ERROR_NOT_FOUND: c_int = 1168;
-            pub static INVALID_HANDLE_VALUE : c_int = -1;
+            pub static INVALID_HANDLE_VALUE: HANDLE = -1 as HANDLE;
 
             pub static DELETE : DWORD = 0x00010000;
             pub static READ_CONTROL : DWORD = 0x00020000;
@@ -3891,7 +3889,8 @@ pub mod funcs {
     // so be careful when trying to write portable code; it won't always work
     // with the same POSIX functions and types as other platforms.
 
-    #[cfg(target_os = "win32")]
+    #[cfg(target_os = "windows")]
+    #[cfg(stage0, target_os = "win32")] // NOTE: Remove after snapshot
     pub mod posix88 {
         pub mod stat_ {
             use types::os::common::posix01::{stat, utimbuf};
@@ -4320,7 +4319,8 @@ pub mod funcs {
         }
     }
 
-    #[cfg(target_os = "win32")]
+    #[cfg(target_os = "windows")]
+    #[cfg(stage0, target_os = "win32")] // NOTE: Remove after snapshot
     pub mod posix01 {
         pub mod stat_ {
         }
@@ -4336,7 +4336,8 @@ pub mod funcs {
     }
 
 
-    #[cfg(target_os = "win32")]
+    #[cfg(target_os = "windows")]
+    #[cfg(stage0, target_os = "win32")] // NOTE: Remove after snapshot
     #[cfg(target_os = "linux")]
     #[cfg(target_os = "android")]
     #[cfg(target_os = "macos")]
@@ -4474,7 +4475,8 @@ pub mod funcs {
     }
 
 
-    #[cfg(target_os = "win32")]
+    #[cfg(target_os = "windows")]
+    #[cfg(stage0, target_os = "win32")] // NOTE: Remove after snapshot
     pub mod bsd44 {
     }
 
@@ -4500,7 +4502,8 @@ pub mod funcs {
     }
 
 
-    #[cfg(target_os = "win32")]
+    #[cfg(target_os = "windows")]
+    #[cfg(stage0, target_os = "win32")] // NOTE: Remove after snapshot
     pub mod extra {
 
         pub mod kernel32 {

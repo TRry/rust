@@ -21,6 +21,7 @@ use std::gc::Gc;
 use std::io::File;
 use std::rc::Rc;
 use std::str;
+use std::iter;
 
 pub mod lexer;
 pub mod parser;
@@ -143,6 +144,8 @@ pub fn parse_stmt_from_source_str(name: String,
     maybe_aborted(p.parse_stmt(attrs),p)
 }
 
+// Note: keep in sync with `with_hygiene::parse_tts_from_source_str`
+// until #16472 is resolved.
 pub fn parse_tts_from_source_str(name: String,
                                  source: String,
                                  cfg: ast::CrateConfig,
@@ -159,6 +162,8 @@ pub fn parse_tts_from_source_str(name: String,
     maybe_aborted(p.parse_all_token_trees(),p)
 }
 
+// Note: keep in sync with `with_hygiene::new_parser_from_source_str`
+// until #16472 is resolved.
 // Create a new parser from a source string
 pub fn new_parser_from_source_str<'a>(sess: &'a ParseSess,
                                       cfg: ast::CrateConfig,
@@ -191,6 +196,8 @@ pub fn new_sub_parser_from_file<'a>(sess: &'a ParseSess,
     p
 }
 
+// Note: keep this in sync with `with_hygiene::filemap_to_parser` until
+// #16472 is resolved.
 /// Given a filemap and config, return a parser
 pub fn filemap_to_parser<'a>(sess: &'a ParseSess,
                              filemap: Rc<FileMap>,
@@ -247,6 +254,8 @@ pub fn string_to_filemap(sess: &ParseSess, source: String, path: String)
     sess.span_diagnostic.cm.new_filemap(path, source)
 }
 
+// Note: keep this in sync with `with_hygiene::filemap_to_tts` (apart
+// from the StringReader constructor), until #16472 is resolved.
 /// Given a filemap, produce a sequence of token-trees
 pub fn filemap_to_tts(sess: &ParseSess, filemap: Rc<FileMap>)
     -> Vec<ast::TokenTree> {
@@ -264,6 +273,67 @@ pub fn tts_to_parser<'a>(sess: &'a ParseSess,
                          cfg: ast::CrateConfig) -> Parser<'a> {
     let trdr = lexer::new_tt_reader(&sess.span_diagnostic, None, tts);
     Parser::new(sess, cfg, box trdr)
+}
+
+// FIXME (Issue #16472): The `with_hygiene` mod should go away after
+// ToToken impls are revised to go directly to token-trees.
+pub mod with_hygiene {
+    use ast;
+    use codemap::FileMap;
+    use parse::parser::Parser;
+    use std::rc::Rc;
+    use super::ParseSess;
+    use super::{maybe_aborted, string_to_filemap, tts_to_parser};
+
+    // Note: keep this in sync with `super::parse_tts_from_source_str` until
+    // #16472 is resolved.
+    pub fn parse_tts_from_source_str(name: String,
+                                     source: String,
+                                     cfg: ast::CrateConfig,
+                                     sess: &ParseSess) -> Vec<ast::TokenTree> {
+        let mut p = new_parser_from_source_str(
+            sess,
+            cfg,
+            name,
+            source
+        );
+        p.quote_depth += 1u;
+        // right now this is re-creating the token trees from ... token trees.
+        maybe_aborted(p.parse_all_token_trees(),p)
+    }
+
+    // Note: keep this in sync with `super::new_parser_from_source_str` until
+    // #16472 is resolved.
+    // Create a new parser from a source string
+    fn new_parser_from_source_str<'a>(sess: &'a ParseSess,
+                                      cfg: ast::CrateConfig,
+                                      name: String,
+                                      source: String) -> Parser<'a> {
+        filemap_to_parser(sess, string_to_filemap(sess, source, name), cfg)
+    }
+
+    // Note: keep this in sync with `super::filemap_to_parserr` until
+    // #16472 is resolved.
+    /// Given a filemap and config, return a parser
+    fn filemap_to_parser<'a>(sess: &'a ParseSess,
+                             filemap: Rc<FileMap>,
+                             cfg: ast::CrateConfig) -> Parser<'a> {
+        tts_to_parser(sess, filemap_to_tts(sess, filemap), cfg)
+    }
+
+    // Note: keep this in sync with `super::filemap_to_tts` until
+    // #16472 is resolved.
+    /// Given a filemap, produce a sequence of token-trees
+    fn filemap_to_tts(sess: &ParseSess, filemap: Rc<FileMap>)
+                      -> Vec<ast::TokenTree> {
+        // it appears to me that the cfg doesn't matter here... indeed,
+        // parsing tt's probably shouldn't require a parser at all.
+        use super::lexer::make_reader_with_embedded_idents as make_reader;
+        let cfg = Vec::new();
+        let srdr = make_reader(&sess.span_diagnostic, filemap);
+        let mut p1 = Parser::new(sess, cfg, box srdr);
+        p1.parse_all_token_trees()
+    }
 }
 
 /// Abort if necessary
@@ -327,7 +397,7 @@ pub fn str_lit(lit: &str) -> String {
     let error = |i| format!("lexer should have rejected {} at {}", lit, i);
 
     /// Eat everything up to a non-whitespace
-    fn eat<'a>(it: &mut ::std::iter::Peekable<(uint, char), ::std::str::CharOffsets<'a>>) {
+    fn eat<'a>(it: &mut iter::Peekable<(uint, char), str::CharOffsets<'a>>) {
         loop {
             match it.peek().map(|x| x.val1()) {
                 Some(' ') | Some('\n') | Some('\r') | Some('\t') => {
@@ -471,35 +541,54 @@ pub fn binary_lit(lit: &str) -> Rc<Vec<u8>> {
     // FIXME #8372: This could be a for-loop if it didn't borrow the iterator
     let error = |i| format!("lexer should have rejected {} at {}", lit, i);
 
+    /// Eat everything up to a non-whitespace
+    fn eat<'a, I: Iterator<(uint, u8)>>(it: &mut iter::Peekable<(uint, u8), I>) {
+        loop {
+            match it.peek().map(|x| x.val1()) {
+                Some(b' ') | Some(b'\n') | Some(b'\r') | Some(b'\t') => {
+                    it.next();
+                },
+                _ => { break; }
+            }
+        }
+    }
+
     // binary literals *must* be ASCII, but the escapes don't have to be
-    let mut chars = lit.as_bytes().iter().enumerate().peekable();
+    let mut chars = lit.bytes().enumerate().peekable();
     loop {
         match chars.next() {
-            Some((i, &c)) => {
-                if c == b'\\' {
-                    if *chars.peek().expect(error(i).as_slice()).val1() == b'\n' {
-                        loop {
-                            // eat everything up to a non-whitespace
-                            match chars.peek().map(|x| *x.val1()) {
-                                Some(b' ') | Some(b'\n') | Some(b'\r') | Some(b'\t') => {
-                                    chars.next();
-                                },
-                                _ => { break; }
-                            }
+            Some((i, b'\\')) => {
+                let em = error(i);
+                match chars.peek().expect(em.as_slice()).val1() {
+                    b'\n' => eat(&mut chars),
+                    b'\r' => {
+                        chars.next();
+                        if chars.peek().expect(em.as_slice()).val1() != b'\n' {
+                            fail!("lexer accepted bare CR");
                         }
-                    } else {
+                        eat(&mut chars);
+                    }
+                    _ => {
                         // otherwise, a normal escape
                         let (c, n) = byte_lit(lit.slice_from(i));
-                        for _ in range(0, n - 1) { // we don't need to move past the first \
+                        // we don't need to move past the first \
+                        for _ in range(0, n - 1) {
                             chars.next();
                         }
                         res.push(c);
                     }
-                } else {
-                    res.push(c);
                 }
             },
-            None => { break; }
+            Some((i, b'\r')) => {
+                let em = error(i);
+                if chars.peek().expect(em.as_slice()).val1() != b'\n' {
+                    fail!("lexer accepted bare CR");
+                }
+                chars.next();
+                res.push(b'\n');
+            }
+            Some((_, c)) => res.push(c),
+            None => break,
         }
     }
 
@@ -515,31 +604,13 @@ pub fn integer_lit(s: &str, sd: &SpanHandler, sp: Span) -> ast::Lit_ {
     debug!("parse_integer_lit: {}", s);
 
     if s.len() == 1 {
-        return ast::LitIntUnsuffixed((s.char_at(0)).to_digit(10).unwrap() as i64);
+        let n = (s.char_at(0)).to_digit(10).unwrap();
+        return ast::LitInt(n as u64, ast::UnsuffixedIntLit(ast::Sign::new(n)));
     }
 
     let mut base = 10;
     let orig = s;
-
-    #[deriving(Show)]
-    enum Result {
-        Nothing,
-        Signed(ast::IntTy),
-        Unsigned(ast::UintTy)
-    }
-
-    impl Result {
-        fn suffix_len(&self) -> uint {
-            match *self {
-                Nothing => 0,
-                Signed(s) => s.suffix_len(),
-                Unsigned(u) => u.suffix_len()
-            }
-        }
-    }
-
-    let mut ty = Nothing;
-
+    let mut ty = ast::UnsuffixedIntLit(ast::Plus);
 
     if s.char_at(0) == '0' {
         match s.char_at(1) {
@@ -556,13 +627,13 @@ pub fn integer_lit(s: &str, sd: &SpanHandler, sp: Span) -> ast::Lit_ {
 
     let last = s.len() - 1;
     match s.char_at(last) {
-        'i' => ty = Signed(ast::TyI),
-        'u' => ty = Unsigned(ast::TyU),
+        'i' => ty = ast::SignedIntLit(ast::TyI, ast::Plus),
+        'u' => ty = ast::UnsignedIntLit(ast::TyU),
         '8' => {
             if s.len() > 2 {
                 match s.char_at(last - 1) {
-                    'i' => ty = Signed(ast::TyI8),
-                    'u' => ty = Unsigned(ast::TyU8),
+                    'i' => ty = ast::SignedIntLit(ast::TyI8, ast::Plus),
+                    'u' => ty = ast::UnsignedIntLit(ast::TyU8),
                     _ => { }
                 }
             }
@@ -570,8 +641,8 @@ pub fn integer_lit(s: &str, sd: &SpanHandler, sp: Span) -> ast::Lit_ {
         '6' => {
             if s.len() > 3 && s.char_at(last - 1) == '1' {
                 match s.char_at(last - 2) {
-                    'i' => ty = Signed(ast::TyI16),
-                    'u' => ty = Unsigned(ast::TyU16),
+                    'i' => ty = ast::SignedIntLit(ast::TyI16, ast::Plus),
+                    'u' => ty = ast::UnsignedIntLit(ast::TyU16),
                     _ => { }
                 }
             }
@@ -579,8 +650,8 @@ pub fn integer_lit(s: &str, sd: &SpanHandler, sp: Span) -> ast::Lit_ {
         '2' => {
             if s.len() > 3 && s.char_at(last - 1) == '3' {
                 match s.char_at(last - 2) {
-                    'i' => ty = Signed(ast::TyI32),
-                    'u' => ty = Unsigned(ast::TyU32),
+                    'i' => ty = ast::SignedIntLit(ast::TyI32, ast::Plus),
+                    'u' => ty = ast::UnsignedIntLit(ast::TyU32),
                     _ => { }
                 }
             }
@@ -588,8 +659,8 @@ pub fn integer_lit(s: &str, sd: &SpanHandler, sp: Span) -> ast::Lit_ {
         '4' => {
             if s.len() > 3 && s.char_at(last - 1) == '6' {
                 match s.char_at(last - 2) {
-                    'i' => ty = Signed(ast::TyI64),
-                    'u' => ty = Unsigned(ast::TyU64),
+                    'i' => ty = ast::SignedIntLit(ast::TyI64, ast::Plus),
+                    'u' => ty = ast::UnsignedIntLit(ast::TyU64),
                     _ => { }
                 }
             }
@@ -597,21 +668,22 @@ pub fn integer_lit(s: &str, sd: &SpanHandler, sp: Span) -> ast::Lit_ {
         _ => { }
     }
 
-
-    s = s.slice_to(s.len() - ty.suffix_len());
-
     debug!("The suffix is {}, base {}, the new string is {}, the original \
            string was {}", ty, base, s, orig);
+
+    s = s.slice_to(s.len() - ty.suffix_len());
 
     let res: u64 = match ::std::num::from_str_radix(s, base) {
         Some(r) => r,
         None => { sd.span_err(sp, "int literal is too large"); 0 }
     };
 
+    // adjust the sign
+    let sign = ast::Sign::new(res);
     match ty {
-        Nothing => ast::LitIntUnsuffixed(res as i64),
-        Signed(t) => ast::LitInt(res as i64, t),
-        Unsigned(t) => ast::LitUint(res, t)
+        ast::SignedIntLit(t, _) => ast::LitInt(res, ast::SignedIntLit(t, sign)),
+        ast::UnsuffixedIntLit(_) => ast::LitInt(res, ast::UnsuffixedIntLit(sign)),
+        us@ast::UnsignedIntLit(_) => ast::LitInt(res, us)
     }
 }
 
@@ -981,6 +1053,10 @@ mod test {
                                     ast::Generics{ // no idea on either of these:
                                         lifetimes: Vec::new(),
                                         ty_params: OwnedSlice::empty(),
+                                        where_clause: ast::WhereClause {
+                                            id: ast::DUMMY_NODE_ID,
+                                            predicates: Vec::new(),
+                                        }
                                     },
                                     ast::P(ast::Block {
                                         view_items: Vec::new(),

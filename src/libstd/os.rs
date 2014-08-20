@@ -45,10 +45,10 @@ use path::{Path, GenericPath, BytesContainer};
 use ptr::RawPtr;
 use ptr;
 use result::{Err, Ok, Result};
-use slice::{Vector, ImmutableVector, MutableVector, ImmutableEqVector};
+use slice::{Slice, ImmutableSlice, MutableSlice, ImmutablePartialEqSlice};
 use str::{Str, StrSlice, StrAllocating};
 use string::String;
-use sync::atomics::{AtomicInt, INIT_ATOMIC_INT, SeqCst};
+use sync::atomic::{AtomicInt, INIT_ATOMIC_INT, SeqCst};
 use vec::Vec;
 
 #[cfg(unix)]
@@ -145,7 +145,7 @@ pub mod win32 {
     use option::{None, Option};
     use option;
     use os::TMPBUF_SZ;
-    use slice::{MutableVector, ImmutableVector};
+    use slice::{MutableSlice, ImmutableSlice};
     use string::String;
     use str::StrSlice;
     use vec::Vec;
@@ -293,7 +293,7 @@ pub fn env_as_bytes() -> Vec<(Vec<u8>,Vec<u8>)> {
         fn env_convert(input: Vec<Vec<u8>>) -> Vec<(Vec<u8>, Vec<u8>)> {
             let mut pairs = Vec::new();
             for p in input.iter() {
-                let mut it = p.as_slice().splitn(1, |b| *b == '=' as u8);
+                let mut it = p.as_slice().splitn(1, |b| *b == b'=');
                 let key = Vec::from_slice(it.next().unwrap());
                 let val = Vec::from_slice(it.next().unwrap_or(&[]));
                 pairs.push((key, val));
@@ -873,7 +873,7 @@ pub fn make_absolute(p: &Path) -> Path {
 ///
 /// let root = Path::new("/");
 /// assert!(os::change_dir(&root));
-/// println!("Succesfully changed working directory to {}!", root.display());
+/// println!("Successfully changed working directory to {}!", root.display());
 /// ```
 pub fn change_dir(p: &Path) -> bool {
     return chdir(p);
@@ -1842,7 +1842,8 @@ pub mod consts {
     pub static EXE_EXTENSION: &'static str = "";
 }
 
-#[cfg(target_os = "win32")]
+#[cfg(target_os = "windows")]
+#[cfg(stage0, target_os = "win32")] // NOTE: Remove after snapshot
 pub mod consts {
     pub use os::arch_consts::ARCH;
 
@@ -1850,7 +1851,7 @@ pub mod consts {
 
     /// A string describing the specific operating system in use: in this
     /// case, `win32`.
-    pub static SYSNAME: &'static str = "win32";
+    pub static SYSNAME: &'static str = "windows";
 
     /// Specifies the filename prefix used for shared libraries on this
     /// platform: in this case, the empty string.

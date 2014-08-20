@@ -15,7 +15,7 @@
 pub trait Sized {}
 
 mod bar {
-    // shouln't bring in too much
+    // shouldn't bring in too much
     pub use self::glob::*;
 
     // can't publicly re-export private items
@@ -171,12 +171,11 @@ pub mod mytest {
     // Even though the inner `A` struct is a publicly exported item (usable from
     // external crates through `foo::foo`, it should not be accessible through
     // its definition path (which has the private `i` module).
-    use self::foo::foo;
     use self::foo::i::A; //~ ERROR: type `A` is inaccessible
                          //~^ NOTE: module `i` is private
 
     pub mod foo {
-        pub use foo = self::i::A;
+        pub use self::i::A as foo;
 
         mod i {
             pub struct A;

@@ -12,6 +12,7 @@
 //!
 //! For more details `std::slice`.
 
+#![stable]
 #![doc(primitive = "slice")]
 
 // How this module is organized.
@@ -47,20 +48,25 @@ use ptr::RawPtr;
 use mem;
 use mem::size_of;
 use kinds::marker;
-use raw::{Repr, Slice};
+use raw::Repr;
+// Avoid conflicts with *both* the Slice trait (buggy) and the `slice::raw` module.
+use raw::Slice as RawSlice;
+
 
 //
 // Extension traits
 //
 
 /// Extension methods for vectors
-pub trait ImmutableVector<'a, T> {
+#[unstable = "may merge with other traits; region parameter may disappear"]
+pub trait ImmutableSlice<'a, T> {
     /**
      * Returns a slice of self spanning the interval [`start`, `end`).
      *
      * Fails when the slice (or part of it) is outside the bounds of self,
      * or when `start` > `end`.
      */
+    #[unstable]
     fn slice(&self, start: uint, end: uint) -> &'a [T];
 
     /**
@@ -68,6 +74,7 @@ pub trait ImmutableVector<'a, T> {
      *
      * Fails when `start` points outside the bounds of self.
      */
+    #[unstable]
     fn slice_from(&self, start: uint) -> &'a [T];
 
     /**
@@ -75,23 +82,39 @@ pub trait ImmutableVector<'a, T> {
      *
      * Fails when `end` points outside the bounds of self.
      */
+    #[unstable]
     fn slice_to(&self, end: uint) -> &'a [T];
+
+    /// Divides one slice into two at an index.
+    ///
+    /// The first will contain all indices from `[0, mid)` (excluding
+    /// the index `mid` itself) and the second will contain all
+    /// indices from `[mid, len)` (excluding the index `len` itself).
+    ///
+    /// Fails if `mid > len`.
+    #[unstable]
+    fn split_at(&self, mid: uint) -> (&'a [T], &'a [T]);
+
     /// Returns an iterator over the vector
+    #[unstable = "iterator type may change"]
     fn iter(self) -> Items<'a, T>;
     /// Returns an iterator over the subslices of the vector which are
     /// separated by elements that match `pred`.  The matched element
     /// is not contained in the subslices.
+    #[unstable = "iterator type may change"]
     fn split(self, pred: |&T|: 'a -> bool) -> Splits<'a, T>;
     /// Returns an iterator over the subslices of the vector which are
     /// separated by elements that match `pred`, limited to splitting
     /// at most `n` times.  The matched element is not contained in
     /// the subslices.
+    #[unstable = "iterator type may change"]
     fn splitn(self, n: uint, pred: |&T|: 'a -> bool) -> SplitsN<'a, T>;
     /// Returns an iterator over the subslices of the vector which are
     /// separated by elements that match `pred` limited to splitting
     /// at most `n` times. This starts at the end of the vector and
     /// works backwards.  The matched element is not contained in the
     /// subslices.
+    #[unstable = "iterator type may change"]
     fn rsplitn(self,  n: uint, pred: |&T|: 'a -> bool) -> SplitsN<'a, T>;
 
     /**
@@ -116,6 +139,7 @@ pub trait ImmutableVector<'a, T> {
      * ```
      *
      */
+    #[unstable = "iterator type may change"]
     fn windows(self, size: uint) -> Windows<'a, T>;
     /**
      *
@@ -141,27 +165,41 @@ pub trait ImmutableVector<'a, T> {
      * ```
      *
      */
+    #[unstable = "iterator type may change"]
     fn chunks(self, size: uint) -> Chunks<'a, T>;
 
     /// Returns the element of a vector at the given index, or `None` if the
     /// index is out of bounds
+    #[unstable]
     fn get(&self, index: uint) -> Option<&'a T>;
     /// Returns the first element of a vector, or `None` if it is empty
+    #[unstable = "name may change"]
     fn head(&self) -> Option<&'a T>;
     /// Returns all but the first element of a vector
+    #[unstable = "name may change"]
     fn tail(&self) -> &'a [T];
     /// Returns all but the first `n' elements of a vector
+    #[deprecated = "use slice_from"]
     fn tailn(&self, n: uint) -> &'a [T];
     /// Returns all but the last element of a vector
+    #[unstable = "name may change"]
     fn init(&self) -> &'a [T];
     /// Returns all but the last `n' elements of a vector
+    #[deprecated = "use slice_to but note the arguments are different"]
     fn initn(&self, n: uint) -> &'a [T];
     /// Returns the last element of a vector, or `None` if it is empty.
+    #[unstable = "name may change"]
     fn last(&self) -> Option<&'a T>;
 
     /// Returns a pointer to the element at the given index, without doing
     /// bounds checking.
+    #[deprecated = "renamed to `unsafe_get`"]
     unsafe fn unsafe_ref(self, index: uint) -> &'a T;
+
+    /// Returns a pointer to the element at the given index, without doing
+    /// bounds checking.
+    #[unstable]
+    unsafe fn unsafe_get(self, index: uint) -> &'a T;
 
     /**
      * Returns an unsafe pointer to the vector's buffer
@@ -172,6 +210,7 @@ pub trait ImmutableVector<'a, T> {
      * Modifying the vector may cause its buffer to be reallocated, which
      * would also make any pointers to it invalid.
      */
+    #[unstable]
     fn as_ptr(&self) -> *const T;
 
     /**
@@ -185,7 +224,22 @@ pub trait ImmutableVector<'a, T> {
      * Returns the index where the comparator returned `Equal`, or `None` if
      * not found.
      */
+    #[deprecated = "use binary_search"]
     fn bsearch(&self, f: |&T| -> Ordering) -> Option<uint>;
+
+    /// Binary search a sorted vector with a comparator function.
+    ///
+    /// The comparator function should implement an order consistent
+    /// with the sort order of the underlying vector, returning an
+    /// order code that indicates whether its argument is `Less`,
+    /// `Equal` or `Greater` the desired target.
+    ///
+    /// If the value is found then `Found` is returned, containing the
+    /// index of the matching element; if the value is not found then
+    /// `NotFound` is returned, containing the index where a matching
+    /// element could be inserted while maintaining sorted order.
+    #[unstable]
+    fn binary_search(&self, f: |&T| -> Ordering) -> BinarySearchResult;
 
     /**
      * Returns an immutable reference to the first element in this slice
@@ -203,6 +257,7 @@ pub trait ImmutableVector<'a, T> {
      *
      * Returns `None` if vector is empty
      */
+    #[deprecated = "find some other way. sorry"]
     fn shift_ref(&mut self) -> Option<&'a T>;
 
     /**
@@ -221,16 +276,18 @@ pub trait ImmutableVector<'a, T> {
      *
      * Returns `None` if slice is empty.
      */
+    #[deprecated = "find some other way. sorry"]
     fn pop_ref(&mut self) -> Option<&'a T>;
 }
 
-impl<'a,T> ImmutableVector<'a, T> for &'a [T] {
+#[unstable]
+impl<'a,T> ImmutableSlice<'a, T> for &'a [T] {
     #[inline]
     fn slice(&self, start: uint, end: uint) -> &'a [T] {
         assert!(start <= end);
         assert!(end <= self.len());
         unsafe {
-            transmute(Slice {
+            transmute(RawSlice {
                     data: self.as_ptr().offset(start as int),
                     len: (end - start)
                 })
@@ -245,6 +302,11 @@ impl<'a,T> ImmutableVector<'a, T> for &'a [T] {
     #[inline]
     fn slice_to(&self, end: uint) -> &'a [T] {
         self.slice(0, end)
+    }
+
+    #[inline]
+    fn split_at(&self, mid: uint) -> (&'a [T], &'a [T]) {
+        (self.slice(0, mid), self.slice(mid, self.len()))
     }
 
     #[inline]
@@ -316,6 +378,7 @@ impl<'a,T> ImmutableVector<'a, T> for &'a [T] {
     fn tail(&self) -> &'a [T] { self.slice(1, self.len()) }
 
     #[inline]
+    #[deprecated = "use slice_from"]
     fn tailn(&self, n: uint) -> &'a [T] { self.slice(n, self.len()) }
 
     #[inline]
@@ -324,6 +387,7 @@ impl<'a,T> ImmutableVector<'a, T> for &'a [T] {
     }
 
     #[inline]
+    #[deprecated = "use slice_to but note the arguments are different"]
     fn initn(&self, n: uint) -> &'a [T] {
         self.slice(0, self.len() - n)
     }
@@ -334,7 +398,13 @@ impl<'a,T> ImmutableVector<'a, T> for &'a [T] {
     }
 
     #[inline]
+    #[deprecated = "renamed to `unsafe_get`"]
     unsafe fn unsafe_ref(self, index: uint) -> &'a T {
+        transmute(self.repr().data.offset(index as int))
+    }
+
+    #[inline]
+    unsafe fn unsafe_get(self, index: uint) -> &'a T {
         transmute(self.repr().data.offset(index as int))
     }
 
@@ -344,6 +414,7 @@ impl<'a,T> ImmutableVector<'a, T> for &'a [T] {
     }
 
 
+    #[deprecated = "use binary_search"]
     fn bsearch(&self, f: |&T| -> Ordering) -> Option<uint> {
         let mut base : uint = 0;
         let mut lim : uint = self.len();
@@ -363,9 +434,29 @@ impl<'a,T> ImmutableVector<'a, T> for &'a [T] {
         return None;
     }
 
+    #[unstable]
+    fn binary_search(&self, f: |&T| -> Ordering) -> BinarySearchResult {
+        let mut base : uint = 0;
+        let mut lim : uint = self.len();
+
+        while lim != 0 {
+            let ix = base + (lim >> 1);
+            match f(&self[ix]) {
+                Equal => return Found(ix),
+                Less => {
+                    base = ix + 1;
+                    lim -= 1;
+                }
+                Greater => ()
+            }
+            lim >>= 1;
+        }
+        return NotFound(base);
+    }
+
     fn shift_ref(&mut self) -> Option<&'a T> {
         unsafe {
-            let s: &mut Slice<T> = transmute(self);
+            let s: &mut RawSlice<T> = transmute(self);
             match raw::shift_ptr(s) {
                 Some(p) => Some(&*p),
                 None => None
@@ -375,7 +466,7 @@ impl<'a,T> ImmutableVector<'a, T> for &'a [T] {
 
     fn pop_ref(&mut self) -> Option<&'a T> {
         unsafe {
-            let s: &mut Slice<T> = transmute(self);
+            let s: &mut RawSlice<T> = transmute(self);
             match raw::pop_ptr(s) {
                 Some(p) => Some(&*p),
                 None => None
@@ -386,7 +477,8 @@ impl<'a,T> ImmutableVector<'a, T> for &'a [T] {
 
 /// Extension methods for vectors such that their elements are
 /// mutable.
-pub trait MutableVector<'a, T> {
+#[experimental = "may merge with other traits; may lose region param; needs review"]
+pub trait MutableSlice<'a, T> {
     /// Returns a mutable reference to the element at the given index,
     /// or `None` if the index is out of bounds
     fn get_mut(self, index: uint) -> Option<&'a mut T>;
@@ -450,6 +542,7 @@ pub trait MutableVector<'a, T> {
      *
      * Returns `None` if slice is empty
      */
+    #[deprecated = "find some other way. sorry"]
     fn mut_shift_ref(&mut self) -> Option<&'a mut T>;
 
     /**
@@ -468,6 +561,7 @@ pub trait MutableVector<'a, T> {
      *
      * Returns `None` if slice is empty.
      */
+    #[deprecated = "find some other way. sorry"]
     fn mut_pop_ref(&mut self) -> Option<&'a mut T>;
 
     /// Swaps two elements in a vector.
@@ -592,7 +686,8 @@ pub trait MutableVector<'a, T> {
     unsafe fn copy_memory(self, src: &[T]);
 }
 
-impl<'a,T> MutableVector<'a, T> for &'a mut [T] {
+#[experimental = "trait is experimental"]
+impl<'a,T> MutableSlice<'a, T> for &'a mut [T] {
     #[inline]
     fn get_mut(self, index: uint) -> Option<&'a mut T> {
         if index < self.len() { Some(&mut self[index]) } else { None }
@@ -605,7 +700,7 @@ impl<'a,T> MutableVector<'a, T> for &'a mut [T] {
         assert!(start <= end);
         assert!(end <= self.len());
         unsafe {
-            transmute(Slice {
+            transmute(RawSlice {
                     data: self.as_mut_ptr().offset(start as int) as *const T,
                     len: (end - start)
                 })
@@ -670,7 +765,7 @@ impl<'a,T> MutableVector<'a, T> for &'a mut [T] {
 
     fn mut_shift_ref(&mut self) -> Option<&'a mut T> {
         unsafe {
-            let s: &mut Slice<T> = transmute(self);
+            let s: &mut RawSlice<T> = transmute(self);
             match raw::shift_ptr(s) {
                 // FIXME #13933: this `&` -> `&mut` cast is a little
                 // dubious
@@ -682,7 +777,7 @@ impl<'a,T> MutableVector<'a, T> for &'a mut [T] {
 
     fn mut_pop_ref(&mut self) -> Option<&'a mut T> {
         unsafe {
-            let s: &mut Slice<T> = transmute(self);
+            let s: &mut RawSlice<T> = transmute(self);
             match raw::pop_ptr(s) {
                 // FIXME #13933: this `&` -> `&mut` cast is a little
                 // dubious
@@ -740,7 +835,8 @@ impl<'a,T> MutableVector<'a, T> for &'a mut [T] {
 }
 
 /// Extension methods for vectors contain `PartialEq` elements.
-pub trait ImmutableEqVector<T:PartialEq> {
+#[unstable = "may merge with other traits"]
+pub trait ImmutablePartialEqSlice<T:PartialEq> {
     /// Find the first index containing a matching value
     fn position_elem(&self, t: &T) -> Option<uint>;
 
@@ -757,7 +853,8 @@ pub trait ImmutableEqVector<T:PartialEq> {
     fn ends_with(&self, needle: &[T]) -> bool;
 }
 
-impl<'a,T:PartialEq> ImmutableEqVector<T> for &'a [T] {
+#[unstable = "trait is unstable"]
+impl<'a,T:PartialEq> ImmutablePartialEqSlice<T> for &'a [T] {
     #[inline]
     fn position_elem(&self, x: &T) -> Option<uint> {
         self.iter().position(|y| *x == *y)
@@ -787,23 +884,51 @@ impl<'a,T:PartialEq> ImmutableEqVector<T> for &'a [T] {
 }
 
 /// Extension methods for vectors containing `Ord` elements.
-pub trait ImmutableOrdVector<T: Ord> {
+#[unstable = "may merge with other traits"]
+pub trait ImmutableOrdSlice<T: Ord> {
     /**
      * Binary search a sorted vector for a given element.
      *
      * Returns the index of the element or None if not found.
      */
+    #[deprecated = "use binary_search_elem"]
     fn bsearch_elem(&self, x: &T) -> Option<uint>;
+
+    /**
+     * Binary search a sorted vector for a given element.
+     *
+     * If the value is found then `Found` is returned, containing the
+     * index of the matching element; if the value is not found then
+     * `NotFound` is returned, containing the index where a matching
+     * element could be inserted while maintaining sorted order.
+     */
+    #[unstable]
+    fn binary_search_elem(&self, x: &T) -> BinarySearchResult;
 }
 
-impl<'a, T: Ord> ImmutableOrdVector<T> for &'a [T] {
+#[unstable = "trait is unstable"]
+impl<'a, T: Ord> ImmutableOrdSlice<T> for &'a [T] {
+    #[deprecated = "use binary_search_elem"]
+    #[allow(deprecated)]
     fn bsearch_elem(&self, x: &T) -> Option<uint> {
         self.bsearch(|p| p.cmp(x))
+    }
+
+    #[unstable]
+    fn binary_search_elem(&self, x: &T) -> BinarySearchResult {
+        self.binary_search(|p| p.cmp(x))
     }
 }
 
 /// Trait for &[T] where T is Cloneable
-pub trait MutableCloneableVector<T> {
+#[unstable = "may merge with other traits"]
+pub trait MutableCloneableSlice<T> {
+    /// Copies as many elements from `src` as it can into `self` (the
+    /// shorter of `self.len()` and `src.len()`). Returns the number
+    /// of elements copied.
+    #[deprecated = "renamed to clone_from_slice"]
+    fn copy_from(self, s: &[T]) -> uint { self.clone_from_slice(s) }
+
     /// Copies as many elements from `src` as it can into `self` (the
     /// shorter of `self.len()` and `src.len()`). Returns the number
     /// of elements copied.
@@ -811,7 +936,7 @@ pub trait MutableCloneableVector<T> {
     /// # Example
     ///
     /// ```rust
-    /// use std::slice::MutableCloneableVector;
+    /// use std::slice::MutableCloneableSlice;
     ///
     /// let mut dst = [0i, 0, 0];
     /// let src = [1i, 2];
@@ -823,12 +948,13 @@ pub trait MutableCloneableVector<T> {
     /// assert!(dst.copy_from(src2) == 3);
     /// assert!(dst == [3i, 4, 5]);
     /// ```
-    fn copy_from(self, &[T]) -> uint;
+    fn clone_from_slice(self, &[T]) -> uint;
 }
 
-impl<'a, T:Clone> MutableCloneableVector<T> for &'a mut [T] {
+#[unstable = "trait is unstable"]
+impl<'a, T:Clone> MutableCloneableSlice<T> for &'a mut [T] {
     #[inline]
-    fn copy_from(self, src: &[T]) -> uint {
+    fn clone_from_slice(self, src: &[T]) -> uint {
         for (a, b) in self.mut_iter().zip(src.iter()) {
             a.clone_from(b);
         }
@@ -844,16 +970,19 @@ impl<'a, T:Clone> MutableCloneableVector<T> for &'a mut [T] {
 //
 
 /// Any vector that can be represented as a slice.
-pub trait Vector<T> {
+#[unstable = "may merge with other traits"]
+pub trait Slice<T> {
     /// Work with `self` as a slice.
     fn as_slice<'a>(&'a self) -> &'a [T];
 }
 
-impl<'a,T> Vector<T> for &'a [T] {
+#[unstable = "trait is unstable"]
+impl<'a,T> Slice<T> for &'a [T] {
     #[inline(always)]
     fn as_slice<'a>(&'a self) -> &'a [T] { *self }
 }
 
+#[experimental = "trait is experimental"]
 impl<'a, T> Collection for &'a [T] {
     /// Returns the length of a vector
     #[inline]
@@ -862,6 +991,7 @@ impl<'a, T> Collection for &'a [T] {
     }
 }
 
+#[unstable = "waiting for DST"]
 impl<'a, T> Default for &'a [T] {
     fn default() -> &'a [T] { &[] }
 }
@@ -876,6 +1006,7 @@ impl<'a, T> Default for &'a [T] {
 // The shared definition of the `Item` and `MutItems` iterators
 macro_rules! iterator {
     (struct $name:ident -> $ptr:ty, $elem:ty) => {
+        #[experimental = "needs review"]
         impl<'a, T> Iterator<$elem> for $name<'a, T> {
             #[inline]
             fn next(&mut self) -> Option<$elem> {
@@ -911,6 +1042,7 @@ macro_rules! iterator {
             }
         }
 
+        #[experimental = "needs review"]
         impl<'a, T> DoubleEndedIterator<$elem> for $name<'a, T> {
             #[inline]
             fn next_back(&mut self) -> Option<$elem> {
@@ -938,6 +1070,7 @@ macro_rules! iterator {
 }
 
 /// Immutable slice iterator
+#[experimental = "needs review"]
 pub struct Items<'a, T> {
     ptr: *const T,
     end: *const T,
@@ -946,12 +1079,15 @@ pub struct Items<'a, T> {
 
 iterator!{struct Items -> *const T, &'a T}
 
+#[experimental = "needs review"]
 impl<'a, T> ExactSize<&'a T> for Items<'a, T> {}
 
+#[experimental = "needs review"]
 impl<'a, T> Clone for Items<'a, T> {
     fn clone(&self) -> Items<'a, T> { *self }
 }
 
+#[experimental = "needs review"]
 impl<'a, T> RandomAccessIterator<&'a T> for Items<'a, T> {
     #[inline]
     fn indexable(&self) -> uint {
@@ -977,6 +1113,7 @@ impl<'a, T> RandomAccessIterator<&'a T> for Items<'a, T> {
 }
 
 /// Mutable slice iterator
+#[experimental = "needs review"]
 pub struct MutItems<'a, T> {
     ptr: *mut T,
     end: *mut T,
@@ -986,16 +1123,19 @@ pub struct MutItems<'a, T> {
 
 iterator!{struct MutItems -> *mut T, &'a mut T}
 
+#[experimental = "needs review"]
 impl<'a, T> ExactSize<&'a mut T> for MutItems<'a, T> {}
 
 /// An iterator over the slices of a vector separated by elements that
 /// match a predicate function.
+#[experimental = "needs review"]
 pub struct Splits<'a, T> {
     v: &'a [T],
     pred: |t: &T|: 'a -> bool,
     finished: bool
 }
 
+#[experimental = "needs review"]
 impl<'a, T> Iterator<&'a [T]> for Splits<'a, T> {
     #[inline]
     fn next(&mut self) -> Option<&'a [T]> {
@@ -1024,6 +1164,7 @@ impl<'a, T> Iterator<&'a [T]> for Splits<'a, T> {
     }
 }
 
+#[experimental = "needs review"]
 impl<'a, T> DoubleEndedIterator<&'a [T]> for Splits<'a, T> {
     #[inline]
     fn next_back(&mut self) -> Option<&'a [T]> {
@@ -1045,12 +1186,14 @@ impl<'a, T> DoubleEndedIterator<&'a [T]> for Splits<'a, T> {
 
 /// An iterator over the subslices of the vector which are separated
 /// by elements that match `pred`.
+#[experimental = "needs review"]
 pub struct MutSplits<'a, T> {
     v: &'a mut [T],
     pred: |t: &T|: 'a -> bool,
     finished: bool
 }
 
+#[experimental = "needs review"]
 impl<'a, T> Iterator<&'a mut [T]> for MutSplits<'a, T> {
     #[inline]
     fn next(&mut self) -> Option<&'a mut [T]> {
@@ -1087,6 +1230,7 @@ impl<'a, T> Iterator<&'a mut [T]> for MutSplits<'a, T> {
     }
 }
 
+#[experimental = "needs review"]
 impl<'a, T> DoubleEndedIterator<&'a mut [T]> for MutSplits<'a, T> {
     #[inline]
     fn next_back(&mut self) -> Option<&'a mut [T]> {
@@ -1111,12 +1255,14 @@ impl<'a, T> DoubleEndedIterator<&'a mut [T]> for MutSplits<'a, T> {
 
 /// An iterator over the slices of a vector separated by elements that
 /// match a predicate function, splitting at most a fixed number of times.
+#[experimental = "needs review"]
 pub struct SplitsN<'a, T> {
     iter: Splits<'a, T>,
     count: uint,
     invert: bool
 }
 
+#[experimental = "needs review"]
 impl<'a, T> Iterator<&'a [T]> for SplitsN<'a, T> {
     #[inline]
     fn next(&mut self) -> Option<&'a [T]> {
@@ -1146,11 +1292,13 @@ impl<'a, T> Iterator<&'a [T]> for SplitsN<'a, T> {
 /// An iterator over the (overlapping) slices of length `size` within
 /// a vector.
 #[deriving(Clone)]
+#[experimental = "needs review"]
 pub struct Windows<'a, T> {
     v: &'a [T],
     size: uint
 }
 
+#[experimental = "needs review"]
 impl<'a, T> Iterator<&'a [T]> for Windows<'a, T> {
     #[inline]
     fn next(&mut self) -> Option<&'a [T]> {
@@ -1180,11 +1328,13 @@ impl<'a, T> Iterator<&'a [T]> for Windows<'a, T> {
 /// When the vector len is not evenly divided by the chunk size,
 /// the last slice of the iteration will be the remainder.
 #[deriving(Clone)]
+#[experimental = "needs review"]
 pub struct Chunks<'a, T> {
     v: &'a [T],
     size: uint
 }
 
+#[experimental = "needs review"]
 impl<'a, T> Iterator<&'a [T]> for Chunks<'a, T> {
     #[inline]
     fn next(&mut self) -> Option<&'a [T]> {
@@ -1192,8 +1342,7 @@ impl<'a, T> Iterator<&'a [T]> for Chunks<'a, T> {
             None
         } else {
             let chunksz = cmp::min(self.v.len(), self.size);
-            let (fst, snd) = (self.v.slice_to(chunksz),
-                              self.v.slice_from(chunksz));
+            let (fst, snd) = self.v.split_at(chunksz);
             self.v = snd;
             Some(fst)
         }
@@ -1211,6 +1360,7 @@ impl<'a, T> Iterator<&'a [T]> for Chunks<'a, T> {
     }
 }
 
+#[experimental = "needs review"]
 impl<'a, T> DoubleEndedIterator<&'a [T]> for Chunks<'a, T> {
     #[inline]
     fn next_back(&mut self) -> Option<&'a [T]> {
@@ -1219,14 +1369,14 @@ impl<'a, T> DoubleEndedIterator<&'a [T]> for Chunks<'a, T> {
         } else {
             let remainder = self.v.len() % self.size;
             let chunksz = if remainder != 0 { remainder } else { self.size };
-            let (fst, snd) = (self.v.slice_to(self.v.len() - chunksz),
-                              self.v.slice_from(self.v.len() - chunksz));
+            let (fst, snd) = self.v.split_at(self.v.len() - chunksz);
             self.v = fst;
             Some(snd)
         }
     }
 }
 
+#[experimental = "needs review"]
 impl<'a, T> RandomAccessIterator<&'a [T]> for Chunks<'a, T> {
     #[inline]
     fn indexable(&self) -> uint {
@@ -1250,11 +1400,13 @@ impl<'a, T> RandomAccessIterator<&'a [T]> for Chunks<'a, T> {
 /// An iterator over a vector in (non-overlapping) mutable chunks (`size`  elements at a time). When
 /// the vector len is not evenly divided by the chunk size, the last slice of the iteration will be
 /// the remainder.
+#[experimental = "needs review"]
 pub struct MutChunks<'a, T> {
     v: &'a mut [T],
     chunk_size: uint
 }
 
+#[experimental = "needs review"]
 impl<'a, T> Iterator<&'a mut [T]> for MutChunks<'a, T> {
     #[inline]
     fn next(&mut self) -> Option<&'a mut [T]> {
@@ -1281,6 +1433,7 @@ impl<'a, T> Iterator<&'a mut [T]> for MutChunks<'a, T> {
     }
 }
 
+#[experimental = "needs review"]
 impl<'a, T> DoubleEndedIterator<&'a mut [T]> for MutChunks<'a, T> {
     #[inline]
     fn next_back(&mut self) -> Option<&'a mut [T]> {
@@ -1300,6 +1453,43 @@ impl<'a, T> DoubleEndedIterator<&'a mut [T]> for MutChunks<'a, T> {
 
 
 
+/// The result of calling `binary_search`.
+///
+/// `Found` means the search succeeded, and the contained value is the
+/// index of the matching element. `NotFound` means the search
+/// succeeded, and the contained value is an index where a matching
+/// value could be inserted while maintaining sort order.
+#[deriving(PartialEq, Show)]
+#[experimental = "needs review"]
+pub enum BinarySearchResult {
+    /// The index of the found value.
+    Found(uint),
+    /// The index where the value should have been found.
+    NotFound(uint)
+}
+
+#[experimental = "needs review"]
+impl BinarySearchResult {
+    /// Converts a `Found` to `Some`, `NotFound` to `None`.
+    /// Similar to `Result::ok`.
+    pub fn found(&self) -> Option<uint> {
+        match *self {
+            Found(i) => Some(i),
+            NotFound(_) => None
+        }
+    }
+
+    /// Convert a `Found` to `None`, `NotFound` to `Some`.
+    /// Similar to `Result::err`.
+    pub fn not_found(&self) -> Option<uint> {
+        match *self {
+            Found(_) => None,
+            NotFound(i) => Some(i)
+        }
+    }
+}
+
+
 
 //
 // Free functions
@@ -1308,19 +1498,21 @@ impl<'a, T> DoubleEndedIterator<&'a mut [T]> for MutChunks<'a, T> {
 /**
  * Converts a pointer to A into a slice of length 1 (without copying).
  */
+#[unstable = "waiting for DST"]
 pub fn ref_slice<'a, A>(s: &'a A) -> &'a [A] {
     unsafe {
-        transmute(Slice { data: s, len: 1 })
+        transmute(RawSlice { data: s, len: 1 })
     }
 }
 
 /**
  * Converts a pointer to A into a slice of length 1 (without copying).
  */
+#[unstable = "waiting for DST"]
 pub fn mut_ref_slice<'a, A>(s: &'a mut A) -> &'a mut [A] {
     unsafe {
         let ptr: *const A = transmute(s);
-        transmute(Slice { data: ptr, len: 1 })
+        transmute(RawSlice { data: ptr, len: 1 })
     }
 }
 
@@ -1332,6 +1524,7 @@ pub fn mut_ref_slice<'a, A>(s: &'a mut A) -> &'a mut [A] {
 //
 
 /// Unsafe operations
+#[experimental = "needs review"]
 pub mod raw {
     use mem::transmute;
     use ptr::RawPtr;
@@ -1397,10 +1590,11 @@ pub mod raw {
 }
 
 /// Operations on `[u8]`.
+#[experimental = "needs review"]
 pub mod bytes {
     use collections::Collection;
     use ptr;
-    use slice::MutableVector;
+    use slice::MutableSlice;
 
     /// A trait for operations on mutable `[u8]`s.
     pub trait MutableByteVector {
@@ -1434,6 +1628,7 @@ pub mod bytes {
 // Boilerplate traits
 //
 
+#[unstable = "waiting for DST"]
 impl<'a,T:PartialEq> PartialEq for &'a [T] {
     fn eq(&self, other: & &'a [T]) -> bool {
         self.len() == other.len() &&
@@ -1445,19 +1640,23 @@ impl<'a,T:PartialEq> PartialEq for &'a [T] {
     }
 }
 
+#[unstable = "waiting for DST"]
 impl<'a,T:Eq> Eq for &'a [T] {}
 
-impl<'a,T:PartialEq, V: Vector<T>> Equiv<V> for &'a [T] {
+#[unstable = "waiting for DST"]
+impl<'a,T:PartialEq, V: Slice<T>> Equiv<V> for &'a [T] {
     #[inline]
     fn equiv(&self, other: &V) -> bool { self.as_slice() == other.as_slice() }
 }
 
+#[unstable = "waiting for DST"]
 impl<'a,T:Ord> Ord for &'a [T] {
     fn cmp(&self, other: & &'a [T]) -> Ordering {
         order::cmp(self.iter(), other.iter())
     }
 }
 
+#[unstable = "waiting for DST"]
 impl<'a, T: PartialOrd> PartialOrd for &'a [T] {
     #[inline]
     fn partial_cmp(&self, other: &&'a [T]) -> Option<Ordering> {

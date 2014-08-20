@@ -8,7 +8,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// calling pin_task and that's having wierd side-effects.
+// calling pin_task and that's having weird side-effects.
 
 mod rustrt1 {
     extern crate libc;
@@ -22,7 +22,6 @@ mod rustrt1 {
 mod rustrt2 {
     extern crate libc;
 
-    #[link(name = "rust_test_helpers")]
     extern {
         pub fn rust_get_test_int() -> libc::intptr_t;
     }

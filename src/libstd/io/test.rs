@@ -16,7 +16,7 @@ use libc;
 use os;
 use prelude::*;
 use std::io::net::ip::*;
-use sync::atomics::{AtomicUint, INIT_ATOMIC_UINT, Relaxed};
+use sync::atomic::{AtomicUint, INIT_ATOMIC_UINT, Relaxed};
 
 macro_rules! iotest (
     { fn $name:ident() $b:block $(#[$a:meta])* } => (
@@ -39,6 +39,7 @@ macro_rules! iotest (
             use io::process::*;
             use rt::running_on_valgrind;
             use str;
+            use time::Duration;
 
             fn f() $b
 

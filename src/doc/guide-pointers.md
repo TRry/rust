@@ -332,7 +332,7 @@ let z = &x;
 Mutable ones, however, are not:
 
 ```{rust,ignore}
-let x = 5i;
+let mut x = 5i;
 let y = &mut x;
 let z = &mut x; // error: cannot borrow `x` as mutable more than once at a time
 ```
@@ -655,7 +655,7 @@ This part is coming soon.
 # Returning Pointers
 
 In many languages with pointers, you'd return a pointer from a function
-so as to avoid a copying a large data structure. For example:
+so as to avoid copying a large data structure. For example:
 
 ```{rust}
 struct BigStruct {

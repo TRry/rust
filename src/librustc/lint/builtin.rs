@@ -135,7 +135,7 @@ impl LintPass for TypeLimits {
                 match expr.node  {
                     ast::ExprLit(lit) => {
                         match lit.node {
-                            ast::LitUint(..) => {
+                            ast::LitInt(_, ast::UnsignedIntLit(_)) => {
                                 cx.span_lint(UNSIGNED_NEGATE, e.span,
                                              "negation of unsigned int literal may \
                                              be unintentional");
@@ -177,15 +177,25 @@ impl LintPass for TypeLimits {
                         } else { t };
                         let (min, max) = int_ty_range(int_type);
                         let mut lit_val: i64 = match lit.node {
-                            ast::LitInt(v, _) => v,
-                            ast::LitUint(v, _) => v as i64,
-                            ast::LitIntUnsuffixed(v) => v,
+                            ast::LitInt(v, ast::SignedIntLit(_, ast::Plus)) |
+                            ast::LitInt(v, ast::UnsuffixedIntLit(ast::Plus)) => {
+                                if v > i64::MAX as u64{
+                                    cx.span_lint(TYPE_OVERFLOW, e.span,
+                                                 "literal out of range for its type");
+                                    return;
+                                }
+                                v as i64
+                            }
+                            ast::LitInt(v, ast::SignedIntLit(_, ast::Minus)) |
+                            ast::LitInt(v, ast::UnsuffixedIntLit(ast::Minus)) => {
+                                -(v as i64)
+                            }
                             _ => fail!()
                         };
                         if self.negated_expr_id == e.id {
                             lit_val *= -1;
                         }
-                        if  lit_val < min || lit_val > max {
+                        if lit_val < min || lit_val > max {
                             cx.span_lint(TYPE_OVERFLOW, e.span,
                                          "literal out of range for its type");
                         }
@@ -197,9 +207,7 @@ impl LintPass for TypeLimits {
                         let (min, max) = uint_ty_range(uint_type);
                         let lit_val: u64 = match lit.node {
                             ast::LitByte(_v) => return,  // _v is u8, within range by definition
-                            ast::LitInt(v, _) => v as u64,
-                            ast::LitUint(v, _) => v,
-                            ast::LitIntUnsuffixed(v) => v as u64,
+                            ast::LitInt(v, _) => v,
                             _ => fail!()
                         };
                         if  lit_val < min || lit_val > max {
@@ -294,9 +302,10 @@ impl LintPass for TypeLimits {
                     let (min, max) = int_ty_range(int_ty);
                     let lit_val: i64 = match lit.node {
                         ast::ExprLit(li) => match li.node {
-                            ast::LitInt(v, _) => v,
-                            ast::LitUint(v, _) => v as i64,
-                            ast::LitIntUnsuffixed(v) => v,
+                            ast::LitInt(v, ast::SignedIntLit(_, ast::Plus)) |
+                            ast::LitInt(v, ast::UnsuffixedIntLit(ast::Plus)) => v as i64,
+                            ast::LitInt(v, ast::SignedIntLit(_, ast::Minus)) |
+                            ast::LitInt(v, ast::UnsuffixedIntLit(ast::Minus)) => -(v as i64),
                             _ => return true
                         },
                         _ => fail!()
@@ -307,9 +316,7 @@ impl LintPass for TypeLimits {
                     let (min, max): (u64, u64) = uint_ty_range(uint_ty);
                     let lit_val: u64 = match lit.node {
                         ast::ExprLit(li) => match li.node {
-                            ast::LitInt(v, _) => v as u64,
-                            ast::LitUint(v, _) => v,
-                            ast::LitIntUnsuffixed(v) => v as u64,
+                            ast::LitInt(v, _) => v,
                             _ => return true
                         },
                         _ => fail!()
@@ -561,6 +568,7 @@ impl LintPass for UnusedAttribute {
             // FIXME: #14406 these are processed in trans, which happens after the
             // lint pass
             "cold",
+            "export_name",
             "inline",
             "link",
             "link_name",
@@ -571,6 +579,10 @@ impl LintPass for UnusedAttribute {
             "packed",
             "static_assert",
             "thread_local",
+            "no_debug",
+
+            // used in resolve
+            "prelude_import",
 
             // not used anywhere (!?) but apparently we want to keep them around
             "comment",
@@ -794,15 +806,19 @@ fn method_context(cx: &Context, m: &ast::Method) -> MethodContext {
         node: m.id
     };
 
-    match cx.tcx.methods.borrow().find_copy(&did) {
+    match cx.tcx.impl_or_trait_items.borrow().find_copy(&did) {
         None => cx.sess().span_bug(m.span, "missing method descriptor?!"),
         Some(md) => {
-            match md.container {
-                ty::TraitContainer(..) => TraitDefaultImpl,
-                ty::ImplContainer(cid) => {
-                    match ty::impl_trait_ref(cx.tcx, cid) {
-                        Some(..) => TraitImpl,
-                        None => PlainImpl
+            match md {
+                ty::MethodTraitItem(md) => {
+                    match md.container {
+                        ty::TraitContainer(..) => TraitDefaultImpl,
+                        ty::ImplContainer(cid) => {
+                            match ty::impl_trait_ref(cx.tcx, cid) {
+                                Some(..) => TraitImpl,
+                                None => PlainImpl
+                            }
+                        }
                     }
                 }
             }
@@ -1463,7 +1479,15 @@ impl LintPass for Stability {
                                 trait_id: trait_id,
                                 method_num: index,
                                 ..
-                            }) => ty::trait_method(cx.tcx, trait_id, index).def_id
+                            }) => {
+                                match ty::trait_item(cx.tcx,
+                                                     trait_id,
+                                                     index) {
+                                    ty::MethodTraitItem(method) => {
+                                        method.def_id
+                                    }
+                                }
+                            }
                         }
                     }
                     None => return
@@ -1472,20 +1496,20 @@ impl LintPass for Stability {
             _ => return
         };
 
-        // stability attributes are promises made across crates; do not
-        // check anything for crate-local usage.
-        if ast_util::is_local(id) { return }
-
         let stability = stability::lookup(cx.tcx, id);
+        let cross_crate = !ast_util::is_local(id);
+
+        // stability attributes are promises made across crates; only
+        // check DEPRECATED for crate-local usage.
         let (lint, label) = match stability {
             // no stability attributes == Unstable
-            None => (UNSTABLE, "unmarked"),
-            Some(attr::Stability { level: attr::Unstable, .. }) =>
-                    (UNSTABLE, "unstable"),
-            Some(attr::Stability { level: attr::Experimental, .. }) =>
-                    (EXPERIMENTAL, "experimental"),
+            None if cross_crate => (UNSTABLE, "unmarked"),
+            Some(attr::Stability { level: attr::Unstable, .. }) if cross_crate =>
+                (UNSTABLE, "unstable"),
+            Some(attr::Stability { level: attr::Experimental, .. }) if cross_crate =>
+                (EXPERIMENTAL, "experimental"),
             Some(attr::Stability { level: attr::Deprecated, .. }) =>
-                    (DEPRECATED, "deprecated"),
+                (DEPRECATED, "deprecated"),
             _ => return
         };
 

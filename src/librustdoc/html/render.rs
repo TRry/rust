@@ -742,10 +742,13 @@ impl<'a> SourceCollector<'a> {
         let mut w = BufferedWriter::new(try!(File::create(&cur)));
 
         let title = format!("{} -- source", cur.filename_display());
+        let desc = format!("Source to the Rust file `{}`.", filename);
         let page = layout::Page {
             title: title.as_slice(),
             ty: "source",
             root_path: root_path.as_slice(),
+            description: desc.as_slice(),
+            keywords: get_basic_keywords(),
         };
         try!(layout::render(&mut w as &mut Writer, &self.cx.layout,
                             &page, &(""), &Source(contents)));
@@ -1072,10 +1075,14 @@ impl Context {
             try!(stability.encode(&mut json::Encoder::new(&mut json_out)));
 
             let title = stability.name.clone().append(" - Stability dashboard");
+            let desc = format!("API stability overview for the Rust `{}` crate.",
+                               this.layout.krate);
             let page = layout::Page {
                 ty: "mod",
                 root_path: this.root_path.as_slice(),
                 title: title.as_slice(),
+                description: desc.as_slice(),
+                keywords: get_basic_keywords(),
             };
             let html_dst = &this.dst.join("stability.html");
             let mut html_out = BufferedWriter::new(try!(File::create(html_dst)));
@@ -1098,7 +1105,7 @@ impl Context {
         Ok(())
     }
 
-    /// Non-parellelized version of rendering an item. This will take the input
+    /// Non-parallelized version of rendering an item. This will take the input
     /// item, render its contents, and then invoke the specified closure with
     /// all sub-items which need to be rendered.
     ///
@@ -1120,10 +1127,25 @@ impl Context {
                 title.push_str(it.name.get_ref().as_slice());
             }
             title.push_str(" - Rust");
+            let tyname = shortty(it).to_static_str();
+            let is_crate = match it.inner {
+                clean::ModuleItem(clean::Module { items: _, is_crate: true }) => true,
+                _ => false
+            };
+            let desc = if is_crate {
+                format!("API documentation for the Rust `{}` crate.",
+                        cx.layout.krate)
+            } else {
+                format!("API documentation for the Rust `{}` {} in crate `{}`.",
+                        it.name.get_ref(), tyname, cx.layout.krate)
+            };
+            let keywords = make_item_keywords(it);
             let page = layout::Page {
-                ty: shortty(it).to_static_str(),
+                ty: tyname,
                 root_path: cx.root_path.as_slice(),
                 title: title.as_slice(),
+                description: desc.as_slice(),
+                keywords: keywords.as_slice(),
             };
 
             markdown::reset_headers();
@@ -1252,8 +1274,8 @@ impl<'a> Item<'a> {
         // located, then we return `None`.
         } else {
             let cache = cache_key.get().unwrap();
-            let path = cache.external_paths.get(&self.item.def_id);
-            let root = match *cache.extern_locations.get(&self.item.def_id.krate) {
+            let path = &cache.external_paths[self.item.def_id];
+            let root = match cache.extern_locations[self.item.def_id.krate] {
                 Remote(ref s) => s.to_string(),
                 Local => self.cx.root_path.clone(),
                 Unknown => return None,
@@ -1272,7 +1294,7 @@ impl<'a> Item<'a> {
 impl<'a> fmt::Show for Item<'a> {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         // Write the breadcrumb trail header for the top
-        try!(write!(fmt, "\n<h1 class='fqn'>"));
+        try!(write!(fmt, "\n<h1 class='fqn'><div class='in-band'>"));
         match self.item.inner {
             clean::ModuleItem(ref m) => if m.is_crate {
                     try!(write!(fmt, "Crate "));
@@ -1294,7 +1316,7 @@ impl<'a> fmt::Show for Item<'a> {
             let cur = self.cx.current.as_slice();
             let amt = if self.ismodule() { cur.len() - 1 } else { cur.len() };
             for (i, component) in cur.iter().enumerate().take(amt) {
-                try!(write!(fmt, "<a href='{}index.html'>{}</a>::",
+                try!(write!(fmt, "<a href='{}index.html'>{}</a>::<wbr>",
                             "../".repeat(cur.len() - i - 1),
                             component.as_slice()));
             }
@@ -1303,18 +1325,24 @@ impl<'a> fmt::Show for Item<'a> {
                     shortty(self.item), self.item.name.get_ref().as_slice()));
 
         // Write stability level
-        try!(write!(fmt, "{}", Stability(&self.item.stability)));
+        try!(write!(fmt, "<wbr>{}", Stability(&self.item.stability)));
 
         // Links to out-of-band information, i.e. src and stability dashboard
-        try!(write!(fmt, "<span class='out-of-band'>"));
+        try!(write!(fmt, "</div><div class='out-of-band'>"));
 
         // Write stability dashboard link
         match self.item.inner {
             clean::ModuleItem(ref m) if m.is_crate => {
-                try!(write!(fmt, "<a href='stability.html'>[stability dashboard]</a> "));
+                try!(write!(fmt, "<a href='stability.html'>[stability]</a> "));
             }
             _ => {}
         };
+
+        try!(write!(fmt,
+        r##"<span id='render-detail'>
+            <a id="collapse-all" href="#">[-]
+            </a>&nbsp;<a id="expand-all" href="#">[+]</a>
+        </span>"##));
 
         // Write `src` tag
         //
@@ -1332,7 +1360,7 @@ impl<'a> fmt::Show for Item<'a> {
             }
         }
 
-        try!(write!(fmt, "</span>"));
+        try!(write!(fmt, "</div>"));
 
         try!(write!(fmt, "</h1>\n"));
 
@@ -1596,10 +1624,24 @@ fn item_trait(w: &mut fmt::Formatter, cx: &Context, it: &clean::Item,
                   it.name.get_ref().as_slice(),
                   t.generics,
                   parents));
-    let required = t.methods.iter().filter(|m| m.is_req()).collect::<Vec<&clean::TraitMethod>>();
-    let provided = t.methods.iter().filter(|m| !m.is_req()).collect::<Vec<&clean::TraitMethod>>();
+    let required = t.items.iter()
+                          .filter(|m| {
+                              match **m {
+                                  clean::RequiredMethod(_) => true,
+                                  _ => false,
+                              }
+                          })
+                          .collect::<Vec<&clean::TraitItem>>();
+    let provided = t.items.iter()
+                          .filter(|m| {
+                              match **m {
+                                  clean::ProvidedMethod(_) => true,
+                                  _ => false,
+                              }
+                          })
+                          .collect::<Vec<&clean::TraitItem>>();
 
-    if t.methods.len() == 0 {
+    if t.items.len() == 0 {
         try!(write!(w, "{{ }}"));
     } else {
         try!(write!(w, "{{\n"));
@@ -1623,7 +1665,8 @@ fn item_trait(w: &mut fmt::Formatter, cx: &Context, it: &clean::Item,
     // Trait documentation
     try!(document(w, it));
 
-    fn meth(w: &mut fmt::Formatter, m: &clean::TraitMethod) -> fmt::Result {
+    fn trait_item(w: &mut fmt::Formatter, m: &clean::TraitItem)
+                  -> fmt::Result {
         try!(write!(w, "<h3 id='{}.{}' class='method'>{}<code>",
                     shortty(m.item()),
                     *m.item().name.get_ref(),
@@ -1641,7 +1684,7 @@ fn item_trait(w: &mut fmt::Formatter, cx: &Context, it: &clean::Item,
             <div class='methods'>
         "));
         for m in required.iter() {
-            try!(meth(w, *m));
+            try!(trait_item(w, *m));
         }
         try!(write!(w, "</div>"));
     }
@@ -1651,7 +1694,7 @@ fn item_trait(w: &mut fmt::Formatter, cx: &Context, it: &clean::Item,
             <div class='methods'>
         "));
         for m in provided.iter() {
-            try!(meth(w, *m));
+            try!(trait_item(w, *m));
         }
         try!(write!(w, "</div>"));
     }
@@ -1963,8 +2006,8 @@ fn render_impl(w: &mut fmt::Formatter, i: &Impl) -> fmt::Result {
         None => {}
     }
 
-    fn docmeth(w: &mut fmt::Formatter, item: &clean::Item,
-               dox: bool) -> fmt::Result {
+    fn doctraititem(w: &mut fmt::Formatter, item: &clean::Item, dox: bool)
+                    -> fmt::Result {
         try!(write!(w, "<h4 id='method.{}' class='method'>{}<code>",
                     *item.name.get_ref(),
                     ConciseStability(&item.stability)));
@@ -1980,21 +2023,21 @@ fn render_impl(w: &mut fmt::Formatter, i: &Impl) -> fmt::Result {
     }
 
     try!(write!(w, "<div class='impl-methods'>"));
-    for meth in i.impl_.methods.iter() {
-        try!(docmeth(w, meth, true));
+    for trait_item in i.impl_.items.iter() {
+        try!(doctraititem(w, trait_item, true));
     }
 
     fn render_default_methods(w: &mut fmt::Formatter,
                               t: &clean::Trait,
                               i: &clean::Impl) -> fmt::Result {
-        for method in t.methods.iter() {
-            let n = method.item().name.clone();
-            match i.methods.iter().find(|m| { m.name == n }) {
+        for trait_item in t.items.iter() {
+            let n = trait_item.item().name.clone();
+            match i.items.iter().find(|m| { m.name == n }) {
                 Some(..) => continue,
                 None => {}
             }
 
-            try!(docmeth(w, method.item(), false));
+            try!(doctraititem(w, trait_item.item(), false));
         }
         Ok(())
     }
@@ -2035,7 +2078,7 @@ impl<'a> fmt::Show for Sidebar<'a> {
         let len = cx.current.len() - if it.is_mod() {1} else {0};
         for (i, name) in cx.current.iter().take(len).enumerate() {
             if i > 0 {
-                try!(write!(fmt, "&#8203;::"));
+                try!(write!(fmt, "::<wbr>"));
             }
             try!(write!(fmt, "<a href='{}index.html'>{}</a>",
                           cx.root_path
@@ -2145,4 +2188,12 @@ fn ignore_private_item(it: &clean::Item) -> bool {
         clean::PrimitiveItem(..) => it.visibility != Some(ast::Public),
         _ => false,
     }
+}
+
+fn get_basic_keywords() -> &'static str {
+    "rust, rustlang, rust-lang"
+}
+
+fn make_item_keywords(it: &clean::Item) -> String {
+    format!("{}, {}", get_basic_keywords(), it.name.get_ref())
 }

@@ -70,7 +70,7 @@ use path;
 use result::{Err, Ok};
 use rt::rtio::LocalIo;
 use rt::rtio;
-use slice::ImmutableVector;
+use slice::ImmutableSlice;
 use string::String;
 use vec::Vec;
 
@@ -236,10 +236,15 @@ impl File {
         })
     }
 
-    /// Tests whether this stream has reached EOF.
+    /// Returns true if the stream has reached the end of the file.
     ///
     /// If true, then this file will no longer continue to return data via
     /// `read`.
+    ///
+    /// Note that the operating system will not return an `EOF` indicator
+    /// until you have attempted to read past the end of the file, so if
+    /// you've read _exactly_ the number of bytes in the file, this will
+    /// return `false`, not `true`.
     pub fn eof(&self) -> bool {
         self.last_nread == 0
     }
@@ -1241,8 +1246,8 @@ mod test {
         let mut cur = [0u8, .. 2];
         for f in files {
             let stem = f.filestem_str().unwrap();
-            let root = stem.as_bytes()[0] - ('0' as u8);
-            let name = stem.as_bytes()[1] - ('0' as u8);
+            let root = stem.as_bytes()[0] - b'0';
+            let name = stem.as_bytes()[1] - b'0';
             assert!(cur[root as uint] < name);
             cur[root as uint] = name;
         }
@@ -1588,26 +1593,25 @@ mod test {
                 "truncate didn't truncate");
     })
 
-    #[test]
-    fn utime() {
+    iotest!(fn utime() {
         let tmpdir = tmpdir();
         let path = tmpdir.join("a");
         check!(File::create(&path));
+        // These numbers have to be bigger than the time in the day to account for timezones
+        // Windows in particular will fail in certain timezones with small enough values
+        check!(change_file_times(&path, 100000, 200000));
+        assert_eq!(check!(path.stat()).accessed, 100000);
+        assert_eq!(check!(path.stat()).modified, 200000);
+    })
 
-        check!(change_file_times(&path, 1000, 2000));
-        assert_eq!(check!(path.stat()).accessed, 1000);
-        assert_eq!(check!(path.stat()).modified, 2000);
-    }
-
-    #[test]
-    fn utime_noexist() {
+    iotest!(fn utime_noexist() {
         let tmpdir = tmpdir();
 
         match change_file_times(&tmpdir.join("a"), 100, 200) {
             Ok(..) => fail!(),
             Err(..) => {}
         }
-    }
+    })
 
     iotest!(fn binary_file() {
         use rand::{StdRng, Rng};

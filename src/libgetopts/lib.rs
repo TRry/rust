@@ -88,7 +88,11 @@
        html_root_url = "http://doc.rust-lang.org/master/",
        html_playground_url = "http://play.rust-lang.org/")]
 #![feature(globs, phase)]
+#![feature(import_shadowing)]
 #![deny(missing_doc)]
+
+// NOTE(stage0, pcwalton): Remove after snapshot.
+#![allow(unknown_features)]
 
 #[cfg(test)] extern crate debug;
 #[cfg(test)] #[phase(plugin, link)] extern crate log;
@@ -115,9 +119,9 @@ pub enum Name {
 pub enum HasArg {
     /// The option requires an argument.
     Yes,
-    /// The option is just a flag, therefore no argument.
+    /// The option takes no argument.
     No,
-    /// The option argument is optional and it could or not exist.
+    /// The option argument is optional.
     Maybe,
 }
 
@@ -126,9 +130,9 @@ pub enum HasArg {
 pub enum Occur {
     /// The option occurs once.
     Req,
-    /// The option could or not occur.
+    /// The option occurs at most once.
     Optional,
-    /// The option occurs once or multiple times.
+    /// The option occurs zero or more times.
     Multi,
 }
 
@@ -372,7 +376,7 @@ impl Matches {
 }
 
 fn is_arg(arg: &str) -> bool {
-    arg.len() > 1 && arg.as_bytes()[0] == '-' as u8
+    arg.len() > 1 && arg.as_bytes()[0] == b'-'
 }
 
 fn find_opt(opts: &[Opt], nm: Name) -> Option<uint> {
@@ -555,7 +559,7 @@ pub fn getopts(args: &[String], optgrps: &[OptGroup]) -> Result {
         } else {
             let mut names;
             let mut i_arg = None;
-            if cur.as_bytes()[1] == '-' as u8 {
+            if cur.as_bytes()[1] == b'-' {
                 let tail = cur.as_slice().slice(2, curlen);
                 let tail_eq: Vec<&str> = tail.split('=').collect();
                 if tail_eq.len() <= 1 {

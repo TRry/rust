@@ -285,8 +285,9 @@ fn enc_sty(w: &mut SeekableMemWriter, cx: &ctxt, st: &ty::sty) {
             enc_substs(w, cx, substs);
             mywrite!(w, "]");
         }
-        ty::ty_unboxed_closure(def) => {
+        ty::ty_unboxed_closure(def, region) => {
             mywrite!(w, "k{}", (cx.ds)(def));
+            enc_region(w, cx, region);
         }
         ty::ty_err => {
             mywrite!(w, "e");
@@ -352,7 +353,7 @@ fn enc_bounds(w: &mut SeekableMemWriter, cx: &ctxt, bs: &ty::ParamBounds) {
             ty::BoundStatic => mywrite!(w, "O"),
             ty::BoundSized => mywrite!(w, "Z"),
             ty::BoundCopy => mywrite!(w, "P"),
-            ty::BoundShare => mywrite!(w, "T"),
+            ty::BoundSync => mywrite!(w, "T"),
         }
     }
 

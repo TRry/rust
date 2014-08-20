@@ -37,19 +37,18 @@ use core::prelude::*;
 
 use alloc::boxed::Box;
 use collections::Vec;
-use collections::Collection;
 use core::mem;
 use core::cell::UnsafeCell;
 use rustrt::local::Local;
 use rustrt::mutex::{NativeMutex, LockGuard};
 use rustrt::task::{Task, BlockedTask};
 
-use atomics;
+use atomic;
 
 pub struct Packet<T> {
     /// Only field outside of the mutex. Just done for kicks, but mainly because
     /// the other shared channel already had the code implemented
-    channels: atomics::AtomicUint,
+    channels: atomic::AtomicUint,
 
     /// The state field is protected by this mutex
     lock: NativeMutex,
@@ -131,7 +130,7 @@ fn wakeup(task: BlockedTask, guard: LockGuard) {
 impl<T: Send> Packet<T> {
     pub fn new(cap: uint) -> Packet<T> {
         Packet {
-            channels: atomics::AtomicUint::new(1),
+            channels: atomic::AtomicUint::new(1),
             lock: unsafe { NativeMutex::new() },
             state: UnsafeCell::new(State {
                 disconnected: false,
@@ -303,12 +302,12 @@ impl<T: Send> Packet<T> {
     // Prepares this shared packet for a channel clone, essentially just bumping
     // a refcount.
     pub fn clone_chan(&self) {
-        self.channels.fetch_add(1, atomics::SeqCst);
+        self.channels.fetch_add(1, atomic::SeqCst);
     }
 
     pub fn drop_chan(&self) {
         // Only flag the channel as disconnected if we're the last channel
-        match self.channels.fetch_sub(1, atomics::SeqCst) {
+        match self.channels.fetch_sub(1, atomic::SeqCst) {
             1 => {}
             _ => return
         }
@@ -411,7 +410,7 @@ impl<T: Send> Packet<T> {
 #[unsafe_destructor]
 impl<T: Send> Drop for Packet<T> {
     fn drop(&mut self) {
-        assert_eq!(self.channels.load(atomics::SeqCst), 0);
+        assert_eq!(self.channels.load(atomic::SeqCst), 0);
         let (_g, state) = self.lock();
         assert!(state.queue.dequeue().is_none());
         assert!(state.canceled.is_none());

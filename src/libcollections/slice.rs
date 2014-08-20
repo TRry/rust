@@ -8,113 +8,96 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-/*!
-
-Utilities for vector manipulation
-
-The `vec` module contains useful code to help work with vector values.
-Vectors are Rust's list type. Vectors contain zero or more values of
-homogeneous types:
-
-```rust
-let int_vector = [1i, 2i, 3i];
-let str_vector = ["one", "two", "three"];
-```
-
-This is a big module, but for a high-level overview:
-
-## Structs
-
-Several structs that are useful for vectors, such as `Items`, which
-represents iteration over a vector.
-
-## Traits
-
-A number of traits add methods that allow you to accomplish tasks with vectors.
-
-Traits defined for the `&[T]` type (a vector slice), have methods that can be
-called on either owned vectors, denoted `~[T]`, or on vector slices themselves.
-These traits include `ImmutableVector`, and `MutableVector` for the `&mut [T]`
-case.
-
-An example is the method `.slice(a, b)` that returns an immutable "view" into
-a vector or a vector slice from the index interval `[a, b)`:
-
-```rust
-let numbers = [0i, 1i, 2i];
-let last_numbers = numbers.slice(1, 3);
-// last_numbers is now &[1i, 2i]
-```
-
-Traits defined for the `~[T]` type, like `OwnedVector`, can only be called
-on such vectors. These methods deal with adding elements or otherwise changing
-the allocation of the vector.
-
-An example is the method `.push(element)` that will add an element at the end
-of the vector:
-
-```rust
-let mut numbers = vec![0i, 1i, 2i];
-numbers.push(7);
-// numbers is now vec![0i, 1i, 2i, 7i];
-```
-
-## Implementations of other traits
-
-Vectors are a very useful type, and so there's several implementations of
-traits from other modules. Some notable examples:
-
-* `Clone`
-* `Eq`, `Ord`, `Eq`, `Ord` -- vectors can be compared,
-  if the element type defines the corresponding trait.
-
-## Iteration
-
-The method `iter()` returns an iteration value for a vector or a vector slice.
-The iterator yields references to the vector's elements, so if the element
-type of the vector is `int`, the element type of the iterator is `&int`.
-
-```rust
-let numbers = [0i, 1i, 2i];
-for &x in numbers.iter() {
-    println!("{} is a number!", x);
-}
-```
-
-* `.mut_iter()` returns an iterator that allows modifying each value.
-* `.move_iter()` converts an owned vector into an iterator that
-  moves out a value from the vector each iteration.
-* Further iterators exist that split, chunk or permute the vector.
-
-## Function definitions
-
-There are a number of free functions that create or take vectors, for example:
-
-* Creating a vector, like `from_elem` and `from_fn`
-* Creating a vector with a given size: `with_capacity`
-* Modifying a vector and returning it, like `append`
-* Operations on paired elements, like `unzip`.
-
-*/
+//! Utilities for slice manipulation
+//!
+//! The `slice` module contains useful code to help work with slice values.
+//! Slices are a view into a block of memory represented as a pointer and a length.
+//!
+//! ```rust
+//! // slicing a Vec
+//! let vec = vec!(1i, 2, 3);
+//! let int_slice = vec.as_slice();
+//! // coercing an array to a slice
+//! let str_slice: &[&str] = ["one", "two", "three"];
+//! ```
+//!
+//! Slices are either mutable or shared. The shared slice type is `&[T]`,
+//! while the mutable slice type is `&mut[T]`. For example, you can mutate the
+//! block of memory that a mutable slice points to:
+//!
+//! ```rust
+//! let x: &mut[int] = [1i, 2, 3];
+//! x[1] = 7;
+//! assert_eq!(x[0], 1);
+//! assert_eq!(x[1], 7);
+//! assert_eq!(x[2], 3);
+//! ```
+//!
+//! Here are some of the things this module contains:
+//!
+//! ## Structs
+//!
+//! There are several structs that are useful for slices, such as `Items`, which
+//! represents iteration over a slice.
+//!
+//! ## Traits
+//!
+//! A number of traits add methods that allow you to accomplish tasks with slices.
+//! These traits include `ImmutableSlice`, which is defined for `&[T]` types,
+//! and `MutableSlice`, defined for `&mut [T]` types.
+//!
+//! An example is the method `.slice(a, b)` that returns an immutable "view" into
+//! a `Vec` or another slice from the index interval `[a, b)`:
+//!
+//! ```rust
+//! let numbers = [0i, 1i, 2i];
+//! let last_numbers = numbers.slice(1, 3);
+//! // last_numbers is now &[1i, 2i]
+//! ```
+//!
+//! ## Implementations of other traits
+//!
+//! There are several implementations of common traits for slices. Some examples
+//! include:
+//!
+//! * `Clone`
+//! * `Eq`, `Ord` - for immutable slices whose element type are `Eq` or `Ord`.
+//! * `Hash` - for slices whose element type is `Hash`
+//!
+//! ## Iteration
+//!
+//! The method `iter()` returns an iteration value for a slice. The iterator
+//! yields references to the slice's elements, so if the element
+//! type of the slice is `int`, the element type of the iterator is `&int`.
+//!
+//! ```rust
+//! let numbers = [0i, 1i, 2i];
+//! for &x in numbers.iter() {
+//!     println!("{} is a number!", x);
+//! }
+//! ```
+//!
+//! * `.mut_iter()` returns an iterator that allows modifying each value.
+//! * Further iterators exist that split, chunk or permute the slice.
 
 #![doc(primitive = "slice")]
-
-use core::prelude::*;
 
 use core::cmp;
 use core::mem::size_of;
 use core::mem;
+use core::prelude::{Clone, Collection, Greater, Iterator, Less, None, Option};
+use core::prelude::{Ord, Ordering, RawPtr, Some, range};
 use core::ptr;
 use core::iter::{range_step, MultiplicativeIterator};
 
-use {Collection, MutableSeq};
+use MutableSeq;
 use vec::Vec;
 
-pub use core::slice::{ref_slice, mut_ref_slice, Splits, Windows};
-pub use core::slice::{Chunks, Vector, ImmutableVector, ImmutableEqVector};
-pub use core::slice::{ImmutableOrdVector, MutableVector, Items, MutItems};
-pub use core::slice::{MutSplits, MutChunks};
-pub use core::slice::{bytes, MutableCloneableVector};
+pub use core::slice::{Chunks, Slice, ImmutableSlice, ImmutablePartialEqSlice};
+pub use core::slice::{ImmutableOrdSlice, MutableSlice, Items, MutItems};
+pub use core::slice::{MutSplits, MutChunks, Splits};
+pub use core::slice::{bytes, ref_slice, MutableCloneableSlice};
+pub use core::slice::{Found, NotFound};
 
 // Functional utilities
 
@@ -122,14 +105,14 @@ pub use core::slice::{bytes, MutableCloneableVector};
 pub trait VectorVector<T> {
     // FIXME #5898: calling these .concat and .connect conflicts with
     // StrVector::con{cat,nect}, since they have generic contents.
-    /// Flattens a vector of vectors of T into a single vector of T.
+    /// Flattens a vector of vectors of `T` into a single `Vec<T>`.
     fn concat_vec(&self) -> Vec<T>;
 
     /// Concatenate a vector of vectors, placing a given separator between each.
     fn connect_vec(&self, sep: &T) -> Vec<T>;
 }
 
-impl<'a, T: Clone, V: Vector<T>> VectorVector<T> for &'a [V] {
+impl<'a, T: Clone, V: Slice<T>> VectorVector<T> for &'a [V] {
     fn concat_vec(&self) -> Vec<T> {
         let size = self.iter().fold(0u, |acc, v| acc + v.as_slice().len());
         let mut result = Vec::with_capacity(size);
@@ -151,7 +134,7 @@ impl<'a, T: Clone, V: Vector<T>> VectorVector<T> for &'a [V] {
     }
 }
 
-/// An Iterator that yields the element swaps needed to produce
+/// An iterator that yields the element swaps needed to produce
 /// a sequence of all possible permutations for an indexed sequence of
 /// elements. Each permutation is only a single swap apart.
 ///
@@ -163,13 +146,14 @@ impl<'a, T: Clone, V: Vector<T>> VectorVector<T> for &'a [V] {
 /// sequence to its initial order.
 pub struct ElementSwaps {
     sdir: Vec<SizeDirection>,
-    /// If true, emit the last swap that returns the sequence to initial state
+    /// If `true`, emit the last swap that returns the sequence to initial
+    /// state.
     emit_reset: bool,
     swaps_made : uint,
 }
 
 impl ElementSwaps {
-    /// Create an `ElementSwaps` iterator for a sequence of `length` elements
+    /// Creates an `ElementSwaps` iterator for a sequence of `length` elements.
     pub fn new(length: uint) -> ElementSwaps {
         // Initialize `sdir` with a direction that position should move in
         // (all negative at the beginning) and the `size` of the
@@ -184,7 +168,7 @@ impl ElementSwaps {
 
 enum Direction { Pos, Neg }
 
-/// An Index and Direction together
+/// An `Index` and `Direction` together.
 struct SizeDirection {
     size: uint,
     dir: Direction,
@@ -203,7 +187,7 @@ impl Iterator<(uint, uint)> for ElementSwaps {
         let max = self.sdir.iter().map(|&x| x).enumerate()
                            .filter(|&(i, sd)|
                                 new_pos(i, sd.dir) < self.sdir.len() &&
-                                self.sdir.get(new_pos(i, sd.dir)).size < sd.size)
+                                self.sdir[new_pos(i, sd.dir)].size < sd.size)
                            .max_by(|&(_, sd)| sd.size);
         match max {
             Some((i, sd)) => {
@@ -242,7 +226,7 @@ impl Iterator<(uint, uint)> for ElementSwaps {
     }
 }
 
-/// An Iterator that uses `ElementSwaps` to iterate through
+/// An iterator that uses `ElementSwaps` to iterate through
 /// all possible permutations of a vector.
 ///
 /// The first iteration yields a clone of the vector as it is,
@@ -277,16 +261,16 @@ impl<T: Clone> Iterator<Vec<T>> for Permutations<T> {
 
 /// Extension methods for vector slices with cloneable elements
 pub trait CloneableVector<T> {
-    /// Copy `self` into a new vector
+    /// Copies `self` into a new `Vec`.
     fn to_vec(&self) -> Vec<T>;
 
-    /// Deprecated. Use `to_vec`
+    /// Deprecated. Use `to_vec`.
     #[deprecated = "Replaced by `to_vec`"]
     fn to_owned(&self) -> Vec<T> {
         self.to_vec()
     }
 
-    /// Convert `self` into an owned vector, not making a copy if possible.
+    /// Converts `self` into an owned vector, not making a copy if possible.
     fn into_vec(self) -> Vec<T>;
 
     /// Deprecated. Use `into_vec`
@@ -296,7 +280,6 @@ pub trait CloneableVector<T> {
     }
 }
 
-/// Extension methods for vector slices
 impl<'a, T: Clone> CloneableVector<T> for &'a [T] {
     /// Returns a copy of `v`.
     #[inline]
@@ -308,12 +291,34 @@ impl<'a, T: Clone> CloneableVector<T> for &'a [T] {
 
 /// Extension methods for vectors containing `Clone` elements.
 pub trait ImmutableCloneableVector<T> {
-    /// Partitions the vector into two vectors `(A,B)`, where all
-    /// elements of `A` satisfy `f` and all elements of `B` do not.
+    /// Partitions the vector into two vectors `(a, b)`, where all
+    /// elements of `a` satisfy `f` and all elements of `b` do not.
     fn partitioned(&self, f: |&T| -> bool) -> (Vec<T>, Vec<T>);
 
-    /// Create an iterator that yields every possible permutation of the
+    /// Creates an iterator that yields every possible permutation of the
     /// vector in succession.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// let v = [1i, 2, 3];
+    /// let mut perms = v.permutations();
+    ///
+    /// for p in perms {
+    ///   println!("{}", p);
+    /// }
+    /// ```
+    ///
+    /// # Example 2: iterating through permutations one by one.
+    ///
+    /// ```rust
+    /// let v = [1i, 2, 3];
+    /// let mut perms = v.permutations();
+    ///
+    /// assert_eq!(Some(vec![1i, 2, 3]), perms.next());
+    /// assert_eq!(Some(vec![1i, 3, 2]), perms.next());
+    /// assert_eq!(Some(vec![3i, 1, 2]), perms.next());
+    /// ```
     fn permutations(self) -> Permutations<T>;
 }
 
@@ -334,6 +339,7 @@ impl<'a,T:Clone> ImmutableCloneableVector<T> for &'a [T] {
         (lefts, rights)
     }
 
+    /// Returns an iterator over all permutations of a vector.
     fn permutations(self) -> Permutations<T> {
         Permutations{
             swaps: ElementSwaps::new(self.len()),
@@ -548,8 +554,8 @@ fn merge_sort<T>(v: &mut [T], compare: |&T, &T| -> Ordering) {
 
 /// Extension methods for vectors such that their elements are
 /// mutable.
-pub trait MutableVectorAllocating<'a, T> {
-    /// Sort the vector, in place, using `compare` to compare
+pub trait MutableSliceAllocating<'a, T> {
+    /// Sorts the slice, in place, using `compare` to compare
     /// elements.
     ///
     /// This sort is `O(n log n)` worst-case and stable, but allocates
@@ -568,23 +574,31 @@ pub trait MutableVectorAllocating<'a, T> {
     /// ```
     fn sort_by(self, compare: |&T, &T| -> Ordering);
 
-    /**
-     * Consumes `src` and moves as many elements as it can into `self`
-     * from the range [start,end).
-     *
-     * Returns the number of elements copied (the shorter of self.len()
-     * and end - start).
-     *
-     * # Arguments
-     *
-     * * src - A mutable vector of `T`
-     * * start - The index into `src` to start copying from
-     * * end - The index into `src` to stop copying from
-     */
+    /// Consumes `src` and moves as many elements as it can into `self`
+    /// from the range [start,end).
+    ///
+    /// Returns the number of elements copied (the shorter of `self.len()`
+    /// and `end - start`).
+    ///
+    /// # Arguments
+    ///
+    /// * src - A mutable vector of `T`
+    /// * start - The index into `src` to start copying from
+    /// * end - The index into `src` to stop copying from
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// let mut a = [1i, 2, 3, 4, 5];
+    /// let b = vec![6i, 7, 8];
+    /// let num_moved = a.move_from(b, 0, 3);
+    /// assert_eq!(num_moved, 3);
+    /// assert!(a == [6i, 7, 8, 4, 5]);
+    /// ```
     fn move_from(self, src: Vec<T>, start: uint, end: uint) -> uint;
 }
 
-impl<'a,T> MutableVectorAllocating<'a, T> for &'a mut [T] {
+impl<'a,T> MutableSliceAllocating<'a, T> for &'a mut [T] {
     #[inline]
     fn sort_by(self, compare: |&T, &T| -> Ordering) {
         merge_sort(self, compare)
@@ -601,8 +615,8 @@ impl<'a,T> MutableVectorAllocating<'a, T> for &'a mut [T] {
 
 /// Methods for mutable vectors with orderable elements, such as
 /// in-place sorting.
-pub trait MutableOrdVector<T> {
-    /// Sort the vector, in place.
+pub trait MutableOrdSlice<T> {
+    /// Sorts the slice, in place.
     ///
     /// This is equivalent to `self.sort_by(|a, b| a.cmp(b))`.
     ///
@@ -618,7 +632,8 @@ pub trait MutableOrdVector<T> {
 
     /// Mutates the slice to the next lexicographic permutation.
     ///
-    /// Returns `true` if successful, `false` if the slice is at the last-ordered permutation.
+    /// Returns `true` if successful and `false` if the slice is at the
+    /// last-ordered permutation.
     ///
     /// # Example
     ///
@@ -633,7 +648,8 @@ pub trait MutableOrdVector<T> {
 
     /// Mutates the slice to the previous lexicographic permutation.
     ///
-    /// Returns `true` if successful, `false` if the slice is at the first-ordered permutation.
+    /// Returns `true` if successful and `false` if the slice is at the
+    /// first-ordered permutation.
     ///
     /// # Example
     ///
@@ -647,7 +663,7 @@ pub trait MutableOrdVector<T> {
     fn prev_permutation(self) -> bool;
 }
 
-impl<'a, T: Ord> MutableOrdVector<T> for &'a mut [T] {
+impl<'a, T: Ord> MutableOrdSlice<T> for &'a mut [T] {
     #[inline]
     fn sort(self) {
         self.sort_by(|a,b| a.cmp(b))

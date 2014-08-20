@@ -20,7 +20,7 @@ use option::{Some, None};
 use os;
 use result::{Ok, Err};
 use str::StrSlice;
-use sync::atomics;
+use sync::atomic;
 use unicode::char::UnicodeChar;
 
 pub use self::imp::write;
@@ -28,9 +28,9 @@ pub use self::imp::write;
 // For now logging is turned off by default, and this function checks to see
 // whether the magical environment variable is present to see if it's turned on.
 pub fn log_enabled() -> bool {
-    static mut ENABLED: atomics::AtomicInt = atomics::INIT_ATOMIC_INT;
+    static mut ENABLED: atomic::AtomicInt = atomic::INIT_ATOMIC_INT;
     unsafe {
-        match ENABLED.load(atomics::SeqCst) {
+        match ENABLED.load(atomic::SeqCst) {
             1 => return false,
             2 => return true,
             _ => {}
@@ -41,7 +41,7 @@ pub fn log_enabled() -> bool {
         Some(..) => 2,
         None => 1,
     };
-    unsafe { ENABLED.store(val, atomics::SeqCst); }
+    unsafe { ENABLED.store(val, atomic::SeqCst); }
     val == 2
 }
 
@@ -258,7 +258,7 @@ mod imp {
     pub fn write(w: &mut Writer) -> IoResult<()> {
         use iter::{Iterator, range};
         use result;
-        use slice::{MutableVector};
+        use slice::{MutableSlice};
 
         extern {
             fn backtrace(buf: *mut *mut libc::c_void,
@@ -398,7 +398,7 @@ mod imp {
         use path::GenericPath;
         use ptr::RawPtr;
         use ptr;
-        use slice::{ImmutableVector, MutableVector};
+        use slice::{ImmutableSlice, MutableSlice};
 
         ////////////////////////////////////////////////////////////////////////
         // libbacktrace.h API
@@ -415,6 +415,9 @@ mod imp {
                           errnum: libc::c_int);
         enum backtrace_state {}
         #[link(name = "backtrace", kind = "static")]
+        #[cfg(not(test))]
+        extern {}
+
         extern {
             fn backtrace_create_state(filename: *const libc::c_char,
                                       threaded: libc::c_int,
@@ -667,7 +670,7 @@ mod imp {
     use path::Path;
     use result::{Ok, Err};
     use rt::mutex::{StaticNativeMutex, NATIVE_MUTEX_INIT};
-    use slice::ImmutableVector;
+    use slice::ImmutableSlice;
     use str::StrSlice;
     use dynamic_lib::DynamicLibrary;
 

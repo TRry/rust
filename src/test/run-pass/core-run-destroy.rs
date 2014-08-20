@@ -16,6 +16,8 @@
 // instead of in std.
 
 #![feature(macro_rules)]
+#![reexport_test_harness_main = "test_main"]
+
 extern crate libc;
 
 extern crate native;
@@ -23,6 +25,7 @@ extern crate green;
 extern crate rustuv;
 
 use std::io::{Process, Command};
+use std::time::Duration;
 
 macro_rules! succeed( ($e:expr) => (
     match $e { Ok(..) => {}, Err(e) => fail!("failure: {}", e) }
@@ -38,7 +41,7 @@ macro_rules! iotest (
             use std::str;
             use std::io::process::Command;
             use native;
-            use super::*;
+            use super::{sleeper, test_destroy_actually_kills};
 
             fn f() $b
 
@@ -55,7 +58,7 @@ macro_rules! iotest (
 
 #[cfg(test)] #[start]
 fn start(argc: int, argv: *const *const u8) -> int {
-    green::start(argc, argv, rustuv::event_loop, __test::main)
+    green::start(argc, argv, rustuv::event_loop, test_main)
 }
 
 iotest!(fn test_destroy_once() {
@@ -74,7 +77,7 @@ pub fn sleeper() -> Process {
 pub fn sleeper() -> Process {
     // There's a `timeout` command on windows, but it doesn't like having
     // its output piped, so instead just ping ourselves a few times with
-    // gaps inbetweeen so we're sure this process is alive for awhile
+    // gaps in between so we're sure this process is alive for awhile
     Command::new("ping").arg("127.0.0.1").arg("-n").arg("1000").spawn().unwrap()
 }
 
@@ -113,7 +116,7 @@ pub fn test_destroy_actually_kills(force: bool) {
     // Don't let this test time out, this should be quick
     let (tx, rx1) = channel();
     let mut t = timer::Timer::new().unwrap();
-    let rx2 = t.oneshot(1000);
+    let rx2 = t.oneshot(Duration::milliseconds(1000));
     spawn(proc() {
         select! {
             () = rx2.recv() => unsafe { libc::exit(1) },

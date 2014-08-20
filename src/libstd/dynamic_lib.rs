@@ -29,7 +29,7 @@ use option::*;
 use os;
 use path::{Path,GenericPath};
 use result::*;
-use slice::{Vector,ImmutableVector};
+use slice::{Slice,ImmutableSlice};
 use str;
 use string::String;
 use vec::Vec;
@@ -114,7 +114,7 @@ impl DynamicLibrary {
     }
 
     fn separator() -> u8 {
-        if cfg!(windows) {';' as u8} else {':' as u8}
+        if cfg!(windows) {b';'} else {b':'}
     }
 
     /// Returns the current search path for dynamic libraries being used by this
@@ -278,7 +278,8 @@ pub mod dl {
     }
 }
 
-#[cfg(target_os = "win32")]
+#[cfg(target_os = "windows")]
+#[cfg(stage0, target_os = "win32")] // NOTE: Remove after snapshot
 pub mod dl {
     use c_str::ToCStr;
     use iter::Iterator;

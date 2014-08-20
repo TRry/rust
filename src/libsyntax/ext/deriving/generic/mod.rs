@@ -198,7 +198,7 @@ use owned_slice::OwnedSlice;
 use parse::token::InternedString;
 use parse::token::special_idents;
 
-use self::ty::*;
+use self::ty::{LifetimeBounds, Path, Ptr, PtrTy, Self, Ty};
 
 pub mod ty;
 
@@ -390,12 +390,12 @@ impl<'a> TraitDef<'a> {
                            methods: Vec<Gc<ast::Method>> ) -> Gc<ast::Item> {
         let trait_path = self.path.to_path(cx, self.span, type_ident, generics);
 
-        let Generics { mut lifetimes, ty_params } =
+        let Generics { mut lifetimes, ty_params, where_clause: _ } =
             self.generics.to_generics(cx, self.span, type_ident, generics);
         let mut ty_params = ty_params.into_vec();
 
         // Copy the lifetimes
-        lifetimes.extend(generics.lifetimes.iter().map(|l| *l));
+        lifetimes.extend(generics.lifetimes.iter().map(|l| (*l).clone()));
 
         // Create the type parameters.
         ty_params.extend(generics.ty_params.iter().map(|ty_param| {
@@ -418,7 +418,11 @@ impl<'a> TraitDef<'a> {
         }));
         let trait_generics = Generics {
             lifetimes: lifetimes,
-            ty_params: OwnedSlice::from_vec(ty_params)
+            ty_params: OwnedSlice::from_vec(ty_params),
+            where_clause: ast::WhereClause {
+                id: ast::DUMMY_NODE_ID,
+                predicates: Vec::new(),
+            },
         };
 
         // Create the reference to the trait.
@@ -429,7 +433,11 @@ impl<'a> TraitDef<'a> {
             cx.ty_ident(self.span, ty_param.ident)
         });
 
-        let self_lifetimes = generics.lifetimes.clone();
+        let self_lifetimes: Vec<ast::Lifetime> =
+            generics.lifetimes
+            .iter()
+            .map(|ld| ld.lifetime)
+            .collect();
 
         // Create the type of `self`.
         let self_type = cx.ty_path(
@@ -448,8 +456,13 @@ impl<'a> TraitDef<'a> {
             self.span,
             ident,
             (vec!(attr)).append(self.attributes.as_slice()),
-            ast::ItemImpl(trait_generics, opt_trait_ref,
-                          self_type, methods))
+            ast::ItemImpl(trait_generics,
+                          opt_trait_ref,
+                          self_type,
+                          methods.move_iter()
+                                 .map(|method| {
+                                     ast::MethodImplItem(method)
+                                 }).collect()))
     }
 
     fn expand_struct_def(&self,
@@ -996,7 +1009,7 @@ impl<'a> MethodDef<'a> {
             let arms : Vec<ast::Arm> = variants.iter().enumerate()
                 .map(|(index, &variant)| {
                     let pat = variant_to_pat(cx, sp, &*variant);
-                    let lit = ast::LitUint(index as u64, ast::TyU);
+                    let lit = ast::LitInt(index as u64, ast::UnsignedIntLit(ast::TyU));
                     cx.arm(sp, vec![pat], cx.expr_lit(sp, lit))
                 }).collect();
 

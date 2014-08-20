@@ -66,12 +66,12 @@ use syntax::visit::Visitor;
 // It may be better to do something more clever, like processing fully
 // resolved types first.
 
-/// A vtable context includes an inference context, a crate context, and a
-/// callback function to call in case of type error.
+/// A vtable context includes an inference context, a parameter environment,
+/// and a list of unboxed closure types.
 pub struct VtableContext<'a> {
     pub infcx: &'a infer::InferCtxt<'a>,
     pub param_env: &'a ty::ParameterEnvironment,
-    pub unboxed_closure_types: &'a RefCell<DefIdMap<ty::ClosureTy>>,
+    pub unboxed_closures: &'a RefCell<DefIdMap<ty::UnboxedClosure>>,
 }
 
 impl<'a> VtableContext<'a> {
@@ -83,8 +83,7 @@ fn lookup_vtables(vcx: &VtableContext,
                   type_param_defs: &VecPerParamSpace<ty::TypeParameterDef>,
                   substs: &subst::Substs,
                   is_early: bool)
-                  -> VecPerParamSpace<vtable_param_res>
-{
+                  -> VecPerParamSpace<vtable_param_res> {
     debug!("lookup_vtables(\
            type_param_defs={}, \
            substs={}",
@@ -154,11 +153,12 @@ fn lookup_vtables_for_param(vcx: &VtableContext,
         match lookup_vtable(vcx, span, ty, trait_ref.clone(), is_early) {
             Some(vtable) => param_result.push(vtable),
             None => {
-                vcx.tcx().sess.span_fatal(span,
+                vcx.tcx().sess.span_err(span,
                     format!("failed to find an implementation of \
                           trait {} for {}",
                          vcx.infcx.trait_ref_to_string(&*trait_ref),
                          vcx.infcx.ty_to_string(ty)).as_slice());
+                param_result.push(vtable_error)
             }
         }
         true
@@ -309,31 +309,42 @@ fn search_for_unboxed_closure_vtable(vcx: &VtableContext,
                                      -> Option<vtable_origin> {
     let tcx = vcx.tcx();
     let closure_def_id = match ty::get(ty).sty {
-        ty::ty_unboxed_closure(closure_def_id) => closure_def_id,
+        ty::ty_unboxed_closure(closure_def_id, _) => closure_def_id,
         _ => return None,
     };
 
     let fn_traits = [
-        tcx.lang_items.fn_trait(),
-        tcx.lang_items.fn_mut_trait(),
-        tcx.lang_items.fn_once_trait()
+        (ty::FnUnboxedClosureKind, tcx.lang_items.fn_trait()),
+        (ty::FnMutUnboxedClosureKind, tcx.lang_items.fn_mut_trait()),
+        (ty::FnOnceUnboxedClosureKind, tcx.lang_items.fn_once_trait()),
     ];
-    for fn_trait in fn_traits.iter() {
-        match *fn_trait {
-            Some(ref fn_trait) if *fn_trait == trait_ref.def_id => {}
+    for tuple in fn_traits.iter() {
+        let kind = match tuple {
+            &(kind, Some(ref fn_trait)) if *fn_trait == trait_ref.def_id => {
+                kind
+            }
             _ => continue,
         };
 
         // Check to see whether the argument and return types match.
-        let unboxed_closure_types = tcx.unboxed_closure_types.borrow();
-        let closure_type = match unboxed_closure_types.find(&closure_def_id) {
-            Some(closure_type) => (*closure_type).clone(),
+        let unboxed_closures = tcx.unboxed_closures.borrow();
+        let closure_type = match unboxed_closures.find(&closure_def_id) {
+            Some(closure) => {
+                if closure.kind != kind {
+                    continue
+                }
+                closure.closure_type.clone()
+            }
             None => {
                 // Try the inherited unboxed closure type map.
-                let unboxed_closure_types = vcx.unboxed_closure_types
-                                               .borrow();
-                match unboxed_closure_types.find(&closure_def_id) {
-                    Some(closure_type) => (*closure_type).clone(),
+                let unboxed_closures = vcx.unboxed_closures.borrow();
+                match unboxed_closures.find(&closure_def_id) {
+                    Some(closure) => {
+                        if closure.kind != kind {
+                            continue
+                        }
+                        closure.closure_type.clone()
+                    }
                     None => {
                         tcx.sess.span_bug(span,
                                           "didn't find unboxed closure type \
@@ -572,10 +583,11 @@ fn fixup_ty(vcx: &VtableContext,
     match resolve_type(vcx.infcx, Some(span), ty, resolve_and_force_all_but_regions) {
         Ok(new_type) => Some(new_type),
         Err(e) if !is_early => {
-            tcx.sess.span_fatal(span,
+            tcx.sess.span_err(span,
                 format!("cannot determine a type for this bounded type \
                          parameter: {}",
-                        fixup_err_to_string(e)).as_slice())
+                        fixup_err_to_string(e)).as_slice());
+            Some(ty::mk_err())
         }
         Err(_) => {
             None
@@ -881,11 +893,11 @@ pub fn resolve_impl(tcx: &ty::ctxt,
     debug!("impl_trait_ref={}", impl_trait_ref.repr(tcx));
 
     let infcx = &infer::new_infer_ctxt(tcx);
-    let unboxed_closure_types = RefCell::new(DefIdMap::new());
+    let unboxed_closures = RefCell::new(DefIdMap::new());
     let vcx = VtableContext {
         infcx: infcx,
         param_env: &param_env,
-        unboxed_closure_types: &unboxed_closure_types,
+        unboxed_closures: &unboxed_closures,
     };
 
     // Resolve the vtables for the trait reference on the impl.  This
@@ -934,11 +946,11 @@ pub fn resolve_impl(tcx: &ty::ctxt,
 pub fn trans_resolve_method(tcx: &ty::ctxt, id: ast::NodeId,
                             substs: &subst::Substs) -> vtable_res {
     let generics = ty::lookup_item_type(tcx, ast_util::local_def(id)).generics;
-    let unboxed_closure_types = RefCell::new(DefIdMap::new());
+    let unboxed_closures = RefCell::new(DefIdMap::new());
     let vcx = VtableContext {
         infcx: &infer::new_infer_ctxt(tcx),
         param_env: &ty::construct_parameter_environment(tcx, &ty::Generics::empty(), id),
-        unboxed_closure_types: &unboxed_closure_types,
+        unboxed_closures: &unboxed_closures,
     };
 
     lookup_vtables(&vcx,
@@ -963,3 +975,38 @@ impl<'a, 'b> visit::Visitor<()> for &'a FnCtxt<'b> {
 pub fn resolve_in_block(mut fcx: &FnCtxt, bl: &ast::Block) {
     visit::walk_block(&mut fcx, bl, ());
 }
+
+/// Used in the kind checker after typechecking has finished. Calls
+/// `any_missing` if any bounds were missing.
+pub fn check_param_bounds(tcx: &ty::ctxt,
+                          span: Span,
+                          parameter_environment: &ty::ParameterEnvironment,
+                          type_param_defs:
+                            &VecPerParamSpace<ty::TypeParameterDef>,
+                          substs: &subst::Substs,
+                          any_missing: |&ty::TraitRef|) {
+    let unboxed_closures = RefCell::new(DefIdMap::new());
+    let vcx = VtableContext {
+        infcx: &infer::new_infer_ctxt(tcx),
+        param_env: parameter_environment,
+        unboxed_closures: &unboxed_closures,
+    };
+    let vtable_param_results =
+        lookup_vtables(&vcx, span, type_param_defs, substs, false);
+    for (vtable_param_result, type_param_def) in
+            vtable_param_results.iter().zip(type_param_defs.iter()) {
+        for (vtable_result, trait_ref) in
+                vtable_param_result.iter()
+                                   .zip(type_param_def.bounds
+                                                      .trait_bounds
+                                                      .iter()) {
+            match *vtable_result {
+                vtable_error => any_missing(&**trait_ref),
+                vtable_static(..) |
+                vtable_param(..) |
+                vtable_unboxed_closure(..) => {}
+            }
+        }
+    }
+}
+

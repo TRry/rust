@@ -17,8 +17,8 @@ use middle::dataflow::DataFlowContext;
 use middle::dataflow::BitwiseOperator;
 use middle::dataflow::DataFlowOperator;
 use middle::def;
-use euv = middle::expr_use_visitor;
-use mc = middle::mem_categorization;
+use middle::expr_use_visitor as euv;
+use middle::mem_categorization as mc;
 use middle::ty;
 use util::ppaux::{note_and_explain_region, Repr, UserString};
 
@@ -290,8 +290,9 @@ pub fn closure_to_block(closure_id: ast::NodeId,
                     tcx: &ty::ctxt) -> ast::NodeId {
     match tcx.map.get(closure_id) {
         ast_map::NodeExpr(expr) => match expr.node {
-            ast::ExprProc(_decl, block) |
-            ast::ExprFnBlock(_decl, block) => { block.id }
+            ast::ExprProc(_, block) |
+            ast::ExprFnBlock(_, _, block) |
+            ast::ExprUnboxedFn(_, _, _, block) => { block.id }
             _ => fail!("encountered non-closure id: {}", closure_id)
         },
         _ => fail!("encountered non-expr id: {}", closure_id)

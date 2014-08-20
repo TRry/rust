@@ -10,7 +10,7 @@
 
 use clean;
 
-use dl = std::dynamic_lib;
+use std::dynamic_lib as dl;
 use serialize::json;
 use std::mem;
 use std::string::String;
@@ -73,7 +73,8 @@ impl PluginManager {
     }
 }
 
-#[cfg(target_os="win32")]
+#[cfg(target_os = "windows")]
+#[cfg(stage0, target_os = "win32")] // NOTE: Remove after snapshot
 fn libname(mut n: String) -> String {
     n.push_str(".dll");
     n
@@ -85,7 +86,8 @@ fn libname(mut n: String) -> String {
     n
 }
 
-#[cfg(not(target_os="win32"), not(target_os="macos"))]
+#[cfg(not(stage0), not(target_os="windows"), not(target_os="macos"))]
+#[cfg(stage0, not(target_os="win32"), not(target_os="macos"))] // NOTE: Remove after snapshot
 fn libname(n: String) -> String {
     let mut i = String::from_str("lib");
     i.push_str(n.as_slice());

@@ -8,27 +8,26 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-//! A double-ended queue implemented as a circular buffer
+//! A double-ended queue implemented as a circular buffer.
 //!
-//! RingBuf implements the trait Deque. It should be imported with `use
-//! collections::Deque`.
+//! `RingBuf` implements the trait `Deque`. It should be imported with
+//! `use collections::Deque`.
 
 use core::prelude::*;
 
 use core::cmp;
 use core::default::Default;
 use core::fmt;
-use core::iter::RandomAccessIterator;
 use core::iter;
 use std::hash::{Writer, Hash};
 
-use {Deque, Collection, Mutable, MutableSeq};
+use {Deque, Mutable, MutableSeq};
 use vec::Vec;
 
 static INITIAL_CAPACITY: uint = 8u; // 2^3
 static MINIMUM_CAPACITY: uint = 2u;
 
-/// RingBuf is a circular buffer that implements Deque.
+/// `RingBuf` is a circular buffer that implements `Deque`.
 #[deriving(Clone)]
 pub struct RingBuf<T> {
     nelts: uint,
@@ -37,12 +36,12 @@ pub struct RingBuf<T> {
 }
 
 impl<T> Collection for RingBuf<T> {
-    /// Return the number of elements in the RingBuf
+    /// Returns the number of elements in the `RingBuf`.
     fn len(&self) -> uint { self.nelts }
 }
 
 impl<T> Mutable for RingBuf<T> {
-    /// Clear the RingBuf, removing all values.
+    /// Clears the `RingBuf`, removing all values.
     fn clear(&mut self) {
         for x in self.elts.mut_iter() { *x = None }
         self.nelts = 0;
@@ -51,28 +50,29 @@ impl<T> Mutable for RingBuf<T> {
 }
 
 impl<T> Deque<T> for RingBuf<T> {
-    /// Return a reference to the first element in the RingBuf
+    /// Returns a reference to the first element in the `RingBuf`.
     fn front<'a>(&'a self) -> Option<&'a T> {
-        if self.nelts > 0 { Some(self.get(0)) } else { None }
+        if self.nelts > 0 { Some(&self[0]) } else { None }
     }
 
-    /// Return a mutable reference to the first element in the RingBuf
+    /// Returns a mutable reference to the first element in the `RingBuf`.
     fn front_mut<'a>(&'a mut self) -> Option<&'a mut T> {
         if self.nelts > 0 { Some(self.get_mut(0)) } else { None }
     }
 
-    /// Return a reference to the last element in the RingBuf
+    /// Returns a reference to the last element in the `RingBuf`.
     fn back<'a>(&'a self) -> Option<&'a T> {
-        if self.nelts > 0 { Some(self.get(self.nelts - 1)) } else { None }
+        if self.nelts > 0 { Some(&self[self.nelts - 1]) } else { None }
     }
 
-    /// Return a mutable reference to the last element in the RingBuf
+    /// Returns a mutable reference to the last element in the `RingBuf`.
     fn back_mut<'a>(&'a mut self) -> Option<&'a mut T> {
         let nelts = self.nelts;
         if nelts > 0 { Some(self.get_mut(nelts - 1)) } else { None }
     }
 
-    /// Remove and return the first element in the RingBuf, or None if it is empty
+    /// Removes and returns the first element in the `RingBuf`, or `None` if it
+    /// is empty.
     fn pop_front(&mut self) -> Option<T> {
         let result = self.elts.get_mut(self.lo).take();
         if result.is_some() {
@@ -82,7 +82,7 @@ impl<T> Deque<T> for RingBuf<T> {
         result
     }
 
-    /// Prepend an element to the RingBuf
+    /// Prepends an element to the `RingBuf`.
     fn push_front(&mut self, t: T) {
         if self.nelts == self.elts.len() {
             grow(self.nelts, &mut self.lo, &mut self.elts);
@@ -121,24 +121,26 @@ impl<T> Default for RingBuf<T> {
 }
 
 impl<T> RingBuf<T> {
-    /// Create an empty RingBuf
+    /// Creates an empty `RingBuf`.
     pub fn new() -> RingBuf<T> {
         RingBuf::with_capacity(INITIAL_CAPACITY)
     }
 
-    /// Create an empty RingBuf with space for at least `n` elements.
+    /// Creates an empty `RingBuf` with space for at least `n` elements.
     pub fn with_capacity(n: uint) -> RingBuf<T> {
         RingBuf{nelts: 0, lo: 0,
               elts: Vec::from_fn(cmp::max(MINIMUM_CAPACITY, n), |_| None)}
     }
 
-    /// Retrieve an element in the RingBuf by index
+    /// Retrieva an element in the `RingBuf` by index.
     ///
-    /// Fails if there is no element with the given index
+    /// Fails if there is no element with the given index.
     ///
     /// # Example
     ///
     /// ```rust
+    /// #![allow(deprecated)]
+    ///
     /// use std::collections::RingBuf;
     ///
     /// let mut buf = RingBuf::new();
@@ -147,17 +149,18 @@ impl<T> RingBuf<T> {
     /// buf.push(5);
     /// assert_eq!(buf.get(1), &4);
     /// ```
+    #[deprecated = "prefer using indexing, e.g., ringbuf[0]"]
     pub fn get<'a>(&'a self, i: uint) -> &'a T {
         let idx = self.raw_index(i);
-        match *self.elts.get(idx) {
+        match self.elts[idx] {
             None => fail!(),
             Some(ref v) => v
         }
     }
 
-    /// Retrieve an element in the RingBuf by index
+    /// Retrieves an element in the `RingBuf` by index.
     ///
-    /// Fails if there is no element with the given index
+    /// Fails if there is no element with the given index.
     ///
     /// # Example
     ///
@@ -169,7 +172,7 @@ impl<T> RingBuf<T> {
     /// buf.push(4);
     /// buf.push(5);
     /// *buf.get_mut(1) = 7;
-    /// assert_eq!(buf.get(1), &7);
+    /// assert_eq!(buf[1], 7);
     /// ```
     pub fn get_mut<'a>(&'a mut self, i: uint) -> &'a mut T {
         let idx = self.raw_index(i);
@@ -179,11 +182,11 @@ impl<T> RingBuf<T> {
         }
     }
 
-    /// Swap elements at indices `i` and `j`
+    /// Swaps elements at indices `i` and `j`.
     ///
     /// `i` and `j` may be equal.
     ///
-    /// Fails if there is no element with the given index
+    /// Fails if there is no element with either index.
     ///
     /// # Example
     ///
@@ -195,8 +198,8 @@ impl<T> RingBuf<T> {
     /// buf.push(4);
     /// buf.push(5);
     /// buf.swap(0, 2);
-    /// assert_eq!(buf.get(0), &5);
-    /// assert_eq!(buf.get(2), &3);
+    /// assert_eq!(buf[0], 5);
+    /// assert_eq!(buf[2], 3);
     /// ```
     pub fn swap(&mut self, i: uint, j: uint) {
         assert!(i < self.len());
@@ -206,37 +209,30 @@ impl<T> RingBuf<T> {
         self.elts.as_mut_slice().swap(ri, rj);
     }
 
-    /// Return index in underlying vec for a given logical element index
+    /// Returns the index in the underlying `Vec` for a given logical element
+    /// index.
     fn raw_index(&self, idx: uint) -> uint {
         raw_index(self.lo, self.elts.len(), idx)
     }
 
-    /// Reserve capacity for exactly `n` elements in the given RingBuf,
+    /// Reserves capacity for exactly `n` elements in the given `RingBuf`,
     /// doing nothing if `self`'s capacity is already equal to or greater
-    /// than the requested capacity
-    ///
-    /// # Arguments
-    ///
-    /// * n - The number of elements to reserve space for
+    /// than the requested capacity.
     pub fn reserve_exact(&mut self, n: uint) {
         self.elts.reserve_exact(n);
     }
 
-    /// Reserve capacity for at least `n` elements in the given RingBuf,
+    /// Reserves capacity for at least `n` elements in the given `RingBuf`,
     /// over-allocating in case the caller needs to reserve additional
     /// space.
     ///
     /// Do nothing if `self`'s capacity is already equal to or greater
     /// than the requested capacity.
-    ///
-    /// # Arguments
-    ///
-    /// * n - The number of elements to reserve space for
     pub fn reserve(&mut self, n: uint) {
         self.elts.reserve(n);
     }
 
-    /// Front-to-back iterator.
+    /// Returns a front-to-back iterator.
     ///
     /// # Example
     ///
@@ -253,7 +249,7 @@ impl<T> RingBuf<T> {
         Items{index: 0, rindex: self.nelts, lo: self.lo, elts: self.elts.as_slice()}
     }
 
-    /// Front-to-back iterator which returns mutable values.
+    /// Returns a front-to-back iterator which returns mutable references.
     ///
     /// # Example
     ///
@@ -295,7 +291,7 @@ impl<T> RingBuf<T> {
     }
 }
 
-/// RingBuf iterator
+/// `RingBuf` iterator.
 pub struct Items<'a, T> {
     lo: uint,
     index: uint,
@@ -350,7 +346,7 @@ impl<'a, T> RandomAccessIterator<&'a T> for Items<'a, T> {
     }
 }
 
-/// RingBuf mutable iterator
+/// `RingBuf` mutable iterator.
 pub struct MutItems<'a, T> {
     remaining1: &'a mut [Option<T>],
     remaining2: &'a mut [Option<T>],
@@ -359,6 +355,7 @@ pub struct MutItems<'a, T> {
 
 impl<'a, T> Iterator<&'a mut T> for MutItems<'a, T> {
     #[inline]
+    #[allow(deprecated)] // mut_shift_ref
     fn next(&mut self) -> Option<&'a mut T> {
         if self.nelts == 0 {
             return None;
@@ -381,6 +378,7 @@ impl<'a, T> Iterator<&'a mut T> for MutItems<'a, T> {
 
 impl<'a, T> DoubleEndedIterator<&'a mut T> for MutItems<'a, T> {
     #[inline]
+    #[allow(deprecated)] // mut_shift_ref
     fn next_back(&mut self) -> Option<&'a mut T> {
         if self.nelts == 0 {
             return None;
@@ -403,11 +401,11 @@ impl<'a, T> ExactSize<&'a mut T> for MutItems<'a, T> {}
 fn grow<T>(nelts: uint, loptr: &mut uint, elts: &mut Vec<Option<T>>) {
     assert_eq!(nelts, elts.len());
     let lo = *loptr;
-    let newlen = nelts * 2;
-    elts.reserve(newlen);
+    elts.reserve(nelts * 2);
+    let newlen = elts.capacity();
 
     /* fill with None */
-    for _ in range(elts.len(), elts.capacity()) {
+    for _ in range(elts.len(), newlen) {
         elts.push(None);
     }
 
@@ -433,7 +431,7 @@ fn grow<T>(nelts: uint, loptr: &mut uint, elts: &mut Vec<Option<T>>) {
     }
 }
 
-/// Return index in underlying vec for a given logical element index
+/// Returns the index in the underlying `Vec` for a given logical element index.
 fn raw_index(lo: uint, len: uint, index: uint) -> uint {
     if lo >= len - index {
         lo + index - len
@@ -452,9 +450,18 @@ impl<A: PartialEq> PartialEq for RingBuf<A> {
     }
 }
 
+impl<A: Eq> Eq for RingBuf<A> {}
+
 impl<A: PartialOrd> PartialOrd for RingBuf<A> {
     fn partial_cmp(&self, other: &RingBuf<A>) -> Option<Ordering> {
         iter::order::partial_cmp(self.iter(), other.iter())
+    }
+}
+
+impl<A: Ord> Ord for RingBuf<A> {
+    #[inline]
+    fn cmp(&self, other: &RingBuf<A>) -> Ordering {
+        iter::order::cmp(self.iter(), other.iter())
     }
 }
 
@@ -466,6 +473,22 @@ impl<S: Writer, A: Hash<S>> Hash<S> for RingBuf<A> {
         }
     }
 }
+
+impl<A> Index<uint, A> for RingBuf<A> {
+    #[inline]
+    #[allow(deprecated)]
+    fn index<'a>(&'a self, i: &uint) -> &'a A {
+        self.get(*i)
+    }
+}
+
+// FIXME(#12825) Indexing will always try IndexMut first and that causes issues.
+/*impl<A> IndexMut<uint, A> for RingBuf<A> {
+    #[inline]
+    fn index_mut<'a>(&'a mut self, index: &uint) -> &'a mut A {
+        self.get_mut(*index)
+    }
+}*/
 
 impl<A> FromIterator<A> for RingBuf<A> {
     fn from_iter<T: Iterator<A>>(iterator: T) -> RingBuf<A> {
@@ -479,7 +502,7 @@ impl<A> FromIterator<A> for RingBuf<A> {
 impl<A> Extendable<A> for RingBuf<A> {
     fn extend<T: Iterator<A>>(&mut self, mut iterator: T) {
         for elt in iterator {
-            self.push_back(elt);
+            self.push(elt);
         }
     }
 }
@@ -644,6 +667,25 @@ mod tests {
         }
     }
 
+    #[test]
+    fn test_index() {
+        let mut deq = RingBuf::new();
+        for i in range(1u, 4) {
+            deq.push_front(i);
+        }
+        assert_eq!(deq[1], 2);
+    }
+
+    #[test]
+    #[should_fail]
+    fn test_index_out_of_bounds() {
+        let mut deq = RingBuf::new();
+        for i in range(1u, 4) {
+            deq.push_front(i);
+        }
+        deq[3];
+    }
+
     #[bench]
     fn bench_new(b: &mut test::Bencher) {
         b.iter(|| {
@@ -739,6 +781,47 @@ mod tests {
         let mut d = RingBuf::with_capacity(50);
         d.push_back(1i);
         assert_eq!(d.len(), 1);
+    }
+
+    #[test]
+    fn test_with_capacity_non_power_two() {
+        let mut d3 = RingBuf::with_capacity(3);
+        d3.push(1i);
+
+        // X = None, | = lo
+        // [|1, X, X]
+        assert_eq!(d3.pop_front(), Some(1));
+        // [X, |X, X]
+        assert_eq!(d3.front(), None);
+
+        // [X, |3, X]
+        d3.push(3);
+        // [X, |3, 6]
+        d3.push(6);
+        // [X, X, |6]
+        assert_eq!(d3.pop_front(), Some(3));
+
+        // Pushing the lo past half way point to trigger
+        // the 'B' scenario for growth
+        // [9, X, |6]
+        d3.push(9);
+        // [9, 12, |6]
+        d3.push(12);
+
+        d3.push(15);
+        // There used to be a bug here about how the
+        // RingBuf made growth assumptions about the
+        // underlying Vec which didn't hold and lead
+        // to corruption.
+        // (Vec grows to next power of two)
+        //good- [9, 12, 15, X, X, X, X, |6]
+        //bug-  [15, 12, X, X, X, |6, X, X]
+        assert_eq!(d3.pop_front(), Some(6));
+
+        // Which leads us to the following state which
+        // would be a failure case.
+        //bug-  [15, 12, X, X, X, X, |X, X]
+        assert_eq!(d3.front(), Some(&9));
     }
 
     #[test]

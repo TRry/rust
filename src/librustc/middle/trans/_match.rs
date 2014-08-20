@@ -190,18 +190,21 @@
 
 use back::abi;
 use driver::config::FullDebugInfo;
-use llvm;
 use llvm::{ValueRef, BasicBlockRef};
+use llvm;
+use middle::check_match::StaticInliner;
+use middle::check_match;
 use middle::const_eval;
 use middle::def;
-use middle::check_match;
-use middle::check_match::StaticInliner;
+use middle::expr_use_visitor as euv;
 use middle::lang_items::StrEqFnLangItem;
+use middle::mem_categorization as mc;
 use middle::pat_util::*;
 use middle::resolve::DefMap;
 use middle::trans::adt;
 use middle::trans::base::*;
-use middle::trans::build::*;
+use middle::trans::build::{And, BitCast, Br, CondBr, GEPi, InBoundsGEP, Load};
+use middle::trans::build::{Mul, Not, Store, Sub, Switch, add_comment};
 use middle::trans::build;
 use middle::trans::callee;
 use middle::trans::cleanup;
@@ -1292,13 +1295,58 @@ pub fn trans_match<'a>(
     trans_match_inner(bcx, match_expr.id, discr_expr, arms, dest)
 }
 
-fn create_bindings_map(bcx: &Block, pat: Gc<ast::Pat>) -> BindingsMap {
+/// Checks whether the binding in `discr` is assigned to anywhere in the expression `body`
+fn is_discr_reassigned(bcx: &Block, discr: &ast::Expr, body: &ast::Expr) -> bool {
+    match discr.node {
+        ast::ExprPath(..) => match bcx.def(discr.id) {
+            def::DefArg(vid, _) | def::DefBinding(vid, _) |
+            def::DefLocal(vid, _) | def::DefUpvar(vid, _, _, _) => {
+                let mut rc = ReassignmentChecker {
+                    node: vid,
+                    reassigned: false
+                };
+                {
+                    let mut visitor = euv::ExprUseVisitor::new(&mut rc, bcx);
+                    visitor.walk_expr(body);
+                }
+                rc.reassigned
+            }
+            _ => false
+        },
+        _ => false
+    }
+}
+
+struct ReassignmentChecker {
+    node: ast::NodeId,
+    reassigned: bool
+}
+
+impl euv::Delegate for ReassignmentChecker {
+    fn consume(&mut self, _: ast::NodeId, _: Span, _: mc::cmt, _: euv::ConsumeMode) {}
+    fn consume_pat(&mut self, _: &ast::Pat, _: mc::cmt, _: euv::ConsumeMode) {}
+    fn borrow(&mut self, _: ast::NodeId, _: Span, _: mc::cmt, _: ty::Region,
+              _: ty::BorrowKind, _: euv::LoanCause) {}
+    fn decl_without_init(&mut self, _: ast::NodeId, _: Span) {}
+
+    fn mutate(&mut self, _: ast::NodeId, _: Span, cmt: mc::cmt, _: euv::MutateMode) {
+        match cmt.cat {
+            mc::cat_copied_upvar(mc::CopiedUpvar { upvar_id: vid, .. }) |
+            mc::cat_arg(vid) | mc::cat_local(vid) => self.reassigned = self.node == vid,
+            _ => {}
+        }
+    }
+}
+
+fn create_bindings_map(bcx: &Block, pat: Gc<ast::Pat>,
+                      discr: &ast::Expr, body: &ast::Expr) -> BindingsMap {
     // Create the bindings map, which is a mapping from each binding name
     // to an alloca() that will be the value for that local variable.
     // Note that we use the names because each binding will have many ids
     // from the various alternatives.
     let ccx = bcx.ccx();
     let tcx = bcx.tcx();
+    let reassigned = is_discr_reassigned(bcx, discr, body);
     let mut bindings_map = HashMap::new();
     pat_bindings(&tcx.def_map, &*pat, |bm, p_id, span, path1| {
         let ident = path1.node;
@@ -1310,7 +1358,7 @@ fn create_bindings_map(bcx: &Block, pat: Gc<ast::Pat>) -> BindingsMap {
         let trmode;
         match bm {
             ast::BindByValue(_)
-                if !ty::type_moves_by_default(tcx, variable_ty) => {
+                if !ty::type_moves_by_default(tcx, variable_ty) || reassigned => {
                 llmatch = alloca_no_lifetime(bcx,
                                  llvariable_ty.ptr_to(),
                                  "__llmatch");
@@ -1371,10 +1419,10 @@ fn trans_match_inner<'a>(scope_cx: &'a Block<'a>,
     let arm_datas: Vec<ArmData> = arms.iter().map(|arm| ArmData {
         bodycx: fcx.new_id_block("case_body", arm.body.id),
         arm: arm,
-        bindings_map: create_bindings_map(bcx, *arm.pats.get(0))
+        bindings_map: create_bindings_map(bcx, *arm.pats.get(0), discr_expr, &*arm.body)
     }).collect();
 
-    let mut static_inliner = StaticInliner { tcx: scope_cx.tcx() };
+    let mut static_inliner = StaticInliner::new(scope_cx.tcx());
     let mut matches = Vec::new();
     for arm_data in arm_datas.iter() {
         matches.extend(arm_data.arm.pats.iter().map(|&p| Match {
@@ -1392,7 +1440,7 @@ fn trans_match_inner<'a>(scope_cx: &'a Block<'a>,
     // to the default arm.
     let has_default = arms.last().map_or(false, |arm| {
         arm.pats.len() == 1
-        && arm.pats.last().unwrap().node == ast::PatWild
+        && arm.pats.last().unwrap().node == ast::PatWild(ast::PatWildSingle)
     });
 
     compile_submatch(bcx, matches.as_slice(), [discr_datum.val], &chk, has_default);
@@ -1762,7 +1810,7 @@ fn bind_irrefutable_pat<'a>(
         ast::PatMac(..) => {
             bcx.sess().span_bug(pat.span, "unexpanded macro");
         }
-        ast::PatWild | ast::PatWildMulti | ast::PatLit(_) | ast::PatRange(_, _) => ()
+        ast::PatWild(_) | ast::PatLit(_) | ast::PatRange(_, _) => ()
     }
     return bcx;
 }

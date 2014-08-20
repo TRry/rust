@@ -29,7 +29,7 @@
 //! ```
 
 // Reexported core operators
-pub use kinds::{Copy, Send, Sized, Share};
+pub use kinds::{Copy, Send, Sized, Sync};
 pub use ops::{Add, Sub, Mul, Div, Rem, Neg, Not};
 pub use ops::{BitAnd, BitOr, BitXor};
 pub use ops::{Drop, Deref, DerefMut};
@@ -61,6 +61,6 @@ pub use str::{Str, StrSlice};
 pub use tuple::{Tuple1, Tuple2, Tuple3, Tuple4};
 pub use tuple::{Tuple5, Tuple6, Tuple7, Tuple8};
 pub use tuple::{Tuple9, Tuple10, Tuple11, Tuple12};
-pub use slice::{ImmutableEqVector, ImmutableOrdVector};
-pub use slice::{MutableVector};
-pub use slice::{Vector, ImmutableVector};
+pub use slice::{ImmutablePartialEqSlice, ImmutableOrdSlice};
+pub use slice::{MutableSlice};
+pub use slice::{Slice, ImmutableSlice};

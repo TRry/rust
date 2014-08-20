@@ -30,7 +30,7 @@ use iter::range;
 use num::{CheckedMul, Saturating};
 use option::{Option, None, Some};
 use raw::Repr;
-use slice::ImmutableVector;
+use slice::{ImmutableSlice, MutableSlice};
 use slice;
 use uint;
 
@@ -562,7 +562,7 @@ enum Searcher {
 impl Searcher {
     fn new(haystack: &[u8], needle: &[u8]) -> Searcher {
         // FIXME: Tune this.
-        if needle.len() > haystack.len() - 20 {
+        if needle.len() + 20 > haystack.len() {
             Naive(NaiveSearcher::new())
         } else {
             let searcher = TwoWaySearcher::new(needle);
@@ -646,7 +646,7 @@ impl<'a> Iterator<u16> for Utf16CodeUnits<'a> {
 
         let mut buf = [0u16, ..2];
         self.chars.next().map(|ch| {
-            let n = ch.encode_utf16(buf /* as mut slice! */);
+            let n = ch.encode_utf16(buf.as_mut_slice()).unwrap_or(0);
             if n == 2 { self.extra = buf[1]; }
             buf[0]
         })
@@ -964,7 +964,7 @@ pub mod raw {
     use collections::Collection;
     use ptr::RawPtr;
     use raw::Slice;
-    use slice::{ImmutableVector};
+    use slice::{ImmutableSlice};
     use str::{is_utf8, StrSlice};
 
     /// Converts a slice of bytes to a string slice without checking
@@ -1029,9 +1029,6 @@ pub mod traits {
     use iter::Iterator;
     use option::{Option, Some};
     use str::{Str, StrSlice, eq_slice};
-
-    #[cfg(stage0)]
-    use option::None;   // NOTE(stage0): Remove after snapshot.
 
     impl<'a> Ord for &'a str {
         #[inline]
@@ -1150,22 +1147,22 @@ pub trait StrSlice<'a> {
     /// # Example
     ///
     /// ```rust
-    /// let v: Vec<&str> = "Mary had a little lambda".splitn(' ', 2).collect();
+    /// let v: Vec<&str> = "Mary had a little lambda".splitn(2, ' ').collect();
     /// assert_eq!(v, vec!["Mary", "had", "a little lambda"]);
     ///
-    /// let v: Vec<&str> = "abc1def2ghi".splitn(|c: char| c.is_digit(), 1).collect();
+    /// let v: Vec<&str> = "abc1def2ghi".splitn(1, |c: char| c.is_digit()).collect();
     /// assert_eq!(v, vec!["abc", "def2ghi"]);
     ///
-    /// let v: Vec<&str> = "lionXXtigerXleopard".splitn('X', 2).collect();
+    /// let v: Vec<&str> = "lionXXtigerXleopard".splitn(2, 'X').collect();
     /// assert_eq!(v, vec!["lion", "", "tigerXleopard"]);
     ///
-    /// let v: Vec<&str> = "abcXdef".splitn('X', 0).collect();
+    /// let v: Vec<&str> = "abcXdef".splitn(0, 'X').collect();
     /// assert_eq!(v, vec!["abcXdef"]);
     ///
-    /// let v: Vec<&str> = "".splitn('X', 1).collect();
+    /// let v: Vec<&str> = "".splitn(1, 'X').collect();
     /// assert_eq!(v, vec![""]);
     /// ```
-    fn splitn<Sep: CharEq>(&self, sep: Sep, count: uint) -> CharSplitsN<'a, Sep>;
+    fn splitn<Sep: CharEq>(&self, count: uint, sep: Sep) -> CharSplitsN<'a, Sep>;
 
     /// An iterator over substrings of `self`, separated by characters
     /// matched by `sep`.
@@ -1200,16 +1197,16 @@ pub trait StrSlice<'a> {
     /// # Example
     ///
     /// ```rust
-    /// let v: Vec<&str> = "Mary had a little lamb".rsplitn(' ', 2).collect();
+    /// let v: Vec<&str> = "Mary had a little lamb".rsplitn(2, ' ').collect();
     /// assert_eq!(v, vec!["lamb", "little", "Mary had a"]);
     ///
-    /// let v: Vec<&str> = "abc1def2ghi".rsplitn(|c: char| c.is_digit(), 1).collect();
+    /// let v: Vec<&str> = "abc1def2ghi".rsplitn(1, |c: char| c.is_digit()).collect();
     /// assert_eq!(v, vec!["ghi", "abc1def"]);
     ///
-    /// let v: Vec<&str> = "lionXXtigerXleopard".rsplitn('X', 2).collect();
+    /// let v: Vec<&str> = "lionXXtigerXleopard".rsplitn(2, 'X').collect();
     /// assert_eq!(v, vec!["leopard", "tiger", "lionX"]);
     /// ```
-    fn rsplitn<Sep: CharEq>(&self, sep: Sep, count: uint) -> CharSplitsN<'a, Sep>;
+    fn rsplitn<Sep: CharEq>(&self, count: uint, sep: Sep) -> CharSplitsN<'a, Sep>;
 
     /// An iterator over the start and end indices of the disjoint
     /// matches of `sep` within `self`.
@@ -1700,7 +1697,7 @@ impl<'a> StrSlice<'a> for &'a str {
     }
 
     #[inline]
-    fn splitn<Sep: CharEq>(&self, sep: Sep, count: uint)
+    fn splitn<Sep: CharEq>(&self, count: uint, sep: Sep)
         -> CharSplitsN<'a, Sep> {
         CharSplitsN {
             iter: self.split(sep),
@@ -1719,7 +1716,7 @@ impl<'a> StrSlice<'a> for &'a str {
     }
 
     #[inline]
-    fn rsplitn<Sep: CharEq>(&self, sep: Sep, count: uint)
+    fn rsplitn<Sep: CharEq>(&self, count: uint, sep: Sep)
         -> CharSplitsN<'a, Sep> {
         CharSplitsN {
             iter: self.split(sep),
@@ -1755,7 +1752,7 @@ impl<'a> StrSlice<'a> for &'a str {
     fn lines_any(&self) -> AnyLines<'a> {
         self.lines().map(|line| {
             let l = line.len();
-            if l > 0 && line.as_bytes()[l - 1] == '\r' as u8 { line.slice(0, l - 1) }
+            if l > 0 && line.as_bytes()[l - 1] == b'\r' { line.slice(0, l - 1) }
             else { line }
         })
     }

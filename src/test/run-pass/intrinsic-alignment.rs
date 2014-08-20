@@ -33,6 +33,7 @@ mod m {
 
     #[main]
     #[cfg(target_arch = "x86_64")]
+    #[cfg(target_arch = "arm")]
     pub fn main() {
         unsafe {
             assert_eq!(::rusti::pref_align_of::<u64>(), 8u);
@@ -41,10 +42,20 @@ mod m {
     }
 }
 
-#[cfg(target_os = "win32")]
+#[cfg(target_os = "windows")]
+/* NOTE: Remove after snapshot */#[cfg(stage0, target_os = "win32")]
 mod m {
     #[main]
     #[cfg(target_arch = "x86")]
+    pub fn main() {
+        unsafe {
+            assert_eq!(::rusti::pref_align_of::<u64>(), 8u);
+            assert_eq!(::rusti::min_align_of::<u64>(), 8u);
+        }
+    }
+
+    #[main]
+    #[cfg(target_arch = "x86_64")]
     pub fn main() {
         unsafe {
             assert_eq!(::rusti::pref_align_of::<u64>(), 8u);

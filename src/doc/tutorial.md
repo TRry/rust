@@ -76,7 +76,7 @@ OS X, the install page provides links to native installers.
 > the precise details of which are not discussed here.
 
 For Linux and OS X, the install page provides links to binary tarballs.
-To install the Rust compiler from the from a binary tarball, download
+To install the Rust compiler from a binary tarball, download
 the binary package, extract it, and execute the `install.sh` script in
 the root directory of the package.
 
@@ -114,7 +114,7 @@ If you've fulfilled those prerequisites, something along these lines
 should work.
 
 ~~~~console
-$ curl -O http://static.rust-lang.org/dist/rust-nightly.tar.gz
+$ curl -O https://static.rust-lang.org/dist/rust-nightly.tar.gz
 $ tar -xzf rust-nightly.tar.gz
 $ cd rust-nightly
 $ ./configure
@@ -131,8 +131,8 @@ When complete, `make install` will place several programs into
 `/usr/local/bin`: `rustc`, the Rust compiler, and `rustdoc`, the
 API-documentation tool.
 
-[tarball]: http://static.rust-lang.org/dist/rust-nightly.tar.gz
-[win-exe]: http://static.rust-lang.org/dist/rust-nightly-install.exe
+[tarball]: https://static.rust-lang.org/dist/rust-nightly.tar.gz
+[win-exe]: https://static.rust-lang.org/dist/rust-nightly-install.exe
 
 ## Compiling your first program
 
@@ -1132,6 +1132,16 @@ the box rather than doing an implicit heap allocation.
 let xs = Cons(1, box Cons(2, box Cons(3, box Nil)));
 let ys = xs; // copies `Cons(u32, pointer)` shallowly
 ~~~
+
+> *Note:* Names like `xs` and `ys` are a naming
+> convention for collection-like data structures
+> (like our `List`). These collections are given 
+> names appended with 's' to signify plurality, 
+> i.e. that the data structure stores multiple 
+> elements.  For example, `xs` in this case can 
+> be read as "a list of ex-es", where "x" here 
+> are elements of type `u32`.
+
 
 Rust will consider a shallow copy of a type with a destructor like `List` to
 *move ownership* of the value. After a value has been moved, the source
@@ -2196,7 +2206,7 @@ and may not be overridden:
 Types are sendable
 unless they contain references.
 
-* `Share` - Types that are *threadsafe*
+* `Sync` - Types that are *threadsafe*.
 These are types that are safe to be used across several threads with access to
 a `&T` pointer. `Mutex<T>` is an example of a *sharable* type with internal mutable data.
 
@@ -2250,7 +2260,7 @@ We say that the `Printable` trait _provides_ a `print` method with the
 given signature.  This means that we can call `print` on an argument
 of any type that implements the `Printable` trait.
 
-Rust's built-in `Send` and `Share` types are examples of traits that
+Rust's built-in `Send` and `Sync` types are examples of traits that
 don't provide any methods.
 
 Traits may be implemented for specific types with [impls]. An impl for
@@ -2535,7 +2545,7 @@ select the method to call at runtime.
 
 This usage of traits is similar to Java interfaces.
 
-There are some built-in bounds, such as `Send` and `Share`, which are properties
+There are some built-in bounds, such as `Send` and `Sync`, which are properties
 of the components of types. By design, trait objects don't know the exact type
 of their contents and so the compiler cannot reason about those properties.
 
@@ -2548,7 +2558,7 @@ trait Foo {}
 trait Bar<T> {}
 
 fn sendable_foo(f: Box<Foo + Send>) { /* ... */ }
-fn shareable_bar<T: Share>(b: &Bar<T> + Share) { /* ... */ }
+fn sync_bar<T: Sync>(b: &Bar<T> + Sync) { /* ... */ }
 ~~~
 
 When no colon is specified (such as the type `Box<Foo>`), it is inferred that the
@@ -3102,7 +3112,7 @@ use farm::*;
 However, that's not all. You can also rename an item while you're bringing it into scope:
 
 ~~~
-use egg_layer = farm::chicken;
+use farm::chicken as egg_layer;
 # mod farm { pub fn chicken() { println!("Laying eggs is fun!")  } }
 // ...
 
@@ -3325,7 +3335,7 @@ you just have to import it with an `use` statement.
 For example, it re-exports `range` which is defined in `std::iter::range`:
 
 ~~~
-use iter_range = std::iter::range;
+use std::iter::range as iter_range;
 
 fn main() {
     // `range` is imported by default

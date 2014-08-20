@@ -223,7 +223,7 @@ impl<T: Send> Mutex<T> {
     pub fn lock<'a>(&'a self) -> MutexGuard<'a, T> {
         let guard = self.lock.lock();
 
-        // These two accesses are safe because we're guranteed at this point
+        // These two accesses are safe because we're guaranteed at this point
         // that we have exclusive access to this mutex. We are indeed able to
         // promote ourselves from &Mutex to `&mut T`
         let poison = unsafe { &mut *self.failed.get() };
@@ -298,7 +298,7 @@ pub struct RWLockReadGuard<'a, T> {
     _guard: raw::RWLockReadGuard<'a>,
 }
 
-impl<T: Send + Share> RWLock<T> {
+impl<T: Send + Sync> RWLock<T> {
     /// Create a reader/writer lock with the supplied data.
     pub fn new(user_data: T) -> RWLock<T> {
         RWLock::new_with_condvars(user_data, 1)
@@ -326,7 +326,7 @@ impl<T: Send + Share> RWLock<T> {
     pub fn write<'a>(&'a self) -> RWLockWriteGuard<'a, T> {
         let guard = self.lock.write();
 
-        // These two accesses are safe because we're guranteed at this point
+        // These two accesses are safe because we're guaranteed at this point
         // that we have exclusive access to this rwlock. We are indeed able to
         // promote ourselves from &RWLock to `&mut T`
         let poison = unsafe { &mut *self.failed.get() };
@@ -359,7 +359,7 @@ impl<T: Send + Share> RWLock<T> {
     }
 }
 
-impl<'a, T: Send + Share> RWLockWriteGuard<'a, T> {
+impl<'a, T: Send + Sync> RWLockWriteGuard<'a, T> {
     /// Consumes this write lock token, returning a new read lock token.
     ///
     /// This will allow pending readers to come into the lock.
@@ -375,13 +375,13 @@ impl<'a, T: Send + Share> RWLockWriteGuard<'a, T> {
     }
 }
 
-impl<'a, T: Send + Share> Deref<T> for RWLockReadGuard<'a, T> {
+impl<'a, T: Send + Sync> Deref<T> for RWLockReadGuard<'a, T> {
     fn deref<'a>(&'a self) -> &'a T { self._data }
 }
-impl<'a, T: Send + Share> Deref<T> for RWLockWriteGuard<'a, T> {
+impl<'a, T: Send + Sync> Deref<T> for RWLockWriteGuard<'a, T> {
     fn deref<'a>(&'a self) -> &'a T { &*self._data }
 }
-impl<'a, T: Send + Share> DerefMut<T> for RWLockWriteGuard<'a, T> {
+impl<'a, T: Send + Sync> DerefMut<T> for RWLockWriteGuard<'a, T> {
     fn deref_mut<'a>(&'a mut self) -> &'a mut T { &mut *self._data }
 }
 

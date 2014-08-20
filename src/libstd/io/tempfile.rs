@@ -19,10 +19,7 @@ use option::{Option, None, Some};
 use os;
 use path::{Path, GenericPath};
 use result::{Ok, Err};
-use sync::atomics;
-
-#[cfg(stage0)]
-use iter::Iterator; // NOTE(stage0): Remove after snapshot.
+use sync::atomic;
 
 /// A wrapper for a path to temporary directory implementing automatic
 /// scope-based deletion.
@@ -42,13 +39,13 @@ impl TempDir {
             return TempDir::new_in(&os::make_absolute(tmpdir), suffix);
         }
 
-        static mut CNT: atomics::AtomicUint = atomics::INIT_ATOMIC_UINT;
+        static mut CNT: atomic::AtomicUint = atomic::INIT_ATOMIC_UINT;
 
         for _ in range(0u, 1000) {
             let filename =
                 format!("rs-{}-{}-{}",
                         unsafe { libc::getpid() },
-                        unsafe { CNT.fetch_add(1, atomics::SeqCst) },
+                        unsafe { CNT.fetch_add(1, atomic::SeqCst) },
                         suffix);
             let p = tmpdir.join(filename);
             match fs::mkdir(&p, io::UserRWX) {

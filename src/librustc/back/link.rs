@@ -9,6 +9,7 @@
 // except according to those terms.
 
 use super::archive::{Archive, ArchiveBuilder, ArchiveConfig, METADATA_FILENAME};
+use super::archive;
 use super::rpath;
 use super::rpath::RPathConfig;
 use super::svh::Svh;
@@ -32,6 +33,7 @@ use std::char;
 use std::collections::HashSet;
 use std::io::{fs, TempDir, Command};
 use std::io;
+use std::mem;
 use std::ptr;
 use std::str;
 use std::string::String;
@@ -44,6 +46,36 @@ use syntax::ast_map;
 use syntax::attr::AttrMetaMethods;
 use syntax::codemap::Span;
 use syntax::parse::token;
+
+// RLIB LLVM-BYTECODE OBJECT LAYOUT
+// Version 1
+// Bytes    Data
+// 0..10    "RUST_OBJECT" encoded in ASCII
+// 11..14   format version as little-endian u32
+// 15..22   size in bytes of deflate compressed LLVM bitcode as
+//          little-endian u64
+// 23..     compressed LLVM bitcode
+
+// This is the "magic number" expected at the beginning of a LLVM bytecode
+// object in an rlib.
+pub static RLIB_BYTECODE_OBJECT_MAGIC: &'static [u8] = b"RUST_OBJECT";
+
+// The version number this compiler will write to bytecode objects in rlibs
+pub static RLIB_BYTECODE_OBJECT_VERSION: u32 = 1;
+
+// The offset in bytes the bytecode object format version number can be found at
+pub static RLIB_BYTECODE_OBJECT_VERSION_OFFSET: uint = 11;
+
+// The offset in bytes the size of the compressed bytecode can be found at in
+// format version 1
+pub static RLIB_BYTECODE_OBJECT_V1_DATASIZE_OFFSET: uint =
+    RLIB_BYTECODE_OBJECT_VERSION_OFFSET + 4;
+
+// The offset in bytes the compressed LLVM bytecode can be found at in format
+// version 1
+pub static RLIB_BYTECODE_OBJECT_V1_DATA_OFFSET: uint =
+    RLIB_BYTECODE_OBJECT_V1_DATASIZE_OFFSET + 8;
+
 
 #[deriving(Clone, PartialEq, PartialOrd, Ord, Eq)]
 pub enum OutputType {
@@ -168,7 +200,7 @@ pub mod write {
             // OSX has -dead_strip, which doesn't rely on ffunction_sections
             // FIXME(#13846) this should be enabled for windows
             let ffunction_sections = sess.targ_cfg.os != abi::OsMacos &&
-                                     sess.targ_cfg.os != abi::OsWin32;
+                                     sess.targ_cfg.os != abi::OsWindows;
             let fdata_sections = ffunction_sections;
 
             let reloc_model = match sess.opts.cg.relocation_model.as_slice() {
@@ -826,7 +858,7 @@ pub fn get_cc_prog(sess: &Session) -> String {
     // instead of hard-coded gcc.
     // For win32, there is no cc command, so we add a condition to make it use gcc.
     match sess.targ_cfg.os {
-        abi::OsWin32 => "gcc",
+        abi::OsWindows => "gcc",
         _ => "cc",
     }.to_string()
 }
@@ -922,7 +954,7 @@ pub fn filename_for_input(sess: &Session,
         }
         config::CrateTypeDylib => {
             let (prefix, suffix) = match sess.targ_cfg.os {
-                abi::OsWin32 => (loader::WIN32_DLL_PREFIX, loader::WIN32_DLL_SUFFIX),
+                abi::OsWindows => (loader::WIN32_DLL_PREFIX, loader::WIN32_DLL_SUFFIX),
                 abi::OsMacos => (loader::MACOS_DLL_PREFIX, loader::MACOS_DLL_SUFFIX),
                 abi::OsLinux => (loader::LINUX_DLL_PREFIX, loader::LINUX_DLL_SUFFIX),
                 abi::OsAndroid => (loader::ANDROID_DLL_PREFIX, loader::ANDROID_DLL_SUFFIX),
@@ -940,7 +972,7 @@ pub fn filename_for_input(sess: &Session,
         }
         config::CrateTypeExecutable => {
             match sess.targ_cfg.os {
-                abi::OsWin32 => out_filename.with_extension("exe"),
+                abi::OsWindows => out_filename.with_extension("exe"),
                 abi::OsMacos |
                 abi::OsLinux |
                 abi::OsAndroid |
@@ -1103,28 +1135,44 @@ fn link_rlib<'a>(sess: &'a Session,
             // is never exactly 16 bytes long by adding a 16 byte extension to
             // it. This is to work around a bug in LLDB that would cause it to
             // crash if the name of a file in an archive was exactly 16 bytes.
-            let bc = obj_filename.with_extension("bc");
-            let bc_deflated = obj_filename.with_extension("bytecode.deflate");
-            match fs::File::open(&bc).read_to_end().and_then(|data| {
-                fs::File::create(&bc_deflated)
-                    .write(match flate::deflate_bytes(data.as_slice()) {
-                        Some(compressed) => compressed,
-                        None => sess.fatal("failed to compress bytecode")
-                     }.as_slice())
-            }) {
+            let bc_filename = obj_filename.with_extension("bc");
+            let bc_deflated_filename = obj_filename.with_extension("bytecode.deflate");
+
+            let bc_data = match fs::File::open(&bc_filename).read_to_end() {
+                Ok(buffer) => buffer,
+                Err(e) => sess.fatal(format!("failed to read bytecode: {}",
+                                             e).as_slice())
+            };
+
+            let bc_data_deflated = match flate::deflate_bytes(bc_data.as_slice()) {
+                Some(compressed) => compressed,
+                None => sess.fatal(format!("failed to compress bytecode from {}",
+                                           bc_filename.display()).as_slice())
+            };
+
+            let mut bc_file_deflated = match fs::File::create(&bc_deflated_filename) {
+                Ok(file) => file,
+                Err(e) => {
+                    sess.fatal(format!("failed to create compressed bytecode \
+                                        file: {}", e).as_slice())
+                }
+            };
+
+            match write_rlib_bytecode_object_v1(&mut bc_file_deflated,
+                                                bc_data_deflated.as_slice()) {
                 Ok(()) => {}
                 Err(e) => {
                     sess.err(format!("failed to write compressed bytecode: \
-                                      {}",
-                                     e).as_slice());
+                                      {}", e).as_slice());
                     sess.abort_if_errors()
                 }
-            }
-            ab.add_file(&bc_deflated).unwrap();
-            remove(sess, &bc_deflated);
+            };
+
+            ab.add_file(&bc_deflated_filename).unwrap();
+            remove(sess, &bc_deflated_filename);
             if !sess.opts.cg.save_temps &&
                !sess.opts.output_types.contains(&OutputTypeBitcode) {
-                remove(sess, &bc);
+                remove(sess, &bc_filename);
             }
         }
 
@@ -1132,6 +1180,32 @@ fn link_rlib<'a>(sess: &'a Session,
     }
 
     ab
+}
+
+fn write_rlib_bytecode_object_v1<T: Writer>(writer: &mut T,
+                                            bc_data_deflated: &[u8])
+                                         -> ::std::io::IoResult<()> {
+    let bc_data_deflated_size: u64 = bc_data_deflated.as_slice().len() as u64;
+
+    try! { writer.write(RLIB_BYTECODE_OBJECT_MAGIC) };
+    try! { writer.write_le_u32(1) };
+    try! { writer.write_le_u64(bc_data_deflated_size) };
+    try! { writer.write(bc_data_deflated.as_slice()) };
+
+    let number_of_bytes_written_so_far =
+        RLIB_BYTECODE_OBJECT_MAGIC.len() +                // magic id
+        mem::size_of_val(&RLIB_BYTECODE_OBJECT_VERSION) + // version
+        mem::size_of_val(&bc_data_deflated_size) +        // data size field
+        bc_data_deflated_size as uint;                    // actual data
+
+    // If the number of bytes written to the object so far is odd, add a
+    // padding byte to make it even. This works around a crash bug in LLDB
+    // (see issue #15950)
+    if number_of_bytes_written_so_far % 2 == 1 {
+        try! { writer.write_u8(0) };
+    }
+
+    return Ok(());
 }
 
 // Create a static archive
@@ -1314,7 +1388,7 @@ fn link_args(cmd: &mut Command,
     // subset we wanted.
     //
     // FIXME(#11937) we should invoke the system linker directly
-    if sess.targ_cfg.os != abi::OsWin32 {
+    if sess.targ_cfg.os != abi::OsWindows {
         cmd.arg("-nodefaultlibs");
     }
 
@@ -1324,6 +1398,20 @@ fn link_args(cmd: &mut Command,
     // the size of hello world from 1.8MB to 597K, a 67% reduction.
     if !dylib && sess.targ_cfg.os != abi::OsMacos && sess.targ_cfg.os != abi::OsiOS {
         cmd.arg("-Wl,--gc-sections");
+    }
+
+    let used_link_args = sess.cstore.get_used_link_args().borrow();
+
+    // Dynamically linked executables can be compiled as position independent if the default
+    // relocation model of position independent code is not changed. This is a requirement to take
+    // advantage of ASLR, as otherwise the functions in the executable are not randomized and can
+    // be used during an exploit of a vulnerability in any code.
+    if sess.targ_cfg.os == abi::OsLinux {
+        let mut args = sess.opts.cg.link_args.iter().chain(used_link_args.iter());
+        if !dylib && sess.opts.cg.relocation_model.as_slice() == "pic" &&
+            !args.any(|x| x.as_slice() == "-static") {
+            cmd.arg("-pie");
+        }
     }
 
     if sess.targ_cfg.os == abi::OsLinux || sess.targ_cfg.os == abi::OsDragonfly {
@@ -1352,7 +1440,7 @@ fn link_args(cmd: &mut Command,
         cmd.arg("-Wl,-dead_strip");
     }
 
-    if sess.targ_cfg.os == abi::OsWin32 {
+    if sess.targ_cfg.os == abi::OsWindows {
         // Make sure that we link to the dynamic libgcc, otherwise cross-module
         // DWARF stack unwinding will not work.
         // This behavior may be overridden by --link-args "-static-libgcc"
@@ -1384,6 +1472,12 @@ fn link_args(cmd: &mut Command,
         // [1] - https://sourceware.org/bugzilla/show_bug.cgi?id=13130
         // [2] - https://code.google.com/p/go/issues/detail?id=2139
         cmd.arg("-Wl,--enable-long-section-names");
+
+        // Always enable DEP (NX bit) when it is available
+        cmd.arg("-Wl,--nxcompat");
+
+        // Mark all dynamic libraries and executables as compatible with ASLR
+        cmd.arg("-Wl,--dynamicbase");
     }
 
     if sess.targ_cfg.os == abi::OsAndroid {
@@ -1494,9 +1588,7 @@ fn link_args(cmd: &mut Command,
     // Finally add all the linker arguments provided on the command line along
     // with any #[link_args] attributes found inside the crate
     cmd.args(sess.opts.cg.link_args.as_slice());
-    for arg in sess.cstore.get_used_link_args().borrow().iter() {
-        cmd.arg(arg.as_slice());
-    }
+    cmd.args(used_link_args.as_slice());
 }
 
 // # Native library linking
@@ -1524,28 +1616,60 @@ fn add_local_native_libraries(cmd: &mut Command, sess: &Session) {
     // For those that support this, we ensure we pass the option if the library
     // was flagged "static" (most defaults are dynamic) to ensure that if
     // libfoo.a and libfoo.so both exist that the right one is chosen.
-    let takes_hints = sess.targ_cfg.os != abi::OsMacos && sess.targ_cfg.os != abi::OsiOS;
+    let takes_hints = sess.targ_cfg.os != abi::OsMacos &&
+                      sess.targ_cfg.os != abi::OsiOS;
 
-    for &(ref l, kind) in sess.cstore.get_used_libraries().borrow().iter() {
-        match kind {
-            cstore::NativeUnknown | cstore::NativeStatic => {
-                if takes_hints {
-                    if kind == cstore::NativeStatic {
-                        cmd.arg("-Wl,-Bstatic");
-                    } else {
-                        cmd.arg("-Wl,-Bdynamic");
-                    }
-                }
-                cmd.arg(format!("-l{}", *l));
-            }
-            cstore::NativeFramework => {
-                cmd.arg("-framework");
-                cmd.arg(l.as_slice());
-            }
+    let libs = sess.cstore.get_used_libraries();
+    let libs = libs.borrow();
+
+    let mut staticlibs = libs.iter().filter_map(|&(ref l, kind)| {
+        if kind == cstore::NativeStatic {Some(l)} else {None}
+    });
+    let mut others = libs.iter().filter(|&&(_, kind)| {
+        kind != cstore::NativeStatic
+    });
+
+    // Platforms that take hints generally also support the --whole-archive
+    // flag. We need to pass this flag when linking static native libraries to
+    // ensure the entire library is included.
+    //
+    // For more details see #15460, but the gist is that the linker will strip
+    // away any unused objects in the archive if we don't otherwise explicitly
+    // reference them. This can occur for libraries which are just providing
+    // bindings, libraries with generic functions, etc.
+    if takes_hints {
+        cmd.arg("-Wl,--whole-archive").arg("-Wl,-Bstatic");
+    }
+    let search_path = archive_search_paths(sess);
+    for l in staticlibs {
+        if takes_hints {
+            cmd.arg(format!("-l{}", l));
+        } else {
+            // -force_load is the OSX equivalent of --whole-archive, but it
+            // involves passing the full path to the library to link.
+            let lib = archive::find_library(l.as_slice(),
+                                            sess.targ_cfg.os,
+                                            search_path.as_slice(),
+                                            &sess.diagnostic().handler);
+            let mut v = b"-Wl,-force_load,".to_vec();
+            v.push_all(lib.as_vec());
+            cmd.arg(v.as_slice());
         }
     }
     if takes_hints {
-        cmd.arg("-Wl,-Bdynamic");
+        cmd.arg("-Wl,--no-whole-archive").arg("-Wl,-Bdynamic");
+    }
+
+    for &(ref l, kind) in others {
+        match kind {
+            cstore::NativeUnknown => {
+                cmd.arg(format!("-l{}", l));
+            }
+            cstore::NativeFramework => {
+                cmd.arg("-framework").arg(l.as_slice());
+            }
+            cstore::NativeStatic => unreachable!(),
+        }
     }
 }
 
@@ -1597,7 +1721,7 @@ fn add_upstream_rust_crates(cmd: &mut Command, sess: &Session,
 
     // Converts a library file-stem into a cc -l argument
     fn unlib<'a>(config: &config::Config, stem: &'a [u8]) -> &'a [u8] {
-        if stem.starts_with("lib".as_bytes()) && config.os != abi::OsWin32 {
+        if stem.starts_with("lib".as_bytes()) && config.os != abi::OsWindows {
             stem.tailn(3)
         } else {
             stem

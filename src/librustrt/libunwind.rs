@@ -60,7 +60,7 @@ pub type _Unwind_Word = libc::uintptr_t;
 pub static unwinder_private_data_size: uint = 5;
 
 #[cfg(target_arch = "x86_64")]
-pub static unwinder_private_data_size: uint = 2;
+pub static unwinder_private_data_size: uint = 6;
 
 #[cfg(target_arch = "arm", not(target_os = "ios"))]
 pub static unwinder_private_data_size: uint = 20;
@@ -86,7 +86,8 @@ pub type _Unwind_Exception_Cleanup_Fn =
 
 #[cfg(target_os = "linux")]
 #[cfg(target_os = "freebsd")]
-#[cfg(target_os = "win32")]
+#[cfg(target_os = "windows")]
+#[cfg(stage0, target_os = "win32")] // NOTE: Remove after snapshot
 #[link(name = "gcc_s")]
 extern {}
 

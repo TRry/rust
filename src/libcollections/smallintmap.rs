@@ -21,7 +21,7 @@ use core::iter;
 use core::iter::{Enumerate, FilterMap};
 use core::mem::replace;
 
-use {Collection, Mutable, Map, MutableMap, MutableSeq};
+use {Mutable, Map, MutableMap, MutableSeq};
 use {vec, slice};
 use vec::Vec;
 use hash;
@@ -66,27 +66,27 @@ pub struct SmallIntMap<T> {
 }
 
 impl<V> Collection for SmallIntMap<V> {
-    /// Return the number of elements in the map.
+    /// Returns the number of elements in the map.
     fn len(&self) -> uint {
         self.v.iter().filter(|elt| elt.is_some()).count()
     }
 
-    /// Return `true` if there are no elements in the map.
+    /// Returns`true` if there are no elements in the map.
     fn is_empty(&self) -> bool {
         self.v.iter().all(|elt| elt.is_none())
     }
 }
 
 impl<V> Mutable for SmallIntMap<V> {
-    /// Clear the map, removing all key-value pairs.
+    /// Clears the map, removing all key-value pairs.
     fn clear(&mut self) { self.v.clear() }
 }
 
 impl<V> Map<uint, V> for SmallIntMap<V> {
-    /// Return a reference to the value corresponding to the key.
+    /// Returns a reference to the value corresponding to the key.
     fn find<'a>(&'a self, key: &uint) -> Option<&'a V> {
         if *key < self.v.len() {
-            match *self.v.get(*key) {
+            match self.v[*key] {
               Some(ref value) => Some(value),
               None => None
             }
@@ -97,7 +97,7 @@ impl<V> Map<uint, V> for SmallIntMap<V> {
 }
 
 impl<V> MutableMap<uint, V> for SmallIntMap<V> {
-    /// Return a mutable reference to the value corresponding to the key.
+    /// Returns a mutable reference to the value corresponding to the key.
     fn find_mut<'a>(&'a mut self, key: &uint) -> Option<&'a mut V> {
         if *key < self.v.len() {
             match *self.v.get_mut(*key) {
@@ -109,8 +109,8 @@ impl<V> MutableMap<uint, V> for SmallIntMap<V> {
         }
     }
 
-    /// Insert a key-value pair into the map. An existing value for a
-    /// key is replaced by the new value. Return `true` if the key did
+    /// Inserts a key-value pair into the map. An existing value for a
+    /// key is replaced by the new value. Returns `true` if the key did
     /// not already exist in the map.
     fn insert(&mut self, key: uint, value: V) -> bool {
         let exists = self.contains_key(&key);
@@ -122,13 +122,13 @@ impl<V> MutableMap<uint, V> for SmallIntMap<V> {
         !exists
     }
 
-    /// Remove a key-value pair from the map. Return `true` if the key
-    /// was present in the map, otherwise `false`.
+    /// Removes a key-value pair from the map. Returns `true` if the key
+    /// was present in the map.
     fn remove(&mut self, key: &uint) -> bool {
         self.pop(key).is_some()
     }
 
-    /// Insert a key-value pair from the map. If the key already had a value
+    /// Inserts a key-value pair into the map. If the key already had a value
     /// present in the map, that value is returned. Otherwise `None` is returned.
     fn swap(&mut self, key: uint, value: V) -> Option<V> {
         match self.find_mut(&key) {
@@ -176,7 +176,7 @@ impl <S: hash::Writer, T: Hash<S>> Hash<S> for SmallIntMap<T> {
 }
 
 impl<V> SmallIntMap<V> {
-    /// Create an empty SmallIntMap.
+    /// Creates an empty `SmallIntMap`.
     ///
     /// # Example
     ///
@@ -186,8 +186,8 @@ impl<V> SmallIntMap<V> {
     /// ```
     pub fn new() -> SmallIntMap<V> { SmallIntMap{v: vec!()} }
 
-    /// Create an empty SmallIntMap with space for at least `capacity` elements
-    /// before resizing.
+    /// Creates an empty `SmallIntMap` with space for at least `capacity`
+    /// elements before resizing.
     ///
     /// # Example
     ///
@@ -209,30 +209,33 @@ impl<V> SmallIntMap<V> {
     /// # Example
     ///
     /// ```
+    /// #![allow(deprecated)]
+    ///
     /// use std::collections::SmallIntMap;
     ///
     /// let mut map = SmallIntMap::new();
     /// map.insert(1, "a");
     /// assert_eq!(map.get(&1), &"a");
     /// ```
+    #[deprecated = "prefer using indexing, e.g., map[0]"]
     pub fn get<'a>(&'a self, key: &uint) -> &'a V {
         self.find(key).expect("key not present")
     }
 
-    /// An iterator visiting all keys in ascending order by the keys.
-    /// Iterator element type is `uint`.
+    /// Returns an iterator visiting all keys in ascending order by the keys.
+    /// The iterator's element type is `uint`.
     pub fn keys<'r>(&'r self) -> Keys<'r, V> {
         self.iter().map(|(k, _v)| k)
     }
 
-    /// An iterator visiting all values in ascending order by the keys.
-    /// Iterator element type is `&'r V`.
+    /// Returns an iterator visiting all values in ascending order by the keys.
+    /// The iterator's element type is `&'r V`.
     pub fn values<'r>(&'r self) -> Values<'r, V> {
         self.iter().map(|(_k, v)| v)
     }
 
-    /// An iterator visiting all key-value pairs in ascending order by the keys.
-    /// Iterator element type is `(uint, &'r V)`.
+    /// Returns an iterator visiting all key-value pairs in ascending order by the keys.
+    /// The iterator's element type is `(uint, &'r V)`.
     ///
     /// # Example
     ///
@@ -257,9 +260,9 @@ impl<V> SmallIntMap<V> {
         }
     }
 
-    /// An iterator visiting all key-value pairs in ascending order by the keys,
-    /// with mutable references to the values
-    /// Iterator element type is `(uint, &'r mut V)`.
+    /// Returns an iterator visiting all key-value pairs in ascending order by the keys,
+    /// with mutable references to the values.
+    /// The iterator's element type is `(uint, &'r mut V)`.
     ///
     /// # Example
     ///
@@ -287,7 +290,9 @@ impl<V> SmallIntMap<V> {
         }
     }
 
-    /// Empties the map, moving all values into the specified closure.
+    /// Returns an iterator visiting all key-value pairs in ascending order by
+    /// the keys, emptying (but not consuming) the original `SmallIntMap`.
+    /// The iterator's element type is `(uint, &'r V)`.
     ///
     /// # Example
     ///
@@ -316,10 +321,10 @@ impl<V> SmallIntMap<V> {
 }
 
 impl<V:Clone> SmallIntMap<V> {
-    /// Update a value in the map. If the key already exists in the map,
-    /// modify the value with `ff` taking `oldval, newval`.
-    /// Otherwise set the value to `newval`.
-    /// Return `true` if the key did not already exist in the map.
+    /// Updates a value in the map. If the key already exists in the map,
+    /// modifies the value with `ff` taking `oldval, newval`.
+    /// Otherwise, sets the value to `newval`.
+    /// Returasn `true` if the key did not already exist in the map.
     ///
     /// # Example
     ///
@@ -330,20 +335,20 @@ impl<V:Clone> SmallIntMap<V> {
     ///
     /// // Key does not exist, will do a simple insert
     /// assert!(map.update(1, vec![1i, 2], |old, new| old.append(new.as_slice())));
-    /// assert_eq!(map.get(&1), &vec![1i, 2]);
+    /// assert_eq!(map[1], vec![1i, 2]);
     ///
     /// // Key exists, update the value
     /// assert!(!map.update(1, vec![3i, 4], |old, new| old.append(new.as_slice())));
-    /// assert_eq!(map.get(&1), &vec![1i, 2, 3, 4]);
+    /// assert_eq!(map[1], vec![1i, 2, 3, 4]);
     /// ```
     pub fn update(&mut self, key: uint, newval: V, ff: |V, V| -> V) -> bool {
         self.update_with_key(key, newval, |_k, v, v1| ff(v,v1))
     }
 
-    /// Update a value in the map. If the key already exists in the map,
-    /// modify the value with `ff` taking `key, oldval, newval`.
-    /// Otherwise set the value to `newval`.
-    /// Return `true` if the key did not already exist in the map.
+    /// Updates a value in the map. If the key already exists in the map,
+    /// modifies the value with `ff` taking `key, oldval, newval`.
+    /// Otherwise, sets the value to `newval`.
+    /// Returns `true` if the key did not already exist in the map.
     ///
     /// # Example
     ///
@@ -354,11 +359,11 @@ impl<V:Clone> SmallIntMap<V> {
     ///
     /// // Key does not exist, will do a simple insert
     /// assert!(map.update_with_key(7, 10, |key, old, new| (old + new) % key));
-    /// assert_eq!(map.get(&7), &10);
+    /// assert_eq!(map[7], 10);
     ///
     /// // Key exists, update the value
     /// assert!(!map.update_with_key(7, 20, |key, old, new| (old + new) % key));
-    /// assert_eq!(map.get(&7), &2);
+    /// assert_eq!(map[7], 2);
     /// ```
     pub fn update_with_key(&mut self,
                            key: uint,
@@ -415,6 +420,22 @@ impl<V> Extendable<(uint, V)> for SmallIntMap<V> {
         }
     }
 }
+
+impl<V> Index<uint, V> for SmallIntMap<V> {
+    #[inline]
+    #[allow(deprecated)]
+    fn index<'a>(&'a self, i: &uint) -> &'a V {
+        self.get(i)
+    }
+}
+
+// FIXME(#12825) Indexing will always try IndexMut first and that causes issues.
+/*impl<V> IndexMut<uint, V> for SmallIntMap<V> {
+    #[inline]
+    fn index_mut<'a>(&'a mut self, i: &uint) -> &'a mut V {
+        self.find_mut(i).expect("key not present")
+    }
+}*/
 
 macro_rules! iterator {
     (impl $name:ident -> $elem:ty, $getter:ident) => {
@@ -842,6 +863,29 @@ mod test_map {
         for &(k, v) in xs.iter() {
             assert_eq!(map.find(&k), Some(&v));
         }
+    }
+
+    #[test]
+    fn test_index() {
+        let mut map: SmallIntMap<int> = SmallIntMap::new();
+
+        map.insert(1, 2);
+        map.insert(2, 1);
+        map.insert(3, 4);
+
+        assert_eq!(map[3], 4);
+    }
+
+    #[test]
+    #[should_fail]
+    fn test_index_nonexistent() {
+        let mut map: SmallIntMap<int> = SmallIntMap::new();
+
+        map.insert(1, 2);
+        map.insert(2, 1);
+        map.insert(3, 4);
+
+        map[4];
     }
 }
 

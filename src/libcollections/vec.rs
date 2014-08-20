@@ -13,18 +13,17 @@
 use core::prelude::*;
 
 use alloc::heap::{allocate, reallocate, deallocate};
-use core::raw::Slice;
 use core::cmp::max;
 use core::default::Default;
 use core::fmt;
 use core::mem;
-use core::num::{CheckedMul, CheckedAdd};
 use core::num;
 use core::ptr;
+use core::raw::Slice as RawSlice;
 use core::uint;
 
-use {Collection, Mutable, MutableSeq};
-use slice::{MutableOrdVector, MutableVectorAllocating, CloneableVector};
+use {Mutable, MutableSeq};
+use slice::{MutableOrdSlice, MutableSliceAllocating, CloneableVector};
 use slice::{Items, MutItems};
 
 
@@ -191,7 +190,7 @@ impl<T> Vec<T> {
         }
     }
 
-    /// Create a `Vec<T>` directly from the raw constituents.
+    /// Creates a `Vec<T>` directly from the raw constituents.
     ///
     /// This is highly unsafe:
     ///
@@ -347,7 +346,7 @@ impl<T: Clone> Vec<T> {
             unsafe {
                 ptr::write(
                     self.as_mut_slice().unsafe_mut_ref(len),
-                    other.unsafe_ref(i).clone());
+                    other.unsafe_get(i).clone());
                 self.set_len(len + 1);
             }
         }
@@ -400,7 +399,7 @@ impl<T: Clone> Vec<T> {
     /// Partitions a vector based on a predicate.
     ///
     /// Clones the elements of the vector, partitioning them into two `Vec`s
-    /// `(A,B)`, where all elements of `A` satisfy `f` and all elements of `B`
+    /// `(a, b)`, where all elements of `a` satisfy `f` and all elements of `b`
     /// do not. The order of elements is preserved.
     ///
     /// # Example
@@ -453,6 +452,7 @@ impl<T:Clone> Clone for Vec<T> {
 
 impl<T> Index<uint,T> for Vec<T> {
     #[inline]
+    #[allow(deprecated)] // allow use of get
     fn index<'a>(&'a self, index: &uint) -> &'a T {
         self.get(*index)
     }
@@ -505,7 +505,7 @@ impl<T: PartialOrd> PartialOrd for Vec<T> {
 
 impl<T: Eq> Eq for Vec<T> {}
 
-impl<T: PartialEq, V: Vector<T>> Equiv<V> for Vec<T> {
+impl<T: PartialEq, V: Slice<T>> Equiv<V> for Vec<T> {
     #[inline]
     fn equiv(&self, other: &V) -> bool { self.as_slice() == other.as_slice() }
 }
@@ -635,7 +635,7 @@ impl<T> Vec<T> {
         }
     }
 
-    /// Shrink the capacity of the vector as much as possible
+    /// Shrinks the capacity of the vector as much as possible.
     ///
     /// # Example
     ///
@@ -701,12 +701,12 @@ impl<T> Vec<T> {
                 // decrement len before the read(), so a failure on Drop doesn't
                 // re-drop the just-failed value.
                 self.len -= 1;
-                ptr::read(self.as_slice().unsafe_ref(self.len));
+                ptr::read(self.as_slice().unsafe_get(self.len));
             }
         }
     }
 
-    /// Work with `self` as a mutable slice.
+    /// Returns a mutable slice of the elements of `self`.
     ///
     /// # Example
     ///
@@ -719,7 +719,7 @@ impl<T> Vec<T> {
     #[inline]
     pub fn as_mut_slice<'a>(&'a mut self) -> &'a mut [T] {
         unsafe {
-            mem::transmute(Slice {
+            mem::transmute(RawSlice {
                 data: self.as_mut_ptr() as *const T,
                 len: self.len,
             })
@@ -841,7 +841,7 @@ impl<T> Vec<T> {
         self.as_mut_slice().mut_iter()
     }
 
-    /// Sort the vector, in place, using `compare` to compare elements.
+    /// Sorts the vector, in place, using `compare` to compare elements.
     ///
     /// This sort is `O(n log n)` worst-case and stable, but allocates
     /// approximately `2 * n`, where `n` is the length of `self`.
@@ -910,8 +910,9 @@ impl<T> Vec<T> {
     /// assert!(vec.tailn(2) == [3, 4]);
     /// ```
     #[inline]
+    #[deprecated = "use slice_from"]
     pub fn tailn<'a>(&'a self, n: uint) -> &'a [T] {
-        self.as_slice().tailn(n)
+        self.as_slice().slice_from(n)
     }
 
     /// Returns a reference to the last element of a vector, or `None` if it is
@@ -943,7 +944,7 @@ impl<T> Vec<T> {
         self.as_mut_slice().mut_last()
     }
 
-    /// Remove an element from anywhere in the vector and return it, replacing
+    /// Removes an element from anywhere in the vector and return it, replacing
     /// it with the last element. This does not preserve ordering, but is O(1).
     ///
     /// Returns `None` if `index` is out of bounds.
@@ -964,7 +965,7 @@ impl<T> Vec<T> {
     #[inline]
     pub fn swap_remove(&mut self, index: uint) -> Option<T> {
         let length = self.len();
-        if index < length - 1 {
+        if length > 0 && index < length - 1 {
             self.as_mut_slice().swap(index, length - 1);
         } else if index >= length {
             return None
@@ -972,7 +973,7 @@ impl<T> Vec<T> {
         self.pop()
     }
 
-    /// Prepend an element to the vector.
+    /// Prepends an element to the vector.
     ///
     /// # Warning
     ///
@@ -1013,8 +1014,8 @@ impl<T> Vec<T> {
         self.remove(0)
     }
 
-    /// Insert an element at position `index` within the vector, shifting all
-    /// elements after position i one position to the right.
+    /// Inserts an element at position `index` within the vector, shifting all
+    /// elements after position `i` one position to the right.
     ///
     /// # Failure
     ///
@@ -1051,7 +1052,7 @@ impl<T> Vec<T> {
         }
     }
 
-    /// Remove and return the element at position `index` within the vector,
+    /// Removes and returns the element at position `index` within the vector,
     /// shifting all elements after position `index` one position to the left.
     /// Returns `None` if `i` is out of bounds.
     ///
@@ -1125,7 +1126,7 @@ impl<T> Vec<T> {
         self.as_mut_slice().mut_slice(start, end)
     }
 
-    /// Returns a mutable slice of self from `start` to the end of the vec.
+    /// Returns a mutable slice of `self` from `start` to the end of the `Vec`.
     ///
     /// # Failure
     ///
@@ -1142,7 +1143,7 @@ impl<T> Vec<T> {
         self.as_mut_slice().mut_slice_from(start)
     }
 
-    /// Returns a mutable slice of self from the start of the vec to `end`.
+    /// Returns a mutable slice of `self` from the start of the `Vec` to `end`.
     ///
     /// # Failure
     ///
@@ -1159,7 +1160,7 @@ impl<T> Vec<T> {
         self.as_mut_slice().mut_slice_to(end)
     }
 
-    /// Returns a pair of mutable slices that divides the vec at an index.
+    /// Returns a pair of mutable slices that divides the `Vec` at an index.
     ///
     /// The first will contain all indices from `[0, mid)` (excluding
     /// the index `mid` itself) and the second will contain all
@@ -1198,7 +1199,7 @@ impl<T> Vec<T> {
         self.as_mut_slice().mut_split_at(mid)
     }
 
-    /// Reverse the order of elements in a vector, in place.
+    /// Reverses the order of elements in a vector, in place.
     ///
     /// # Example
     ///
@@ -1318,7 +1319,7 @@ impl<T> Vec<T> {
     /// Retains only the elements specified by the predicate.
     ///
     /// In other words, remove all elements `e` such that `f(&e)` returns false.
-    /// This method operates in place and preserves the order the retained elements.
+    /// This method operates in place and preserves the order of the retained elements.
     ///
     /// # Example
     ///
@@ -1391,8 +1392,8 @@ impl<T> Mutable for Vec<T> {
     }
 }
 
-impl<T:PartialEq> Vec<T> {
-    /// Return true if a vector contains an element with the given value
+impl<T: PartialEq> Vec<T> {
+    /// Returns true if a vector contains an element equal to the given value.
     ///
     /// # Example
     ///
@@ -1405,7 +1406,7 @@ impl<T:PartialEq> Vec<T> {
         self.as_slice().contains(x)
     }
 
-    /// Remove consecutive repeated elements in the vector.
+    /// Removes consecutive repeated elements in the vector.
     ///
     /// If the vector is sorted, this removes all duplicates.
     ///
@@ -1501,8 +1502,8 @@ impl<T:PartialEq> Vec<T> {
     }
 }
 
-impl<T> Vector<T> for Vec<T> {
-    /// Work with `self` as a slice.
+impl<T> Slice<T> for Vec<T> {
+    /// Returns a slice into `self`.
     ///
     /// # Example
     ///
@@ -1514,11 +1515,11 @@ impl<T> Vector<T> for Vec<T> {
     /// ```
     #[inline]
     fn as_slice<'a>(&'a self) -> &'a [T] {
-        unsafe { mem::transmute(Slice { data: self.as_ptr(), len: self.len }) }
+        unsafe { mem::transmute(RawSlice { data: self.as_ptr(), len: self.len }) }
     }
 }
 
-impl<T: Clone, V: Vector<T>> Add<V, Vec<T>> for Vec<T> {
+impl<T: Clone, V: Slice<T>> Add<V, Vec<T>> for Vec<T> {
     #[inline]
     fn add(&self, rhs: &V) -> Vec<T> {
         let mut res = Vec::with_capacity(self.len() + rhs.as_slice().len());
@@ -1557,7 +1558,7 @@ impl<T:fmt::Show> fmt::Show for Vec<T> {
 }
 
 impl<T> MutableSeq<T> for Vec<T> {
-    /// Append an element to the back of a collection.
+    /// Appends an element to the back of a collection.
     ///
     /// # Failure
     ///
@@ -1603,7 +1604,7 @@ impl<T> MutableSeq<T> for Vec<T> {
         } else {
             unsafe {
                 self.len -= 1;
-                Some(ptr::read(self.as_slice().unsafe_ref(self.len())))
+                Some(ptr::read(self.as_slice().unsafe_get(self.len())))
             }
         }
     }
@@ -1653,14 +1654,12 @@ impl<T> Drop for MoveItems<T> {
     }
 }
 
-/**
- * Convert an iterator of pairs into a pair of vectors.
- *
- * Returns a tuple containing two vectors where the i-th element of the first
- * vector contains the first element of the i-th tuple of the input iterator,
- * and the i-th element of the second vector contains the second element
- * of the i-th tuple of the input iterator.
- */
+/// Converts an iterator of pairs into a pair of vectors.
+///
+/// Returns a tuple containing two vectors where the i-th element of the first
+/// vector contains the first element of the i-th tuple of the input iterator,
+/// and the i-th element of the second vector contains the second element
+/// of the i-th tuple of the input iterator.
 pub fn unzip<T, U, V: Iterator<(T, U)>>(mut iter: V) -> (Vec<T>, Vec<U>) {
     let (lo, _) = iter.size_hint();
     let mut ts = Vec::with_capacity(lo);
@@ -1672,7 +1671,7 @@ pub fn unzip<T, U, V: Iterator<(T, U)>>(mut iter: V) -> (Vec<T>, Vec<U>) {
     (ts, us)
 }
 
-/// Unsafe operations
+/// Unsafe vector operations.
 pub mod raw {
     use super::Vec;
     use core::ptr;
@@ -2001,6 +2000,12 @@ mod tests {
     fn test_index_out_of_bounds() {
         let vec = vec!(1i, 2, 3);
         let _ = vec[3];
+    }
+
+    #[test]
+    fn test_swap_remove_empty() {
+        let mut vec: Vec<uint> = vec!();
+        assert_eq!(vec.swap_remove(0), None);
     }
 
     #[bench]

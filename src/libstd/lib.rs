@@ -107,12 +107,18 @@
 
 #![feature(macro_rules, globs, managed_boxes, linkage)]
 #![feature(default_type_params, phase, lang_items, unsafe_destructor)]
+#![feature(import_shadowing)]
 
 // Don't link to std. We are std.
 #![no_std]
 
+// NOTE(stage0, pcwalton): Remove after snapshot.
+#![allow(unknown_features)]
+
 #![allow(deprecated)]
 #![deny(missing_doc)]
+
+#![reexport_test_harness_main = "test_main"]
 
 // When testing libstd, bring in libuv as the I/O backend so tests can print
 // things and all of the std::io tests have an I/O interface to run on top
@@ -169,7 +175,7 @@ pub use core::option;
 
 pub use alloc::boxed;
 #[deprecated = "use boxed instead"]
-pub use owned = boxed;
+pub use boxed as owned;
 
 pub use alloc::rc;
 
@@ -186,13 +192,9 @@ pub use unicode::char;
 pub use core_sync::comm;
 
 // Run tests with libgreen instead of libnative.
-//
-// FIXME: This egregiously hacks around starting the test runner in a different
-//        threading mode than the default by reaching into the auto-generated
-//        '__test' module.
 #[cfg(test)] #[start]
 fn start(argc: int, argv: *const *const u8) -> int {
-    green::start(argc, argv, rustuv::event_loop, __test::main)
+    green::start(argc, argv, rustuv::event_loop, test_main)
 }
 
 /* Exported macros */
@@ -234,6 +236,8 @@ pub mod ascii;
 
 #[cfg(not(test))]
 pub mod gc;
+
+pub mod time;
 
 /* Common traits */
 
@@ -285,7 +289,7 @@ mod std {
     pub use vec; // used for vec![]
 
     // The test runner calls ::std::os::args() but really wants realstd
-    #[cfg(test)] pub use os = realstd::os;
+    #[cfg(test)] pub use realstd::os as os;
     // The test runner requires std::slice::Vector, so re-export std::slice just for it.
     #[cfg(test)] pub use slice;
 

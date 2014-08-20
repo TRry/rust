@@ -13,15 +13,15 @@
 //! local storage, and logging. Even a 'freestanding' Rust would likely want
 //! to implement this.
 
-use core::prelude::*;
-
 use alloc::arc::Arc;
 use alloc::boxed::{BoxAny, Box};
 use core::any::Any;
-use core::atomics::{AtomicUint, SeqCst};
+use core::atomic::{AtomicUint, SeqCst};
 use core::iter::Take;
 use core::kinds::marker;
 use core::mem;
+use core::prelude::{Clone, Drop, Err, Iterator, None, Ok, Option, Send, Some};
+use core::prelude::{drop};
 use core::raw;
 
 use local_data;

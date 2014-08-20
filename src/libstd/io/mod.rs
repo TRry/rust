@@ -235,7 +235,7 @@ use os;
 use boxed::Box;
 use result::{Ok, Err, Result};
 use rt::rtio;
-use slice::{Vector, MutableVector, ImmutableVector};
+use slice::{Slice, MutableSlice, ImmutableSlice};
 use str::{Str, StrSlice};
 use str;
 use string::String;
@@ -1103,14 +1103,14 @@ pub trait Writer {
     /// that the `write` method is used specifically instead.
     #[inline]
     fn write_line(&mut self, s: &str) -> IoResult<()> {
-        self.write_str(s).and_then(|()| self.write(['\n' as u8]))
+        self.write_str(s).and_then(|()| self.write([b'\n']))
     }
 
     /// Write a single char, encoded as UTF-8.
     #[inline]
     fn write_char(&mut self, c: char) -> IoResult<()> {
         let mut buf = [0u8, ..4];
-        let n = c.encode_utf8(buf.as_mut_slice());
+        let n = c.encode_utf8(buf.as_mut_slice()).unwrap_or(0);
         self.write(buf.slice_to(n))
     }
 
@@ -1442,7 +1442,7 @@ pub trait Buffer: Reader {
     /// Additionally, this function can fail if the line of input read is not a
     /// valid UTF-8 sequence of bytes.
     fn read_line(&mut self) -> IoResult<String> {
-        self.read_until('\n' as u8).and_then(|line|
+        self.read_until(b'\n').and_then(|line|
             match String::from_utf8(line) {
                 Ok(s)  => Ok(s),
                 Err(_) => Err(standard_error(InvalidInput)),

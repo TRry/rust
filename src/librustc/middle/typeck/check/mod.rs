@@ -86,7 +86,7 @@ use middle::subst;
 use middle::subst::{Subst, Substs, VecPerParamSpace, ParamSpace};
 use middle::ty::{FnSig, VariantInfo};
 use middle::ty::{Polytype};
-use middle::ty::{ParamTy, Disr, ExprTyProvider};
+use middle::ty::{Disr, ExprTyProvider, ParamTy, ParameterEnvironment};
 use middle::ty;
 use middle::ty_fold::TypeFolder;
 use middle::typeck::astconv::AstConv;
@@ -123,7 +123,7 @@ use std::mem::replace;
 use std::rc::Rc;
 use std::gc::Gc;
 use syntax::abi;
-use syntax::ast::{Provided, Required};
+use syntax::ast::{ProvidedMethod, RequiredMethod};
 use syntax::ast;
 use syntax::ast_map;
 use syntax::ast_util::{local_def, PostExpansionMethod};
@@ -168,7 +168,7 @@ pub struct Inherited<'a> {
     method_map: MethodMap,
     vtable_map: vtable_map,
     upvar_borrow_map: RefCell<ty::UpvarBorrowMap>,
-    unboxed_closure_types: RefCell<DefIdMap<ty::ClosureTy>>,
+    unboxed_closures: RefCell<DefIdMap<ty::UnboxedClosure>>,
 }
 
 /// When type-checking an expression, we propagate downward
@@ -275,13 +275,14 @@ impl<'a> Inherited<'a> {
             method_map: RefCell::new(FnvHashMap::new()),
             vtable_map: RefCell::new(FnvHashMap::new()),
             upvar_borrow_map: RefCell::new(HashMap::new()),
-            unboxed_closure_types: RefCell::new(DefIdMap::new()),
+            unboxed_closures: RefCell::new(DefIdMap::new()),
         }
     }
 }
 
 // Used by check_const and check_enum_variants
-fn blank_fn_ctxt<'a>(ccx: &'a CrateCtxt<'a>,
+pub fn blank_fn_ctxt<'a>(
+                     ccx: &'a CrateCtxt<'a>,
                      inh: &'a Inherited<'a>,
                      rty: ty::t,
                      region_bnd: ast::NodeId)
@@ -673,30 +674,30 @@ pub fn check_item(ccx: &CrateCtxt, it: &ast::Item) {
       }
       ast::ItemFn(ref decl, _, _, _, ref body) => {
         let fn_pty = ty::lookup_item_type(ccx.tcx, ast_util::local_def(it.id));
-
-        let param_env = ty::construct_parameter_environment(ccx.tcx,
-                                                            &fn_pty.generics,
-                                                            body.id);
-
+        let param_env = ParameterEnvironment::for_item(ccx.tcx, it.id);
         check_bare_fn(ccx, &**decl, &**body, it.id, fn_pty.ty, param_env);
       }
-      ast::ItemImpl(_, ref opt_trait_ref, _, ref ms) => {
+      ast::ItemImpl(_, ref opt_trait_ref, _, ref impl_items) => {
         debug!("ItemImpl {} with id {}", token::get_ident(it.ident), it.id);
 
         let impl_pty = ty::lookup_item_type(ccx.tcx, ast_util::local_def(it.id));
-        for m in ms.iter() {
-            check_method_body(ccx, &impl_pty.generics, &**m);
+        for impl_item in impl_items.iter() {
+            match *impl_item {
+                ast::MethodImplItem(m) => {
+                    check_method_body(ccx, &impl_pty.generics, &*m);
+                }
+            }
         }
 
         match *opt_trait_ref {
             Some(ref ast_trait_ref) => {
                 let impl_trait_ref =
                     ty::node_id_to_trait_ref(ccx.tcx, ast_trait_ref.ref_id);
-                check_impl_methods_against_trait(ccx,
-                                             it.span,
-                                             ast_trait_ref,
-                                             &*impl_trait_ref,
-                                             ms.as_slice());
+                check_impl_items_against_trait(ccx,
+                                               it.span,
+                                               ast_trait_ref,
+                                               &*impl_trait_ref,
+                                               impl_items.as_slice());
                 vtable::resolve_impl(ccx.tcx, it, &impl_pty.generics, &*impl_trait_ref);
             }
             None => { }
@@ -707,11 +708,11 @@ pub fn check_item(ccx: &CrateCtxt, it: &ast::Item) {
         let trait_def = ty::lookup_trait_def(ccx.tcx, local_def(it.id));
         for trait_method in (*trait_methods).iter() {
             match *trait_method {
-                Required(..) => {
+                RequiredMethod(..) => {
                     // Nothing to do, since required methods don't have
                     // bodies to check.
                 }
-                Provided(m) => {
+                ProvidedMethod(m) => {
                     check_method_body(ccx, &trait_def.generics, &*m);
                 }
             }
@@ -769,13 +770,7 @@ fn check_method_body(ccx: &CrateCtxt,
     debug!("check_method_body(item_generics={}, method.id={})",
             item_generics.repr(ccx.tcx),
             method.id);
-    let method_def_id = local_def(method.id);
-    let method_ty = ty::method(ccx.tcx, method_def_id);
-    let method_generics = &method_ty.generics;
-
-    let param_env = ty::construct_parameter_environment(ccx.tcx,
-                                                        method_generics,
-                                                        method.pe_body().id);
+    let param_env = ParameterEnvironment::for_item(ccx.tcx, method.id);
 
     let fty = ty::node_id_to_type(ccx.tcx, method.id);
 
@@ -787,43 +782,58 @@ fn check_method_body(ccx: &CrateCtxt,
                   param_env);
 }
 
-fn check_impl_methods_against_trait(ccx: &CrateCtxt,
-                                    impl_span: Span,
-                                    ast_trait_ref: &ast::TraitRef,
-                                    impl_trait_ref: &ty::TraitRef,
-                                    impl_methods: &[Gc<ast::Method>]) {
+fn check_impl_items_against_trait(ccx: &CrateCtxt,
+                                  impl_span: Span,
+                                  ast_trait_ref: &ast::TraitRef,
+                                  impl_trait_ref: &ty::TraitRef,
+                                  impl_items: &[ast::ImplItem]) {
     // Locate trait methods
     let tcx = ccx.tcx;
-    let trait_methods = ty::trait_methods(tcx, impl_trait_ref.def_id);
+    let trait_items = ty::trait_items(tcx, impl_trait_ref.def_id);
 
     // Check existing impl methods to see if they are both present in trait
     // and compatible with trait signature
-    for impl_method in impl_methods.iter() {
-        let impl_method_def_id = local_def(impl_method.id);
-        let impl_method_ty = ty::method(ccx.tcx, impl_method_def_id);
+    for impl_item in impl_items.iter() {
+        match *impl_item {
+            ast::MethodImplItem(impl_method) => {
+                let impl_method_def_id = local_def(impl_method.id);
+                let impl_item_ty = ty::impl_or_trait_item(ccx.tcx,
+                                                          impl_method_def_id);
 
-        // If this is an impl of a trait method, find the corresponding
-        // method definition in the trait.
-        let opt_trait_method_ty =
-            trait_methods.iter().
-            find(|tm| tm.ident.name == impl_method_ty.ident.name);
-        match opt_trait_method_ty {
-            Some(trait_method_ty) => {
-                compare_impl_method(ccx.tcx,
-                                    &*impl_method_ty,
-                                    impl_method.span,
-                                    impl_method.pe_body().id,
-                                    &**trait_method_ty,
-                                    &impl_trait_ref.substs);
-            }
-            None => {
-                // This is span_bug as it should have already been caught in resolve.
-                tcx.sess.span_bug(
-                    impl_method.span,
-                    format!(
-                        "method `{}` is not a member of trait `{}`",
-                        token::get_ident(impl_method_ty.ident),
-                        pprust::path_to_string(&ast_trait_ref.path)).as_slice());
+                // If this is an impl of a trait method, find the
+                // corresponding method definition in the trait.
+                let opt_trait_method_ty =
+                    trait_items.iter()
+                               .find(|ti| {
+                                   ti.ident().name == impl_item_ty.ident()
+                                                                  .name
+                               });
+                match opt_trait_method_ty {
+                    Some(trait_method_ty) => {
+                        match (trait_method_ty, &impl_item_ty) {
+                            (&ty::MethodTraitItem(ref trait_method_ty),
+                             &ty::MethodTraitItem(ref impl_method_ty)) => {
+                                compare_impl_method(ccx.tcx,
+                                                    &**impl_method_ty,
+                                                    impl_method.span,
+                                                    impl_method.pe_body().id,
+                                                    &**trait_method_ty,
+                                                    &impl_trait_ref.substs);
+                            }
+                        }
+                    }
+                    None => {
+                        // This is span_bug as it should have already been
+                        // caught in resolve.
+                        tcx.sess.span_bug(
+                            impl_method.span,
+                            format!(
+                                "method `{}` is not a member of trait `{}`",
+                                token::get_ident(impl_item_ty.ident()),
+                                pprust::path_to_string(
+                                    &ast_trait_ref.path)).as_slice());
+                    }
+                }
             }
         }
     }
@@ -832,16 +842,26 @@ fn check_impl_methods_against_trait(ccx: &CrateCtxt,
     let provided_methods = ty::provided_trait_methods(tcx,
                                                       impl_trait_ref.def_id);
     let mut missing_methods = Vec::new();
-    for trait_method in trait_methods.iter() {
-        let is_implemented =
-            impl_methods.iter().any(
-                |m| m.pe_ident().name == trait_method.ident.name);
-        let is_provided =
-            provided_methods.iter().any(
-                |m| m.ident.name == trait_method.ident.name);
-        if !is_implemented && !is_provided {
-            missing_methods.push(
-                format!("`{}`", token::get_ident(trait_method.ident)));
+    for trait_item in trait_items.iter() {
+        match *trait_item {
+            ty::MethodTraitItem(ref trait_method) => {
+                let is_implemented =
+                    impl_items.iter().any(|ii| {
+                        match *ii {
+                            ast::MethodImplItem(m) => {
+                                m.pe_ident().name == trait_method.ident.name
+                            }
+                        }
+                    });
+                let is_provided =
+                    provided_methods.iter().any(
+                        |m| m.ident.name == trait_method.ident.name);
+                if !is_implemented && !is_provided {
+                    missing_methods.push(
+                        format!("`{}`",
+                                token::get_ident(trait_method.ident)));
+                }
+            }
         }
     }
 
@@ -853,7 +873,7 @@ fn check_impl_methods_against_trait(ccx: &CrateCtxt,
 }
 
 /**
- * Checks that a method from an impl/class conforms to the signature of
+ * Checks that a method from an impl conforms to the signature of
  * the same method as declared in the trait.
  *
  * # Parameters
@@ -1271,7 +1291,7 @@ impl<'a> FnCtxt<'a> {
         VtableContext {
             infcx: self.infcx(),
             param_env: &self.inh.param_env,
-            unboxed_closure_types: &self.inh.unboxed_closure_types,
+            unboxed_closures: &self.inh.unboxed_closures,
         }
     }
 }
@@ -2057,9 +2077,9 @@ fn check_lit(fcx: &FnCtxt,
         }
         ast::LitByte(_) => ty::mk_u8(),
         ast::LitChar(_) => ty::mk_char(),
-        ast::LitInt(_, t) => ty::mk_mach_int(t),
-        ast::LitUint(_, t) => ty::mk_mach_uint(t),
-        ast::LitIntUnsuffixed(_) => {
+        ast::LitInt(_, ast::SignedIntLit(t, _)) => ty::mk_mach_int(t),
+        ast::LitInt(_, ast::UnsignedIntLit(t)) => ty::mk_mach_uint(t),
+        ast::LitInt(_, ast::UnsuffixedIntLit(_)) => {
             let opt_ty = expected.map_to_option(fcx, |sty| {
                 match *sty {
                     ty::ty_int(i) => Some(ty::mk_mach_int(i)),
@@ -2618,6 +2638,7 @@ fn check_expr_with_unifier(fcx: &FnCtxt,
 
     fn check_unboxed_closure(fcx: &FnCtxt,
                              expr: &ast::Expr,
+                             kind: ast::UnboxedClosureKind,
                              decl: &ast::FnDecl,
                              body: ast::P<ast::Block>) {
         // The `RegionTraitStore` is a lie, but we ignore it so it doesn't
@@ -2635,8 +2656,16 @@ fn check_expr_with_unifier(fcx: &FnCtxt,
             abi::RustCall,
             None);
 
+        let region = match fcx.infcx().anon_regions(expr.span, 1) {
+            Err(_) => {
+                fcx.ccx.tcx.sess.span_bug(expr.span,
+                                          "can't make anon regions here?!")
+            }
+            Ok(regions) => *regions.get(0),
+        };
         let closure_type = ty::mk_unboxed_closure(fcx.ccx.tcx,
-                                                  local_def(expr.id));
+                                                  local_def(expr.id),
+                                                  region);
         fcx.write_ty(expr.id, closure_type);
 
         check_fn(fcx.ccx,
@@ -2648,13 +2677,24 @@ fn check_expr_with_unifier(fcx: &FnCtxt,
                  fcx.inh);
 
         // Tuple up the arguments and insert the resulting function type into
-        // the `unboxed_closure_types` table.
+        // the `unboxed_closures` table.
         fn_ty.sig.inputs = vec![ty::mk_tup(fcx.tcx(), fn_ty.sig.inputs)];
 
+        let kind = match kind {
+            ast::FnUnboxedClosureKind => ty::FnUnboxedClosureKind,
+            ast::FnMutUnboxedClosureKind => ty::FnMutUnboxedClosureKind,
+            ast::FnOnceUnboxedClosureKind => ty::FnOnceUnboxedClosureKind,
+        };
+
+        let unboxed_closure = ty::UnboxedClosure {
+            closure_type: fn_ty,
+            kind: kind,
+        };
+
         fcx.inh
-           .unboxed_closure_types
+           .unboxed_closures
            .borrow_mut()
-           .insert(local_def(expr.id), fn_ty);
+           .insert(local_def(expr.id), unboxed_closure);
     }
 
     fn check_expr_fn(fcx: &FnCtxt,
@@ -3292,7 +3332,7 @@ fn check_expr_with_unifier(fcx: &FnCtxt,
           for &(_, ref input) in ia.inputs.iter() {
               check_expr(fcx, &**input);
           }
-          for &(_, ref out) in ia.outputs.iter() {
+          for &(_, ref out, _) in ia.outputs.iter() {
               check_expr(fcx, &**out);
           }
           fcx.write_nil(id);
@@ -3390,7 +3430,7 @@ fn check_expr_with_unifier(fcx: &FnCtxt,
       ast::ExprMatch(ref discrim, ref arms) => {
         _match::check_match(fcx, expr, &**discrim, arms.as_slice());
       }
-      ast::ExprFnBlock(ref decl, ref body) => {
+      ast::ExprFnBlock(_, ref decl, ref body) => {
         let region = astconv::opt_ast_region_to_region(fcx,
                                                        fcx.infcx(),
                                                        expr.span,
@@ -3402,9 +3442,10 @@ fn check_expr_with_unifier(fcx: &FnCtxt,
                       body.clone(),
                       expected);
       }
-      ast::ExprUnboxedFn(ref decl, ref body) => {
+      ast::ExprUnboxedFn(_, kind, ref decl, ref body) => {
         check_unboxed_closure(fcx,
                               expr,
+                              kind,
                               &**decl,
                               *body);
       }
@@ -3917,6 +3958,24 @@ fn check_block_with_expected(fcx: &FnCtxt,
     });
 
     *fcx.ps.borrow_mut() = prev;
+}
+
+/// Checks a constant appearing in a type. At the moment this is just the
+/// length expression in a fixed-length vector, but someday it might be
+/// extended to type-level numeric literals.
+pub fn check_const_in_type(tcx: &ty::ctxt,
+                           expr: &ast::Expr,
+                           expected_type: ty::t) {
+    // Synthesize a crate context. The trait map is not needed here (though I
+    // imagine it will be if we have associated statics --pcwalton), so we
+    // leave it blank.
+    let ccx = CrateCtxt {
+        trait_map: NodeMap::new(),
+        tcx: tcx,
+    };
+    let inh = blank_inherited_fields(&ccx);
+    let fcx = blank_fn_ctxt(&ccx, &inh, expected_type, expr.id);
+    check_const_with_ty(&fcx, expr.span, expr, expected_type);
 }
 
 pub fn check_const(ccx: &CrateCtxt,
@@ -4985,6 +5044,8 @@ pub fn check_intrinsic_type(ccx: &CrateCtxt, it: &ast::ForeignItem) {
             "u64_add_with_overflow" | "u64_sub_with_overflow"  | "u64_mul_with_overflow" =>
                 (0, vec!(ty::mk_u64(), ty::mk_u64()),
                 ty::mk_tup(tcx, vec!(ty::mk_u64(), ty::mk_bool()))),
+
+            "return_address" => (0, vec![], ty::mk_imm_ptr(tcx, ty::mk_u8())),
 
             ref other => {
                 span_err!(tcx.sess, it.span, E0093,

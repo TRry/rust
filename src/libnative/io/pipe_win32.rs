@@ -92,7 +92,7 @@ use std::os;
 use std::ptr;
 use std::rt::rtio;
 use std::rt::rtio::{IoResult, IoError};
-use std::sync::atomics;
+use std::sync::atomic;
 use std::rt::mutex;
 
 use super::c;
@@ -128,8 +128,8 @@ impl Drop for Event {
 struct Inner {
     handle: libc::HANDLE,
     lock: mutex::NativeMutex,
-    read_closed: atomics::AtomicBool,
-    write_closed: atomics::AtomicBool,
+    read_closed: atomic::AtomicBool,
+    write_closed: atomic::AtomicBool,
 }
 
 impl Inner {
@@ -137,8 +137,8 @@ impl Inner {
         Inner {
             handle: handle,
             lock: unsafe { mutex::NativeMutex::new() },
-            read_closed: atomics::AtomicBool::new(false),
-            write_closed: atomics::AtomicBool::new(false),
+            read_closed: atomic::AtomicBool::new(false),
+            write_closed: atomic::AtomicBool::new(false),
         }
     }
 }
@@ -223,7 +223,7 @@ impl UnixStream {
                 libc::FILE_FLAG_OVERLAPPED,
                 ptr::mut_null())
         };
-        if result != libc::INVALID_HANDLE_VALUE as libc::HANDLE {
+        if result != libc::INVALID_HANDLE_VALUE {
             return Some(result)
         }
 
@@ -238,7 +238,7 @@ impl UnixStream {
                     libc::FILE_FLAG_OVERLAPPED,
                     ptr::mut_null())
             };
-            if result != libc::INVALID_HANDLE_VALUE as libc::HANDLE {
+            if result != libc::INVALID_HANDLE_VALUE {
                 return Some(result)
             }
         }
@@ -253,7 +253,7 @@ impl UnixStream {
                     libc::FILE_FLAG_OVERLAPPED,
                     ptr::mut_null())
             };
-            if result != libc::INVALID_HANDLE_VALUE as libc::HANDLE {
+            if result != libc::INVALID_HANDLE_VALUE {
                 return Some(result)
             }
         }
@@ -311,7 +311,7 @@ impl UnixStream {
                     }
                 }
 
-                // An example I found on microsoft's website used 20
+                // An example I found on Microsoft's website used 20
                 // seconds, libuv uses 30 seconds, hence we make the
                 // obvious choice of waiting for 25 seconds.
                 None => {
@@ -326,11 +326,11 @@ impl UnixStream {
     fn handle(&self) -> libc::HANDLE { self.inner.handle }
 
     fn read_closed(&self) -> bool {
-        self.inner.read_closed.load(atomics::SeqCst)
+        self.inner.read_closed.load(atomic::SeqCst)
     }
 
     fn write_closed(&self) -> bool {
-        self.inner.write_closed.load(atomics::SeqCst)
+        self.inner.write_closed.load(atomic::SeqCst)
     }
 
     fn cancel_io(&self) -> IoResult<()> {
@@ -525,14 +525,14 @@ impl rtio::RtioPipe for UnixStream {
         // and 2 with a lock with respect to close_read(), we're guaranteed that
         // no thread will erroneously sit in a read forever.
         let _guard = unsafe { self.inner.lock.lock() };
-        self.inner.read_closed.store(true, atomics::SeqCst);
+        self.inner.read_closed.store(true, atomic::SeqCst);
         self.cancel_io()
     }
 
     fn close_write(&mut self) -> IoResult<()> {
         // see comments in close_read() for why this lock is necessary
         let _guard = unsafe { self.inner.lock.lock() };
-        self.inner.write_closed.store(true, atomics::SeqCst);
+        self.inner.write_closed.store(true, atomic::SeqCst);
         self.cancel_io()
     }
 
@@ -565,7 +565,7 @@ impl UnixListener {
         // and such.
         let addr_v = try!(to_utf16(addr));
         let ret = unsafe { pipe(addr_v.as_ptr(), true) };
-        if ret == libc::INVALID_HANDLE_VALUE as libc::HANDLE {
+        if ret == libc::INVALID_HANDLE_VALUE {
             Err(super::last_error())
         } else {
             Ok(UnixListener { handle: ret, name: addr.clone() })
@@ -680,7 +680,7 @@ impl UnixAcceptor {
         // create a second server pipe. If this fails, we disconnect the
         // connected client and return an error (see comments above).
         let new_handle = unsafe { pipe(name.as_ptr(), false) };
-        if new_handle == libc::INVALID_HANDLE_VALUE as libc::HANDLE {
+        if new_handle == libc::INVALID_HANDLE_VALUE {
             let ret = Err(super::last_error());
             // If our disconnection fails, then there's not really a whole lot
             // that we can do, so fail the task.

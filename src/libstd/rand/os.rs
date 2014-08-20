@@ -70,7 +70,7 @@ mod imp {
     use rand::Rng;
     use result::{Ok};
     use self::libc::{c_int, size_t};
-    use slice::MutableVector;
+    use slice::MutableSlice;
 
     /// A random number generator that retrieves randomness straight from
     /// the operating system. Platform sources:
@@ -136,10 +136,11 @@ mod imp {
     use rand::Rng;
     use result::{Ok, Err};
     use rt::stack;
-    use self::libc::{c_ulong, DWORD, BYTE, LPCSTR, BOOL};
-    use slice::MutableVector;
+    use self::libc::{DWORD, BYTE, LPCSTR, BOOL};
+    use self::libc::types::os::arch::extra::{LONG_PTR};
+    use slice::MutableSlice;
 
-    type HCRYPTPROV = c_ulong;
+    type HCRYPTPROV = LONG_PTR;
 
     /// A random number generator that retrieves randomness straight from
     /// the operating system. Platform sources:

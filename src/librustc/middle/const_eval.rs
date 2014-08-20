@@ -17,6 +17,7 @@ use middle::def;
 use middle::pat_util::def_to_path;
 use middle::ty;
 use middle::typeck::astconv;
+use middle::typeck::check;
 use util::nodemap::{DefIdMap};
 
 use syntax::ast::*;
@@ -274,6 +275,17 @@ impl<'a> ConstEvalVisitor<'a> {
 }
 
 impl<'a> Visitor<()> for ConstEvalVisitor<'a> {
+    fn visit_ty(&mut self, t: &Ty, _: ()) {
+        match t.node {
+            TyFixedLengthVec(_, expr) => {
+                check::check_const_in_type(self.tcx, &*expr, ty::mk_uint());
+            }
+            _ => {}
+        }
+
+        visit::walk_ty(self, t, ());
+    }
+
     fn visit_expr_post(&mut self, e: &Expr, _: ()) {
         self.classify(e);
     }
@@ -560,10 +572,13 @@ pub fn lit_to_const(lit: &Lit) -> const_val {
         }
         LitByte(n) => const_uint(n as u64),
         LitChar(n) => const_uint(n as u64),
-        LitInt(n, _) => const_int(n),
-        LitUint(n, _) => const_uint(n),
-        LitIntUnsuffixed(n) => const_int(n),
-        LitFloat(ref n, _) | LitFloatUnsuffixed(ref n) => {
+        LitInt(n, ast::SignedIntLit(_, ast::Plus)) |
+        LitInt(n, ast::UnsuffixedIntLit(ast::Plus)) => const_int(n as i64),
+        LitInt(n, ast::SignedIntLit(_, ast::Minus)) |
+        LitInt(n, ast::UnsuffixedIntLit(ast::Minus)) => const_int(-(n as i64)),
+        LitInt(n, ast::UnsignedIntLit(_)) => const_uint(n),
+        LitFloat(ref n, _) |
+        LitFloatUnsuffixed(ref n) => {
             const_float(from_str::<f64>(n.get()).unwrap() as f64)
         }
         LitNil => const_nil,

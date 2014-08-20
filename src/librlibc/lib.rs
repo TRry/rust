@@ -28,12 +28,15 @@
        html_favicon_url = "http://www.rust-lang.org/favicon.ico",
        html_root_url = "http://doc.rust-lang.org/master/")]
 
-#![feature(intrinsics, phase)]
+#![feature(import_shadowing, intrinsics, phase)]
 #![no_std]
 
 // This library defines the builtin functions, so it would be a shame for
 // LLVM to optimize these function calls to themselves!
 #![no_builtins]
+
+// NOTE(stage0, pcwalton): Remove after snapshot.
+#![allow(unknown_features)]
 
 #[cfg(test)] extern crate native;
 #[cfg(test)] extern crate test;
@@ -112,7 +115,7 @@ mod test {
     use core::iter::Iterator;
     use core::collections::Collection;
     use core::str::StrSlice;
-    use core::slice::{MutableVector, ImmutableVector};
+    use core::slice::{MutableSlice, ImmutableSlice};
 
     use super::{memcmp, memset, memcpy, memmove};
 

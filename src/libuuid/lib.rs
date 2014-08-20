@@ -59,6 +59,7 @@ Examples of string representations:
 #![crate_name = "uuid"]
 #![deprecated = "This is now a cargo package located at: \
                  https://github.com/rust-lang/uuid"]
+#![allow(deprecated)]
 #![crate_type = "rlib"]
 #![crate_type = "dylib"]
 #![license = "MIT/ASL2"]
@@ -522,7 +523,7 @@ impl rand::Rand for Uuid {
 }
 
 #[cfg(test)]
-mod test {
+mod uuidtest {
     use super::{Uuid, VariantMicrosoft, VariantNCS, VariantRFC4122,
                 Version1Mac, Version2Dce, Version3Md5, Version4Random,
                 Version5Sha1};

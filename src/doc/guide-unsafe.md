@@ -1,4 +1,4 @@
-% Writing Safe Unsafe and Low-Level Code
+% Writing Unsafe and Low-Level Code in Rust
 
 # Introduction
 
@@ -137,7 +137,7 @@ explicitly with, respectively, `value as *const T` and `value as *mut T`).
 
 Going the opposite direction, from `*const` to a reference `&`, is not
 safe. A `&T` is always valid, and so, at a minimum, the raw pointer
-`*const T` has to be a valid to a valid instance of type `T`. Furthermore,
+`*const T` has to point to a valid instance of type `T`. Furthermore,
 the resulting pointer must satisfy the aliasing and mutability laws of
 references. The compiler assumes these properties are true for any
 references, no matter how they are created, and so any conversion from
@@ -537,11 +537,12 @@ extern crate core;
 use core::prelude::*;
 
 use core::mem;
-use core::raw::Slice;
 
 #[no_mangle]
 pub extern fn dot_product(a: *const u32, a_len: u32,
                           b: *const u32, b_len: u32) -> u32 {
+    use core::raw::Slice;
+
     // Convert the provided arrays into Rust slices.
     // The core::raw module guarantees that the Slice
     // structure has the same memory layout as a &[T]
@@ -699,10 +700,10 @@ Other features provided by lang items include:
 - stack unwinding and general failure; the `eh_personality`, `fail_`
   and `fail_bounds_checks` lang items.
 - the traits in `std::kinds` used to indicate types that satisfy
-  various kinds; lang items `send`, `share` and `copy`.
+  various kinds; lang items `send`, `sync` and `copy`.
 - the marker types and variance indicators found in
   `std::kinds::markers`; lang items `covariant_type`,
-  `contravariant_lifetime`, `no_share_bound`, etc.
+  `contravariant_lifetime`, `no_sync_bound`, etc.
 
 Lang items are loaded lazily by the compiler; e.g. if one never uses
 `Box` then there is no need to define functions for `exchange_malloc`

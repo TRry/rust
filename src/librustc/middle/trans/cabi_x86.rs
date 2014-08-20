@@ -8,13 +8,12 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-
-use syntax::abi::{OsWin32, OsMacos, OsiOS};
 use llvm::*;
-use super::cabi::*;
+use middle::trans::cabi::{ArgType, FnType};
+use middle::trans::type_::Type;
 use super::common::*;
 use super::machine::*;
-use middle::trans::type_::Type;
+use syntax::abi::{OsWindows, OsMacos, OsiOS};
 
 pub fn compute_abi_info(ccx: &CrateContext,
                         atys: &[Type],
@@ -36,7 +35,7 @@ pub fn compute_abi_info(ccx: &CrateContext,
 
         enum Strategy { RetValue(Type), RetPointer }
         let strategy = match ccx.sess().targ_cfg.os {
-            OsWin32 | OsMacos | OsiOS => {
+            OsWindows | OsMacos | OsiOS => {
                 match llsize_of_alloc(ccx, rty) {
                     1 => RetValue(Type::i8(ccx)),
                     2 => RetValue(Type::i16(ccx)),

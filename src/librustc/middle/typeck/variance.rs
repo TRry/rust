@@ -195,7 +195,7 @@ represents the "variance transform" as defined in the paper:
 use std::collections::HashMap;
 use arena;
 use arena::Arena;
-use rl = middle::resolve_lifetime;
+use middle::resolve_lifetime as rl;
 use middle::subst;
 use middle::subst::{ParamSpace, FnSpace, TypeSpace, SelfSpace, VecPerParamSpace};
 use middle::ty;
@@ -358,7 +358,8 @@ impl<'a> Visitor<()> for TermsContext<'a> {
             ast::ItemStruct(_, ref generics) |
             ast::ItemTrait(ref generics, _, _, _) => {
                 for (i, p) in generics.lifetimes.iter().enumerate() {
-                    self.add_inferred(item.id, RegionParam, TypeSpace, i, p.id);
+                    let id = p.lifetime.id;
+                    self.add_inferred(item.id, RegionParam, TypeSpace, i, id);
                 }
                 for (i, p) in generics.ty_params.iter().enumerate() {
                     self.add_inferred(item.id, TypeParam, TypeSpace, i, p.id);
@@ -514,10 +515,14 @@ impl<'a> Visitor<()> for ConstraintContext<'a> {
             }
 
             ast::ItemTrait(..) => {
-                let methods = ty::trait_methods(tcx, did);
-                for method in methods.iter() {
-                    self.add_constraints_from_sig(
-                        &method.fty.sig, self.covariant);
+                let trait_items = ty::trait_items(tcx, did);
+                for trait_item in trait_items.iter() {
+                    match *trait_item {
+                        ty::MethodTraitItem(ref method) => {
+                            self.add_constraints_from_sig(&method.fty.sig,
+                                                          self.covariant);
+                        }
+                    }
                 }
             }
 
@@ -608,8 +613,8 @@ impl<'a> ConstraintContext<'a> {
                         _                    => cannot_happen!(),
                     }
                 }
-                ast_map::NodeTraitMethod(..) => is_inferred = false,
-                ast_map::NodeMethod(_)       => is_inferred = false,
+                ast_map::NodeTraitItem(..)   => is_inferred = false,
+                ast_map::NodeImplItem(..)    => is_inferred = false,
                 _                            => cannot_happen!(),
             }
 
@@ -721,8 +726,13 @@ impl<'a> ConstraintContext<'a> {
         match ty::get(ty).sty {
             ty::ty_nil | ty::ty_bot | ty::ty_bool |
             ty::ty_char | ty::ty_int(_) | ty::ty_uint(_) |
-            ty::ty_float(_) | ty::ty_str | ty::ty_unboxed_closure(..) => {
+            ty::ty_float(_) | ty::ty_str => {
                 /* leaf type -- noop */
+            }
+
+            ty::ty_unboxed_closure(_, region) => {
+                let contra = self.contravariant(variance);
+                self.add_constraints_from_region(region, contra);
             }
 
             ty::ty_rptr(region, ref mt) => {

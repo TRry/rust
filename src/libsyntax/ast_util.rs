@@ -209,21 +209,6 @@ pub fn name_to_dummy_lifetime(name: Name) -> Lifetime {
                name: name }
 }
 
-pub fn is_unguarded(a: &Arm) -> bool {
-    match a.guard {
-      None => true,
-      _    => false
-    }
-}
-
-pub fn unguarded_pat(a: &Arm) -> Option<Vec<Gc<Pat>>> {
-    if is_unguarded(a) {
-        Some(/* FIXME (#2543) */ a.pats.clone())
-    } else {
-        None
-    }
-}
-
 /// Generate a "pretty" name for an `impl` from its type and trait.
 /// This is designed so that symbols of `impl`'d methods give some
 /// hint of where they came from, (previously they would all just be
@@ -241,51 +226,52 @@ pub fn impl_pretty_name(trait_ref: &Option<TraitRef>, ty: &Ty) -> Ident {
     token::gensym_ident(pretty.as_slice())
 }
 
-/// extract a TypeMethod from a TraitMethod. if the TraitMethod is
-/// a default, pull out the useful fields to make a TypeMethod
-//
-// NB: to be used only after expansion is complete, and macros are gone.
-pub fn trait_method_to_ty_method(method: &TraitMethod) -> TypeMethod {
-    match *method {
-        Required(ref m) => (*m).clone(),
-        Provided(m) => {
-            match m.node {
-                MethDecl(ident,
-                         ref generics,
-                         abi,
-                         explicit_self,
-                         fn_style,
-                         decl,
-                         _,
-                         vis) => {
-                    TypeMethod {
-                        ident: ident,
-                        attrs: m.attrs.clone(),
-                        fn_style: fn_style,
-                        decl: decl,
-                        generics: generics.clone(),
-                        explicit_self: explicit_self,
-                        id: m.id,
-                        span: m.span,
-                        vis: vis,
-                        abi: abi,
-                    }
-                },
-                MethMac(_) => fail!("expected non-macro method declaration")
+pub fn trait_method_to_ty_method(method: &Method) -> TypeMethod {
+    match method.node {
+        MethDecl(ident,
+                 ref generics,
+                 abi,
+                 explicit_self,
+                 fn_style,
+                 decl,
+                 _,
+                 vis) => {
+            TypeMethod {
+                ident: ident,
+                attrs: method.attrs.clone(),
+                fn_style: fn_style,
+                decl: decl,
+                generics: generics.clone(),
+                explicit_self: explicit_self,
+                id: method.id,
+                span: method.span,
+                vis: vis,
+                abi: abi,
             }
-
-        }
+        },
+        MethMac(_) => fail!("expected non-macro method declaration")
     }
 }
 
-pub fn split_trait_methods(trait_methods: &[TraitMethod])
+/// extract a TypeMethod from a TraitItem. if the TraitItem is
+/// a default, pull out the useful fields to make a TypeMethod
+//
+// NB: to be used only after expansion is complete, and macros are gone.
+pub fn trait_item_to_ty_method(method: &TraitItem) -> TypeMethod {
+    match *method {
+        RequiredMethod(ref m) => (*m).clone(),
+        ProvidedMethod(ref m) => trait_method_to_ty_method(&**m),
+    }
+}
+
+pub fn split_trait_methods(trait_methods: &[TraitItem])
     -> (Vec<TypeMethod> , Vec<Gc<Method>> ) {
     let mut reqd = Vec::new();
     let mut provd = Vec::new();
     for trt_method in trait_methods.iter() {
         match *trt_method {
-            Required(ref tm) => reqd.push((*tm).clone()),
-            Provided(m) => provd.push(m)
+            RequiredMethod(ref tm) => reqd.push((*tm).clone()),
+            ProvidedMethod(m) => provd.push(m)
         }
     };
     (reqd, provd)
@@ -319,8 +305,14 @@ pub fn operator_prec(op: ast::BinOp) -> uint {
 pub static as_prec: uint = 12u;
 
 pub fn empty_generics() -> Generics {
-    Generics {lifetimes: Vec::new(),
-              ty_params: OwnedSlice::empty()}
+    Generics {
+        lifetimes: Vec::new(),
+        ty_params: OwnedSlice::empty(),
+        where_clause: WhereClause {
+            id: DUMMY_NODE_ID,
+            predicates: Vec::new(),
+        }
+    }
 }
 
 // ______________________________________________________________________
@@ -369,7 +361,7 @@ impl<'a, O: IdVisitingOperation> IdVisitor<'a, O> {
             self.operation.visit_id(type_parameter.id)
         }
         for lifetime in generics.lifetimes.iter() {
-            self.operation.visit_id(lifetime.id)
+            self.operation.visit_id(lifetime.lifetime.id)
         }
     }
 }
@@ -543,12 +535,12 @@ impl<'a, O: IdVisitingOperation> Visitor<()> for IdVisitor<'a, O> {
         visit::walk_struct_def(self, struct_def, ());
     }
 
-    fn visit_trait_method(&mut self, tm: &ast::TraitMethod, _: ()) {
+    fn visit_trait_item(&mut self, tm: &ast::TraitItem, _: ()) {
         match *tm {
-            ast::Required(ref m) => self.operation.visit_id(m.id),
-            ast::Provided(ref m) => self.operation.visit_id(m.id),
+            ast::RequiredMethod(ref m) => self.operation.visit_id(m.id),
+            ast::ProvidedMethod(ref m) => self.operation.visit_id(m.id),
         }
-        visit::walk_trait_method(self, tm, ());
+        visit::walk_trait_item(self, tm, ());
     }
 }
 
@@ -636,7 +628,7 @@ pub fn walk_pat(pat: &Pat, it: |&Pat| -> bool) -> bool {
             after.iter().all(|p| walk_pat(&**p, |p| it(p)))
         }
         PatMac(_) => fail!("attempted to analyze unexpanded pattern"),
-        PatWild | PatWildMulti | PatLit(_) | PatRange(_, _) | PatIdent(_, _, _) |
+        PatWild(_) | PatLit(_) | PatRange(_, _) | PatIdent(_, _, _) |
         PatEnum(_, _) => {
             true
         }

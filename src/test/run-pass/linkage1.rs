@@ -8,7 +8,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// ignore-win32
+// ignore-windows
 // ignore-android
 // ignore-macos
 // aux-build:linkage1.rs
@@ -28,7 +28,7 @@ fn main() {
     // It appears that the --as-needed flag to linkers will not pull in a dynamic
     // library unless it satisfies a non weak undefined symbol. The 'other' crate
     // is compiled as a dynamic library where it would only be used for a
-    // weak-symbol as part of an executable, so the dynamic library woudl be
+    // weak-symbol as part of an executable, so the dynamic library would be
     // discarded. By adding and calling `other::bar`, we get around this problem.
     other::bar();
 
