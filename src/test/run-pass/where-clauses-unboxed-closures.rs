@@ -1,4 +1,4 @@
-// Copyright 2013 The Rust Project Developers. See the COPYRIGHT
+// Copyright 2014 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
 //
@@ -8,17 +8,19 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use std::mem;
+#![feature(unboxed_closures)]
 
-#[repr(packed)]
-struct S<T, S> {
-    a: T,
-    b: u8,
-    c: S
+struct Bencher;
+
+// ICE
+fn warm_up<'a, F>(f: F) where F: |&: &'a mut Bencher| {
 }
 
-pub fn main() {
-    assert_eq!(mem::size_of::<S<u8, u8>>(), 3);
+fn main() {
+    // ICE trigger
+    warm_up(|&: b: &mut Bencher| () );
 
-    assert_eq!(mem::size_of::<S<u64, u16>>(), 11);
+    // OK
+    warm_up(|&: b| () );
 }
+

@@ -1,4 +1,4 @@
-// Copyright 2013 The Rust Project Developers. See the COPYRIGHT
+// Copyright 2014 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
 //
@@ -8,17 +8,22 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use std::mem;
+// Tests that nested vtables work with overloaded calls.
 
-#[repr(packed)]
-struct S<T, S> {
-    a: T,
-    b: u8,
-    c: S
+#![feature(overloaded_calls)]
+
+use std::ops::Fn;
+
+struct G;
+
+impl<'a, A: Add<int, int>> Fn<(A,), int> for G {
+    extern "rust-call" fn call(&self, (arg,): (A,)) -> int {
+        arg.add(&1)
+    }
 }
 
-pub fn main() {
-    assert_eq!(mem::size_of::<S<u8, u8>>(), 3);
-
-    assert_eq!(mem::size_of::<S<u64, u16>>(), 11);
+fn main() {
+    // ICE trigger
+    G(1i);
 }
+

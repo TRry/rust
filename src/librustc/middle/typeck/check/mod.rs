@@ -79,7 +79,10 @@ type parameter).
 
 use middle::const_eval;
 use middle::def;
+use middle::freevars;
 use middle::lang_items::IteratorItem;
+use middle::mem_categorization::McResult;
+use middle::mem_categorization;
 use middle::pat_util::pat_id_map;
 use middle::pat_util;
 use middle::subst;
@@ -110,6 +113,7 @@ use middle::typeck::no_params;
 use middle::typeck::{require_same_types, vtable_map};
 use middle::typeck::{MethodCall, MethodMap};
 use middle::typeck::{TypeAndSubsts};
+use middle::typeck;
 use middle::lang_items::TypeIdLangItem;
 use lint;
 use util::common::{block_query, indenter, loop_query};
@@ -259,6 +263,39 @@ pub struct FnCtxt<'a> {
     inh: &'a Inherited<'a>,
 
     ccx: &'a CrateCtxt<'a>,
+}
+
+impl<'a> mem_categorization::Typer for FnCtxt<'a> {
+    fn tcx<'a>(&'a self) -> &'a ty::ctxt {
+        self.ccx.tcx
+    }
+    fn node_ty(&self, id: ast::NodeId) -> McResult<ty::t> {
+        self.ccx.tcx.node_ty(id)
+    }
+    fn node_method_ty(&self, method_call: typeck::MethodCall)
+                      -> Option<ty::t> {
+        self.ccx.tcx.node_method_ty(method_call)
+    }
+    fn adjustments<'a>(&'a self) -> &'a RefCell<NodeMap<ty::AutoAdjustment>> {
+        self.ccx.tcx.adjustments()
+    }
+    fn is_method_call(&self, id: ast::NodeId) -> bool {
+        self.ccx.tcx.is_method_call(id)
+    }
+    fn temporary_scope(&self, rvalue_id: ast::NodeId) -> Option<ast::NodeId> {
+        self.ccx.tcx.temporary_scope(rvalue_id)
+    }
+    fn upvar_borrow(&self, upvar_id: ty::UpvarId) -> ty::UpvarBorrow {
+        self.ccx.tcx.upvar_borrow(upvar_id)
+    }
+    fn capture_mode(&self, closure_expr_id: ast::NodeId)
+                    -> freevars::CaptureMode {
+        self.ccx.tcx.capture_mode(closure_expr_id)
+    }
+    fn unboxed_closures<'a>(&'a self)
+                        -> &'a RefCell<DefIdMap<ty::UnboxedClosure>> {
+        &self.inh.unboxed_closures
+    }
 }
 
 impl<'a> Inherited<'a> {
@@ -2678,7 +2715,11 @@ fn check_expr_with_unifier(fcx: &FnCtxt,
 
         // Tuple up the arguments and insert the resulting function type into
         // the `unboxed_closures` table.
-        fn_ty.sig.inputs = vec![ty::mk_tup(fcx.tcx(), fn_ty.sig.inputs)];
+        fn_ty.sig.inputs = if fn_ty.sig.inputs.len() == 0 {
+            vec![ty::mk_nil()]
+        } else {
+            vec![ty::mk_tup(fcx.tcx(), fn_ty.sig.inputs)]
+        };
 
         let kind = match kind {
             ast::FnUnboxedClosureKind => ty::FnUnboxedClosureKind,
@@ -4180,13 +4221,13 @@ pub fn check_enum_variants(ccx: &CrateCtxt,
                     let inh = blank_inherited_fields(ccx);
                     let fcx = blank_fn_ctxt(ccx, &inh, rty, e.id);
                     let declty = match hint {
-                        attr::ReprAny | attr::ReprExtern => ty::mk_int(),
+                        attr::ReprAny | attr::ReprPacked | attr::ReprExtern => ty::mk_int(),
                         attr::ReprInt(_, attr::SignedInt(ity)) => {
                             ty::mk_mach_int(ity)
                         }
                         attr::ReprInt(_, attr::UnsignedInt(ity)) => {
                             ty::mk_mach_uint(ity)
-                        }
+                        },
                     };
                     check_const_with_ty(&fcx, e.span, &*e, declty);
                     // check_expr (from check_const pass) doesn't guarantee
@@ -4225,6 +4266,9 @@ pub fn check_enum_variants(ccx: &CrateCtxt,
                             "discriminant type specified here");
                     }
                 }
+                attr::ReprPacked => {
+                    ccx.tcx.sess.bug("range_to_inttype: found ReprPacked on an enum");
+                }
             }
             disr_vals.push(current_disr_val);
 
@@ -4238,7 +4282,9 @@ pub fn check_enum_variants(ccx: &CrateCtxt,
         return variants;
     }
 
-    let hint = ty::lookup_repr_hint(ccx.tcx, ast::DefId { krate: ast::LOCAL_CRATE, node: id });
+    let hint = *ty::lookup_repr_hints(ccx.tcx, ast::DefId { krate: ast::LOCAL_CRATE, node: id })
+                    .as_slice().get(0).unwrap_or(&attr::ReprAny);
+
     if hint != attr::ReprAny && vs.len() <= 1 {
         if vs.len() == 1 {
             span_err!(ccx.tcx.sess, sp, E0083,

@@ -1,4 +1,4 @@
-// Copyright 2013 The Rust Project Developers. See the COPYRIGHT
+// Copyright 2014 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
 //
@@ -8,17 +8,10 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use std::mem;
+#![feature(unboxed_closures)]
 
-#[repr(packed)]
-struct S<T, S> {
-    a: T,
-    b: u8,
-    c: S
+fn main() {
+    let mut zero = |&mut:| {};
+    zero.call_mut(());
 }
 
-pub fn main() {
-    assert_eq!(mem::size_of::<S<u8, u8>>(), 3);
-
-    assert_eq!(mem::size_of::<S<u64, u16>>(), 11);
-}
