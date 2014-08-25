@@ -86,6 +86,7 @@ use std::collections::HashSet;
 use std::mem::replace;
 use std::rc::Rc;
 use std::gc::{Gc, GC};
+use std::iter;
 
 #[allow(non_camel_case_types)]
 #[deriving(PartialEq)]
@@ -413,7 +414,7 @@ impl<'a> Parser<'a> {
         } else {
             let token_str = Parser::token_to_string(t);
             let this_token_str = self.this_token_to_string();
-            self.fatal(format!("expected `{}` but found `{}`",
+            self.fatal(format!("expected `{}`, found `{}`",
                                token_str,
                                this_token_str).as_slice())
         }
@@ -447,11 +448,11 @@ impl<'a> Parser<'a> {
             let actual = self.this_token_to_string();
             self.fatal(
                 (if expected.len() != 1 {
-                    (format!("expected one of `{}` but found `{}`",
+                    (format!("expected one of `{}`, found `{}`",
                              expect,
                              actual))
                 } else {
-                    (format!("expected `{}` but found `{}`",
+                    (format!("expected `{}`, found `{}`",
                              expect,
                              actual))
                 }).as_slice()
@@ -762,20 +763,26 @@ impl<'a> Parser<'a> {
                                   sep: Option<token::Token>,
                                   f: |&mut Parser| -> T)
                                   -> OwnedSlice<T> {
-        let mut first = true;
         let mut v = Vec::new();
-        while self.token != token::GT
-            && self.token != token::BINOP(token::SHR)
-            && self.token != token::GE
-            && self.token != token::BINOPEQ(token::SHR) {
-            match sep {
-              Some(ref t) => {
-                if first { first = false; }
-                else { self.expect(t); }
-              }
-              _ => ()
+        // This loop works by alternating back and forth between parsing types
+        // and commas.  For example, given a string `A, B,>`, the parser would
+        // first parse `A`, then a comma, then `B`, then a comma. After that it
+        // would encounter a `>` and stop. This lets the parser handle trailing
+        // commas in generic parameters, because it can stop either after
+        // parsing a type or after parsing a comma.
+        for i in iter::count(0u, 1) {
+            if self.token == token::GT
+                || self.token == token::BINOP(token::SHR)
+                || self.token == token::GE
+                || self.token == token::BINOPEQ(token::SHR) {
+                break;
             }
-            v.push(f(self));
+
+            if i % 2 == 0 {
+                v.push(f(self));
+            } else {
+                sep.as_ref().map(|t| self.expect(t));
+            }
         }
         return OwnedSlice::from_vec(v);
     }
@@ -1314,7 +1321,7 @@ impl<'a> Parser<'a> {
 
               _ => {
                   let token_str = p.this_token_to_string();
-                  p.fatal((format!("expected `;` or `{{` but found `{}`",
+                  p.fatal((format!("expected `;` or `{{`, found `{}`",
                                    token_str)).as_slice())
               }
             }
@@ -2266,7 +2273,7 @@ impl<'a> Parser<'a> {
                             let mut es = self.parse_unspanned_seq(
                                 &token::LPAREN,
                                 &token::RPAREN,
-                                seq_sep_trailing_disallowed(token::COMMA),
+                                seq_sep_trailing_allowed(token::COMMA),
                                 |p| p.parse_expr()
                             );
                             hi = self.last_span.hi;
@@ -3196,7 +3203,7 @@ impl<'a> Parser<'a> {
                                 args = self.parse_enum_variant_seq(
                                     &token::LPAREN,
                                     &token::RPAREN,
-                                    seq_sep_trailing_disallowed(token::COMMA),
+                                    seq_sep_trailing_allowed(token::COMMA),
                                     |p| p.parse_pat()
                                 );
                                 pat = PatEnum(enum_path, Some(args));
@@ -3375,7 +3382,7 @@ impl<'a> Parser<'a> {
                         ""
                     };
                     let tok_str = self.this_token_to_string();
-                    self.fatal(format!("expected {}`(` or `{{`, but found `{}`",
+                    self.fatal(format!("expected {}`(` or `{{`, found `{}`",
                                        ident_str,
                                        tok_str).as_slice())
                 }
@@ -3924,7 +3931,7 @@ impl<'a> Parser<'a> {
             },
             _ => {
                 let token_str = self.this_token_to_string();
-                self.fatal(format!("expected `self` but found `{}`",
+                self.fatal(format!("expected `self`, found `{}`",
                                    token_str).as_slice())
             }
         }
@@ -4068,7 +4075,7 @@ impl<'a> Parser<'a> {
             match self.token {
                 token::COMMA => {
                     self.bump();
-                    let sep = seq_sep_trailing_disallowed(token::COMMA);
+                    let sep = seq_sep_trailing_allowed(token::COMMA);
                     let mut fn_inputs = self.parse_seq_to_before_end(
                         &token::RPAREN,
                         sep,
@@ -4091,7 +4098,7 @@ impl<'a> Parser<'a> {
 
         let fn_inputs = match explicit_self {
             SelfStatic =>  {
-                let sep = seq_sep_trailing_disallowed(token::COMMA);
+                let sep = seq_sep_trailing_allowed(token::COMMA);
                 self.parse_seq_to_before_end(&token::RPAREN, sep, parse_arg_fn)
             }
             SelfValue(id) => parse_remaining_arguments!(id),
@@ -4128,7 +4135,7 @@ impl<'a> Parser<'a> {
                     self.parse_optional_unboxed_closure_kind();
                 let args = self.parse_seq_to_before_end(
                     &token::BINOP(token::OR),
-                    seq_sep_trailing_disallowed(token::COMMA),
+                    seq_sep_trailing_allowed(token::COMMA),
                     |p| p.parse_fn_block_arg()
                 );
                 self.bump();
@@ -4455,7 +4462,7 @@ impl<'a> Parser<'a> {
         } else {
             let token_str = self.this_token_to_string();
             self.fatal(format!("expected `{}`, `(`, or `;` after struct \
-                                name but found `{}`", "{",
+                                name, found `{}`", "{",
                                token_str).as_slice())
         }
 
@@ -4486,7 +4493,7 @@ impl<'a> Parser<'a> {
                 let span = self.span;
                 let token_str = self.this_token_to_string();
                 self.span_fatal(span,
-                                format!("expected `,`, or `}}` but found `{}`",
+                                format!("expected `,`, or `}}`, found `{}`",
                                         token_str).as_slice())
             }
         }
@@ -4566,7 +4573,7 @@ impl<'a> Parser<'a> {
               }
               _ => {
                   let token_str = self.this_token_to_string();
-                  self.fatal(format!("expected item but found `{}`",
+                  self.fatal(format!("expected item, found `{}`",
                                      token_str).as_slice())
               }
             }
@@ -4950,7 +4957,7 @@ impl<'a> Parser<'a> {
                 let arg_tys = self.parse_enum_variant_seq(
                     &token::LPAREN,
                     &token::RPAREN,
-                    seq_sep_trailing_disallowed(token::COMMA),
+                    seq_sep_trailing_allowed(token::COMMA),
                     |p| p.parse_ty(true)
                 );
                 for ty in arg_tys.move_iter() {
@@ -5107,7 +5114,7 @@ impl<'a> Parser<'a> {
             let span = self.span;
             let token_str = self.this_token_to_string();
             self.span_fatal(span,
-                            format!("expected `{}` or `fn` but found `{}`", "{",
+                            format!("expected `{}` or `fn`, found `{}`", "{",
                                     token_str).as_slice());
         }
 
