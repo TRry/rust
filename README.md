@@ -15,13 +15,7 @@
 
 For building for iOS you should use a separate target:
 
-    $ ./configure --target=arm-apple-ios
-
-or
-
-    $ ./configure --target=i386-apple-ios
-
-(for device and simulator respectively)
+    $ ./configure --target=arm-apple-ios,i386-apple-ios
 
 Once you get a cross-compiler, you have to provide same targets to rustc binary, i.e.
 
