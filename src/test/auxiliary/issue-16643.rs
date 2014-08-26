@@ -1,4 +1,4 @@
-// Copyright 2012 The Rust Project Developers. See the COPYRIGHT
+// Copyright 2014 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
 //
@@ -8,13 +8,20 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#![crate_id="foreign_lib"]
+#![crate_type = "lib"]
 
-pub mod rustrt {
-    extern crate libc;
+pub struct TreeBuilder<H>;
 
-    #[link(name = "rust_test_helpers")]
-    extern {
-        pub fn rust_get_test_int() -> libc::intptr_t;
+impl<H> TreeBuilder<H> {
+    pub fn process_token(&mut self) {
+        match self {
+            _ => for _y in *self {}
+        }
+    }
+}
+
+impl<H> Iterator<H> for TreeBuilder<H> {
+    fn next(&mut self) -> Option<H> {
+        None
     }
 }

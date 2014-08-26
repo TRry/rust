@@ -1,4 +1,4 @@
-// Copyright 2012 The Rust Project Developers. See the COPYRIGHT
+// Copyright 2014 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
 //
@@ -8,13 +8,10 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#![crate_id="foreign_lib"]
+// aux-build:issue-16643.rs
 
-pub mod rustrt {
-    extern crate libc;
+extern crate i = "issue-16643";
 
-    #[link(name = "rust_test_helpers")]
-    extern {
-        pub fn rust_get_test_int() -> libc::intptr_t;
-    }
+pub fn main() {
+    i::TreeBuilder::<uint>.process_token();
 }
