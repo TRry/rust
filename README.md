@@ -1,28 +1,44 @@
 # iOS related notes
 
-
-* Note: iOS support was merged into master as
-  https://github.com/mozilla/rust/commit/2ec323e4c30c265f35314c0a77f5df5a655cec2f,
-  that also means this fork might lag significantly, so you'd better
-  to track Rust master now on.
+* iOS support [was merged](https://github.com/mozilla/rust/commit/2ec323e4c30c265f35314c0a77f5df5a655cec2f) 
+ into `master`. The only problem is that since it is not tested on 
+ Mozilla's internal buildbots, building from `master` might be 
+ broken. This branch is automatically tested to be 100% compilable
+ even if means to lag a bit behind `master`. 
 * Should work out of box both for device and simulator
 * Segmented stacks are currently disabled. It also means there is no
   prevention from stack overflow
 * Unwinding works
-* Only 32-bit targets are supported now (i.e. armv7 and i386),
-  although porting to arm64 and x86_64 simulator shouldn't take that
-  much effort
+* Only 32-bit targets are supported now (i.e. armv7 and i386) so far, x86_64 simulator isn't merged yet, arm64 needs testing on actual device which I don't have yet.
 
-For building for iOS you should use a separate target:
+## Obtaining
 
-    $ ./configure --target=arm-apple-ios,i386-apple-ios
+### Pre-built binary
 
-Once you get a cross-compiler, you have to provide same targets to rustc binary, i.e.
+  Is available in Releases section, [direct link](https://github.com/vhbit/rust/releases/download/ios-latest/rust-0.12.0-pre-x86_64-apple-darwin.tar.gz), it is kind of experimental now, will be updated daily. Unpack and install as usual Rust nightly.
+  
+    curl -O https://github.com/vhbit/rust/releases/download/ios-latest/rust-0.12.0-pre-x86_64-apple-darwin.tar.gz
+    tar xzf rust-0.12.0-pre-x86_64-apple-darwin.tar.gz
+    cd rust-0.12.0-pre-x86_64-apple-darwin
+    ./install.sh
+
+### Building from source
+    
+    git clone git@github.com:vhbit/rust.git
+    git checkout ios
+    mkdir build
+    cd build
+    ../configure --target=arm-apple-ios,i386-apple-ios
+    make -j4
+    make install
+
+## Using
+
+Once you've got a cross-compiler, you have to provide same targets to rustc binary, i.e.
 
     $ rustc --target=arm-apple-ios hello.rs
 
-You can check how it works on [ObjCrust sample project](https://github.com/vhbit/ObjCrust).
-More documentation to come...
+You can check how it works on [ObjCrust sample project](https://github.com/vhbit/ObjCrust). It also has an example of how to setup `make` for building fat libraries and incorporate Rust build into Xcode build process through `Script Phase` (`cargo` support is planned but unfortunately there is [a bug](https://github.com/rust-lang/cargo/issues/442) which makes it impossible to use so far).
 
 # The Rust Programming Language
 
