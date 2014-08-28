@@ -8,16 +8,22 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// aux-build:issue-12612-1.rs
+// aux-build:issue-15562.rs
 
-extern crate "issue-12612-1" as foo;
+extern crate i = "issue-15562";
 
-use foo::bar;
-
-mod test {
-    use bar::foo;
-    //~^ ERROR unresolved import `bar::foo`. Maybe a missing `extern crate bar`?
+pub fn main() {
+    extern {
+        fn transmute();
+    }
+    unsafe {
+        transmute();
+        i::transmute();
+    }
 }
 
-fn main() {}
-
+// We declare this so we don't run into unresolved symbol errors
+// The above extern is NOT `extern "rust-intrinsic"` and thus
+// means it'll try to find a corresponding symbol to link to.
+#[no_mangle]
+pub extern fn transmute() {}
