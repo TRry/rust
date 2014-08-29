@@ -108,7 +108,7 @@ fn try_inline_def(cx: &core::DocContext,
         _ => return None,
     };
     let fqn = csearch::get_item_path(tcx, did);
-    cx.inlined.borrow_mut().get_mut_ref().insert(did);
+    cx.inlined.borrow_mut().as_mut().unwrap().insert(did);
     ret.push(clean::Item {
         source: clean::Span::empty(),
         name: Some(fqn.last().unwrap().to_string()),
@@ -142,7 +142,7 @@ pub fn record_extern_fqn(cx: &core::DocContext,
         core::Typed(ref tcx) => {
             let fqn = csearch::get_item_path(tcx, did);
             let fqn = fqn.move_iter().map(|i| i.to_string()).collect();
-            cx.external_paths.borrow_mut().get_mut_ref().insert(did, (fqn, kind));
+            cx.external_paths.borrow_mut().as_mut().unwrap().insert(did, (fqn, kind));
         }
         core::NotTyped(..) => {}
     }
@@ -159,18 +159,12 @@ pub fn build_external_trait(tcx: &ty::ctxt, did: ast::DefId) -> clean::Trait {
             clean::RequiredMethod(trait_item)
         }
     });
-    let supertraits = ty::trait_supertraits(tcx, did);
-    let mut parents = supertraits.iter().map(|i| {
-        match i.clean() {
-            clean::TraitBound(ty) => ty,
-            clean::RegionBound => unreachable!()
-        }
-    });
-
+    let trait_def = ty::lookup_trait_def(tcx, did);
+    let bounds = trait_def.bounds.clean();
     clean::Trait {
         generics: (&def.generics, subst::TypeSpace).clean(),
         items: items.collect(),
-        parents: parents.collect()
+        bounds: bounds,
     }
 }
 
@@ -278,7 +272,7 @@ fn build_impls(cx: &core::DocContext,
 fn build_impl(cx: &core::DocContext,
               tcx: &ty::ctxt,
               did: ast::DefId) -> Option<clean::Item> {
-    if !cx.inlined.borrow_mut().get_mut_ref().insert(did) {
+    if !cx.inlined.borrow_mut().as_mut().unwrap().insert(did) {
         return None
     }
 

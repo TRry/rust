@@ -668,7 +668,8 @@ impl<K: Ord, V> TreeMap<K, V> {
     }
 }
 
-/// A lazy forward iterator over a map.
+/// Note: stage0-specific version that lacks bound on A.
+#[cfg(stage0)]
 pub struct Entries<'a, K, V> {
     stack: Vec<&'a TreeNode<K, V>>,
     // See the comment on MutEntries; this is just to allow
@@ -679,13 +680,32 @@ pub struct Entries<'a, K, V> {
     remaining_max: uint
 }
 
-/// Lazy backward iterator over a map.
+/// Lazy forward iterator over a map
+#[cfg(not(stage0))]
+pub struct Entries<'a, K:'a, V:'a> {
+    stack: Vec<&'a TreeNode<K, V>>,
+    // See the comment on MutEntries; this is just to allow
+    // code-sharing (for this immutable-values iterator it *could* very
+    // well be Option<&'a TreeNode<K,V>>).
+    node: *const TreeNode<K, V>,
+    remaining_min: uint,
+    remaining_max: uint
+}
+
+/// Note: stage0-specific version that lacks bound on A.
+#[cfg(stage0)]
 pub struct RevEntries<'a, K, V> {
     iter: Entries<'a, K, V>,
 }
 
-/// A lazy forward iterator over a map that allows for the mutation of
-/// the values.
+/// Lazy backward iterator over a map
+#[cfg(not(stage0))]
+pub struct RevEntries<'a, K:'a, V:'a> {
+    iter: Entries<'a, K, V>,
+}
+
+/// Note: stage0-specific version that lacks bound on A.
+#[cfg(stage0)]
 pub struct MutEntries<'a, K, V> {
     stack: Vec<&'a mut TreeNode<K, V>>,
     // Unfortunately, we require some unsafe-ness to get around the
@@ -712,11 +732,46 @@ pub struct MutEntries<'a, K, V> {
     remaining_max: uint
 }
 
-/// Lazy backward iterator over a map.
+/// Lazy forward iterator over a map that allows for the mutation of
+/// the values.
+#[cfg(not(stage0))]
+pub struct MutEntries<'a, K:'a, V:'a> {
+    stack: Vec<&'a mut TreeNode<K, V>>,
+    // Unfortunately, we require some unsafe-ness to get around the
+    // fact that we would be storing a reference *into* one of the
+    // nodes in the stack.
+    //
+    // As far as the compiler knows, this would let us invalidate the
+    // reference by assigning a new value to this node's position in
+    // its parent, which would cause this current one to be
+    // deallocated so this reference would be invalid. (i.e. the
+    // compilers complaints are 100% correct.)
+    //
+    // However, as far as you humans reading this code know (or are
+    // about to know, if you haven't read far enough down yet), we are
+    // only reading from the TreeNode.{left,right} fields. the only
+    // thing that is ever mutated is the .value field (although any
+    // actual mutation that happens is done externally, by the
+    // iterator consumer). So, don't be so concerned, rustc, we've got
+    // it under control.
+    //
+    // (This field can legitimately be null.)
+    node: *mut TreeNode<K, V>,
+    remaining_min: uint,
+    remaining_max: uint
+}
+
+/// Note: stage0-specific version that lacks bound on A.
+#[cfg(stage0)]
 pub struct RevMutEntries<'a, K, V> {
     iter: MutEntries<'a, K, V>,
 }
 
+/// Lazy backward iterator over a map
+#[cfg(not(stage0))]
+pub struct RevMutEntries<'a, K:'a, V:'a> {
+    iter: MutEntries<'a, K, V>,
+}
 
 /// TreeMap keys iterator.
 pub type Keys<'a, K, V> =
@@ -885,9 +940,7 @@ fn mut_deref<K, V>(x: &mut Option<Box<TreeNode<K, V>>>)
     }
 }
 
-
-
-/// A lazy forward iterator over a map that consumes the map while iterating.
+/// Lazy forward iterator over a map that consumes the map while iterating
 pub struct MoveEntries<K, V> {
     stack: Vec<TreeNode<K, V>>,
     remaining: uint
@@ -1322,45 +1375,90 @@ impl<T: Ord> TreeSet<T> {
     }
 }
 
-/// A lazy forward iterator over a set.
+/// Note: stage0-specific version that lacks bound on A.
+#[cfg(stage0)]
 pub struct SetItems<'a, T> {
     iter: Entries<'a, T, ()>
 }
 
-/// Lazy backward iterator over a set.
+/// A lazy forward iterator over a set.
+#[cfg(not(stage0))]
+pub struct SetItems<'a, T:'a> {
+    iter: Entries<'a, T, ()>
+}
+
+/// Note: stage0-specific version that lacks bound on A.
+#[cfg(stage0)]
 pub struct RevSetItems<'a, T> {
+    iter: RevEntries<'a, T, ()>
+}
+
+/// A lazy backward iterator over a set.
+#[cfg(not(stage0))]
+pub struct RevSetItems<'a, T:'a> {
     iter: RevEntries<'a, T, ()>
 }
 
 /// A lazy forward iterator over a set that consumes the set while iterating.
 pub type MoveSetItems<T> = iter::Map<'static, (T, ()), T, MoveEntries<T, ()>>;
 
-/// A lazy iterator producing elements in the set difference (in-order).
+/// Note: stage0-specific version that lacks bound on A.
+#[cfg(stage0)]
 pub struct DifferenceItems<'a, T> {
     a: Peekable<&'a T, SetItems<'a, T>>,
     b: Peekable<&'a T, SetItems<'a, T>>,
 }
 
-/// A lazy iterator producing elements in the set symmetric difference (in-order).
+/// A lazy iterator producing elements in the set difference (in-order).
+#[cfg(not(stage0))]
+pub struct DifferenceItems<'a, T:'a> {
+    a: Peekable<&'a T, SetItems<'a, T>>,
+    b: Peekable<&'a T, SetItems<'a, T>>,
+}
+
+/// Note: stage0-specific version that lacks bound on A.
+#[cfg(stage0)]
 pub struct SymDifferenceItems<'a, T> {
     a: Peekable<&'a T, SetItems<'a, T>>,
     b: Peekable<&'a T, SetItems<'a, T>>,
 }
 
-/// A lazy iterator producing elements in the set intersection (in-order).
+/// A lazy iterator producing elements in the set symmetric difference (in-order).
+#[cfg(not(stage0))]
+pub struct SymDifferenceItems<'a, T:'a> {
+    a: Peekable<&'a T, SetItems<'a, T>>,
+    b: Peekable<&'a T, SetItems<'a, T>>,
+}
+
+/// Note: stage0-specific version that lacks bound on A.
+#[cfg(stage0)]
 pub struct IntersectionItems<'a, T> {
     a: Peekable<&'a T, SetItems<'a, T>>,
     b: Peekable<&'a T, SetItems<'a, T>>,
 }
 
-/// A lazy iterator producing elements in the set union (in-order).
+/// A lazy iterator producing elements in the set intersection (in-order).
+#[cfg(not(stage0))]
+pub struct IntersectionItems<'a, T:'a> {
+    a: Peekable<&'a T, SetItems<'a, T>>,
+    b: Peekable<&'a T, SetItems<'a, T>>,
+}
+
+/// Note: stage0-specific version that lacks bound on A.
+#[cfg(stage0)]
 pub struct UnionItems<'a, T> {
     a: Peekable<&'a T, SetItems<'a, T>>,
     b: Peekable<&'a T, SetItems<'a, T>>,
 }
 
-/// Compare `x` and `y`, but return `short` if x is None and `long` if y is
-/// `None`.
+/// A lazy iterator producing elements in the set union (in-order).
+#[cfg(not(stage0))]
+pub struct UnionItems<'a, T:'a> {
+    a: Peekable<&'a T, SetItems<'a, T>>,
+    b: Peekable<&'a T, SetItems<'a, T>>,
+}
+
+/// Compare `x` and `y`, but return `short` if x is None and `long` if y is None
 fn cmp_opt<T: Ord>(x: Option<&T>, y: Option<&T>,
                         short: Ordering, long: Ordering) -> Ordering {
     match (x, y) {
@@ -1447,7 +1545,7 @@ impl<K: Ord, V> TreeNode<K, V> {
 // Remove left horizontal link by rotating right
 fn skew<K: Ord, V>(node: &mut Box<TreeNode<K, V>>) {
     if node.left.as_ref().map_or(false, |x| x.level == node.level) {
-        let mut save = node.left.take_unwrap();
+        let mut save = node.left.take().unwrap();
         swap(&mut node.left, &mut save.right); // save.right now None
         swap(node, &mut save);
         node.right = Some(save);
@@ -1459,7 +1557,7 @@ fn skew<K: Ord, V>(node: &mut Box<TreeNode<K, V>>) {
 fn split<K: Ord, V>(node: &mut Box<TreeNode<K, V>>) {
     if node.right.as_ref().map_or(false,
       |x| x.right.as_ref().map_or(false, |y| y.level == node.level)) {
-        let mut save = node.right.take_unwrap();
+        let mut save = node.right.take().unwrap();
         swap(&mut node.right, &mut save.left); // save.left now None
         save.level += 1;
         swap(node, &mut save);
@@ -1563,7 +1661,7 @@ fn remove<K: Ord, V>(node: &mut Option<Box<TreeNode<K, V>>>,
           Equal => {
             if save.left.is_some() {
                 if save.right.is_some() {
-                    let mut left = save.left.take_unwrap();
+                    let mut left = save.left.take().unwrap();
                     if left.right.is_some() {
                         heir_swap(save, &mut left.right);
                     } else {
@@ -1573,13 +1671,13 @@ fn remove<K: Ord, V>(node: &mut Option<Box<TreeNode<K, V>>>,
                     save.left = Some(left);
                     (remove(&mut save.left, key), true)
                 } else {
-                    let new = save.left.take_unwrap();
+                    let new = save.left.take().unwrap();
                     let box TreeNode{value, ..} = replace(save, new);
-                    *save = save.left.take_unwrap();
+                    *save = save.left.take().unwrap();
                     (Some(value), true)
                 }
             } else if save.right.is_some() {
-                let new = save.right.take_unwrap();
+                let new = save.right.take().unwrap();
                 let box TreeNode{value, ..} = replace(save, new);
                 (Some(value), true)
             } else {

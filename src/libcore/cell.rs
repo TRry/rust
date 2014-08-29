@@ -99,7 +99,7 @@
 //!             // Take a reference to the inside of cache cell
 //!             let mut cache = self.span_tree_cache.borrow_mut();
 //!             if cache.is_some() {
-//!                 return cache.get_ref().clone();
+//!                 return cache.as_ref().unwrap().clone();
 //!             }
 //!
 //!             let span_tree = self.calc_span_tree();
@@ -324,6 +324,16 @@ impl<T: PartialEq> PartialEq for RefCell<T> {
 
 /// Wraps a borrowed reference to a value in a `RefCell` box.
 #[unstable]
+#[cfg(not(stage0))]
+pub struct Ref<'b, T:'b> {
+    // FIXME #12808: strange name to try to avoid interfering with
+    // field accesses of the contained type via Deref
+    _parent: &'b RefCell<T>
+}
+
+/// Dox.
+#[unstable]
+#[cfg(stage0)]
 pub struct Ref<'b, T> {
     // FIXME #12808: strange name to try to avoid interfering with
     // field accesses of the contained type via Deref
@@ -369,6 +379,16 @@ pub fn clone_ref<'b, T>(orig: &Ref<'b, T>) -> Ref<'b, T> {
 
 /// Wraps a mutable borrowed reference to a value in a `RefCell` box.
 #[unstable]
+#[cfg(not(stage0))]
+pub struct RefMut<'b, T:'b> {
+    // FIXME #12808: strange name to try to avoid interfering with
+    // field accesses of the contained type via Deref
+    _parent: &'b RefCell<T>
+}
+
+/// Dox.
+#[unstable]
+#[cfg(stage0)]
 pub struct RefMut<'b, T> {
     // FIXME #12808: strange name to try to avoid interfering with
     // field accesses of the contained type via Deref

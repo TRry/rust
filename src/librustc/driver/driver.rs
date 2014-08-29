@@ -223,7 +223,7 @@ pub fn phase_2_configure_and_expand(sess: &Session,
     let mut addl_plugins = Some(addl_plugins);
     let Plugins { macros, registrars }
         = time(time_passes, "plugin loading", (), |_|
-               plugin::load::load_plugins(sess, &krate, addl_plugins.take_unwrap()));
+               plugin::load::load_plugins(sess, &krate, addl_plugins.take().unwrap()));
 
     let mut registry = Registry::new(&krate);
 
@@ -958,11 +958,11 @@ pub fn pretty_print_input(sess: Session,
     let mut rdr = MemReader::new(src);
 
     let out = match ofile {
-        None => box io::stdout() as Box<Writer>,
+        None => box io::stdout() as Box<Writer+'static>,
         Some(p) => {
             let r = io::File::create(&p);
             match r {
-                Ok(w) => box w as Box<Writer>,
+                Ok(w) => box w as Box<Writer+'static>,
                 Err(e) => fail!("print-print failed to open {} due to {}",
                                 p.display(), e),
             }
