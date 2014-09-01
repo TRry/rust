@@ -1,4 +1,4 @@
-// Copyright 2012 The Rust Project Developers. See the COPYRIGHT
+// Copyright 2014 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
 //
@@ -8,13 +8,22 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#![macro_escape]
+#![crate_name = "rustdoc_test"]
 
-macro_rules! if_ok(
-    ($inp: expr) => (
-        match $inp {
-            Ok(v) => { v }
-            Err(e) => { return Err(e); }
-        }
-    )
-)
+// In: Foo
+pub use private::Foo;
+
+mod private {
+    pub struct Foo;
+    impl Foo {
+        // In: test_method
+        pub fn test_method() {}
+        // Out: priv_method
+        fn priv_method() {}
+    }
+
+    pub trait PrivateTrait {
+        // Out: priv_method
+        fn trait_method() {}
+    }
+}

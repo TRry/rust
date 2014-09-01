@@ -599,7 +599,7 @@ impl<'a> Parser<'a> {
             let token_str = self.this_token_to_string();
             let span = self.span;
             self.span_err(span,
-                          format!("found `{}` in ident position",
+                          format!("expected identifier, found keyword `{}`",
                                   token_str).as_slice());
         }
     }
@@ -1416,14 +1416,10 @@ impl<'a> Parser<'a> {
         } else if self.token == token::TILDE {
             // OWNED POINTER
             self.bump();
-            let span = self.last_span;
+            let last_span = self.last_span;
             match self.token {
-                token::IDENT(ref ident, _)
-                        if "str" == token::get_ident(*ident).get() => {
-                    // This is OK (for now).
-                }
-                token::LBRACKET => {}   // Also OK.
-                _ => self.obsolete(span, ObsoleteOwnedType)
+                token::LBRACKET => self.obsolete(last_span, ObsoleteOwnedVector),
+                _ => self.obsolete(last_span, ObsoleteOwnedType)
             }
             TyUniq(self.parse_ty(false))
         } else if self.token == token::BINOP(token::STAR) {
@@ -2094,19 +2090,22 @@ impl<'a> Parser<'a> {
                     return self.parse_for_expr(None);
                 }
                 if self.eat_keyword(keywords::While) {
-                    return self.parse_while_expr();
+                    return self.parse_while_expr(None);
                 }
                 if Parser::token_is_lifetime(&self.token) {
                     let lifetime = self.get_lifetime();
                     self.bump();
                     self.expect(&token::COLON);
+                    if self.eat_keyword(keywords::While) {
+                        return self.parse_while_expr(Some(lifetime))
+                    }
                     if self.eat_keyword(keywords::For) {
                         return self.parse_for_expr(Some(lifetime))
                     }
                     if self.eat_keyword(keywords::Loop) {
                         return self.parse_loop_expr(Some(lifetime))
                     }
-                    self.fatal("expected `for` or `loop` after a label")
+                    self.fatal("expected `while`, `for`, or `loop` after a label")
                 }
                 if self.eat_keyword(keywords::Loop) {
                     return self.parse_loop_expr(None);
@@ -2558,13 +2557,10 @@ impl<'a> Parser<'a> {
           }
           token::TILDE => {
             self.bump();
-            let span = self.last_span;
+            let last_span = self.last_span;
             match self.token {
-                token::LIT_STR(_) => {
-                    // This is OK (for now).
-                }
-                token::LBRACKET => {}   // Also OK.
-                _ => self.obsolete(span, ObsoleteOwnedExpr)
+                token::LBRACKET => self.obsolete(last_span, ObsoleteOwnedVector),
+                _ => self.obsolete(last_span, ObsoleteOwnedExpr)
             }
 
             let e = self.parse_prefix_expr();
@@ -2762,12 +2758,12 @@ impl<'a> Parser<'a> {
         self.mk_expr(lo, hi, ExprForLoop(pat, expr, loop_block, opt_ident))
     }
 
-    pub fn parse_while_expr(&mut self) -> Gc<Expr> {
+    pub fn parse_while_expr(&mut self, opt_ident: Option<ast::Ident>) -> Gc<Expr> {
         let lo = self.last_span.lo;
         let cond = self.parse_expr_res(RESTRICT_NO_STRUCT_LITERAL);
         let body = self.parse_block();
         let hi = body.span.hi;
-        return self.mk_expr(lo, hi, ExprWhile(cond, body));
+        return self.mk_expr(lo, hi, ExprWhile(cond, body, opt_ident));
     }
 
     pub fn parse_loop_expr(&mut self, opt_ident: Option<ast::Ident>) -> Gc<Expr> {

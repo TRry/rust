@@ -30,7 +30,6 @@ use middle::subst::{Subst, Substs, VecPerParamSpace};
 use middle::subst;
 use middle::ty;
 use middle::typeck;
-use middle::typeck::MethodCall;
 use middle::ty_fold;
 use middle::ty_fold::{TypeFoldable,TypeFolder};
 use middle;
@@ -2119,6 +2118,7 @@ pub struct TypeContents {
 
 macro_rules! def_type_content_sets(
     (mod $mname:ident { $($name:ident = $bits:expr),+ }) => {
+        #[allow(non_snake_case)]
         mod $mname {
             use middle::ty::TypeContents;
             $(pub static $name: TypeContents = TypeContents { bits: $bits };)+
