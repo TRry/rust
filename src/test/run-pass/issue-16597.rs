@@ -8,31 +8,14 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+// compile-flags:--test
+// ignore-pretty turns out the pretty-printer doesn't handle gensym'd things...
 
-// This would previously leak the Box<Trait> because we wouldn't
-// schedule cleanups when auto borrowing trait objects.
-// This program should be valgrind clean.
+#![feature(globs)]
 
+mod test {
+    use super::*;
 
-static mut DROP_RAN: bool = false;
-
-struct Foo;
-impl Drop for Foo {
-    fn drop(&mut self) {
-        unsafe { DROP_RAN = true; }
-    }
+    #[test]
+    fn test(){}
 }
-
-
-trait Trait {}
-impl Trait for Foo {}
-
-pub fn main() {
-    {
-        let _x: &Trait = &*(box Foo as Box<Trait>);
-    }
-    unsafe {
-        assert!(DROP_RAN);
-    }
-}
-

@@ -8,31 +8,12 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+// Test bounds checking for DST raw slices
+// error-pattern:index out of bounds
 
-// This would previously leak the Box<Trait> because we wouldn't
-// schedule cleanups when auto borrowing trait objects.
-// This program should be valgrind clean.
-
-
-static mut DROP_RAN: bool = false;
-
-struct Foo;
-impl Drop for Foo {
-    fn drop(&mut self) {
-        unsafe { DROP_RAN = true; }
-    }
-}
-
-
-trait Trait {}
-impl Trait for Foo {}
-
-pub fn main() {
-    {
-        let _x: &Trait = &*(box Foo as Box<Trait>);
-    }
+fn main() {
+    let a: *const [_] = &[1i, 2, 3];
     unsafe {
-        assert!(DROP_RAN);
+        let _b = (*a)[3];
     }
 }
-

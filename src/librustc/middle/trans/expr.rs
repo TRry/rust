@@ -254,11 +254,7 @@ fn apply_adjustments<'a>(bcx: &'a Block<'a>,
         let mut datum = datum;
 
         let datum = match autoref {
-            &AutoUnsafe(..) => {
-                debug!("  AutoUnsafe");
-                unpack_datum!(bcx, ref_ptr(bcx, expr, datum))
-            }
-            &AutoPtr(_, _, ref a) => {
+            &AutoPtr(_, _, ref a) | &AutoUnsafe(_, ref a) => {
                 debug!("  AutoPtr");
                 match a {
                     &Some(box ref a) => datum = unpack_datum!(bcx,
@@ -1847,8 +1843,7 @@ pub fn cast_type_kind(tcx: &ty::ctxt, t: ty::t) -> cast_kind {
     match ty::get(t).sty {
         ty::ty_char        => cast_integral,
         ty::ty_float(..)   => cast_float,
-        ty::ty_ptr(..)     => cast_pointer,
-        ty::ty_rptr(_, mt) => {
+        ty::ty_rptr(_, mt) | ty::ty_ptr(mt) => {
             if ty::type_is_sized(tcx, mt.ty) {
                 cast_pointer
             } else {
@@ -2066,11 +2061,17 @@ fn deref_once<'a>(bcx: &'a Block<'a>,
             if ty::type_is_sized(bcx.tcx(), content_ty) {
                 deref_owned_pointer(bcx, expr, datum, content_ty)
             } else {
-                // A fat pointer and an opened DST value have the same represenation
-                // just different types.
-                DatumBlock::new(bcx, Datum::new(datum.val,
-                                                ty::mk_open(bcx.tcx(), content_ty),
-                                                datum.kind))
+                // A fat pointer and an opened DST value have the same
+                // represenation just different types. Since there is no
+                // temporary for `*e` here (because it is unsized), we cannot
+                // emulate the sized object code path for running drop glue and
+                // free. Instead, we schedule cleanup for `e`, turning it into
+                // an lvalue.
+                let datum = unpack_datum!(
+                    bcx, datum.to_lvalue_datum(bcx, "deref", expr.id));
+
+                let datum = Datum::new(datum.val, ty::mk_open(bcx.tcx(), content_ty), LvalueExpr);
+                DatumBlock::new(bcx, datum)
             }
         }
 
@@ -2099,7 +2100,7 @@ fn deref_once<'a>(bcx: &'a Block<'a>,
                 // just different types.
                 DatumBlock::new(bcx, Datum::new(datum.val,
                                                 ty::mk_open(bcx.tcx(), content_ty),
-                                                datum.kind))
+                                                LvalueExpr))
             }
         }
 
