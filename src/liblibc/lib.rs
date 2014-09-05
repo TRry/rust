@@ -65,7 +65,7 @@
 * definitions common-to-all (held in modules named c95, c99, posix88, posix01
 * and posix08) and definitions that appear only on *some* platforms (named
 * 'extra'). This would be things like significant OSX foundation kit, or Windows
-* library kernel32.dll, or various fancy glibc, linux or BSD extensions.
+* library kernel32.dll, or various fancy glibc, Linux or BSD extensions.
 *
 * In addition to the per-platform 'extra' modules, we define a module of
 * 'common BSD' libc routines that never quite made it into POSIX but show up
@@ -4542,7 +4542,7 @@ pub mod funcs {
                 pub fn glob(pattern: *const c_char,
                             flags: c_int,
                             errfunc: ::Nullable<extern "C" fn(epath: *const c_char,
-                                                              errno: c_int) -> int>,
+                                                              errno: c_int) -> c_int>,
                             pglob: *mut glob_t);
                 pub fn globfree(pglob: *mut glob_t);
             }

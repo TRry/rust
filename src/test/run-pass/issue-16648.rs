@@ -8,12 +8,13 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// aux-build:issue-16725.rs
-
-extern crate "issue-16725" as foo;
-
 fn main() {
-    unsafe { foo::bar(); }
-    //~^ ERROR: function `bar` is private
+    let x: (int, &[int]) = (2i, &[1i, 2i]);
+    assert_eq!(match x {
+        (0, [_, _]) => 0,
+        (1, _) => 1,
+        (2, [_, _]) => 2,
+        (2, _) => 3,
+        _ => 4
+    }, 2i);
 }
-

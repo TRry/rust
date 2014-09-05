@@ -8,12 +8,11 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// aux-build:issue-16725.rs
+#![deny(warnings)]
 
-extern crate "issue-16725" as foo;
-
-fn main() {
-    unsafe { foo::bar(); }
-    //~^ ERROR: function `bar` is private
+extern {
+    pub fn foo(x: (int)); //~ ERROR found rust type `int` in foreign module
 }
 
+fn main() {
+}
