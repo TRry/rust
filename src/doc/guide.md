@@ -116,7 +116,7 @@ but also working properly. And printing information to the screen is a pretty
 common thing to do.
 
 The first thing that we need to do is make a file to put our code in. I like
-to make a projects directory in my home directory, and keep all my projects
+to make a `projects` directory in my home directory, and keep all my projects
 there. Rust does not care where your code lives.
 
 This actually leads to one other concern we should address: this tutorial will
@@ -765,7 +765,7 @@ This is a deliberate design decision. While full-program inference is possible,
 languages which have it, like Haskell, often suggest that documenting your
 types explicitly is a best-practice. We agree that forcing functions to declare
 types while allowing for inference inside of function bodies is a wonderful
-compromise between full inference and no inference.
+sweet spot between full inference and no inference.
 
 What about returning a value? Here's a function that adds one to an integer:
 

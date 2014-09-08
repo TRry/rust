@@ -24,7 +24,6 @@ use middle::trans::common::*;
 use middle::trans::datum::{Datum, DatumBlock, Expr, Lvalue, rvalue_scratch_datum};
 use middle::trans::debuginfo;
 use middle::trans::expr;
-use middle::trans::machine::llsize_of;
 use middle::trans::type_of::*;
 use middle::trans::type_::Type;
 use middle::ty;
@@ -144,15 +143,12 @@ fn allocate_cbox<'a>(bcx: &'a Block<'a>,
     let tcx = bcx.tcx();
 
     // Allocate and initialize the box:
+    let cbox_ty = tuplify_box_ty(tcx, cdata_ty);
     match store {
         ty::UniqTraitStore => {
-            let ty = type_of(bcx.ccx(), cdata_ty);
-            let size = llsize_of(bcx.ccx(), ty);
-            // we treat proc as @ here, which isn't ideal
-            malloc_raw_dyn_managed(bcx, cdata_ty, ClosureExchangeMallocFnLangItem, size)
+            malloc_raw_dyn_proc(bcx, cbox_ty, ClosureExchangeMallocFnLangItem)
         }
         ty::RegionTraitStore(..) => {
-            let cbox_ty = tuplify_box_ty(tcx, cdata_ty);
             let llbox = alloc_ty(bcx, cbox_ty, "__closure");
             Result::new(bcx, llbox)
         }
@@ -427,12 +423,12 @@ pub fn trans_expr_fn<'a>(
 pub fn get_or_create_declaration_if_unboxed_closure(ccx: &CrateContext,
                                                     closure_id: ast::DefId)
                                                     -> Option<ValueRef> {
-    if !ccx.tcx.unboxed_closures.borrow().contains_key(&closure_id) {
+    if !ccx.tcx().unboxed_closures.borrow().contains_key(&closure_id) {
         // Not an unboxed closure.
         return None
     }
 
-    match ccx.unboxed_closure_vals.borrow().find(&closure_id) {
+    match ccx.unboxed_closure_vals().borrow().find(&closure_id) {
         Some(llfn) => {
             debug!("get_or_create_declaration_if_unboxed_closure(): found \
                     closure");
@@ -441,10 +437,10 @@ pub fn get_or_create_declaration_if_unboxed_closure(ccx: &CrateContext,
         None => {}
     }
 
-    let function_type = ty::mk_unboxed_closure(&ccx.tcx,
+    let function_type = ty::mk_unboxed_closure(ccx.tcx(),
                                                closure_id,
                                                ty::ReStatic);
-    let symbol = ccx.tcx.map.with_path(closure_id.node, |path| {
+    let symbol = ccx.tcx().map.with_path(closure_id.node, |path| {
         mangle_internal_name_by_path_and_seq(path, "unboxed_closure")
     });
 
@@ -456,8 +452,8 @@ pub fn get_or_create_declaration_if_unboxed_closure(ccx: &CrateContext,
     debug!("get_or_create_declaration_if_unboxed_closure(): inserting new \
             closure {} (type {})",
            closure_id,
-           ccx.tn.type_to_string(val_ty(llfn)));
-    ccx.unboxed_closure_vals.borrow_mut().insert(closure_id, llfn);
+           ccx.tn().type_to_string(val_ty(llfn)));
+    ccx.unboxed_closure_vals().borrow_mut().insert(closure_id, llfn);
 
     Some(llfn)
 }
@@ -554,7 +550,7 @@ pub fn get_wrapper_for_bare_fn(ccx: &CrateContext,
         }
     };
 
-    match ccx.closure_bare_wrapper_cache.borrow().find(&fn_ptr) {
+    match ccx.closure_bare_wrapper_cache().borrow().find(&fn_ptr) {
         Some(&llval) => return llval,
         None => {}
     }
@@ -581,7 +577,7 @@ pub fn get_wrapper_for_bare_fn(ccx: &CrateContext,
         decl_rust_fn(ccx, closure_ty, name.as_slice())
     };
 
-    ccx.closure_bare_wrapper_cache.borrow_mut().insert(fn_ptr, llfn);
+    ccx.closure_bare_wrapper_cache().borrow_mut().insert(fn_ptr, llfn);
 
     // This is only used by statics inlined from a different crate.
     if !is_local {

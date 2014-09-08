@@ -87,7 +87,7 @@ impl<'a> CleanupMethods<'a> for FunctionContext<'a> {
          */
 
         debug!("push_ast_cleanup_scope({})",
-               self.ccx.tcx.map.node_to_string(id));
+               self.ccx.tcx().map.node_to_string(id));
 
         // FIXME(#2202) -- currently closure bodies have a parent
         // region, which messes up the assertion below, since there
@@ -101,7 +101,7 @@ impl<'a> CleanupMethods<'a> for FunctionContext<'a> {
         // this new AST scope had better be its immediate child.
         let top_scope = self.top_ast_scope();
         if top_scope.is_some() {
-            assert_eq!(self.ccx.tcx.region_maps.opt_encl_scope(id), top_scope);
+            assert_eq!(self.ccx.tcx().region_maps.opt_encl_scope(id), top_scope);
         }
 
         self.push_scope(CleanupScope::new(AstScopeKind(id)));
@@ -111,7 +111,7 @@ impl<'a> CleanupMethods<'a> for FunctionContext<'a> {
                                id: ast::NodeId,
                                exits: [&'a Block<'a>, ..EXIT_MAX]) {
         debug!("push_loop_cleanup_scope({})",
-               self.ccx.tcx.map.node_to_string(id));
+               self.ccx.tcx().map.node_to_string(id));
         assert_eq!(Some(id), self.top_ast_scope());
 
         self.push_scope(CleanupScope::new(LoopScopeKind(id, exits)));
@@ -135,7 +135,7 @@ impl<'a> CleanupMethods<'a> for FunctionContext<'a> {
          */
 
         debug!("pop_and_trans_ast_cleanup_scope({})",
-               self.ccx.tcx.map.node_to_string(cleanup_scope));
+               self.ccx.tcx().map.node_to_string(cleanup_scope));
 
         assert!(self.top_scope(|s| s.kind.is_ast_with_id(cleanup_scope)));
 
@@ -154,7 +154,7 @@ impl<'a> CleanupMethods<'a> for FunctionContext<'a> {
          */
 
         debug!("pop_loop_cleanup_scope({})",
-               self.ccx.tcx.map.node_to_string(cleanup_scope));
+               self.ccx.tcx().map.node_to_string(cleanup_scope));
 
         assert!(self.top_scope(|s| s.kind.is_loop_with_id(cleanup_scope)));
 
@@ -237,7 +237,7 @@ impl<'a> CleanupMethods<'a> for FunctionContext<'a> {
 
         debug!("schedule_lifetime_end({:?}, val={})",
                cleanup_scope,
-               self.ccx.tn.val_to_string(val));
+               self.ccx.tn().val_to_string(val));
 
         self.schedule_clean(cleanup_scope, drop as CleanupObj);
     }
@@ -262,7 +262,7 @@ impl<'a> CleanupMethods<'a> for FunctionContext<'a> {
 
         debug!("schedule_drop_mem({:?}, val={}, ty={})",
                cleanup_scope,
-               self.ccx.tn.val_to_string(val),
+               self.ccx.tn().val_to_string(val),
                ty.repr(self.ccx.tcx()));
 
         self.schedule_clean(cleanup_scope, drop as CleanupObj);
@@ -288,7 +288,7 @@ impl<'a> CleanupMethods<'a> for FunctionContext<'a> {
 
         debug!("schedule_drop_and_zero_mem({:?}, val={}, ty={}, zero={})",
                cleanup_scope,
-               self.ccx.tn.val_to_string(val),
+               self.ccx.tn().val_to_string(val),
                ty.repr(self.ccx.tcx()),
                true);
 
@@ -314,7 +314,7 @@ impl<'a> CleanupMethods<'a> for FunctionContext<'a> {
 
         debug!("schedule_drop_immediate({:?}, val={}, ty={})",
                cleanup_scope,
-               self.ccx.tn.val_to_string(val),
+               self.ccx.tn().val_to_string(val),
                ty.repr(self.ccx.tcx()));
 
         self.schedule_clean(cleanup_scope, drop as CleanupObj);
@@ -334,7 +334,28 @@ impl<'a> CleanupMethods<'a> for FunctionContext<'a> {
 
         debug!("schedule_free_value({:?}, val={}, heap={:?})",
                cleanup_scope,
-               self.ccx.tn.val_to_string(val),
+               self.ccx.tn().val_to_string(val),
+               heap);
+
+        self.schedule_clean(cleanup_scope, drop as CleanupObj);
+    }
+
+    fn schedule_free_slice(&self,
+                           cleanup_scope: ScopeId,
+                           val: ValueRef,
+                           size: ValueRef,
+                           align: ValueRef,
+                           heap: Heap) {
+        /*!
+         * Schedules a call to `free(val)`. Note that this is a shallow
+         * operation.
+         */
+
+        let drop = box FreeSlice { ptr: val, size: size, align: align, heap: heap };
+
+        debug!("schedule_free_slice({:?}, val={}, heap={:?})",
+               cleanup_scope,
+               self.ccx.tn().val_to_string(val),
                heap);
 
         self.schedule_clean(cleanup_scope, drop as CleanupObj);
@@ -374,7 +395,7 @@ impl<'a> CleanupMethods<'a> for FunctionContext<'a> {
 
         self.ccx.sess().bug(
             format!("no cleanup scope {} found",
-                    self.ccx.tcx.map.node_to_string(cleanup_scope)).as_slice());
+                    self.ccx.tcx().map.node_to_string(cleanup_scope)).as_slice());
     }
 
     fn schedule_clean_in_custom_scope(&self,
@@ -720,7 +741,7 @@ impl<'a> CleanupHelperMethods<'a> for FunctionContext<'a> {
         let llpersonality = match pad_bcx.tcx().lang_items.eh_personality() {
             Some(def_id) => callee::trans_fn_ref(pad_bcx, def_id, ExprId(0)),
             None => {
-                let mut personality = self.ccx.eh_personality.borrow_mut();
+                let mut personality = self.ccx.eh_personality().borrow_mut();
                 match *personality {
                     Some(llpersonality) => llpersonality,
                     None => {
@@ -926,6 +947,34 @@ impl Cleanup for FreeValue {
     }
 }
 
+pub struct FreeSlice {
+    ptr: ValueRef,
+    size: ValueRef,
+    align: ValueRef,
+    heap: Heap,
+}
+
+impl Cleanup for FreeSlice {
+    fn must_unwind(&self) -> bool {
+        true
+    }
+
+    fn clean_on_unwind(&self) -> bool {
+        true
+    }
+
+    fn trans<'a>(&self, bcx: &'a Block<'a>) -> &'a Block<'a> {
+        match self.heap {
+            HeapManaged => {
+                glue::trans_free(bcx, self.ptr)
+            }
+            HeapExchange => {
+                glue::trans_exchange_free_dyn(bcx, self.ptr, self.size, self.align)
+            }
+        }
+    }
+}
+
 pub struct LifetimeEnd {
     ptr: ValueRef,
 }
@@ -1020,6 +1069,12 @@ pub trait CleanupMethods<'a> {
                            val: ValueRef,
                            heap: Heap,
                            content_ty: ty::t);
+    fn schedule_free_slice(&self,
+                           cleanup_scope: ScopeId,
+                           val: ValueRef,
+                           size: ValueRef,
+                           align: ValueRef,
+                           heap: Heap);
     fn schedule_clean(&self,
                       cleanup_scope: ScopeId,
                       cleanup: CleanupObj);

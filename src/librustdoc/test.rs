@@ -20,7 +20,7 @@ use std::string::String;
 
 use std::collections::{HashSet, HashMap};
 use testing;
-use rustc::back::link;
+use rustc::back::write;
 use rustc::driver::config;
 use rustc::driver::driver;
 use rustc::driver::session;
@@ -39,7 +39,7 @@ use visit_ast::RustdocVisitor;
 
 pub fn run(input: &str,
            cfgs: Vec<String>,
-           libs: HashSet<Path>,
+           libs: Vec<Path>,
            externs: core::Externs,
            mut test_args: Vec<String>,
            crate_name: Option<String>)
@@ -109,7 +109,7 @@ pub fn run(input: &str,
     0
 }
 
-fn runtest(test: &str, cratename: &str, libs: HashSet<Path>, externs: core::Externs,
+fn runtest(test: &str, cratename: &str, libs: Vec<Path>, externs: core::Externs,
            should_fail: bool, no_run: bool, as_test_harness: bool) {
     // the test harness wants its own `main` & top level functions, so
     // never wrap the test in `fn main() { ... }`
@@ -120,7 +120,7 @@ fn runtest(test: &str, cratename: &str, libs: HashSet<Path>, externs: core::Exte
         maybe_sysroot: Some(os::self_exe_path().unwrap().dir_path()),
         addl_lib_search_paths: RefCell::new(libs),
         crate_types: vec!(config::CrateTypeExecutable),
-        output_types: vec!(link::OutputTypeExe),
+        output_types: vec!(write::OutputTypeExe),
         no_trans: no_run,
         externs: externs,
         cg: config::CodegenOptions {
@@ -170,7 +170,7 @@ fn runtest(test: &str, cratename: &str, libs: HashSet<Path>, externs: core::Exte
                                       None,
                                       span_diagnostic_handler);
 
-    let outdir = TempDir::new("rustdoctest").expect("rustdoc needs a tempdir");
+    let outdir = TempDir::new("rustdoctest").ok().expect("rustdoc needs a tempdir");
     let out = Some(outdir.path().clone());
     let cfg = config::build_configuration(&sess);
     let libdir = sess.target_filesearch().get_lib_path();
@@ -244,7 +244,7 @@ pub fn maketest(s: &str, cratename: Option<&str>, lints: bool, dont_insert_main:
 pub struct Collector {
     pub tests: Vec<testing::TestDescAndFn>,
     names: Vec<String>,
-    libs: HashSet<Path>,
+    libs: Vec<Path>,
     externs: core::Externs,
     cnt: uint,
     use_headers: bool,
@@ -253,7 +253,7 @@ pub struct Collector {
 }
 
 impl Collector {
-    pub fn new(cratename: String, libs: HashSet<Path>, externs: core::Externs,
+    pub fn new(cratename: String, libs: Vec<Path>, externs: core::Externs,
                use_headers: bool) -> Collector {
         Collector {
             tests: Vec::new(),
