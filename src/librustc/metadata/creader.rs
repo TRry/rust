@@ -49,19 +49,19 @@ pub fn read_crates(sess: &Session,
         next_crate_num: sess.cstore.next_crate_num(),
     };
     visit_crate(&e, krate);
-    visit::walk_crate(&mut e, krate, ());
+    visit::walk_crate(&mut e, krate);
     dump_crates(&sess.cstore);
     warn_if_multiple_versions(sess.diagnostic(), &sess.cstore)
 }
 
-impl<'a> visit::Visitor<()> for Env<'a> {
-    fn visit_view_item(&mut self, a: &ast::ViewItem, _: ()) {
+impl<'a, 'v> visit::Visitor<'v> for Env<'a> {
+    fn visit_view_item(&mut self, a: &ast::ViewItem) {
         visit_view_item(self, a);
-        visit::walk_view_item(self, a, ());
+        visit::walk_view_item(self, a);
     }
-    fn visit_item(&mut self, a: &ast::Item, _: ()) {
+    fn visit_item(&mut self, a: &ast::Item) {
         visit_item(self, a);
-        visit::walk_item(self, a, ());
+        visit::walk_item(self, a);
     }
 }
 
@@ -145,7 +145,7 @@ fn extract_crate_info(e: &Env, i: &ast::ViewItem) -> Option<CrateInfo> {
     match i.node {
         ast::ViewItemExternCrate(ident, ref path_opt, id) => {
             let ident = token::get_ident(ident);
-            debug!("resolving extern crate stmt. ident: {:?} path_opt: {:?}",
+            debug!("resolving extern crate stmt. ident: {} path_opt: {}",
                    ident, path_opt);
             let name = match *path_opt {
                 Some((ref path_str, _)) => {
@@ -281,7 +281,7 @@ fn existing_match(e: &Env, name: &str,
                   hash: Option<&Svh>) -> Option<ast::CrateNum> {
     let mut ret = None;
     e.sess.cstore.iter_crate_data(|cnum, data| {
-        if data.name().as_slice() != name { return }
+        if data.name.as_slice() != name { return }
 
         match hash {
             Some(hash) if *hash == data.hash() => { ret = Some(cnum); return }

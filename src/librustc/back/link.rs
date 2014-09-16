@@ -28,6 +28,7 @@ use util::ppaux;
 use util::sha2::{Digest, Sha256};
 
 use std::char;
+use std::io::fs::PathExtensions;
 use std::io::{fs, TempDir, Command};
 use std::io;
 use std::mem;
@@ -929,6 +930,14 @@ fn link_args(cmd: &mut Command,
         cmd.arg("-nodefaultlibs");
     }
 
+    // Rust does its' own LTO
+    cmd.arg("-fno-lto");
+
+    // clang fails hard if -fno-use-linker-plugin is passed
+    if sess.targ_cfg.os == abi::OsWindows {
+        cmd.arg("-fno-use-linker-plugin");
+    }
+
     // If we're building a dylib, we don't use --gc-sections because LLVM has
     // already done the best it can do, and we also don't want to eliminate the
     // metadata. If we're building an executable, however, --gc-sections drops
@@ -1014,7 +1023,8 @@ fn link_args(cmd: &mut Command,
         cmd.arg("-Wl,--nxcompat");
 
         // Mark all dynamic libraries and executables as compatible with ASLR
-        cmd.arg("-Wl,--dynamicbase");
+        // FIXME #17098: ASLR breaks gdb
+        // cmd.arg("-Wl,--dynamicbase");
 
         // Mark all dynamic libraries and executables as compatible with the larger 4GiB address
         // space available to x86 Windows binaries on x86_64.
