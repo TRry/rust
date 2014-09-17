@@ -20,9 +20,7 @@ use metadata::cstore;
 use metadata::decoder;
 use metadata::tyencode;
 use middle::ty::{lookup_item_type};
-use middle::astencode;
 use middle::ty;
-use middle::typeck;
 use middle::stability;
 use middle;
 use util::nodemap::{NodeMap, NodeSet};
@@ -125,14 +123,6 @@ fn encode_trait_ref(rbml_w: &mut Encoder,
     rbml_w.end_tag();
 }
 
-fn encode_impl_vtables(rbml_w: &mut Encoder,
-                       ecx: &EncodeContext,
-                       vtables: &typeck::vtable_res) {
-    rbml_w.start_tag(tag_item_impl_vtables);
-    astencode::encode_vtable_res(ecx, rbml_w, vtables);
-    rbml_w.end_tag();
-}
-
 // Item info table encoding
 fn encode_family(rbml_w: &mut Encoder, c: char) {
     rbml_w.start_tag(tag_items_data_item_family);
@@ -189,6 +179,18 @@ pub fn write_type(ecx: &EncodeContext,
         abbrevs: &ecx.type_abbrevs
     };
     tyencode::enc_ty(rbml_w.writer, ty_str_ctxt, typ);
+}
+
+pub fn write_trait_ref(ecx: &EncodeContext,
+                       rbml_w: &mut Encoder,
+                       trait_ref: &ty::TraitRef) {
+    let ty_str_ctxt = &tyencode::ctxt {
+        diag: ecx.diag,
+        ds: def_to_string,
+        tcx: ecx.tcx,
+        abbrevs: &ecx.type_abbrevs
+    };
+    tyencode::enc_trait_ref(rbml_w.writer, ty_str_ctxt, trait_ref);
 }
 
 pub fn write_region(ecx: &EncodeContext,
@@ -399,7 +401,7 @@ fn encode_reexported_static_base_methods(ecx: &EncodeContext,
     let impl_items = ecx.tcx.impl_items.borrow();
     match ecx.tcx.inherent_impls.borrow().find(&exp.def_id) {
         Some(implementations) => {
-            for base_impl_did in implementations.borrow().iter() {
+            for base_impl_did in implementations.iter() {
                 for &method_did in impl_items.get(base_impl_did).iter() {
                     let impl_item = ty::impl_or_trait_item(
                         ecx.tcx,
@@ -871,7 +873,7 @@ fn encode_info_for_method(ecx: &EncodeContext,
     encode_bounds_and_type(rbml_w, ecx, &pty);
 
     let elem = ast_map::PathName(m.ident.name);
-    encode_path(rbml_w, impl_path.chain(Some(elem).move_iter()));
+    encode_path(rbml_w, impl_path.chain(Some(elem).into_iter()));
     match ast_item_opt {
         Some(&ast::MethodImplItem(ref ast_method)) => {
             encode_attributes(rbml_w, ast_method.attrs.as_slice());
@@ -946,7 +948,7 @@ fn encode_inherent_implementations(ecx: &EncodeContext,
     match ecx.tcx.inherent_impls.borrow().find(&def_id) {
         None => {}
         Some(implementations) => {
-            for &impl_def_id in implementations.borrow().iter() {
+            for &impl_def_id in implementations.iter() {
                 rbml_w.start_tag(tag_items_data_item_inherent_impl);
                 encode_def_id(rbml_w, impl_def_id);
                 rbml_w.end_tag();
@@ -1203,8 +1205,6 @@ fn encode_info_for_item(ecx: &EncodeContext,
             let trait_ref = ty::node_id_to_trait_ref(
                 tcx, ast_trait_ref.ref_id);
             encode_trait_ref(rbml_w, ecx, &*trait_ref, tag_item_trait_ref);
-            let impl_vtables = ty::lookup_impl_vtables(tcx, def_id);
-            encode_impl_vtables(rbml_w, ecx, &impl_vtables);
         }
         encode_path(rbml_w, path.clone());
         encode_stability(rbml_w, stab);
@@ -1295,7 +1295,7 @@ fn encode_info_for_item(ecx: &EncodeContext,
 
                     let elem = ast_map::PathName(method_ty.ident.name);
                     encode_path(rbml_w,
-                                path.clone().chain(Some(elem).move_iter()));
+                                path.clone().chain(Some(elem).into_iter()));
 
                     match method_ty.explicit_self {
                         ty::StaticExplicitSelfCategory => {
@@ -1497,7 +1497,7 @@ fn encode_info_for_items(ecx: &EncodeContext,
 fn encode_index<T: Hash>(rbml_w: &mut Encoder, index: Vec<entry<T>>,
                          write_fn: |&mut SeekableMemWriter, &T|) {
     let mut buckets: Vec<Vec<entry<T>>> = Vec::from_fn(256, |_| Vec::new());
-    for elt in index.move_iter() {
+    for elt in index.into_iter() {
         let h = hash::hash(&elt.val) as uint;
         buckets.get_mut(h % 256).push(elt);
     }
@@ -1913,7 +1913,7 @@ pub static metadata_encoding_version : &'static [u8] = &[b'r', b'u', b's', b't',
 pub fn encode_metadata(parms: EncodeParams, krate: &Crate) -> Vec<u8> {
     let mut wr = SeekableMemWriter::new();
     encode_metadata_inner(&mut wr, parms, krate);
-    wr.unwrap().move_iter().collect()
+    wr.unwrap().into_iter().collect()
 }
 
 fn encode_metadata_inner(wr: &mut SeekableMemWriter, parms: EncodeParams, krate: &Crate) {

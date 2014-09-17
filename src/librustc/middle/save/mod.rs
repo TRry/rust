@@ -908,10 +908,10 @@ impl <'l, 'tcx> DxrVisitor<'l, 'tcx> {
                 };
                 (Some(def_id), decl_id)
             }
-            typeck::MethodParam(mp) => {
+            typeck::MethodParam(ref mp) => {
                 // method invoked on a type parameter
                 let trait_item = ty::trait_item(&self.analysis.ty_cx,
-                                                mp.trait_id,
+                                                mp.trait_ref.def_id,
                                                 mp.method_num);
                 match trait_item {
                     ty::MethodTraitItem(method) => {
@@ -919,10 +919,10 @@ impl <'l, 'tcx> DxrVisitor<'l, 'tcx> {
                     }
                 }
             },
-            typeck::MethodObject(mo) => {
+            typeck::MethodObject(ref mo) => {
                 // method invoked on a trait instance
                 let trait_item = ty::trait_item(&self.analysis.ty_cx,
-                                                mo.trait_id,
+                                                mo.trait_ref.def_id,
                                                 mo.method_num);
                 match trait_item {
                     ty::MethodTraitItem(method) => {
@@ -1406,7 +1406,8 @@ impl<'l, 'tcx, 'v> Visitor<'v> for DxrVisitor<'l, 'tcx> {
                                                             self.cur_scope),
                 // FIXME(nrc) what is this doing here?
                 def::DefStatic(_, _) => {}
-                _ => error!("unexpected defintion kind when processing collected paths: {:?}", *def)
+                _ => error!("unexpected definition kind when processing collected paths: {:?}",
+                            *def)
             }
         }
         self.collected_paths.clear();

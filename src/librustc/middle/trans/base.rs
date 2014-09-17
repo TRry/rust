@@ -75,7 +75,6 @@ use middle::trans::type_of;
 use middle::trans::type_of::*;
 use middle::trans::value::Value;
 use middle::ty;
-use middle::typeck;
 use util::common::indenter;
 use util::ppaux::{Repr, ty_to_string};
 use util::sha2::Sha256;
@@ -383,13 +382,9 @@ pub fn malloc_raw_dyn<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
     Result::new(r.bcx, PointerCast(r.bcx, r.val, llty_ptr))
 }
 
-pub fn malloc_raw_dyn_proc<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
-                                       t: ty::t, alloc_fn: LangItem)
-                                       -> Result<'blk, 'tcx> {
+pub fn malloc_raw_dyn_proc<'blk, 'tcx>(bcx: Block<'blk, 'tcx>, t: ty::t) -> Result<'blk, 'tcx> {
     let _icx = push_ctxt("malloc_raw_dyn_proc");
     let ccx = bcx.ccx();
-
-    let langcall = require_alloc_fn(bcx, t, alloc_fn);
 
     // Grab the TypeRef type of ptr_ty.
     let ptr_ty = ty::mk_uniq(bcx.tcx(), t);
@@ -399,18 +394,15 @@ pub fn malloc_raw_dyn_proc<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
     let size = llsize_of(bcx.ccx(), llty);
     let llalign = C_uint(ccx, llalign_of_min(bcx.ccx(), llty) as uint);
 
-    // Allocate space:
-    let drop_glue = glue::get_drop_glue(ccx, ty::mk_uniq(bcx.tcx(), t));
-    let r = callee::trans_lang_call(
-        bcx,
-        langcall,
-        [
-            PointerCast(bcx, drop_glue, Type::glue_fn(ccx, Type::i8p(ccx)).ptr_to()),
-            size,
-            llalign
-        ],
-        None);
-    Result::new(r.bcx, PointerCast(r.bcx, r.val, ptr_llty))
+    // Allocate space and store the destructor pointer:
+    let Result {bcx: bcx, val: llbox} = malloc_raw_dyn(bcx, ptr_llty, t, size, llalign);
+    let dtor_ptr = GEPi(bcx, llbox, [0u, abi::box_field_drop_glue]);
+    let drop_glue_field_ty = type_of(ccx, ty::mk_nil_ptr(bcx.tcx()));
+    let drop_glue = PointerCast(bcx, glue::get_drop_glue(ccx, ty::mk_uniq(bcx.tcx(), t)),
+                                drop_glue_field_ty);
+    Store(bcx, drop_glue, dtor_ptr);
+
+    Result::new(bcx, llbox)
 }
 
 
@@ -547,8 +539,7 @@ pub fn get_res_dtor(ccx: &CrateContext,
         // Since we're in trans we don't care for any region parameters
         let ref substs = subst::Substs::erased(substs.types.clone());
 
-        let vtables = typeck::check::vtable::trans_resolve_method(ccx.tcx(), did.node, substs);
-        let (val, _) = monomorphize::monomorphic_fn(ccx, did, substs, vtables, None);
+        let (val, _) = monomorphize::monomorphic_fn(ccx, did, substs, None);
 
         val
     } else if did.krate == ast::LOCAL_CRATE {
@@ -1640,7 +1631,7 @@ fn copy_args_to_allocas<'blk, 'tcx>(fcx: &FunctionContext<'blk, 'tcx>,
 
     let arg_scope_id = cleanup::CustomScope(arg_scope);
 
-    for (i, arg_datum) in arg_datums.move_iter().enumerate() {
+    for (i, arg_datum) in arg_datums.into_iter().enumerate() {
         // For certain mode/type combinations, the raw llarg values are passed
         // by value.  However, within the fn body itself, we want to always
         // have all locals and arguments be by-ref so that we can cancel the
@@ -1671,7 +1662,7 @@ fn copy_unboxed_closure_args_to_allocas<'blk, 'tcx>(
 
     assert_eq!(arg_datums.len(), 1);
 
-    let arg_datum = arg_datums.move_iter().next().unwrap();
+    let arg_datum = arg_datums.into_iter().next().unwrap();
 
     // Untuple the rest of the arguments.
     let tuple_datum =
@@ -2071,7 +2062,7 @@ fn trans_enum_variant_or_tuple_like_struct(ccx: &CrateContext,
     if !type_is_zero_size(fcx.ccx, result_ty) {
         let dest = fcx.get_ret_slot(bcx, result_ty, "eret_slot");
         let repr = adt::represent_type(ccx, result_ty);
-        for (i, arg_datum) in arg_datums.move_iter().enumerate() {
+        for (i, arg_datum) in arg_datums.into_iter().enumerate() {
             let lldestptr = adt::trans_field_ptr(bcx,
                                                  &*repr,
                                                  dest,
@@ -3142,7 +3133,7 @@ pub fn trans_crate<'tcx>(analysis: CrateAnalysis<'tcx>)
     // the final product, so LTO needs to preserve them.
     shared_ccx.sess().cstore.iter_crate_data(|cnum, _| {
         let syms = csearch::get_reachable_extern_fns(&shared_ccx.sess().cstore, cnum);
-        reachable.extend(syms.move_iter().map(|did| {
+        reachable.extend(syms.into_iter().map(|did| {
             csearch::get_symbol(&shared_ccx.sess().cstore, did)
         }));
     });

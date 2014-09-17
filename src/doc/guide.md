@@ -152,7 +152,7 @@ Save the file, and then type this into your terminal window:
 
 ```{bash}
 $ rustc main.rs
-$ ./hello_world # or hello_world.exe on Windows
+$ ./main # or main.exe on Windows
 Hello, world!
 ```
 
@@ -164,7 +164,7 @@ fn main() {
 }
 ```
 
-These two lines define a **function** in Rust. The `main` function is special:
+These lines define a **function** in Rust. The `main` function is special:
 it's the beginning of every Rust program. The first line says "I'm declaring a
 function named `main`, which takes no arguments and returns nothing." If there
 were arguments, they would go inside the parentheses (`(` and `)`), and because
@@ -232,10 +232,10 @@ main.exe  main.rs
 ```
 
 There are now two files: our source code, with the `.rs` extension, and the
-executable (`hello_world.exe` on Windows, `hello_world` everywhere else)
+executable (`main.exe` on Windows, `main` everywhere else)
 
 ```{bash}
-$ ./hello_world  # or hello_world.exe on Windows
+$ ./main  # or main.exe on Windows
 ```
 
 This prints out our `Hello, world!` text to our terminal.
@@ -1319,7 +1319,7 @@ upper bound is exclusive, though, so our loop will print `0` through `9`, not
 
 Rust does not have the "C style" `for` loop on purpose. Manually controlling
 each element of the loop is complicated and error prone, even for experienced C
-developers. 
+developers.
 
 We'll talk more about `for` when we cover **iterator**s, later in the Guide.
 

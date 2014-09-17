@@ -155,18 +155,9 @@ pub fn regionck_expr(fcx: &FnCtxt, e: &ast::Expr) {
     fcx.infcx().resolve_regions_and_report_errors();
 }
 
-pub fn regionck_type_defn(fcx: &FnCtxt,
-                          span: Span,
-                          component_tys: &[ty::t]) {
-    let mut rcx = Rcx::new(fcx, 0);
-    for &component_ty in component_tys.iter() {
-        // Check that each type outlives the empty region. Since the
-        // empty region is a subregion of all others, this can't fail
-        // unless the type does not meet the well-formedness
-        // requirements.
-        type_must_outlive(&mut rcx, infer::RelateRegionParamBound(span),
-                          component_ty, ty::ReEmpty);
-    }
+pub fn regionck_item(fcx: &FnCtxt, item: &ast::Item) {
+    let mut rcx = Rcx::new(fcx, item.id);
+    rcx.visit_region_obligations(item.id);
     fcx.infcx().resolve_regions_and_report_errors();
 }
 
@@ -177,6 +168,26 @@ pub fn regionck_fn(fcx: &FnCtxt, id: ast::NodeId, blk: &ast::Block) {
         rcx.visit_fn_body(id, blk);
     }
     fcx.infcx().resolve_regions_and_report_errors();
+}
+
+pub fn regionck_ensure_component_tys_wf(fcx: &FnCtxt,
+                                        span: Span,
+                                        component_tys: &[ty::t]) {
+    /*!
+     * Checks that the types in `component_tys` are well-formed.
+     * This will add constraints into the region graph.
+     * Does *not* run `resolve_regions_and_report_errors` and so forth.
+     */
+
+    let mut rcx = Rcx::new(fcx, 0);
+    for &component_ty in component_tys.iter() {
+        // Check that each type outlives the empty region. Since the
+        // empty region is a subregion of all others, this can't fail
+        // unless the type does not meet the well-formedness
+        // requirements.
+        type_must_outlive(&mut rcx, infer::RelateRegionParamBound(span),
+                          component_ty, ty::ReEmpty);
+    }
 }
 
 ///////////////////////////////////////////////////////////////////////////
@@ -639,7 +650,7 @@ fn visit_expr(rcx: &mut Rcx, expr: &ast::Expr) {
         ast::ExprAssignOp(_, ref lhs, ref rhs) => {
             if has_method_map {
                 constrain_call(rcx, expr, Some(&**lhs),
-                               Some(&**rhs).move_iter(), true);
+                               Some(&**rhs).into_iter(), true);
             }
 
             adjust_borrow_kind_for_assignment_lhs(rcx, &**lhs);
@@ -654,7 +665,7 @@ fn visit_expr(rcx: &mut Rcx, expr: &ast::Expr) {
             // implicit "by ref" sort of passing style here.  This
             // should be converted to an adjustment!
             constrain_call(rcx, expr, Some(&**lhs),
-                           Some(&**rhs).move_iter(), true);
+                           Some(&**rhs).into_iter(), true);
 
             visit::walk_expr(rcx, expr);
         }

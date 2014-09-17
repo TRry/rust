@@ -102,17 +102,17 @@ impl<'a, 'tcx> MarkSymbolVisitor<'a, 'tcx> {
                     }
                     typeck::MethodStaticUnboxedClosure(_) => {}
                     typeck::MethodParam(typeck::MethodParam {
-                        trait_id: trait_id,
+                        trait_ref: ref trait_ref,
                         method_num: index,
                         ..
-                    })
-                    | typeck::MethodObject(typeck::MethodObject {
-                        trait_id: trait_id,
+                    }) |
+                    typeck::MethodObject(typeck::MethodObject {
+                        trait_ref: ref trait_ref,
                         method_num: index,
                         ..
                     }) => {
                         let trait_item = ty::trait_item(self.tcx,
-                                                        trait_id,
+                                                        trait_ref.def_id,
                                                         index);
                         match trait_item {
                             ty::MethodTraitItem(method) => {
@@ -302,7 +302,7 @@ fn has_allow_dead_code_or_lang_attr(attrs: &[ast::Attribute]) -> bool {
     }
 
     let dead_code = lint::builtin::DEAD_CODE.name_lower();
-    for attr in lint::gather_attrs(attrs).move_iter() {
+    for attr in lint::gather_attrs(attrs).into_iter() {
         match attr {
             Ok((ref name, lint::Allow, _))
                 if name.get() == dead_code.as_slice() => return true,
@@ -470,7 +470,7 @@ impl<'a, 'tcx> DeadVisitor<'a, 'tcx> {
         match self.tcx.inherent_impls.borrow().find(&local_def(id)) {
             None => (),
             Some(impl_list) => {
-                for impl_did in impl_list.borrow().iter() {
+                for impl_did in impl_list.iter() {
                     for item_did in impl_items.get(impl_did).iter() {
                         if self.live_symbols.contains(&item_did.def_id()
                                                                .node) {
