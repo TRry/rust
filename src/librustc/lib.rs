@@ -80,6 +80,7 @@ pub mod middle {
     pub mod borrowck;
     pub mod cfg;
     pub mod check_const;
+    pub mod check_static_recursion;
     pub mod check_loop;
     pub mod check_match;
     pub mod check_rvalues;
@@ -114,14 +115,6 @@ pub mod middle {
     pub mod ty_fold;
     pub mod typeck;
     pub mod weak_lang_items;
-}
-
-pub mod front {
-    pub mod config;
-    pub mod test;
-    pub mod std_inject;
-    pub mod feature_gate;
-    pub mod show_span;
 }
 
 pub mod metadata;
