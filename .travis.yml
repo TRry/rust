@@ -42,7 +42,7 @@ notifications:
 # ios branch itself is skipped because it should have only 
 # merge from proven commits
 branches:
-  only:
-    - /^ios-.*$/
-    - ios-travis
-    - ios-auto
+    only:
+        - /^ios-[0-9a-f]{7}$/
+        - ios-travis
+        - ios-auto
