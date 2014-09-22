@@ -176,11 +176,9 @@ debugging_opts!(
         SHOW_SPAN,
         COUNT_TYPE_SIZES,
         META_STATS,
-        NO_OPT,
         GC,
         PRINT_LINK_ARGS,
         PRINT_LLVM_PASSES,
-        LTO,
         AST_JSON,
         AST_JSON_NOEXPAND,
         LS,
@@ -212,14 +210,12 @@ pub fn debugging_opts_map() -> Vec<(&'static str, &'static str, u64)> {
      ("count-type-sizes", "count the sizes of aggregate types",
       COUNT_TYPE_SIZES),
      ("meta-stats", "gather metadata statistics", META_STATS),
-     ("no-opt", "do not optimize, even if -O is passed", NO_OPT),
      ("print-link-args", "Print the arguments passed to the linker",
       PRINT_LINK_ARGS),
      ("gc", "Garbage collect shared data (experimental)", GC),
      ("print-llvm-passes",
       "Prints the llvm optimization passes being run",
       PRINT_LLVM_PASSES),
-     ("lto", "Perform LLVM link-time optimizations", LTO),
      ("ast-json", "Print the AST as JSON and halt", AST_JSON),
      ("ast-json-noexpand", "Print the pre-expansion AST as JSON and halt", AST_JSON_NOEXPAND),
      ("ls", "List the symbols defined by a library crate", LS),
@@ -353,6 +349,8 @@ cgoptions!(
         "system linker to link outputs with"),
     link_args: Vec<String> = (Vec::new(), parse_list,
         "extra arguments to pass to the linker (space separated)"),
+    lto: bool = (false, parse_bool,
+        "perform LLVM link-time optimizations"),
     target_cpu: String = ("generic".to_string(), parse_string,
         "select target processor (llc -mcpu=help for details)"),
     target_feature: String = ("".to_string(), parse_string,
@@ -714,9 +712,7 @@ pub fn build_session_options(matches: &getopts::Matches) -> Options {
     let target = matches.opt_str("target").unwrap_or(
         driver::host_triple().to_string());
     let opt_level = {
-        if (debugging_opts & NO_OPT) != 0 {
-            No
-        } else if matches.opt_present("O") {
+        if matches.opt_present("O") {
             if matches.opt_present("opt-level") {
                 early_error("-O and --opt-level both provided");
             }
