@@ -10,7 +10,6 @@
 
 // Enable this to squash warnings due to exporting pieces of the representation
 // for use with the regex! macro. See lib.rs for explanation.
-#![allow(visible_private_types)]
 
 use std::cmp;
 use parse;
@@ -156,7 +155,7 @@ impl<'r> Compiler<'r> {
             Capture(cap, name, x) => {
                 let len = self.names.len();
                 if cap >= len {
-                    self.names.grow(10 + cap - len, &None)
+                    self.names.grow(10 + cap - len, None)
                 }
                 *self.names.get_mut(cap) = name;
 
