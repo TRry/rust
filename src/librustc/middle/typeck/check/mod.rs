@@ -121,6 +121,7 @@ use util::nodemap::{DefIdMap, FnvHashMap, NodeMap};
 
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
+use std::collections::hashmap::{Occupied, Vacant};
 use std::mem::replace;
 use std::rc::Rc;
 use syntax::abi;
@@ -1901,18 +1902,6 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         }
     }
 
-    pub fn method_ty_substs(&self, id: ast::NodeId) -> subst::Substs {
-        match self.inh.method_map.borrow().find(&MethodCall::expr(id)) {
-            Some(method) => method.substs.clone(),
-            None => {
-                self.tcx().sess.bug(
-                    format!("no method entry for node {}: {} in fcx {}",
-                            id, self.tcx().map.node_to_string(id),
-                            self.tag()).as_slice());
-            }
-        }
-    }
-
     pub fn opt_node_ty_substs(&self,
                               id: ast::NodeId,
                               f: |&ty::ItemSubsts|) {
@@ -1984,18 +1973,6 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         self.infcx().type_error_message(sp, mk_msg, actual_ty, err);
     }
 
-    pub fn report_mismatched_return_types(&self,
-                                          sp: Span,
-                                          e: ty::t,
-                                          a: ty::t,
-                                          err: &ty::type_err) {
-        // Derived error
-        if ty::type_is_error(e) || ty::type_is_error(a) {
-            return;
-        }
-        self.infcx().report_mismatched_types(sp, e, a, err)
-    }
-
     pub fn report_mismatched_types(&self,
                                    sp: Span,
                                    e: ty::t,
@@ -2015,11 +1992,14 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
          */
 
         let mut region_obligations = self.inh.region_obligations.borrow_mut();
-        let v = region_obligations.find_or_insert_with(self.body_id,
-                                                       |_| Vec::new());
-        v.push(RegionObligation { sub_region: r,
+        let region_obligation = RegionObligation { sub_region: r,
                                   sup_type: ty,
-                                  origin: origin });
+                                  origin: origin };
+
+        match region_obligations.entry(self.body_id) {
+            Vacant(entry) => { entry.set(vec![region_obligation]); },
+            Occupied(mut entry) => { entry.get_mut().push(region_obligation); },
+        }
     }
 
     pub fn add_obligations_for_parameters(&self,
@@ -4663,24 +4643,6 @@ impl Repr for Expectation {
     }
 }
 
-pub fn require_uint(fcx: &FnCtxt, sp: Span, t: ty::t) {
-    if !type_is_uint(fcx, sp, t) {
-        fcx.type_error_message(sp, |actual| {
-            format!("mismatched types: expected `uint` type, found `{}`",
-                    actual)
-        }, t, None);
-    }
-}
-
-pub fn require_integral(fcx: &FnCtxt, sp: Span, t: ty::t) {
-    if !type_is_integral(fcx, sp, t) {
-        fcx.type_error_message(sp, |actual| {
-            format!("mismatched types: expected integral type, found `{}`",
-                    actual)
-        }, t, None);
-    }
-}
-
 pub fn check_decl_initializer(fcx: &FnCtxt,
                               nid: ast::NodeId,
                               init: &ast::Expr)
@@ -5600,51 +5562,6 @@ pub fn structurally_resolved_type(fcx: &FnCtxt, sp: Span, tp: ty::t) -> ty::t {
 pub fn structure_of<'a>(fcx: &FnCtxt, sp: Span, typ: ty::t)
                         -> &'a ty::sty {
     &ty::get(structurally_resolved_type(fcx, sp, typ)).sty
-}
-
-pub fn type_is_integral(fcx: &FnCtxt, sp: Span, typ: ty::t) -> bool {
-    let typ_s = structurally_resolved_type(fcx, sp, typ);
-    return ty::type_is_integral(typ_s);
-}
-
-pub fn type_is_uint(fcx: &FnCtxt, sp: Span, typ: ty::t) -> bool {
-    let typ_s = structurally_resolved_type(fcx, sp, typ);
-    return ty::type_is_uint(typ_s);
-}
-
-pub fn type_is_scalar(fcx: &FnCtxt, sp: Span, typ: ty::t) -> bool {
-    let typ_s = structurally_resolved_type(fcx, sp, typ);
-    return ty::type_is_scalar(typ_s);
-}
-
-pub fn type_is_char(fcx: &FnCtxt, sp: Span, typ: ty::t) -> bool {
-    let typ_s = structurally_resolved_type(fcx, sp, typ);
-    return ty::type_is_char(typ_s);
-}
-
-pub fn type_is_bare_fn(fcx: &FnCtxt, sp: Span, typ: ty::t) -> bool {
-    let typ_s = structurally_resolved_type(fcx, sp, typ);
-    return ty::type_is_bare_fn(typ_s);
-}
-
-pub fn type_is_floating_point(fcx: &FnCtxt, sp: Span, typ: ty::t) -> bool {
-    let typ_s = structurally_resolved_type(fcx, sp, typ);
-    return ty::type_is_floating_point(typ_s);
-}
-
-pub fn type_is_unsafe_ptr(fcx: &FnCtxt, sp: Span, typ: ty::t) -> bool {
-    let typ_s = structurally_resolved_type(fcx, sp, typ);
-    return ty::type_is_unsafe_ptr(typ_s);
-}
-
-pub fn type_is_region_ptr(fcx: &FnCtxt, sp: Span, typ: ty::t) -> bool {
-    let typ_s = structurally_resolved_type(fcx, sp, typ);
-    return ty::type_is_region_ptr(typ_s);
-}
-
-pub fn type_is_c_like_enum(fcx: &FnCtxt, sp: Span, typ: ty::t) -> bool {
-    let typ_s = structurally_resolved_type(fcx, sp, typ);
-    return ty::type_is_c_like_enum(fcx.ccx.tcx, typ_s);
 }
 
 // Returns true if b contains a break that can exit from b
