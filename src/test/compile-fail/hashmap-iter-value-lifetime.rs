@@ -1,4 +1,4 @@
-// Copyright 2012 The Rust Project Developers. See the COPYRIGHT
+// Copyright 2014 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
 //
@@ -8,11 +8,13 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// compile-flags: --cfg foo
-
-#[cfg(all(foo, bar))] // foo AND bar
-fn foo() {}
-
 fn main() {
-    foo(); //~ ERROR unresolved name `foo`.
+    let mut my_stuff = std::collections::HashMap::new();
+    my_stuff.insert(0i, 42i);
+
+    let (_, thing) = my_stuff.iter().next().unwrap();
+
+    my_stuff.clear(); //~ ERROR cannot borrow
+
+    println!("{}", *thing);
 }
