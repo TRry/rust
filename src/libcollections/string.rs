@@ -160,7 +160,7 @@ impl String {
 
         if i > 0 {
             unsafe {
-                res.as_mut_vec().push_all(v.slice_to(i))
+                res.as_mut_vec().push_all(v[..i])
             };
         }
 
@@ -177,7 +177,7 @@ impl String {
             macro_rules! error(() => ({
                 unsafe {
                     if subseqidx != i_ {
-                        res.as_mut_vec().push_all(v.slice(subseqidx, i_));
+                        res.as_mut_vec().push_all(v[subseqidx..i_]);
                     }
                     subseqidx = i;
                     res.as_mut_vec().push_all(REPLACEMENT);
@@ -199,10 +199,10 @@ impl String {
                     }
                     3 => {
                         match (byte, safe_get(v, i, total)) {
-                            (0xE0        , 0xA0 .. 0xBF) => (),
-                            (0xE1 .. 0xEC, 0x80 .. 0xBF) => (),
-                            (0xED        , 0x80 .. 0x9F) => (),
-                            (0xEE .. 0xEF, 0x80 .. 0xBF) => (),
+                            (0xE0         , 0xA0 ... 0xBF) => (),
+                            (0xE1 ... 0xEC, 0x80 ... 0xBF) => (),
+                            (0xED         , 0x80 ... 0x9F) => (),
+                            (0xEE ... 0xEF, 0x80 ... 0xBF) => (),
                             _ => {
                                 error!();
                                 continue;
@@ -217,9 +217,9 @@ impl String {
                     }
                     4 => {
                         match (byte, safe_get(v, i, total)) {
-                            (0xF0        , 0x90 .. 0xBF) => (),
-                            (0xF1 .. 0xF3, 0x80 .. 0xBF) => (),
-                            (0xF4        , 0x80 .. 0x8F) => (),
+                            (0xF0         , 0x90 ... 0xBF) => (),
+                            (0xF1 ... 0xF3, 0x80 ... 0xBF) => (),
+                            (0xF4         , 0x80 ... 0x8F) => (),
                             _ => {
                                 error!();
                                 continue;
@@ -246,7 +246,7 @@ impl String {
         }
         if subseqidx < total {
             unsafe {
-                res.as_mut_vec().push_all(v.slice(subseqidx, total))
+                res.as_mut_vec().push_all(v[subseqidx..total])
             };
         }
         Owned(res.into_string())
@@ -927,6 +927,7 @@ impl<S: Str> Add<S, String> for String {
     }
 }
 
+#[cfg(stage0)]
 impl ops::Slice<uint, str> for String {
     #[inline]
     fn as_slice_<'a>(&'a self) -> &'a str {
@@ -945,6 +946,34 @@ impl ops::Slice<uint, str> for String {
 
     #[inline]
     fn slice_<'a>(&'a self, from: &uint, to: &uint) -> &'a str {
+        self[][*from..*to]
+    }
+}
+
+#[cfg(not(stage0))]
+#[inline]
+fn str_to_slice<'a, U: Str>(this: &'a U) -> &'a str {
+    this.as_slice()
+}
+#[cfg(not(stage0))]
+impl ops::Slice<uint, str> for String {
+    #[inline]
+    fn as_slice<'a>(&'a self) -> &'a str {
+        str_to_slice(self)
+    }
+
+    #[inline]
+    fn slice_from<'a>(&'a self, from: &uint) -> &'a str {
+        self[][*from..]
+    }
+
+    #[inline]
+    fn slice_to<'a>(&'a self, to: &uint) -> &'a str {
+        self[][..*to]
+    }
+
+    #[inline]
+    fn slice<'a>(&'a self, from: &uint, to: &uint) -> &'a str {
         self[][*from..*to]
     }
 }

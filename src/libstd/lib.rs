@@ -105,9 +105,10 @@
        html_root_url = "http://doc.rust-lang.org/master/",
        html_playground_url = "http://play.rust-lang.org/")]
 
+#![allow(unknown_features)]
 #![feature(macro_rules, globs, managed_boxes, linkage)]
 #![feature(default_type_params, phase, lang_items, unsafe_destructor)]
-#![feature(import_shadowing)]
+#![feature(import_shadowing, slicing_syntax)]
 
 // Don't link to std. We are std.
 #![no_std]
@@ -116,11 +117,6 @@
 
 #![reexport_test_harness_main = "test_main"]
 
-// When testing libstd, bring in libuv as the I/O backend so tests can print
-// things and all of the std::io tests have an I/O interface to run on top
-// of
-#[cfg(test)] extern crate rustuv;
-#[cfg(test)] extern crate native;
 #[cfg(test)] extern crate green;
 #[cfg(test)] extern crate debug;
 #[cfg(test)] #[phase(plugin, link)] extern crate log;
@@ -186,12 +182,6 @@ pub use rustrt::local_data;
 pub use unicode::char;
 
 pub use core_sync::comm;
-
-// Run tests with libgreen instead of libnative.
-#[cfg(test)] #[start]
-fn start(argc: int, argv: *const *const u8) -> int {
-    green::start(argc, argv, rustuv::event_loop, test_main)
-}
 
 /* Exported macros */
 

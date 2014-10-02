@@ -21,7 +21,7 @@
 `std::io` provides Rust's basic I/O types,
 for reading and writing to files, TCP, UDP,
 and other types of sockets and pipes,
-manipulating the file system, spawning processes and signal handling.
+manipulating the file system, spawning processes.
 
 # Examples
 
@@ -235,7 +235,7 @@ use os;
 use boxed::Box;
 use result::{Ok, Err, Result};
 use rt::rtio;
-use slice::{Slice, MutableSlice, ImmutableSlice};
+use slice::{Slice, ImmutableSlice};
 use str::{Str, StrSlice};
 use str;
 use string::String;
@@ -265,9 +265,6 @@ pub use self::buffered::{BufferedReader, BufferedWriter, BufferedStream,
                          LineBufferedWriter};
 pub use self::comm_adapters::{ChanReader, ChanWriter};
 
-// this comes first to get the iotest! macro
-pub mod test;
-
 mod buffered;
 mod comm_adapters;
 mod mem;
@@ -278,8 +275,8 @@ pub mod fs;
 pub mod net;
 pub mod pipe;
 pub mod process;
-pub mod signal;
 pub mod stdio;
+pub mod test;
 pub mod timer;
 pub mod util;
 
@@ -578,7 +575,7 @@ pub trait Reader {
         while read < min {
             let mut zeroes = 0;
             loop {
-                match self.read(buf.slice_from_mut(read)) {
+                match self.read(buf[mut read..]) {
                     Ok(0) => {
                         zeroes += 1;
                         if zeroes >= NO_PROGRESS_LIMIT {
@@ -1114,8 +1111,8 @@ pub trait Writer {
     #[inline]
     fn write_char(&mut self, c: char) -> IoResult<()> {
         let mut buf = [0u8, ..4];
-        let n = c.encode_utf8(buf.as_mut_slice()).unwrap_or(0);
-        self.write(buf.slice_to(n))
+        let n = c.encode_utf8(buf[mut]).unwrap_or(0);
+        self.write(buf[..n])
     }
 
     /// Write the result of passing n through `int::to_str_bytes`.
@@ -1499,7 +1496,7 @@ pub trait Buffer: Reader {
                 };
                 match available.iter().position(|&b| b == byte) {
                     Some(i) => {
-                        res.push_all(available.slice_to(i + 1));
+                        res.push_all(available[..i + 1]);
                         used = i + 1;
                         break
                     }
@@ -1531,14 +1528,14 @@ pub trait Buffer: Reader {
         {
             let mut start = 1;
             while start < width {
-                match try!(self.read(buf.slice_mut(start, width))) {
+                match try!(self.read(buf[mut start..width])) {
                     n if n == width - start => break,
                     n if n < width - start => { start += n; }
                     _ => return Err(standard_error(InvalidInput)),
                 }
             }
         }
-        match str::from_utf8(buf.slice_to(width)) {
+        match str::from_utf8(buf[..width]) {
             Some(s) => Ok(s.char_at(0)),
             None => Err(standard_error(InvalidInput))
         }

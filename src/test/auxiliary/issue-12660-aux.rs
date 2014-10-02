@@ -8,14 +8,14 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// Test slicing expressions doesn't defeat the borrow checker.
+#![crate_type="lib"]
+#![crate_name="issue12660aux"]
 
-#![feature(slicing_syntax)]
+pub use my_mod::{MyStruct, my_fn};
 
-fn main() {
-    let y;
-    {
-        let x: &[int] = &[1, 2, 3, 4, 5]; //~ ERROR borrowed value does not live long enough
-        y = x[1..];
+mod my_mod {
+    pub struct MyStruct;
+
+    pub fn my_fn(my_struct: MyStruct) {
     }
 }

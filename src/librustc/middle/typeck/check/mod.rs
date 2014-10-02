@@ -2078,6 +2078,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
     }
 }
 
+#[deriving(Show)]
 pub enum LvaluePreference {
     PreferMutLvalue,
     NoPreference
@@ -2270,10 +2271,10 @@ fn try_overloaded_slice(fcx: &FnCtxt,
         match fcx.tcx().lang_items.slice_mut_trait() {
             Some(trait_did) => {
                 let method_name = match (start_expr, end_expr) {
-                    (&Some(_), &Some(_)) => "slice_mut_",
-                    (&Some(_), &None) => "slice_from_mut_",
-                    (&None, &Some(_)) => "slice_to_mut_",
-                    (&None, &None) => "as_mut_slice_",
+                    (&Some(_), &Some(_)) => "slice_mut",
+                    (&Some(_), &None) => "slice_from_mut",
+                    (&None, &Some(_)) => "slice_to_mut",
+                    (&None, &None) => "as_mut_slice",
                 };
 
                 method::lookup_in_trait(fcx,
@@ -2295,10 +2296,10 @@ fn try_overloaded_slice(fcx: &FnCtxt,
         match fcx.tcx().lang_items.slice_trait() {
             Some(trait_did) => {
                 let method_name = match (start_expr, end_expr) {
-                    (&Some(_), &Some(_)) => "slice_",
-                    (&Some(_), &None) => "slice_from_",
-                    (&None, &Some(_)) => "slice_to_",
-                    (&None, &None) => "as_slice_",
+                    (&Some(_), &Some(_)) => "slice",
+                    (&Some(_), &None) => "slice_from",
+                    (&None, &Some(_)) => "slice_to",
+                    (&None, &None) => "as_slice",
                 };
 
                 method::lookup_in_trait(fcx,
@@ -3031,7 +3032,7 @@ fn check_expr_with_unifier(fcx: &FnCtxt,
         };
 
         // Call the generic checker.
-        let args: Vec<_> = args.slice_from(1).iter().map(|x| x).collect();
+        let args: Vec<_> = args[1..].iter().map(|x| x).collect();
         let ret_ty = check_method_argument_types(fcx,
                                                  method_name.span,
                                                  fn_ty,
@@ -5085,7 +5086,7 @@ pub fn polytype_for_def(fcx: &FnCtxt,
           let typ = fcx.local_ty(sp, nid);
           return no_params(typ);
       }
-      def::DefFn(id, _) | def::DefStaticMethod(id, _, _) |
+      def::DefFn(id, _, _) | def::DefStaticMethod(id, _, _) |
       def::DefStatic(id, _) | def::DefVariant(_, id, _) |
       def::DefStruct(id) => {
         return ty::lookup_item_type(fcx.ccx.tcx, id);

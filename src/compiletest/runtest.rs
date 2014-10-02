@@ -874,7 +874,7 @@ fn check_error_patterns(props: &TestProps,
     if done { return; }
 
     let missing_patterns =
-        props.error_patterns.slice(next_err_idx, props.error_patterns.len());
+        props.error_patterns[next_err_idx..];
     if missing_patterns.len() == 1u {
         fatal_proc_rec(format!("error pattern '{}' not found!",
                               missing_patterns[0]).as_slice(),
@@ -1512,7 +1512,7 @@ fn _arm_exec_compiled_test(config: &Config,
     for c in exitcode_out.as_slice().chars() {
         if !c.is_digit() { break; }
         exitcode = exitcode * 10 + match c {
-            '0' .. '9' => c as int - ('0' as int),
+            '0' ... '9' => c as int - ('0' as int),
             _ => 101,
         }
     }

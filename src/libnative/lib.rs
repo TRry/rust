@@ -57,7 +57,8 @@
 
 #![deny(unused_result, unused_must_use)]
 #![allow(non_camel_case_types, deprecated)]
-#![feature(default_type_params, lang_items)]
+#![allow(unknown_features)]
+#![feature(default_type_params, lang_items, slicing_syntax)]
 
 // NB this crate explicitly does *not* allow glob imports, please seriously
 //    consider whether they're needed before adding that feature here (the
@@ -77,10 +78,9 @@ pub use task::NativeTaskBuilder;
 pub mod io;
 pub mod task;
 
-#[cfg(windows)]
-#[cfg(android)]
+#[cfg(any(windows, android))]
 static OS_DEFAULT_STACK_ESTIMATE: uint = 1 << 20;
-#[cfg(unix, not(android))]
+#[cfg(all(unix, not(android)))]
 static OS_DEFAULT_STACK_ESTIMATE: uint = 2 * (1 << 20);
 
 #[lang = "start"]

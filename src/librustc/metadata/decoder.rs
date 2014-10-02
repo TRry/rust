@@ -70,7 +70,7 @@ fn lookup_hash<'a>(d: rbml::Doc<'a>, eq_fn: |&[u8]| -> bool,
     let mut ret = None;
     reader::tagged_docs(tagged_doc.doc, belt, |elt| {
         let pos = u64_from_be_bytes(elt.data, elt.start, 4) as uint;
-        if eq_fn(elt.data.slice(elt.start + 4, elt.end)) {
+        if eq_fn(elt.data[elt.start + 4 .. elt.end]) {
             ret = Some(reader::doc_at(d.data, pos).unwrap().doc);
             false
         } else {
@@ -84,7 +84,7 @@ pub fn maybe_find_item<'a>(item_id: ast::NodeId,
                            items: rbml::Doc<'a>) -> Option<rbml::Doc<'a>> {
     fn eq_item(bytes: &[u8], item_id: ast::NodeId) -> bool {
         return u64_from_be_bytes(
-            bytes.slice(0u, 4u), 0u, 4u) as ast::NodeId
+            bytes[0u..4u], 0u, 4u) as ast::NodeId
             == item_id;
     }
     lookup_hash(items,
@@ -112,6 +112,7 @@ enum Family {
     MutStatic,             // b
     Fn,                    // f
     UnsafeFn,              // u
+    CtorFn,                // o
     StaticMethod,          // F
     UnsafeStaticMethod,    // U
     Type,                  // y
@@ -135,6 +136,7 @@ fn item_family(item: rbml::Doc) -> Family {
       'b' => MutStatic,
       'f' => Fn,
       'u' => UnsafeFn,
+      'o' => CtorFn,
       'F' => StaticMethod,
       'U' => UnsafeStaticMethod,
       'y' => Type,
@@ -304,8 +306,9 @@ fn item_to_def_like(item: rbml::Doc, did: ast::DefId, cnum: ast::CrateNum)
         ImmStatic => DlDef(def::DefStatic(did, false)),
         MutStatic => DlDef(def::DefStatic(did, true)),
         Struct    => DlDef(def::DefStruct(did)),
-        UnsafeFn  => DlDef(def::DefFn(did, ast::UnsafeFn)),
-        Fn        => DlDef(def::DefFn(did, ast::NormalFn)),
+        UnsafeFn  => DlDef(def::DefFn(did, ast::UnsafeFn, false)),
+        Fn        => DlDef(def::DefFn(did, ast::NormalFn, false)),
+        CtorFn    => DlDef(def::DefFn(did, ast::NormalFn, true)),
         StaticMethod | UnsafeStaticMethod => {
             let fn_style = if fam == UnsafeStaticMethod {
                 ast::UnsafeFn

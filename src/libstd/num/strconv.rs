@@ -199,8 +199,8 @@ pub fn int_to_str_bytes_common<T: Int>(num: T, radix: uint, sign: SignFormat, f:
             current_digit_signed
         };
         buf[cur] = match current_digit.to_u8().unwrap() {
-            i @ 0..9 => b'0' + i,
-            i        => b'a' + (i - 10),
+            i @ 0...9 => b'0' + i,
+            i         => b'a' + (i - 10),
         };
         cur += 1;
 
@@ -730,7 +730,7 @@ pub fn from_str_bytes_common<T:NumCast+Zero+One+PartialEq+PartialOrd+Div<T,T>+
         // parse remaining bytes as decimal integer,
         // skipping the exponent char
         let exp: Option<int> = from_str_bytes_common(
-            buf.slice(i+1, len), 10, true, false, false, ExpNone, false,
+            buf[i+1..len], 10, true, false, false, ExpNone, false,
             ignore_underscores);
 
         match exp {
