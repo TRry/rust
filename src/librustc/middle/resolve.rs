@@ -1824,6 +1824,11 @@ impl<'a> Resolver<'a> {
                 child_name_bindings.define_value(def, DUMMY_SP, is_exported);
             }
           }
+          DefFn(ctor_id, _, true) => {
+            child_name_bindings.define_value(
+                csearch::get_tuple_struct_definition_if_ctor(&self.session.cstore, ctor_id)
+                    .map_or(def, |_| DefStruct(ctor_id)), DUMMY_SP, is_public);
+          }
           DefFn(..) | DefStaticMethod(..) | DefStatic(..) => {
             debug!("(building reduced graph for external \
                     crate) building value (fn/static) {}", final_ident);
@@ -5847,11 +5852,8 @@ impl<'a> Resolver<'a> {
                 visit::walk_expr(self, expr);
             }
 
-            ExprFnBlock(_, ref fn_decl, ref block) => {
-                // NOTE(stage0): After snapshot, change to:
-                //
-                //self.capture_mode_map.insert(expr.id, capture_clause);
-                self.capture_mode_map.insert(expr.id, ast::CaptureByRef);
+            ExprFnBlock(capture_clause, ref fn_decl, ref block) => {
+                self.capture_mode_map.insert(expr.id, capture_clause);
                 self.resolve_function(ClosureRibKind(expr.id, ast::DUMMY_NODE_ID),
                                       Some(&**fn_decl), NoTypeParameters,
                                       &**block);

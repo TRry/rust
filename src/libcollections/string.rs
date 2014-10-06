@@ -269,7 +269,7 @@ impl String {
     /// ```
     #[unstable = "error value in return may change"]
     pub fn from_utf16(v: &[u16]) -> Option<String> {
-        let mut s = String::with_capacity(v.len() / 2);
+        let mut s = String::with_capacity(v.len());
         for c in str::utf16_items(v) {
             match c {
                 str::ScalarValue(c) => s.push(c),
@@ -613,7 +613,8 @@ impl String {
     ///
     /// # Failure
     ///
-    /// Fails if `len` > current length.
+    /// Fails if `new_len` > current length,
+    /// or if `new_len` is not a character boundary.
     ///
     /// # Example
     ///
@@ -624,9 +625,9 @@ impl String {
     /// ```
     #[inline]
     #[unstable = "the failure conventions for strings are under development"]
-    pub fn truncate(&mut self, len: uint) {
-        assert!(self.as_slice().is_char_boundary(len));
-        self.vec.truncate(len)
+    pub fn truncate(&mut self, new_len: uint) {
+        assert!(self.as_slice().is_char_boundary(new_len));
+        self.vec.truncate(new_len)
     }
 
     /// Appends a byte to this string buffer.
