@@ -29,7 +29,7 @@ use syntax::ast::{ExprPath, ExprProc, ExprStruct, ExprUnboxedFn, FnDecl};
 use syntax::ast::{ForeignItem, ForeignItemFn, ForeignItemStatic, Generics};
 use syntax::ast::{Ident, ImplItem, Item, ItemEnum, ItemFn, ItemForeignMod};
 use syntax::ast::{ItemImpl, ItemMac, ItemMod, ItemStatic, ItemStruct};
-use syntax::ast::{ItemTrait, ItemTy, LOCAL_CRATE, Local};
+use syntax::ast::{ItemTrait, ItemTy, LOCAL_CRATE, Local, ItemConst};
 use syntax::ast::{MethodImplItem, Mod, Name, NamedField, NodeId};
 use syntax::ast::{Pat, PatEnum, PatIdent, PatLit};
 use syntax::ast::{PatRange, PatStruct, Path, PathListIdent, PathListMod};
@@ -1243,6 +1243,12 @@ impl<'a> Resolver<'a> {
                     (DefStatic(local_def(item.id), mutbl), sp, is_public);
                 parent
             }
+            ItemConst(_, _) => {
+                self.add_child(ident, parent.clone(), ForbidDuplicateValues, sp)
+                    .define_value(DefConst(local_def(item.id)),
+                                  sp, is_public);
+                parent
+            }
             ItemFn(_, fn_style, _, _, _) => {
                 let name_bindings =
                     self.add_child(ident, parent.clone(), ForbidDuplicateValues, sp);
@@ -1829,7 +1835,7 @@ impl<'a> Resolver<'a> {
                 csearch::get_tuple_struct_definition_if_ctor(&self.session.cstore, ctor_id)
                     .map_or(def, |_| DefStruct(ctor_id)), DUMMY_SP, is_public);
           }
-          DefFn(..) | DefStaticMethod(..) | DefStatic(..) => {
+          DefFn(..) | DefStaticMethod(..) | DefStatic(..) | DefConst(..) => {
             debug!("(building reduced graph for external \
                     crate) building value (fn/static) {}", final_ident);
             child_name_bindings.define_value(def, DUMMY_SP, is_public);
@@ -4216,7 +4222,7 @@ impl<'a> Resolver<'a> {
                                       &**block);
             }
 
-            ItemStatic(..) => {
+            ItemConst(..) | ItemStatic(..) => {
                 self.with_constant_rib(|this| {
                     visit::walk_item(this, item);
                 });
@@ -4232,15 +4238,25 @@ impl<'a> Resolver<'a> {
                                type_parameters: TypeParameters,
                                f: |&mut Resolver|) {
         match type_parameters {
-            HasTypeParameters(generics, space, node_id,
-                              rib_kind) => {
-
+            HasTypeParameters(generics, space, node_id, rib_kind) => {
                 let mut function_type_rib = Rib::new(rib_kind);
-
+                let mut seen_bindings = HashSet::new();
                 for (index, type_parameter) in generics.ty_params.iter().enumerate() {
                     let ident = type_parameter.ident;
                     debug!("with_type_parameter_rib: {} {}", node_id,
                            type_parameter.id);
+
+                    if seen_bindings.contains(&ident) {
+                        self.resolve_error(type_parameter.span,
+                                           format!("the name `{}` is already \
+                                                    used for a type \
+                                                    parameter in this type \
+                                                    parameter list",
+                                                   token::get_ident(
+                                                       ident)).as_slice())
+                    }
+                    seen_bindings.insert(ident);
+
                     let def_like = DlDef(DefTyParam(space,
                                                     local_def(type_parameter.id),
                                                     index));
@@ -4313,8 +4329,8 @@ impl<'a> Resolver<'a> {
                     // Nothing to do.
                 }
                 Some(declaration) => {
+                    let mut bindings_list = HashMap::new();
                     for argument in declaration.inputs.iter() {
-                        let mut bindings_list = HashMap::new();
                         this.resolve_pattern(&*argument.pat,
                                              ArgumentIrrefutableMode,
                                              &mut bindings_list);
@@ -5056,12 +5072,24 @@ impl<'a> Resolver<'a> {
                             // must not add it if it's in the bindings list
                             // because that breaks the assumptions later
                             // passes make about or-patterns.)
-
                             if !bindings_list.contains_key(&renamed) {
                                 let this = &mut *self;
                                 let last_rib = this.value_ribs.last_mut().unwrap();
                                 last_rib.bindings.insert(renamed, DlDef(def));
                                 bindings_list.insert(renamed, pat_id);
+                            } else if mode == ArgumentIrrefutableMode &&
+                                    bindings_list.contains_key(&renamed) {
+                                // Forbid duplicate bindings in the same
+                                // parameter list.
+                                self.resolve_error(pattern.span,
+                                                   format!("identifier `{}` \
+                                                            is bound more \
+                                                            than once in \
+                                                            this parameter \
+                                                            list",
+                                                           token::get_ident(
+                                                               ident))
+                                                   .as_slice())
                             } else if bindings_list.find(&renamed) ==
                                     Some(&pat_id) {
                                 // Then this is a duplicate variable in the
@@ -5084,6 +5112,7 @@ impl<'a> Resolver<'a> {
                         Some(def @ (DefFn(..), _))      |
                         Some(def @ (DefVariant(..), _)) |
                         Some(def @ (DefStruct(..), _))  |
+                        Some(def @ (DefConst(..), _))  |
                         Some(def @ (DefStatic(..), _)) => {
                             self.record_def(pattern.id, def);
                         }
@@ -5171,12 +5200,14 @@ impl<'a> Resolver<'a> {
                             def @ DefVariant(..) | def @ DefStruct(..) => {
                                 return FoundStructOrEnumVariant(def, LastMod(AllPublic));
                             }
-                            def @ DefStatic(_, false) => {
+                            def @ DefConst(..) => {
                                 return FoundConst(def, LastMod(AllPublic));
                             }
-                            DefStatic(_, true) => {
+                            DefStatic(..) => {
                                 self.resolve_error(span,
-                                    "mutable static variables cannot be referenced in a pattern");
+                                                   "static variables cannot be \
+                                                    referenced in a pattern, \
+                                                    use a `const` instead");
                                 return BareIdentifierPatternUnresolved;
                             }
                             _ => {
