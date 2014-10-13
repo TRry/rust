@@ -8,18 +8,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// Test struct inheritance.
-#![feature(struct_inherit)]
+// Tests that the proper help is displayed in the error message
 
-virtual struct S1 {
-    f1: int,
-}
-
-struct S6 : S1 {
-    f2: int,
-}
-
-pub fn main() {
-    let s = S6{f2: 3}; //~ ERROR missing field: `f1`
-    let s = S6{f1: 3}; //~ ERROR missing field: `f2`
-}
+extern crate foo as bar;
+//~^ ERROR expected `;`, found `as`; perhaps you meant to enclose the crate name `foo` in a string?

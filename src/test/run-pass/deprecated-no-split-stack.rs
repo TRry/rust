@@ -8,11 +8,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// Test struct inheritance.
-#![feature(struct_inherit)]
-
-
-struct S6 : int; //~ ERROR super-struct could not be resolved
-
-pub fn main() {
+//~ WARNING no_split_stack is a deprecated synonym for no_stack_check
+#[no_split_stack]
+fn main() {
 }

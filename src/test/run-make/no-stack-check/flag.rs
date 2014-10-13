@@ -8,18 +8,17 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// Test struct inheritance.
-#![feature(struct_inherit)]
+#![crate_type="lib"]
 
-struct S2 : S0 { //~ ERROR super-struct could not be resolved
-    f2: int,
+extern {
+    // Prevents optimizing away the stack buffer.
+    // This symbol is undefined, but the code doesn't need to pass
+    // the linker.
+    fn black_box(ptr: *const u8);
 }
 
-trait T {}
-
-struct S3 : T { //~ ERROR super-struct is not a struct type
-    f3: int,
-}
-
-pub fn main() {
+pub unsafe fn foo() {
+    // Make sure we use the stack
+    let x: [u8, ..50] = [0, ..50];
+    black_box(x.as_ptr());
 }

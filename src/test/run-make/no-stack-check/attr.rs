@@ -8,18 +8,18 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// Test struct inheritance on structs from another crate.
+#![crate_type="lib"]
 
-// aux-build:inherit_struct_lib.rs
-extern crate inherit_struct_lib;
+extern {
+    // Prevents optimizing away the stack buffer.
+    // This symbol is undefined, but the code doesn't need to pass
+    // the linker.
+    fn black_box(ptr: *const u8);
+}
 
-pub fn main() {
-    let s = inherit_struct_lib::S2{f1: 115, f2: 113};
-    assert!(s.f1 == 115);
-    assert!(s.f2 == 113);
-
-    assert!(inherit_struct_lib::glob_s.f1 == 32);
-    assert!(inherit_struct_lib::glob_s.f2 == -45);
-
-    inherit_struct_lib::test_s2(s);
+#[no_stack_check]
+pub unsafe fn foo() {
+    // Make sure we use the stack
+    let x: [u8, ..50] = [0, ..50];
+    black_box(x.as_ptr());
 }

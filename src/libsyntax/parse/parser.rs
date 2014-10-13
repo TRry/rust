@@ -4540,24 +4540,14 @@ impl<'a> Parser<'a> {
     }
 
     /// Parse struct Foo { ... }
-    fn parse_item_struct(&mut self, is_virtual: bool) -> ItemInfo {
+    fn parse_item_struct(&mut self) -> ItemInfo {
         let class_name = self.parse_ident();
         let mut generics = self.parse_generics();
 
-        let super_struct = if self.eat(&token::COLON) {
+        if self.eat(&token::COLON) {
             let ty = self.parse_ty(true);
-            match ty.node {
-                TyPath(_, None, _) => {
-                    Some(ty)
-                }
-                _ => {
-                    self.span_err(ty.span, "not a struct");
-                    None
-                }
-            }
-        } else {
-            None
-        };
+            self.span_err(ty.span, "`virtual` structs have been removed from the language");
+        }
 
         self.parse_where_clause(&mut generics);
 
@@ -4618,8 +4608,6 @@ impl<'a> Parser<'a> {
          ItemStruct(P(ast::StructDef {
              fields: fields,
              ctor_id: if is_tuple_like { Some(new_id) } else { None },
-             super_struct: super_struct,
-             is_virtual: is_virtual,
          }), generics),
          None)
     }
@@ -4992,18 +4980,27 @@ impl<'a> Parser<'a> {
                                 attrs: Vec<Attribute> )
                                 -> ItemOrViewItem {
 
+        let span = self.span;
         let (maybe_path, ident) = match self.token {
             token::IDENT(..) => {
                 let the_ident = self.parse_ident();
-                self.expect_one_of(&[], &[token::EQ, token::SEMI]);
-                let path = if self.token == token::EQ {
-                    self.bump();
+                let path = if self.eat(&token::EQ) {
                     let path = self.parse_str();
                     let span = self.span;
                     self.obsolete(span, ObsoleteExternCrateRenaming);
                     Some(path)
-                } else {None};
+                } else if self.eat_keyword(keywords::As) {
+                    // skip the ident if there is one
+                    if is_ident(&self.token) { self.bump(); }
 
+                    self.span_err(span,
+                                  format!("expected `;`, found `as`; perhaps you meant \
+                                          to enclose the crate name `{}` in a string?",
+                                          the_ident.as_str()).as_slice());
+                    None
+                } else {
+                    None
+                };
                 self.expect(&token::SEMI);
                 (path, the_ident)
             },
@@ -5090,8 +5087,6 @@ impl<'a> Parser<'a> {
         P(StructDef {
             fields: fields,
             ctor_id: None,
-            super_struct: None,
-            is_virtual: false,
         })
     }
 
@@ -5288,11 +5283,9 @@ impl<'a> Parser<'a> {
                                     token_str).as_slice());
         }
 
-        let is_virtual = self.eat_keyword(keywords::Virtual);
-        if is_virtual && !self.is_keyword(keywords::Struct) {
+        if self.eat_keyword(keywords::Virtual) {
             let span = self.span;
-            self.span_err(span,
-                          "`virtual` keyword may only be used with `struct`");
+            self.span_err(span, "`virtual` structs have been removed from the language");
         }
 
         // the rest are all guaranteed to be items:
@@ -5427,7 +5420,7 @@ impl<'a> Parser<'a> {
         }
         if self.eat_keyword(keywords::Struct) {
             // STRUCT ITEM
-            let (ident, item_, extra_attrs) = self.parse_item_struct(is_virtual);
+            let (ident, item_, extra_attrs) = self.parse_item_struct();
             let last_span = self.last_span;
             let item = self.mk_item(lo,
                                     last_span.hi,

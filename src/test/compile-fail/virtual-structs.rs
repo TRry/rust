@@ -8,27 +8,13 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// ignore-test FIXME: #13991
-
-
-// Test struct inheritance.
+// Test diagnostics for the removed struct inheritance feature.
 #![feature(struct_inherit)]
 
-virtual struct S1 {
+virtual struct SuperStruct { //~ ERROR `virtual` structs have been removed from the language
     f1: int,
 }
 
-virtual struct S6 : S1 {
-    f2: int,
-}
+struct Struct : SuperStruct; //~ ERROR `virtual` structs have been removed from the language
 
-struct S7 : S1 {
-    f1: int, //~ ERROR field `f1` hides field declared in super-struct
-}
-
-struct S8 : S6 {
-    f1: int, //~ ERROR field `f1` hides field declared in super-struct
-}
-
-pub fn main() {
-}
+pub fn main() {}

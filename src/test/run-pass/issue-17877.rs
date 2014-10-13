@@ -8,11 +8,14 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// Test struct inheritance.
-#![feature(struct_inherit)]
+fn main() {
+    assert_eq!(match [0u8, ..1024] {
+        _ => 42u,
+    }, 42u);
 
-struct s9;
-struct s10 : s9; //~ ERROR struct inheritance is only allowed from virtual structs
-
-pub fn main() {
+    assert_eq!(match [0u8, ..1024] {
+        [1, _..] => 0u,
+        [0, _..] => 1u,
+        _ => 2u
+    }, 1u);
 }
