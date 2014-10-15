@@ -1,4 +1,4 @@
-// Copyright 2013 The Rust Project Developers. See the COPYRIGHT
+// Copyright 2014 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
 //
@@ -8,10 +8,13 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// issue #6698
+#![deny(unused_variable)]
 
-fn V() -> bool {
-    std::clone::Clone::clone(true) //~ ERROR error: unresolved name `std::clone::Clone::clone`.
+fn main() {
+    for _ in range(1i, 101) {
+        let x = (); //~ ERROR: unused variable: `x`
+        match () {
+            a => {} //~ ERROR: unused variable: `a`
+        }
+    }
 }
-
-fn main() {}
