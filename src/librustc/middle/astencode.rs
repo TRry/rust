@@ -516,7 +516,8 @@ impl tr for ty::BoundRegion {
     fn tr(&self, dcx: &DecodeContext) -> ty::BoundRegion {
         match *self {
             ty::BrAnon(_) |
-            ty::BrFresh(_) => *self,
+            ty::BrFresh(_) |
+            ty::BrEnv => *self,
             ty::BrNamed(id, ident) => ty::BrNamed(dcx.tr_def_id(id),
                                                     ident),
         }
@@ -1807,7 +1808,7 @@ impl<'a> rbml_decoder_decoder_helpers for reader::Decoder<'a> {
             NominalType | TypeWithId | RegionParameter => dcx.tr_def_id(did),
             TypeParameter => dcx.tr_intern_def_id(did)
         };
-        debug!("convert_def_id(source={:?}, did={:?})={:?}", source, did, r);
+        debug!("convert_def_id(source={}, did={})={}", source, did, r);
         return r;
     }
 }
@@ -1841,7 +1842,7 @@ fn decode_side_tables(dcx: &DecodeContext,
                     }
                     c::tag_table_node_type => {
                         let ty = val_dsr.read_ty(dcx);
-                        debug!("inserting ty for node {:?}: {}",
+                        debug!("inserting ty for node {}: {}",
                                id, ty_to_string(dcx.tcx, ty));
                         dcx.tcx.node_types.borrow_mut().insert(id as uint, ty);
                     }

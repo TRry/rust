@@ -8,17 +8,23 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#![feature(unboxed_closures)]
+// Test that closures cannot subvert aliasing restrictions
 
-// Test generating type visitor glue for unboxed closures
-
-extern crate debug;
+#![feature(overloaded_calls, unboxed_closures)]
 
 fn main() {
-    let expected = "fn(); fn(uint, uint) -> uint; fn() -> !";
-    let result = format!("{:?}; {:?}; {:?}",
-                         |:| {},
-                         |&: x: uint, y: uint| { x + y },
-                         |&mut:| -> ! { fail!() });
-    assert_eq!(expected, result.as_slice());
+    // Unboxed closure case
+    {
+        let mut x = 0u;
+        let mut f = |&mut:| &mut x; //~ ERROR cannot infer
+        let x = f();
+        let y = f();
+    }
+    // Boxed closure case
+    {
+        let mut x = 0u;
+        let f = || &mut x; //~ ERROR cannot infer
+        let x = f();
+        let y = f();
+    }
 }
