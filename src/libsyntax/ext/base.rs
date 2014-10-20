@@ -557,7 +557,7 @@ impl<'a> ExtCtxt<'a> {
         self.recursion_count += 1;
         if self.recursion_count > self.ecfg.recursion_limit {
             self.span_fatal(ei.call_site,
-                            format!("Recursion limit reached while expanding the macro `{}`",
+                            format!("recursion limit reached while expanding the macro `{}`",
                                     ei.callee.name).as_slice());
         }
 
@@ -619,6 +619,10 @@ impl<'a> ExtCtxt<'a> {
     pub fn span_note(&self, sp: Span, msg: &str) {
         self.print_backtrace();
         self.parse_sess.span_diagnostic.span_note(sp, msg);
+    }
+    pub fn span_help(&self, sp: Span, msg: &str) {
+        self.print_backtrace();
+        self.parse_sess.span_diagnostic.span_help(sp, msg);
     }
     pub fn bug(&self, msg: &str) -> ! {
         self.print_backtrace();

@@ -555,16 +555,12 @@ fn check_fn<'a, 'tcx>(ccx: &'a CrateCtxt<'a, 'tcx>,
 
     // Remember return type so that regionck can access it later.
     let fn_sig_tys: Vec<ty::t> =
-        arg_tys.iter()
-        .chain([ret_ty].iter())
-        .map(|&ty| ty)
-        .collect();
+        arg_tys.iter().chain([ret_ty].iter()).map(|&ty| ty).collect();
     debug!("fn-sig-map: fn_id={} fn_sig_tys={}",
            fn_id,
            fn_sig_tys.repr(tcx));
-    inherited.fn_sig_map
-        .borrow_mut()
-        .insert(fn_id, fn_sig_tys);
+
+    inherited.fn_sig_map.borrow_mut().insert(fn_id, fn_sig_tys);
 
     {
         let mut visit = GatherLocalsVisitor { fcx: &fcx, };
@@ -591,6 +587,7 @@ fn check_fn<'a, 'tcx>(ccx: &'a CrateCtxt<'a, 'tcx>,
 
         visit.visit_block(body);
     }
+    fcx.require_type_is_sized(ret_ty, decl.output.span, traits::ReturnType);
 
     check_block_with_expected(&fcx, body, ExpectHasType(ret_ty));
 
@@ -1681,10 +1678,17 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 self.register_unsize_obligations(span, &**u)
             }
             ty::UnsizeVtable(ref ty_trait, self_ty) => {
+                // If the type is `Foo+'a`, ensures that the type
+                // being cast to `Foo+'a` implements `Foo`:
                 vtable2::register_object_cast_obligations(self,
                                                           span,
                                                           ty_trait,
                                                           self_ty);
+
+                // If the type is `Foo+'a`, ensures that the type
+                // being cast to `Foo+'a` outlives `'a`:
+                let origin = infer::RelateObjectBound(span);
+                self.register_region_obligation(origin, self_ty, ty_trait.bounds.region_bound);
             }
         }
     }
@@ -2516,8 +2520,10 @@ fn check_argument_types<'a>(fcx: &FnCtxt,
                         "this function takes 0 parameters but {} parameter{} supplied",
                         args.len(),
                         if args.len() == 1 {" was"} else {"s were"});
+                    err_args(args.len())
+                } else {
+                    vec![]
                 }
-                Vec::new()
             }
             _ => {
                 span_err!(tcx.sess, sp, E0059,

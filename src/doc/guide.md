@@ -482,7 +482,7 @@ but it will still print "Hello, world!":
    Compiling hello_world v0.0.1 (file:///home/you/projects/hello_world)
 src/main.rs:2:9: 2:10 warning: unused variable: `x`, #[warn(unused_variable)] on by default
 src/main.rs:2     let x: int;
-                             ^
+                      ^
 ```
 
 Rust warns us that we never use the variable binding, but since we never use it,
@@ -1255,8 +1255,9 @@ version, if we had forgotten the `Greater` case, for example, our program would
 have happily compiled. If we forget in the `match`, it will not. Rust helps us
 make sure to cover all of our bases.
 
-`match` is also an expression, which means we can use it on the right hand side
-of a `let` binding. We could also implement the previous line like this:
+`match` is also an expression, which means we can use it on the right
+hand side of a `let` binding or directly where an expression is
+used. We could also implement the previous line like this:
 
 ```{rust}
 fn cmp(a: int, b: int) -> Ordering {
@@ -1269,18 +1270,15 @@ fn main() {
     let x = 5i;
     let y = 10i;
 
-    let result = match cmp(x, y) {
+    println!("{}", match cmp(x, y) {
         Less    => "less",
         Greater => "greater",
         Equal   => "equal",
-    };
-
-    println!("{}", result);
+    });
 }
 ```
 
-In this case, it doesn't make a lot of sense, as we are just making a temporary
-string where we don't need to, but sometimes, it's a nice pattern.
+Sometimes, it's a nice pattern.
 
 # Looping
 
@@ -4365,7 +4363,7 @@ element, `find` returns an `Option` rather than the element itself.
 Another important consumer is `fold`. Here's what it looks like:
 
 ```{rust}
-let sum = range(1i, 100i)
+let sum = range(1i, 4i)
               .fold(0i, |sum, x| sum + x);
 ```
 
@@ -4389,7 +4387,7 @@ in this iterator:
 We called `fold()` with these arguments:
 
 ```{rust}
-# range(1i, 5i)
+# range(1i, 4i)
 .fold(0i, |sum, x| sum + x);
 ```
 
