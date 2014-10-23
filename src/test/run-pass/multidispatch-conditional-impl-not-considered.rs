@@ -1,4 +1,4 @@
-// Copyright 2013 The Rust Project Developers. See the COPYRIGHT
+// Copyright 2014 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
 //
@@ -8,19 +8,26 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// compile-flags:--debuginfo=1
-// ignore-lldb
+// Test that we correctly ignore the blanket impl
+// because (in this case) `T` does not impl `Clone`.
+//
+// Issue #17594.
 
-pub trait TraitWithDefaultMethod {
-    fn method(self) {
-        ()
-    }
+use std::cell::RefCell;
+
+trait Foo {
+    fn foo(&self) {}
 }
 
-struct MyStruct;
+impl<T> Foo for T where T: Clone {}
 
-impl TraitWithDefaultMethod for MyStruct { }
+struct Bar;
 
-pub fn main() {
-    MyStruct.method();
+impl Bar {
+    fn foo(&self) {}
+}
+
+fn main() {
+    let b = RefCell::new(Bar);
+    b.borrow().foo()
 }
