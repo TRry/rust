@@ -17,7 +17,7 @@ use syntax::ast_util;
 use syntax::ast_util::PostExpansionMethod;
 use syntax::attr;
 use syntax::attr::{AttributeMethods, AttrMetaMethods};
-use syntax::codemap::{DUMMY_SP, Pos};
+use syntax::codemap::{DUMMY_SP, Pos, Spanned};
 use syntax::parse::token::InternedString;
 use syntax::parse::token;
 use syntax::ptr::P;
@@ -880,6 +880,15 @@ impl Clean<FnDecl> for ast::FnDecl {
     }
 }
 
+impl<'a> Clean<Type> for ty::FnOutput {
+    fn clean(&self, cx: &DocContext) -> Type {
+        match *self {
+            ty::FnConverging(ty) => ty.clean(cx),
+            ty::FnDiverging => Bottom
+        }
+    }
+}
+
 impl<'a> Clean<FnDecl> for (ast::DefId, &'a ty::FnSig) {
     fn clean(&self, cx: &DocContext) -> FnDecl {
         let (did, sig) = *self;
@@ -1258,7 +1267,6 @@ impl Clean<Type> for ast::Ty {
 impl Clean<Type> for ty::t {
     fn clean(&self, cx: &DocContext) -> Type {
         match ty::get(*self).sty {
-            ty::ty_bot => Bottom,
             ty::ty_nil => Primitive(Unit),
             ty::ty_bool => Primitive(Bool),
             ty::ty_char => Primitive(Char),
@@ -2045,7 +2053,7 @@ fn name_from_pat(p: &ast::Pat) -> String {
         PatEnum(ref p, _) => path_to_string(p),
         PatStruct(ref name, ref fields, etc) => {
             format!("{} {{ {}{} }}", path_to_string(name),
-                fields.iter().map(|fp|
+                fields.iter().map(|&Spanned { node: ref fp, .. }|
                                   format!("{}: {}", fp.ident.as_str(), name_from_pat(&*fp.pat)))
                              .collect::<Vec<String>>().connect(", "),
                 if etc { ", ..." } else { "" }

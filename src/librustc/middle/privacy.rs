@@ -667,21 +667,12 @@ impl<'a, 'tcx> PrivacyVisitor<'a, 'tcx> {
 
         let struct_type = ty::lookup_item_type(self.tcx, id).ty;
         let struct_desc = match ty::get(struct_type).sty {
-            ty::ty_struct(_, _) => format!("struct `{}`", ty::item_path_str(self.tcx, id)),
-            ty::ty_bare_fn(ty::BareFnTy { sig: ty::FnSig { output, .. }, .. }) => {
-                // Struct `id` is really a struct variant of an enum,
-                // and we're really looking at the variant's constructor
-                // function. So get the return type for a detailed error
-                // message.
-                let enum_id = match ty::get(output).sty {
-                    ty::ty_enum(id, _) => id,
-                    _ => self.tcx.sess.span_bug(span, "enum variant doesn't \
-                                                       belong to an enum")
-                };
+            ty::ty_struct(_, _) =>
+                format!("struct `{}`", ty::item_path_str(self.tcx, id)),
+            ty::ty_enum(enum_id, _) =>
                 format!("variant `{}` of enum `{}`",
                         ty::with_path(self.tcx, id, |mut p| p.last().unwrap()),
-                        ty::item_path_str(self.tcx, enum_id))
-            }
+                        ty::item_path_str(self.tcx, enum_id)),
             _ => self.tcx.sess.span_bug(span, "can't find struct for field")
         };
         let msg = match name {
@@ -739,9 +730,9 @@ impl<'a, 'tcx> PrivacyVisitor<'a, 'tcx> {
                 resolve::LastMod(resolve::DependsOn(def)) => {
                     self.report_error(ck_public(def));
                 },
-                resolve::LastImport{value_priv: value_priv,
+                resolve::LastImport{value_priv,
                                     value_used: check_value,
-                                    type_priv: type_priv,
+                                    type_priv,
                                     type_used: check_type} => {
                     // This dance with found_error is because we don't want to report
                     // a privacy error twice for the same directive.
@@ -828,8 +819,8 @@ impl<'a, 'tcx> PrivacyVisitor<'a, 'tcx> {
             MethodStaticUnboxedClosure(_) => {}
             // Trait methods are always all public. The only controlling factor
             // is whether the trait itself is accessible or not.
-            MethodTypeParam(MethodParam { trait_ref: ref trait_ref, .. }) |
-            MethodTraitObject(MethodObject { trait_ref: ref trait_ref, .. }) => {
+            MethodTypeParam(MethodParam { ref trait_ref, .. }) |
+            MethodTraitObject(MethodObject { ref trait_ref, .. }) => {
                 self.report_error(self.ensure_public(span, trait_ref.def_id,
                                                      None, "source trait"));
             }
@@ -991,7 +982,7 @@ impl<'a, 'tcx, 'v> Visitor<'v> for PrivacyVisitor<'a, 'tcx> {
                     ty::ty_struct(id, _) => {
                         for field in fields.iter() {
                             self.check_field(pattern.span, id,
-                                             NamedField(field.ident));
+                                             NamedField(field.node.ident));
                         }
                     }
                     ty::ty_enum(_, _) => {
@@ -999,7 +990,7 @@ impl<'a, 'tcx, 'v> Visitor<'v> for PrivacyVisitor<'a, 'tcx> {
                             Some(&def::DefVariant(_, variant_id, _)) => {
                                 for field in fields.iter() {
                                     self.check_field(pattern.span, variant_id,
-                                                     NamedField(field.ident));
+                                                     NamedField(field.node.ident));
                                 }
                             }
                             _ => self.tcx.sess.span_bug(pattern.span,

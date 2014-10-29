@@ -8,8 +8,11 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-static X: uint = 0 as *const uint as uint;
+#![feature(unboxed_closures)]
+
+struct B<T>;
 
 fn main() {
-    assert_eq!(X, 0);
+    let foo = B; //~ ERROR unable to infer enough type information to locate the impl of the trait
+    let closure = |:| foo;
 }

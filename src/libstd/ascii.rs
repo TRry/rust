@@ -15,6 +15,7 @@
 #![experimental]
 
 use collections::Collection;
+use core::kinds::Sized;
 use fmt;
 use iter::Iterator;
 use mem;
@@ -247,8 +248,7 @@ impl OwnedAsciiCast for String {
 
     #[inline]
     unsafe fn into_ascii_nocheck(self) -> Vec<Ascii> {
-        let v: Vec<u8> = mem::transmute(self);
-        v.into_ascii_nocheck()
+        self.into_bytes().into_ascii_nocheck()
     }
 }
 
@@ -260,13 +260,20 @@ impl OwnedAsciiCast for Vec<u8> {
 
     #[inline]
     unsafe fn into_ascii_nocheck(self) -> Vec<Ascii> {
-        mem::transmute(self)
+        let v = Vec::from_raw_parts(self.as_ptr() as *mut Ascii,
+                                    self.len(),
+                                    self.capacity());
+
+        // We forget `self` to avoid freeing it at the end of the scope
+        // Otherwise, the returned `Vec` would point to freed memory
+        mem::forget(self);
+        v
     }
 }
 
 /// Trait for converting an ascii type to a string. Needed to convert
 /// `&[Ascii]` to `&str`.
-pub trait AsciiStr {
+pub trait AsciiStr for Sized? {
     /// Convert to a string.
     fn as_str_ascii<'a>(&'a self) -> &'a str;
 
@@ -285,13 +292,13 @@ pub trait AsciiStr {
     fn to_uppercase(&self) -> Vec<Ascii>;
 
     /// Compares two Ascii strings ignoring case.
-    fn eq_ignore_case(self, other: &[Ascii]) -> bool;
+    fn eq_ignore_case(&self, other: &[Ascii]) -> bool;
 }
 
-impl<'a> AsciiStr for &'a [Ascii] {
+impl AsciiStr for [Ascii] {
     #[inline]
     fn as_str_ascii<'a>(&'a self) -> &'a str {
-        unsafe { mem::transmute(*self) }
+        unsafe { mem::transmute(self) }
     }
 
     #[inline]
@@ -315,7 +322,7 @@ impl<'a> AsciiStr for &'a [Ascii] {
     }
 
     #[inline]
-    fn eq_ignore_case(self, other: &[Ascii]) -> bool {
+    fn eq_ignore_case(&self, other: &[Ascii]) -> bool {
         self.iter().zip(other.iter()).all(|(&a, &b)| a.eq_ignore_case(b))
     }
 }
@@ -338,7 +345,16 @@ pub trait IntoBytes {
 
 impl IntoBytes for Vec<Ascii> {
     fn into_bytes(self) -> Vec<u8> {
-        unsafe { mem::transmute(self) }
+        unsafe {
+            let v = Vec::from_raw_parts(self.as_ptr() as *mut u8,
+                                        self.len(),
+                                        self.capacity());
+
+            // We forget `self` to avoid freeing it at the end of the scope
+            // Otherwise, the returned `Vec` would point to freed memory
+            mem::forget(self);
+            v
+        }
     }
 }
 
@@ -357,7 +373,7 @@ pub trait OwnedAsciiExt {
 }
 
 /// Extension methods for ASCII-subset only operations on string slices
-pub trait AsciiExt<T> {
+pub trait AsciiExt<T> for Sized? {
     /// Makes a copy of the string in ASCII upper case:
     /// ASCII letters 'a' to 'z' are mapped to 'A' to 'Z',
     /// but non-ASCII letters are unchanged.
@@ -371,10 +387,10 @@ pub trait AsciiExt<T> {
     /// Check that two strings are an ASCII case-insensitive match.
     /// Same as `to_ascii_lower(a) == to_ascii_lower(b)`,
     /// but without allocating and copying temporary strings.
-    fn eq_ignore_ascii_case(&self, other: Self) -> bool;
+    fn eq_ignore_ascii_case(&self, other: &Self) -> bool;
 }
 
-impl<'a> AsciiExt<String> for &'a str {
+impl AsciiExt<String> for str {
     #[inline]
     fn to_ascii_upper(&self) -> String {
         // Vec<u8>::to_ascii_upper() preserves the UTF-8 invariant.
@@ -407,7 +423,7 @@ impl OwnedAsciiExt for String {
     }
 }
 
-impl<'a> AsciiExt<Vec<u8>> for &'a [u8] {
+impl AsciiExt<Vec<u8>> for [u8] {
     #[inline]
     fn to_ascii_upper(&self) -> Vec<u8> {
         self.iter().map(|&byte| ASCII_UPPER_MAP[byte as uint]).collect()

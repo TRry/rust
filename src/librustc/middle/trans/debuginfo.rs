@@ -190,7 +190,7 @@ use llvm;
 use llvm::{ModuleRef, ContextRef, ValueRef};
 use llvm::debuginfo::*;
 use metadata::csearch;
-use middle::subst;
+use middle::subst::{mod, Subst};
 use middle::trans::adt;
 use middle::trans::common::*;
 use middle::trans::machine;
@@ -352,7 +352,6 @@ impl TypeMap {
 
         match ty::get(type_).sty {
             ty::ty_nil      |
-            ty::ty_bot      |
             ty::ty_bool     |
             ty::ty_char     |
             ty::ty_str      |
@@ -451,18 +450,25 @@ impl TypeMap {
                 }
 
                 unique_type_id.push_str(")->");
-                let return_type_id = self.get_unique_type_id_of_type(cx, sig.output);
-                let return_type_id = self.get_unique_type_id_as_string(return_type_id);
-                unique_type_id.push_str(return_type_id.as_slice());
+                match sig.output {
+                    ty::FnConverging(ret_ty) => {
+                        let return_type_id = self.get_unique_type_id_of_type(cx, ret_ty);
+                        let return_type_id = self.get_unique_type_id_as_string(return_type_id);
+                        unique_type_id.push_str(return_type_id.as_slice());
+                    }
+                    ty::FnDiverging => {
+                        unique_type_id.push_str("!");
+                    }
+                }
             },
             ty::ty_closure(box ref closure_ty) => {
                 self.get_unique_type_id_of_closure_type(cx,
                                                         closure_ty.clone(),
                                                         &mut unique_type_id);
             },
-            ty::ty_unboxed_closure(ref def_id, _) => {
+            ty::ty_unboxed_closure(ref def_id, _, ref substs) => {
                 let closure_ty = cx.tcx().unboxed_closures.borrow()
-                                   .find(def_id).unwrap().closure_type.clone();
+                                   .find(def_id).unwrap().closure_type.subst(cx.tcx(), substs);
                 self.get_unique_type_id_of_closure_type(cx,
                                                         closure_ty,
                                                         &mut unique_type_id);
@@ -578,9 +584,16 @@ impl TypeMap {
 
         unique_type_id.push_str("|->");
 
-        let return_type_id = self.get_unique_type_id_of_type(cx, sig.output);
-        let return_type_id = self.get_unique_type_id_as_string(return_type_id);
-        unique_type_id.push_str(return_type_id.as_slice());
+        match sig.output {
+            ty::FnConverging(ret_ty) => {
+                let return_type_id = self.get_unique_type_id_of_type(cx, ret_ty);
+                let return_type_id = self.get_unique_type_id_as_string(return_type_id);
+                unique_type_id.push_str(return_type_id.as_slice());
+            }
+            ty::FnDiverging => {
+                unique_type_id.push_str("!");
+            }
+        }
 
         unique_type_id.push(':');
 
@@ -1449,7 +1462,7 @@ pub fn create_function_debug_context(cx: &CrateContext,
 
         // Handle other generic parameters
         let actual_types = param_substs.substs.types.get_slice(subst::FnSpace);
-        for (index, &ast::TyParam{ ident: ident, .. }) in generics.ty_params.iter().enumerate() {
+        for (index, &ast::TyParam{ ident, .. }) in generics.ty_params.iter().enumerate() {
             let actual_type = actual_types[index];
             // Add actual type name to <...> clause of function name
             let actual_type_name = compute_debuginfo_type_name(cx,
@@ -1707,13 +1720,25 @@ fn scope_metadata(fcx: &FunctionContext,
     }
 }
 
+fn diverging_type_metadata(cx: &CrateContext) -> DIType {
+    "!".with_c_str(|name| {
+        unsafe {
+            llvm::LLVMDIBuilderCreateBasicType(
+                DIB(cx),
+                name,
+                bytes_to_bits(0),
+                bytes_to_bits(0),
+                DW_ATE_unsigned)
+        }
+    })
+}
+
 fn basic_type_metadata(cx: &CrateContext, t: ty::t) -> DIType {
 
     debug!("basic_type_metadata: {}", ty::get(t));
 
     let (name, encoding) = match ty::get(t).sty {
         ty::ty_nil => ("()".to_string(), DW_ATE_unsigned),
-        ty::ty_bot => ("!".to_string(), DW_ATE_unsigned),
         ty::ty_bool => ("bool".to_string(), DW_ATE_boolean),
         ty::ty_char => ("char".to_string(), DW_ATE_unsigned_char),
         ty::ty_int(int_ty) => match int_ty {
@@ -2748,9 +2773,12 @@ fn subroutine_type_metadata(cx: &CrateContext,
     let mut signature_metadata: Vec<DIType> = Vec::with_capacity(signature.inputs.len() + 1);
 
     // return type
-    signature_metadata.push(match ty::get(signature.output).sty {
-        ty::ty_nil => ptr::null_mut(),
-        _ => type_metadata(cx, signature.output, span)
+    signature_metadata.push(match signature.output {
+        ty::FnConverging(ret_ty) => match ty::get(ret_ty).sty {
+            ty::ty_nil => ptr::null_mut(),
+            _ => type_metadata(cx, ret_ty, span)
+        },
+        ty::FnDiverging => diverging_type_metadata(cx)
     });
 
     // regular arguments
@@ -2855,7 +2883,6 @@ fn type_metadata(cx: &CrateContext,
     let sty = &ty::get(t).sty;
     let MetadataCreationResult { metadata, already_stored_in_typemap } = match *sty {
         ty::ty_nil      |
-        ty::ty_bot      |
         ty::ty_bool     |
         ty::ty_char     |
         ty::ty_int(_)   |
@@ -2911,9 +2938,9 @@ fn type_metadata(cx: &CrateContext,
         ty::ty_closure(ref closurety) => {
             subroutine_type_metadata(cx, unique_type_id, &closurety.sig, usage_site_span)
         }
-        ty::ty_unboxed_closure(ref def_id, _) => {
+        ty::ty_unboxed_closure(ref def_id, _, ref substs) => {
             let sig = cx.tcx().unboxed_closures.borrow()
-                        .find(def_id).unwrap().closure_type.sig.clone();
+                        .find(def_id).unwrap().closure_type.sig.subst(cx.tcx(), substs);
             subroutine_type_metadata(cx, unique_type_id, &sig, usage_site_span)
         }
         ty::ty_struct(def_id, ref substs) => {
@@ -3344,7 +3371,10 @@ fn populate_scope_map(cx: &CrateContext,
             ast::PatStruct(_, ref field_pats, _) => {
                 scope_map.insert(pat.id, scope_stack.last().unwrap().scope_metadata);
 
-                for &ast::FieldPat { pat: ref sub_pat, .. } in field_pats.iter() {
+                for &codemap::Spanned {
+                    node: ast::FieldPat { pat: ref sub_pat, .. },
+                    ..
+                } in field_pats.iter() {
                     walk_pattern(cx, &**sub_pat, scope_stack, scope_map);
                 }
             }
@@ -3602,8 +3632,8 @@ fn populate_scope_map(cx: &CrateContext,
                 }
             }
 
-            ast::ExprInlineAsm(ast::InlineAsm { inputs: ref inputs,
-                                                outputs: ref outputs,
+            ast::ExprInlineAsm(ast::InlineAsm { ref inputs,
+                                                ref outputs,
                                                 .. }) => {
                 // inputs, outputs: Vec<(String, P<Expr>)>
                 for &(_, ref exp) in inputs.iter() {
@@ -3644,7 +3674,6 @@ fn push_debuginfo_type_name(cx: &CrateContext,
                             output:&mut String) {
     match ty::get(t).sty {
         ty::ty_nil               => output.push_str("()"),
-        ty::ty_bot               => output.push_str("!"),
         ty::ty_bool              => output.push_str("bool"),
         ty::ty_char              => output.push_str("char"),
         ty::ty_str               => output.push_str("str"),
@@ -3746,9 +3775,15 @@ fn push_debuginfo_type_name(cx: &CrateContext,
 
             output.push(')');
 
-            if !ty::type_is_nil(sig.output) {
-                output.push_str(" -> ");
-                push_debuginfo_type_name(cx, sig.output, true, output);
+            match sig.output {
+                ty::FnConverging(result_type) if ty::type_is_nil(result_type) => {}
+                ty::FnConverging(result_type) => {
+                    output.push_str(" -> ");
+                    push_debuginfo_type_name(cx, result_type, true, output);
+                }
+                ty::FnDiverging => {
+                    output.push_str(" -> !");
+                }
             }
         },
         ty::ty_closure(box ty::ClosureTy { fn_style,
@@ -3800,9 +3835,15 @@ fn push_debuginfo_type_name(cx: &CrateContext,
 
             output.push(param_list_closing_char);
 
-            if !ty::type_is_nil(sig.output) {
-                output.push_str(" -> ");
-                push_debuginfo_type_name(cx, sig.output, true, output);
+            match sig.output {
+                ty::FnConverging(result_type) if ty::type_is_nil(result_type) => {}
+                ty::FnConverging(result_type) => {
+                    output.push_str(" -> ");
+                    push_debuginfo_type_name(cx, result_type, true, output);
+                }
+                ty::FnDiverging => {
+                    output.push_str(" -> !");
+                }
             }
         },
         ty::ty_unboxed_closure(..) => {

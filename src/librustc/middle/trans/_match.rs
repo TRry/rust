@@ -1462,15 +1462,11 @@ pub fn store_local<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
             // General path.
             let init_datum =
                 unpack_datum!(bcx, expr::trans_to_lvalue(bcx, &**init_expr, "let"));
-            if ty::type_is_bot(expr_ty(bcx, &**init_expr)) {
-                create_dummy_locals(bcx, pat)
-            } else {
-                if bcx.sess().asm_comments() {
-                    add_comment(bcx, "creating zeroable ref llval");
-                }
-                let var_scope = cleanup::var_scope(tcx, local.id);
-                bind_irrefutable_pat(bcx, pat, init_datum.val, var_scope)
+            if bcx.sess().asm_comments() {
+                add_comment(bcx, "creating zeroable ref llval");
             }
+            let var_scope = cleanup::var_scope(tcx, local.id);
+            bind_irrefutable_pat(bcx, pat, init_datum.val, var_scope)
         }
         None => {
             create_dummy_locals(bcx, pat)
@@ -1692,10 +1688,10 @@ fn bind_irrefutable_pat<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
             let pat_repr = adt::represent_type(bcx.ccx(), pat_ty);
             expr::with_field_tys(tcx, pat_ty, Some(pat.id), |discr, field_tys| {
                 for f in fields.iter() {
-                    let ix = ty::field_idx_strict(tcx, f.ident.name, field_tys);
+                    let ix = ty::field_idx_strict(tcx, f.node.ident.name, field_tys);
                     let fldptr = adt::trans_field_ptr(bcx, &*pat_repr, val,
                                                       discr, ix);
-                    bcx = bind_irrefutable_pat(bcx, &*f.pat, fldptr, cleanup_scope);
+                    bcx = bind_irrefutable_pat(bcx, &*f.node.pat, fldptr, cleanup_scope);
                 }
             })
         }

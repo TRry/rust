@@ -132,7 +132,7 @@ impl<'a, 'tcx> CFGBuilder<'a, 'tcx> {
 
             ast::PatStruct(_, ref subpats, _) => {
                 let pats_exit =
-                    self.pats_all(subpats.iter().map(|f| &f.pat), pred);
+                    self.pats_all(subpats.iter().map(|f| &f.node.pat), pred);
                 self.add_node(pat.id, [pats_exit])
             }
 
@@ -511,12 +511,15 @@ impl<'a, 'tcx> CFGBuilder<'a, 'tcx> {
             pred: CFGIndex,
             func_or_rcvr: &ast::Expr,
             args: I) -> CFGIndex {
+        let method_call = typeck::MethodCall::expr(call_expr.id);
+        let return_ty = ty::ty_fn_ret(match self.tcx.method_map.borrow().find(&method_call) {
+            Some(method) => method.ty,
+            None => ty::expr_ty(self.tcx, func_or_rcvr)
+        });
+
         let func_or_rcvr_exit = self.expr(func_or_rcvr, pred);
         let ret = self.straightline(call_expr, func_or_rcvr_exit, args);
-
-        let return_ty = ty::node_id_to_type(self.tcx, call_expr.id);
-        let fails = ty::type_is_bot(return_ty);
-        if fails {
+        if return_ty == ty::FnDiverging {
             self.add_node(ast::DUMMY_NODE_ID, [])
         } else {
             ret

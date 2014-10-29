@@ -728,15 +728,14 @@ impl<'a, 'tcx> ConstraintContext<'a, 'tcx> {
         debug!("add_constraints_from_ty(ty={})", ty.repr(self.tcx()));
 
         match ty::get(ty).sty {
-            ty::ty_nil | ty::ty_bot | ty::ty_bool |
+            ty::ty_nil | ty::ty_bool |
             ty::ty_char | ty::ty_int(_) | ty::ty_uint(_) |
             ty::ty_float(_) | ty::ty_str => {
                 /* leaf type -- noop */
             }
 
-            ty::ty_unboxed_closure(_, region) => {
-                let contra = self.contravariant(variance);
-                self.add_constraints_from_region(region, contra);
+            ty::ty_unboxed_closure(..) => {
+                self.tcx().sess.bug("Unexpected unboxed closure type in variance computation");
             }
 
             ty::ty_rptr(region, ref mt) => {
@@ -805,7 +804,7 @@ impl<'a, 'tcx> ConstraintContext<'a, 'tcx> {
                     variance);
             }
 
-            ty::ty_param(ty::ParamTy { def_id: ref def_id, .. }) => {
+            ty::ty_param(ty::ParamTy { ref def_id, .. }) => {
                 assert_eq!(def_id.krate, ast::LOCAL_CRATE);
                 match self.terms_cx.inferred_map.find(&def_id.node) {
                     Some(&index) => {
@@ -883,7 +882,9 @@ impl<'a, 'tcx> ConstraintContext<'a, 'tcx> {
         for &input in sig.inputs.iter() {
             self.add_constraints_from_ty(input, contra);
         }
-        self.add_constraints_from_ty(sig.output, variance);
+        if let ty::FnConverging(result_type) = sig.output {
+            self.add_constraints_from_ty(result_type, variance);
+        }
     }
 
     /// Adds constraints appropriate for a region appearing in a

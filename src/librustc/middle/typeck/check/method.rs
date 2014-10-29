@@ -88,7 +88,7 @@ use middle::ty;
 use middle::typeck::astconv::AstConv;
 use middle::typeck::check::{FnCtxt, NoPreference, PreferMutLvalue};
 use middle::typeck::check::{impl_self_ty};
-use middle::typeck::check::vtable2::select_fcx_obligations_where_possible;
+use middle::typeck::check::vtable::select_new_fcx_obligations;
 use middle::typeck::check;
 use middle::typeck::infer;
 use middle::typeck::{MethodCall, MethodCallee};
@@ -223,16 +223,36 @@ pub fn report_error(fcx: &FnCtxt,
 {
     match error {
         NoMatch(static_sources) => {
+            let cx = fcx.tcx();
+            let method_ustring = method_name.user_string(cx);
+
+            // True if the type is a struct and contains a field with
+            // the same name as the not-found method
+            let is_field = match ty::get(rcvr_ty).sty {
+                ty_struct(did, _) =>
+                    ty::lookup_struct_fields(cx, did)
+                        .iter()
+                        .any(|f| f.name.user_string(cx) == method_ustring),
+                _ => false
+            };
+
             fcx.type_error_message(
                 span,
                 |actual| {
                     format!("type `{}` does not implement any \
                              method in scope named `{}`",
                             actual,
-                            method_name.user_string(fcx.tcx()))
+                            method_ustring)
                 },
                 rcvr_ty,
                 None);
+
+            // If the method has the name of a field, give a help note
+            if is_field {
+                cx.sess.span_note(span,
+                    format!("use `(s.{0})(...)` if you meant to call the \
+                            function stored in the `{0}` field", method_ustring).as_slice());
+            }
 
             if static_sources.len() > 0 {
                 fcx.tcx().sess.fileline_note(
@@ -485,7 +505,7 @@ impl<'a, 'tcx> LookupContext<'a, 'tcx> {
                 }
                 ty_enum(did, _) |
                 ty_struct(did, _) |
-                ty_unboxed_closure(did, _) => {
+                ty_unboxed_closure(did, _, _) => {
                     if self.check_traits == CheckTraitsAndInherentMethods {
                         self.push_inherent_impl_candidates_for_type(did);
                     }
@@ -1062,7 +1082,7 @@ impl<'a, 'tcx> LookupContext<'a, 'tcx> {
             ty_bare_fn(..) | ty_uniq(..) | ty_rptr(..) |
             ty_infer(IntVar(_)) |
             ty_infer(FloatVar(_)) |
-            ty_param(..) | ty_nil | ty_bot | ty_bool |
+            ty_param(..) | ty_nil | ty_bool |
             ty_char | ty_int(..) | ty_uint(..) |
             ty_float(..) | ty_enum(..) | ty_ptr(..) | ty_struct(..) |
             ty_unboxed_closure(..) | ty_tup(..) | ty_open(..) |
@@ -1282,7 +1302,7 @@ impl<'a, 'tcx> LookupContext<'a, 'tcx> {
         // the `Self` trait).
         let callee = self.confirm_candidate(rcvr_ty, &candidate);
 
-        select_fcx_obligations_where_possible(self.fcx);
+        select_new_fcx_obligations(self.fcx);
 
         Some(Ok(callee))
     }
@@ -1583,8 +1603,10 @@ impl<'a, 'tcx> LookupContext<'a, 'tcx> {
                 return false;
             }
         }
-        if !check_for_self_ty(sig.output) {
-            return false;
+        if let ty::FnConverging(result_type) = sig.output {
+            if !check_for_self_ty(result_type) {
+                return false;
+            }
         }
 
         if candidate.method_ty.generics.has_type_params(subst::FnSpace) {
@@ -1606,8 +1628,8 @@ impl<'a, 'tcx> LookupContext<'a, 'tcx> {
             MethodStaticUnboxedClosure(_) => {
                 false
             }
-            MethodTypeParam(MethodParam { trait_ref: ref trait_ref, .. }) |
-            MethodTraitObject(MethodObject { trait_ref: ref trait_ref, .. }) => {
+            MethodTypeParam(MethodParam { ref trait_ref, .. }) |
+            MethodTraitObject(MethodObject { ref trait_ref, .. }) => {
                 Some(trait_ref.def_id) == self.tcx().lang_items.drop_trait()
             }
         };

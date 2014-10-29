@@ -359,7 +359,6 @@ fn parse_trait_ref(st: &mut PState, conv: conv_did) -> ty::TraitRef {
 fn parse_ty(st: &mut PState, conv: conv_did) -> ty::t {
     match next(st) {
       'n' => return ty::mk_nil(),
-      'z' => return ty::mk_bot(),
       'b' => return ty::mk_bool(),
       'i' => return ty::mk_int(),
       'u' => return ty::mk_uint(),
@@ -465,9 +464,12 @@ fn parse_ty(st: &mut PState, conv: conv_did) -> ty::t {
           return ty::mk_struct(st.tcx, did, substs);
       }
       'k' => {
+          assert_eq!(next(st), '[');
           let did = parse_def(st, NominalType, |x,y| conv(x,y));
-          let region = parse_region(st, conv);
-          return ty::mk_unboxed_closure(st.tcx, did, region);
+          let region = parse_region(st, |x,y| conv(x,y));
+          let substs = parse_substs(st, |x,y| conv(x,y));
+          assert_eq!(next(st), ']');
+          return ty::mk_unboxed_closure(st.tcx, did, region, substs);
       }
       'e' => {
           return ty::mk_err();
@@ -587,10 +589,16 @@ fn parse_sig(st: &mut PState, conv: conv_did) -> ty::FnSig {
         'N' => false,
         r => fail!(format!("bad variadic: {}", r)),
     };
-    let ret_ty = parse_ty(st, |x,y| conv(x,y));
+    let output = match peek(st) {
+        'z' => {
+          st.pos += 1u;
+          ty::FnDiverging
+        }
+        _ => ty::FnConverging(parse_ty(st, |x,y| conv(x,y)))
+    };
     ty::FnSig {binder_id: id,
                inputs: inputs,
-               output: ret_ty,
+               output: output,
                variadic: variadic}
 }
 

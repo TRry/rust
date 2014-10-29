@@ -1,4 +1,4 @@
-// Copyright 2013 The Rust Project Developers. See the COPYRIGHT
+// Copyright 2014 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
 //
@@ -8,8 +8,12 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// error-pattern:explicit failure
+struct Obj<'a> {
+    closure: ||: 'a -> u32
+}
 
 fn main() {
-    &fail!()
+    let o = Obj { closure: || 42 };
+    o.closure(); //~ ERROR type `Obj<'_>` does not implement any method in scope named `closure`
+    //~^ NOTE use `(s.closure)(...)` if you meant to call the function stored in the `closure` field
 }

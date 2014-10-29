@@ -87,7 +87,6 @@ pub enum categorization {
     cat_deref(cmt, uint, PointerKind), // deref of a ptr
     cat_interior(cmt, InteriorKind),   // something interior: field, tuple, etc
     cat_downcast(cmt),                 // selects a particular enum variant (*1)
-    cat_discr(cmt, ast::NodeId),       // match discriminant (see preserve())
 
     // (*1) downcast is only required if the enum has more than one variant
 }
@@ -433,7 +432,7 @@ impl<'t,'tcx,TYPER:Typer<'tcx>> MemCategorizationContext<'t,TYPER> {
 
                     ty::AdjustDerefRef(
                         ty::AutoDerefRef {
-                            autoref: None, autoderefs: autoderefs}) => {
+                            autoref: None, autoderefs}) => {
                         // Equivalent to *expr or something similar.
                         self.cat_expr_autoderefd(expr, autoderefs)
                     }
@@ -486,7 +485,7 @@ impl<'t,'tcx,TYPER:Typer<'tcx>> MemCategorizationContext<'t,TYPER> {
                 Some(method_ty) => {
                     // If this is an index implemented by a method call, then it will
                     // include an implicit deref of the result.
-                    let ret_ty = ty::ty_fn_ret(method_ty);
+                    let ret_ty = ty::ty_fn_ret(method_ty).unwrap();
                     Ok(self.cat_deref(expr,
                                       self.cat_rvalue_node(expr.id(),
                                                            expr.span(),
@@ -595,7 +594,7 @@ impl<'t,'tcx,TYPER:Typer<'tcx>> MemCategorizationContext<'t,TYPER> {
                       };
                       self.cat_upvar(id, span, var_id, fn_node_id, kind, mode, false)
                   }
-                  ty::ty_unboxed_closure(closure_id, _) => {
+                  ty::ty_unboxed_closure(closure_id, _, _) => {
                       let unboxed_closures = self.typer.unboxed_closures().borrow();
                       let kind = (*unboxed_closures)[closure_id].kind;
                       let mode = self.typer.capture_mode(fn_node_id);
@@ -656,51 +655,54 @@ impl<'t,'tcx,TYPER:Typer<'tcx>> MemCategorizationContext<'t,TYPER> {
         // FnOnce         | copied               | upvar -> &'up bk
         // old stack      | N/A                  | upvar -> &'env mut -> &'up bk
         // old proc/once  | copied               | N/A
+        let var_ty = if_ok!(self.node_ty(var_id));
+
         let upvar_id = ty::UpvarId { var_id: var_id,
                                      closure_expr_id: fn_node_id };
-
-        // Do we need to deref through an env reference?
-        let has_env_deref = kind != ty::FnOnceUnboxedClosureKind;
 
         // Mutability of original variable itself
         let var_mutbl = MutabilityCategory::from_local(self.tcx(), var_id);
 
-        // Mutability of environment dereference
-        let env_mutbl = match kind {
-            ty::FnOnceUnboxedClosureKind => var_mutbl,
-            ty::FnMutUnboxedClosureKind => McInherited,
-            ty::FnUnboxedClosureKind => McImmutable
+        // Construct information about env pointer dereference, if any
+        let mutbl = match kind {
+            ty::FnOnceUnboxedClosureKind => None, // None, env is by-value
+            ty::FnMutUnboxedClosureKind => match mode { // Depends on capture type
+                ast::CaptureByValue => Some(var_mutbl), // Mutable if the original var is
+                ast::CaptureByRef => Some(McDeclared) // Mutable regardless
+            },
+            ty::FnUnboxedClosureKind => Some(McImmutable) // Never mutable
         };
+        let env_info = mutbl.map(|env_mutbl| {
+            // Look up the node ID of the closure body so we can construct
+            // a free region within it
+            let fn_body_id = {
+                let fn_expr = match self.tcx().map.find(fn_node_id) {
+                    Some(ast_map::NodeExpr(e)) => e,
+                    _ => unreachable!()
+                };
 
-        // Look up the node ID of the closure body so we can construct
-        // a free region within it
-        let fn_body_id = {
-            let fn_expr = match self.tcx().map.find(fn_node_id) {
-                Some(ast_map::NodeExpr(e)) => e,
-                _ => unreachable!()
+                match fn_expr.node {
+                    ast::ExprFnBlock(_, _, ref body) |
+                    ast::ExprProc(_, ref body) |
+                    ast::ExprUnboxedFn(_, _, _, ref body) => body.id,
+                    _ => unreachable!()
+                }
             };
 
-            match fn_expr.node {
-                ast::ExprFnBlock(_, _, ref body) |
-                ast::ExprProc(_, ref body) |
-                ast::ExprUnboxedFn(_, _, _, ref body) => body.id,
-                _ => unreachable!()
-            }
-        };
+            // Region of environment pointer
+            let env_region = ty::ReFree(ty::FreeRegion {
+                scope_id: fn_body_id,
+                bound_region: ty::BrEnv
+            });
 
-        // Region of environment pointer
-        let env_region = ty::ReFree(ty::FreeRegion {
-            scope_id: fn_body_id,
-            bound_region: ty::BrEnv
+            let env_ptr = BorrowedPtr(if env_mutbl.is_mutable() {
+                ty::MutBorrow
+            } else {
+                ty::ImmBorrow
+            }, env_region);
+
+            (env_mutbl, env_ptr)
         });
-
-        let env_ptr = BorrowedPtr(if env_mutbl.is_mutable() {
-            ty::MutBorrow
-        } else {
-            ty::ImmBorrow
-        }, env_region);
-
-        let var_ty = if_ok!(self.node_ty(var_id));
 
         // First, switch by capture mode
         Ok(match mode {
@@ -718,25 +720,27 @@ impl<'t,'tcx,TYPER:Typer<'tcx>> MemCategorizationContext<'t,TYPER> {
                     note: NoteNone
                 };
 
-                if has_env_deref {
-                    // We need to add the env deref.  This means that
-                    // the above is actually immutable and has a ref
-                    // type.  However, nothing should actually look at
-                    // the type, so we can get away with stuffing a
-                    // `ty_err` in there instead of bothering to
-                    // construct a proper one.
-                    base.mutbl = McImmutable;
-                    base.ty = ty::mk_err();
-                    Rc::new(cmt_ {
-                        id: id,
-                        span: span,
-                        cat: cat_deref(Rc::new(base), 0, env_ptr),
-                        mutbl: env_mutbl,
-                        ty: var_ty,
-                        note: NoteClosureEnv(upvar_id)
-                    })
-                } else {
-                    Rc::new(base)
+                match env_info {
+                    Some((env_mutbl, env_ptr)) => {
+                        // We need to add the env deref.  This means
+                        // that the above is actually immutable and
+                        // has a ref type.  However, nothing should
+                        // actually look at the type, so we can get
+                        // away with stuffing a `ty_err` in there
+                        // instead of bothering to construct a proper
+                        // one.
+                        base.mutbl = McImmutable;
+                        base.ty = ty::mk_err();
+                        Rc::new(cmt_ {
+                            id: id,
+                            span: span,
+                            cat: cat_deref(Rc::new(base), 0, env_ptr),
+                            mutbl: env_mutbl,
+                            ty: var_ty,
+                            note: NoteClosureEnv(upvar_id)
+                        })
+                    }
+                    None => Rc::new(base)
                 }
             },
             ast::CaptureByRef => {
@@ -756,16 +760,18 @@ impl<'t,'tcx,TYPER:Typer<'tcx>> MemCategorizationContext<'t,TYPER> {
                     note: NoteNone
                 };
 
-                // As in the by-value case, add env deref if needed
-                if has_env_deref {
-                    base = cmt_ {
-                        id: id,
-                        span: span,
-                        cat: cat_deref(Rc::new(base), 0, env_ptr),
-                        mutbl: env_mutbl,
-                        ty: ty::mk_err(),
-                        note: NoteClosureEnv(upvar_id)
-                    };
+                match env_info {
+                    Some((env_mutbl, env_ptr)) => {
+                        base = cmt_ {
+                            id: id,
+                            span: span,
+                            cat: cat_deref(Rc::new(base), 0, env_ptr),
+                            mutbl: env_mutbl,
+                            ty: ty::mk_err(),
+                            note: NoteClosureEnv(upvar_id)
+                        };
+                    }
+                    None => {}
                 }
 
                 // Look up upvar borrow so we can get its region
@@ -872,7 +878,7 @@ impl<'t,'tcx,TYPER:Typer<'tcx>> MemCategorizationContext<'t,TYPER> {
 
         let base_cmt = match method_ty {
             Some(method_ty) => {
-                let ref_ty = ty::ty_fn_ret(method_ty);
+                let ref_ty = ty::ty_fn_ret(method_ty).unwrap();
                 self.cat_rvalue_node(node.id(), node.span(), ref_ty)
             }
             None => base_cmt
@@ -951,7 +957,7 @@ impl<'t,'tcx,TYPER:Typer<'tcx>> MemCategorizationContext<'t,TYPER> {
 
         let element_ty = match method_ty {
             Some(method_ty) => {
-                let ref_ty = ty::ty_fn_ret(method_ty);
+                let ref_ty = ty::ty_fn_ret(method_ty).unwrap();
                 base_cmt = self.cat_rvalue_node(elt.id(), elt.span(), ref_ty);
                 ty::ty_fn_args(method_ty)[0]
             }
@@ -1222,9 +1228,9 @@ impl<'t,'tcx,TYPER:Typer<'tcx>> MemCategorizationContext<'t,TYPER> {
           ast::PatStruct(_, ref field_pats, _) => {
             // {f1: p1, ..., fN: pN}
             for fp in field_pats.iter() {
-                let field_ty = if_ok!(self.pat_ty(&*fp.pat)); // see (*2)
-                let cmt_field = self.cat_field(pat, cmt.clone(), fp.ident.name, field_ty);
-                if_ok!(self.cat_pattern(cmt_field, &*fp.pat, |x,y,z| op(x,y,z)));
+                let field_ty = if_ok!(self.pat_ty(&*fp.node.pat)); // see (*2)
+                let cmt_field = self.cat_field(pat, cmt.clone(), fp.node.ident.name, field_ty);
+                if_ok!(self.cat_pattern(cmt_field, &*fp.node.pat, |x,y,z| op(x,y,z)));
             }
           }
 
@@ -1339,9 +1345,6 @@ impl<'t,'tcx,TYPER:Typer<'tcx>> MemCategorizationContext<'t,TYPER> {
           cat_upvar(ref var) => {
               upvar_to_string(var, true)
           }
-          cat_discr(ref cmt, _) => {
-            self.cmt_to_string(&**cmt)
-          }
           cat_downcast(ref cmt) => {
             self.cmt_to_string(&**cmt)
           }
@@ -1379,7 +1382,6 @@ impl cmt_ {
                 Rc::new((*self).clone())
             }
             cat_downcast(ref b) |
-            cat_discr(ref b, _) |
             cat_interior(ref b, _) |
             cat_deref(ref b, _, OwnedPtr) => {
                 b.guarantor()
@@ -1404,8 +1406,7 @@ impl cmt_ {
             cat_deref(ref b, _, Implicit(ty::UniqueImmBorrow, _)) |
             cat_downcast(ref b) |
             cat_deref(ref b, _, OwnedPtr) |
-            cat_interior(ref b, _) |
-            cat_discr(ref b, _) => {
+            cat_interior(ref b, _) => {
                 // Aliasability depends on base cmt
                 b.freely_aliasable(ctxt)
             }
@@ -1490,9 +1491,6 @@ impl Repr for categorization {
             cat_downcast(ref cmt) => {
                 format!("{}->(enum)", cmt.cat.repr(tcx))
             }
-            cat_discr(ref cmt, _) => {
-                cmt.cat.repr(tcx)
-            }
         }
     }
 }
@@ -1524,7 +1522,7 @@ impl Repr for InteriorKind {
 
 fn element_kind(t: ty::t) -> ElementKind {
     match ty::get(t).sty {
-        ty::ty_rptr(_, ty::mt{ty:ty, ..}) |
+        ty::ty_rptr(_, ty::mt{ty, ..}) |
         ty::ty_uniq(ty) => match ty::get(ty).sty {
             ty::ty_vec(_, None) => VecElement,
             _ => OtherElement

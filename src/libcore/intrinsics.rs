@@ -149,7 +149,7 @@ pub trait TyVisitor {
     fn visit_fn_input(&mut self, i: uint, mode: uint,
                       inner: *const TyDesc) -> bool;
     fn visit_fn_output(&mut self, retstyle: uint, variadic: bool,
-                       inner: *const TyDesc) -> bool;
+                       converging: bool, inner: *const TyDesc) -> bool;
     fn visit_leave_fn(&mut self, purity: uint, proto: uint,
                       n_inputs: uint, retstyle: uint) -> bool;
 
@@ -259,6 +259,17 @@ extern "rust-intrinsic" {
     ///
     /// NB: This is very different from the `unreachable!()` macro!
     pub fn unreachable() -> !;
+
+    /// Inform the optimizer that a condition is always true.
+    /// If the condition is false, the behavior is undefined.
+    ///
+    /// No code is generated for this intrinsic, but the optimizer will try
+    /// to preserve it (and its condition) between passes, which may interfere
+    /// with optimization of surrounding code and reduce performance. It should
+    /// not be used if the invariant can be discovered by the optimizer on its
+    /// own, or if it does not enable any significant optimizations.
+    #[cfg(not(stage0))]
+    pub fn assume(b: bool);
 
     /// Execute a breakpoint trap, for inspection by a debugger.
     pub fn breakpoint();

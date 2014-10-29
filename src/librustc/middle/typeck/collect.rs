@@ -71,7 +71,7 @@ use syntax::visit;
 pub fn collect_item_types(ccx: &CrateCtxt) {
     fn collect_intrinsic_type(ccx: &CrateCtxt,
                               lang_item: ast::DefId) {
-        let ty::Polytype { ty: ty, .. } =
+        let ty::Polytype { ty, .. } =
             ccx.get_item_ty(lang_item);
         ccx.tcx.intrinsic_defs.borrow_mut().insert(lang_item, ty);
     }
@@ -236,10 +236,7 @@ pub fn get_enum_variant_types(ccx: &CrateCtxt,
                 };
 
                 convert_struct(ccx, &**struct_def, pty, variant.node.id);
-
-                let input_tys: Vec<_> = struct_def.fields.iter().map(
-                    |f| ty::node_id_to_type(ccx.tcx, f.node.id)).collect();
-                ty::mk_ctor_fn(tcx, scope, input_tys.as_slice(), enum_ty)
+                enum_ty
             }
         };
 
@@ -2239,7 +2236,10 @@ pub fn ty_of_foreign_fn_decl(ccx: &CrateCtxt,
                         .map(|a| ty_of_arg(ccx, &rb, a, None))
                         .collect();
 
-    let output_ty = ast_ty_to_ty(ccx, &rb, &*decl.output);
+    let output = match decl.output.node {
+        ast::TyBot => ty::FnDiverging,
+        _ => ty::FnConverging(ast_ty_to_ty(ccx, &rb, &*decl.output))
+    };
 
     let t_fn = ty::mk_bare_fn(
         ccx.tcx,
@@ -2248,7 +2248,7 @@ pub fn ty_of_foreign_fn_decl(ccx: &CrateCtxt,
             fn_style: ast::UnsafeFn,
             sig: ty::FnSig {binder_id: def_id.node,
                             inputs: input_tys,
-                            output: output_ty,
+                            output: output,
                             variadic: decl.variadic}
         });
     let pty = Polytype {

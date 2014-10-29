@@ -569,16 +569,29 @@ pub fn noop_fold_arg<T: Folder>(Arg {id, pat, ty}: Arg, fld: &mut T) -> Arg {
 
 pub fn noop_fold_tt<T: Folder>(tt: &TokenTree, fld: &mut T) -> TokenTree {
     match *tt {
-        TTTok(span, ref tok) =>
-            TTTok(span, fld.fold_token(tok.clone())),
-        TTDelim(ref tts) => TTDelim(Rc::new(fld.fold_tts(tts.as_slice()))),
-        TTSeq(span, ref pattern, ref sep, is_optional) =>
-            TTSeq(span,
-                  Rc::new(fld.fold_tts(pattern.as_slice())),
-                  sep.clone().map(|tok| fld.fold_token(tok)),
-                  is_optional),
-        TTNonterminal(sp,ref ident) =>
-            TTNonterminal(sp,fld.fold_ident(*ident))
+        TtToken(span, ref tok) =>
+            TtToken(span, fld.fold_token(tok.clone())),
+        TtDelimited(span, ref delimed) => {
+            let (ref open, ref tts, ref close) = **delimed;
+            TtDelimited(span, Rc::new((
+                            Delimiter {
+                                span: open.span,
+                                token: fld.fold_token(open.token.clone())
+                            },
+                            fld.fold_tts(tts.as_slice()),
+                            Delimiter {
+                                span: close.span,
+                                token: fld.fold_token(close.token.clone())
+                            },
+                        )))
+        },
+        TtSequence(span, ref pattern, ref sep, is_optional) =>
+            TtSequence(span,
+                       Rc::new(fld.fold_tts(pattern.as_slice())),
+                       sep.clone().map(|tok| fld.fold_token(tok)),
+                       is_optional),
+        TtNonterminal(sp,ref ident) =>
+            TtNonterminal(sp,fld.fold_ident(*ident))
     }
 }
 
@@ -1139,10 +1152,12 @@ pub fn noop_fold_pat<T: Folder>(p: P<Pat>, folder: &mut T) -> P<Pat> {
             PatStruct(pth, fields, etc) => {
                 let pth = folder.fold_path(pth);
                 let fs = fields.move_map(|f| {
-                    ast::FieldPat {
-                        ident: f.ident,
-                        pat: folder.fold_pat(f.pat)
-                    }
+                    Spanned { span: folder.new_span(f.span),
+                              node: ast::FieldPat {
+                                  ident: f.node.ident,
+                                  pat: folder.fold_pat(f.node.pat),
+                                  is_shorthand: f.node.is_shorthand,
+                              }}
                 });
                 PatStruct(pth, fs, etc)
             }

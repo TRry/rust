@@ -324,7 +324,7 @@ fn apply_adjustments<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
                 _ => bcx.sess().bug(format!("UnsizeStruct with bad sty: {}",
                                           bcx.ty_to_string(unsized_ty)).as_slice())
             },
-            &ty::UnsizeVtable(ty::TyTrait { def_id: def_id, substs: ref substs, .. }, _) => {
+            &ty::UnsizeVtable(ty::TyTrait { def_id, ref substs, .. }, _) => {
                 let substs = substs.with_self_ty(unsized_ty);
                 let trait_ref =
                     Rc::new(ty::TraitRef { def_id: def_id,
@@ -609,7 +609,7 @@ fn trans_datum_unadjusted<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
             start.as_ref().map(|e| args.push((unpack_datum!(bcx, trans(bcx, &**e)), e.id)));
             end.as_ref().map(|e| args.push((unpack_datum!(bcx, trans(bcx, &**e)), e.id)));
 
-            let result_ty = ty::ty_fn_ret(monomorphize_type(bcx, method_ty.unwrap()));
+            let result_ty = ty::ty_fn_ret(monomorphize_type(bcx, method_ty.unwrap())).unwrap();
             let scratch = rvalue_scratch_datum(bcx, result_ty, "trans_slice");
 
             unpack_result!(bcx,
@@ -757,7 +757,7 @@ fn trans_index<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
                                                    base_datum,
                                                    vec![(ix_datum, idx.id)],
                                                    None));
-            let ref_ty = ty::ty_fn_ret(monomorphize_type(bcx, method_ty));
+            let ref_ty = ty::ty_fn_ret(monomorphize_type(bcx, method_ty)).unwrap();
             let elt_ty = match ty::deref(ref_ty, true) {
                 None => {
                     bcx.tcx().sess.span_bug(index_expr.span,
@@ -940,6 +940,7 @@ fn trans_rvalue_stmt_unadjusted<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
             controlflow::trans_loop(bcx, expr.id, &**body)
         }
         ast::ExprAssign(ref dst, ref src) => {
+            let src_datum = unpack_datum!(bcx, trans(bcx, &**src));
             let dst_datum = unpack_datum!(bcx, trans_to_lvalue(bcx, &**dst, "assign"));
 
             if ty::type_needs_drop(bcx.tcx(), dst_datum.ty) {
@@ -960,7 +961,6 @@ fn trans_rvalue_stmt_unadjusted<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
                 // We could avoid this intermediary with some analysis
                 // to determine whether `dst` may possibly own `src`.
                 debuginfo::set_source_location(bcx.fcx, expr.id, expr.span);
-                let src_datum = unpack_datum!(bcx, trans(bcx, &**src));
                 let src_datum = unpack_datum!(
                     bcx, src_datum.to_rvalue_datum(bcx, "ExprAssign"));
                 bcx = glue::drop_ty(bcx,
@@ -969,7 +969,7 @@ fn trans_rvalue_stmt_unadjusted<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
                                     Some(NodeInfo { id: expr.id, span: expr.span }));
                 src_datum.store_to(bcx, dst_datum.val)
             } else {
-                trans_into(bcx, &**src, SaveIn(dst_datum.to_llref()))
+                src_datum.store_to(bcx, dst_datum.val)
             }
         }
         ast::ExprAssignOp(op, ref dst, ref src) => {
@@ -1614,8 +1614,7 @@ fn trans_eager_binop<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
     let tcx = bcx.tcx();
     let is_simd = ty::type_is_simd(tcx, lhs_t);
     let intype = {
-        if ty::type_is_bot(lhs_t) { rhs_t }
-        else if is_simd { ty::simd_type(tcx, lhs_t) }
+        if is_simd { ty::simd_type(tcx, lhs_t) }
         else { lhs_t }
     };
     let is_float = ty::type_is_fp(intype);
@@ -1675,9 +1674,7 @@ fn trans_eager_binop<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
         } else { LShr(bcx, lhs, rhs) }
       }
       ast::BiEq | ast::BiNe | ast::BiLt | ast::BiGe | ast::BiLe | ast::BiGt => {
-        if ty::type_is_bot(rhs_t) {
-            C_bool(bcx.ccx(), false)
-        } else if ty::type_is_scalar(rhs_t) {
+        if ty::type_is_scalar(rhs_t) {
             unpack_result!(bcx, base::compare_scalar_types(bcx, lhs, rhs, rhs_t, op))
         } else if is_simd {
             base::compare_simd_types(bcx, lhs, rhs, intype, ty::simd_size(tcx, lhs_t), op)
@@ -2098,7 +2095,7 @@ fn deref_once<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
                 _ => datum
             };
 
-            let ref_ty = ty::ty_fn_ret(monomorphize_type(bcx, method_ty));
+            let ref_ty = ty::ty_fn_ret(monomorphize_type(bcx, method_ty)).unwrap();
             let scratch = rvalue_scratch_datum(bcx, ref_ty, "overloaded_deref");
 
             unpack_result!(bcx, trans_overloaded_op(bcx, expr, method_call,
@@ -2117,7 +2114,7 @@ fn deref_once<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
                 deref_owned_pointer(bcx, expr, datum, content_ty)
             } else {
                 // A fat pointer and an opened DST value have the same
-                // represenation just different types. Since there is no
+                // representation just different types. Since there is no
                 // temporary for `*e` here (because it is unsized), we cannot
                 // emulate the sized object code path for running drop glue and
                 // free. Instead, we schedule cleanup for `e`, turning it into
@@ -2142,7 +2139,7 @@ fn deref_once<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
                 // owner (or, in the case of *T, by the user).
                 DatumBlock::new(bcx, Datum::new(ptr, content_ty, LvalueExpr))
             } else {
-                // A fat pointer and an opened DST value have the same represenation
+                // A fat pointer and an opened DST value have the same representation
                 // just different types.
                 DatumBlock::new(bcx, Datum::new(datum.val,
                                                 ty::mk_open(bcx.tcx(), content_ty),

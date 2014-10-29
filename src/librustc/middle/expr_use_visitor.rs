@@ -179,8 +179,8 @@ impl OverloadedCallType {
             MethodStaticUnboxedClosure(def_id) => {
                 OverloadedCallType::from_unboxed_closure(tcx, def_id)
             }
-            MethodTypeParam(MethodParam { trait_ref: ref trait_ref, .. }) |
-            MethodTraitObject(MethodObject { trait_ref: ref trait_ref, .. }) => {
+            MethodTypeParam(MethodParam { ref trait_ref, .. }) |
+            MethodTraitObject(MethodObject { ref trait_ref, .. }) => {
                 OverloadedCallType::from_trait_id(tcx, trait_ref.def_id)
             }
         }
@@ -396,13 +396,9 @@ impl<'d,'t,'tcx,TYPER:mc::Typer<'tcx>> ExprUseVisitor<'d,'t,TYPER> {
                 // make sure that the thing we are pointing out stays valid
                 // for the lifetime `scope_r` of the resulting ptr:
                 let expr_ty = ty::expr_ty(self.tcx(), expr);
-                if !ty::type_is_bot(expr_ty) {
-                    let r = ty::ty_region(self.tcx(), expr.span, expr_ty);
-                    let bk = ty::BorrowKind::from_mutbl(m);
-                    self.borrow_expr(&**base, r, bk, AddrOf);
-                } else {
-                    self.walk_expr(&**base);
-                }
+                let r = ty::ty_region(self.tcx(), expr.span, expr_ty);
+                let bk = ty::BorrowKind::from_mutbl(m);
+                self.borrow_expr(&**base, r, bk, AddrOf);
             }
 
             ast::ExprInlineAsm(ref ia) => {
