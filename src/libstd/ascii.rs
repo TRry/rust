@@ -138,7 +138,7 @@ impl<'a> fmt::Show for Ascii {
 
 /// Trait for converting into an ascii type.
 pub trait AsciiCast<T> {
-    /// Convert to an ascii type, fail on non-ASCII input.
+    /// Convert to an ascii type, panic on non-ASCII input.
     #[inline]
     fn to_ascii(&self) -> T {
         assert!(self.is_ascii());
@@ -331,8 +331,7 @@ impl IntoStr for Vec<Ascii> {
     #[inline]
     fn into_string(self) -> String {
         unsafe {
-            let s: &str = mem::transmute(self.as_slice());
-            String::from_str(s)
+            string::raw::from_utf8(self.into_bytes())
         }
     }
 }
@@ -649,16 +648,16 @@ mod tests {
     }
 
     #[test] #[should_fail]
-    fn test_ascii_vec_fail_u8_slice()  { (&[127u8, 128u8, 255u8]).to_ascii(); }
+    fn test_ascii_vec_panic_u8_slice()  { (&[127u8, 128u8, 255u8]).to_ascii(); }
 
     #[test] #[should_fail]
-    fn test_ascii_vec_fail_str_slice() { "zoä华".to_ascii(); }
+    fn test_ascii_vec_panic_str_slice() { "zoä华".to_ascii(); }
 
     #[test] #[should_fail]
-    fn test_ascii_fail_u8_slice() { 255u8.to_ascii(); }
+    fn test_ascii_panic_u8_slice() { 255u8.to_ascii(); }
 
     #[test] #[should_fail]
-    fn test_ascii_fail_char_slice() { 'λ'.to_ascii(); }
+    fn test_ascii_panic_char_slice() { 'λ'.to_ascii(); }
 
     #[test]
     fn test_opt() {

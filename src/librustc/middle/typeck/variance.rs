@@ -572,7 +572,7 @@ impl<'a, 'tcx> ConstraintContext<'a, 'tcx> {
         match tcx.named_region_map.find(&param_id) {
             Some(&rl::DefEarlyBoundRegion(_, _, lifetime_decl_id))
                 => lifetime_decl_id,
-            Some(_) => fail!("should not encounter non early-bound cases"),
+            Some(_) => panic!("should not encounter non early-bound cases"),
 
             // The lookup should only fail when `param_id` is
             // itself a lifetime binding: use it as the decl_id.
@@ -597,11 +597,11 @@ impl<'a, 'tcx> ConstraintContext<'a, 'tcx> {
             assert!(is_lifetime(&tcx.map, param_id));
             let parent_id = tcx.map.get_parent(decl_id);
             let parent = tcx.map.find(parent_id).unwrap_or_else(
-                || fail!("tcx.map missing entry for id: {}", parent_id));
+                || panic!("tcx.map missing entry for id: {}", parent_id));
 
             let is_inferred;
             macro_rules! cannot_happen { () => { {
-                fail!("invalid parent: {:s} for {:s}",
+                panic!("invalid parent: {:s} for {:s}",
                       tcx.map.node_to_string(parent_id),
                       tcx.map.node_to_string(param_id));
             } } }
@@ -715,7 +715,7 @@ impl<'a, 'tcx> ConstraintContext<'a, 'tcx> {
             }
 
             _ => {
-                self.terms_cx.arena.alloc(|| TransformTerm(v1, v2))
+                &*self.terms_cx.arena.alloc(|| TransformTerm(v1, v2))
             }
         }
     }
@@ -994,7 +994,7 @@ impl<'a, 'tcx> SolveContext<'a, 'tcx> {
                             new_value,
                             term.to_string());
 
-                    *self.solutions.get_mut(inferred) = new_value;
+                    self.solutions[inferred] = new_value;
                     changed = true;
                 }
             }

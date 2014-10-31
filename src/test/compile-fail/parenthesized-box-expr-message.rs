@@ -1,4 +1,4 @@
-// Copyright 2012 The Rust Project Developers. See the COPYRIGHT
+// Copyright 2014 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
 //
@@ -8,13 +8,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-
-trait add {
-    fn plus(&self, x: Self) -> Self;
+fn main() {
+    box(1 + 1) //~ HELP perhaps you meant `box() (foo)` instead?
+    ; //~ ERROR expected expression, found `;`
 }
-
-fn do_add(x: Box<add+'static>, y: Box<add+'static>) -> Box<add+'static> {
-    x.plus(y) //~ ERROR E0038
-}
-
-fn main() {}

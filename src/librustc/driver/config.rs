@@ -498,7 +498,7 @@ pub fn get_os(triple: &str) -> Option<abi::Os> {
     }
     None
 }
-#[allow(non_uppercase_statics)]
+#[allow(non_upper_case_globals)]
 static os_names : &'static [(&'static str, abi::Os)] = &[
     ("mingw32",   abi::OsWindows),
     ("win32",     abi::OsWindows),
@@ -516,7 +516,7 @@ pub fn get_arch(triple: &str) -> Option<abi::Architecture> {
     }
     None
 }
-#[allow(non_uppercase_statics)]
+#[allow(non_upper_case_globals)]
 static architecture_abis : &'static [(&'static str, abi::Architecture)] = &[
     ("i386",   abi::X86),
     ("i486",   abi::X86),
@@ -898,7 +898,7 @@ mod test {
         let matches =
             &match getopts(["--test".to_string()], optgroups().as_slice()) {
               Ok(m) => m,
-              Err(f) => fail!("test_switch_implies_cfg_test: {}", f)
+              Err(f) => panic!("test_switch_implies_cfg_test: {}", f)
             };
         let registry = diagnostics::registry::Registry::new([]);
         let sessopts = build_session_options(matches);
@@ -916,7 +916,7 @@ mod test {
                            optgroups().as_slice()) {
               Ok(m) => m,
               Err(f) => {
-                fail!("test_switch_implies_cfg_test_unless_cfg_test: {}", f)
+                panic!("test_switch_implies_cfg_test_unless_cfg_test: {}", f)
               }
             };
         let registry = diagnostics::registry::Registry::new([]);

@@ -8,23 +8,9 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// Testing casting of a generic Struct to a Trait with a generic method.
-// This is test for issue 10955.
-#![allow(unused_variable)]
+// Check that lint deprecation works
 
-trait Foo {
-    fn f<A>(a: A) -> A {
-        a
-    }
-}
-
-struct Bar<T> {
-    x: T,
-}
-
-impl<T> Foo for Bar<T> { }
-
+#[deny(unused_variable)] //~ warning: lint unused_variable has been renamed to unused_variables
 pub fn main() {
-    let a = Bar { x: 1u };
-    let b = &a as &Foo;
+    let x = 0u8; //~ error: unused variable:
 }

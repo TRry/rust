@@ -768,7 +768,7 @@ Section: Comparing strings
 /// to compare &[u8] byte slices that are not necessarily valid UTF-8.
 #[inline]
 fn eq_slice_(a: &str, b: &str) -> bool {
-    #[allow(ctypes)]
+    #[allow(improper_ctypes)]
     extern { fn memcmp(s1: *const i8, s2: *const i8, n: uint) -> i32; }
     a.len() == b.len() && unsafe {
         memcmp(a.as_ptr() as *const i8,
@@ -1118,7 +1118,7 @@ pub mod raw {
 Section: Trait implementations
 */
 
-#[allow(missing_doc)]
+#[allow(missing_docs)]
 pub mod traits {
     use cmp::{Ord, Ordering, Less, Equal, Greater, PartialEq, PartialOrd, Equiv, Eq};
     use collections::Collection;
@@ -1460,7 +1460,7 @@ pub trait StrSlice for Sized? {
     ///
     /// assert_eq!(s.slice(1, 9), "öwe 老");
     ///
-    /// // these will fail:
+    /// // these will panic:
     /// // byte 2 lies within `ö`:
     /// // s.slice(2, 3);
     ///
@@ -1832,7 +1832,7 @@ pub trait StrSlice for Sized? {
 #[inline(never)]
 fn slice_error_fail(s: &str, begin: uint, end: uint) -> ! {
     assert!(begin <= end);
-    fail!("index {} and/or {} in `{}` do not lie on character boundary",
+    panic!("index {} and/or {} in `{}` do not lie on character boundary",
           begin, end, s);
 }
 
@@ -1986,8 +1986,8 @@ impl StrSlice for str {
         if end_byte.is_none() && count == end { end_byte = Some(self.len()) }
 
         match (begin_byte, end_byte) {
-            (None, _) => fail!("slice_chars: `begin` is beyond end of string"),
-            (_, None) => fail!("slice_chars: `end` is beyond end of string"),
+            (None, _) => panic!("slice_chars: `begin` is beyond end of string"),
+            (_, None) => panic!("slice_chars: `end` is beyond end of string"),
             (Some(a), Some(b)) => unsafe { raw::slice_bytes(self, a, b) }
         }
     }

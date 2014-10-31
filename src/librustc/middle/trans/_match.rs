@@ -235,7 +235,7 @@ impl<'a> ConstantExpr<'a> {
         let ConstantExpr(other_expr) = other;
         match const_eval::compare_lit_exprs(tcx, expr, other_expr) {
             Some(val1) => val1 == 0,
-            None => fail!("compare_list_exprs: type mismatch"),
+            None => panic!("compare_list_exprs: type mismatch"),
         }
     }
 }
@@ -403,7 +403,7 @@ fn expand_nested_bindings<'a, 'p, 'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
         }
 
         let mut pats = br.pats.clone();
-        *pats.get_mut(col) = pat;
+        pats[col] = pat;
         Match {
             pats: pats,
             data: &*br.data,
@@ -734,7 +734,7 @@ impl FailureHandler {
     fn handle_fail(&self, bcx: Block) {
         match *self {
             Infallible =>
-                fail!("attempted to fail in an infallible failure handler!"),
+                panic!("attempted to panic in a non-panicking panic handler!"),
             JumpToBasicBlock(basic_block) =>
                 Br(bcx, basic_block),
             Unreachable =>

@@ -8,44 +8,9 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// error-pattern:explicit failure
-
-trait Foo {
-    fn foo(self, x: int);
-}
-
-struct S {
-    x: int,
-    y: int,
-    z: int,
-    s: String,
-}
-
-impl Foo for S {
-    fn foo(self, x: int) {
-        fail!()
-    }
-}
-
-impl Drop for S {
-    fn drop(&mut self) {
-        println!("bye 1!");
-    }
-}
-
-fn f() {
-    let s = S {
-        x: 2,
-        y: 3,
-        z: 4,
-        s: "hello".to_string(),
-    };
-    let st = box s as Box<Foo>;
-    st.foo(5);
-}
+// Check that trans doesn't ICE when translating an array repeat
+// expression with a count of 1 and a non-Copy element type.
 
 fn main() {
-    f();
+    let _ = [box 1u, ..1];
 }
-
-
