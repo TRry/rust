@@ -12,11 +12,11 @@
 
 use clone::Clone;
 use cmp::{max, Eq, Equiv, PartialEq};
-use collections::{Collection, Mutable, MutableSet, Map, MutableMap};
 use default::Default;
 use fmt::{mod, Show};
 use hash::{Hash, Hasher, RandomSipHasher};
 use iter::{mod, Iterator, FromIterator, Extendable};
+use kinds::Sized;
 use mem::{mod, replace};
 use num;
 use ops::{Deref, Index, IndexMut};
@@ -419,17 +419,17 @@ impl<K, V, M> SearchResult<K, V, M> {
 }
 
 impl<K: Eq + Hash<S>, V, S, H: Hasher<S>> HashMap<K, V, H> {
-    fn make_hash<X: Hash<S>>(&self, x: &X) -> SafeHash {
+    fn make_hash<Sized? X: Hash<S>>(&self, x: &X) -> SafeHash {
         table::make_hash(&self.hasher, x)
     }
 
-    fn search_equiv<'a, Q: Hash<S> + Equiv<K>>(&'a self, q: &Q)
+    fn search_equiv<'a, Sized? Q: Hash<S> + Equiv<K>>(&'a self, q: &Q)
                     -> Option<FullBucketImm<'a, K, V>> {
         let hash = self.make_hash(q);
         search_hashed_generic(&self.table, &hash, |k| q.equiv(k)).into_option()
     }
 
-    fn search_equiv_mut<'a, Q: Hash<S> + Equiv<K>>(&'a mut self, q: &Q)
+    fn search_equiv_mut<'a, Sized? Q: Hash<S> + Equiv<K>>(&'a mut self, q: &Q)
                     -> Option<FullBucketMut<'a, K, V>> {
         let hash = self.make_hash(q);
         search_hashed_generic(&mut self.table, &hash, |k| q.equiv(k)).into_option()
@@ -467,86 +467,6 @@ impl<K: Eq + Hash<S>, V, S, H: Hasher<S>> HashMap<K, V, H> {
             buckets.next();
         }
         panic!("Internal HashMap error: Out of space.");
-    }
-}
-
-impl<K: Eq + Hash<S>, V, S, H: Hasher<S>> Collection for HashMap<K, V, H> {
-    /// Return the number of elements in the map.
-    fn len(&self) -> uint { self.table.size() }
-}
-
-impl<K: Eq + Hash<S>, V, S, H: Hasher<S>> Mutable for HashMap<K, V, H> {
-    /// Clear the map, removing all key-value pairs. Keeps the allocated memory
-    /// for reuse.
-    fn clear(&mut self) {
-        // Prevent reallocations from happening from now on. Makes it possible
-        // for the map to be reused but has a downside: reserves permanently.
-        self.resize_policy.reserve(self.table.size());
-
-        let cap = self.table.capacity();
-        let mut buckets = Bucket::first(&mut self.table);
-
-        while buckets.index() != cap {
-            buckets = match buckets.peek() {
-                Empty(b)  => b.next(),
-                Full(full) => {
-                    let (b, _, _) = full.take();
-                    b.next()
-                }
-            };
-        }
-    }
-}
-
-impl<K: Eq + Hash<S>, V, S, H: Hasher<S>> Map<K, V> for HashMap<K, V, H> {
-    fn find<'a>(&'a self, k: &K) -> Option<&'a V> {
-        self.search(k).map(|bucket| {
-            let (_, v) = bucket.into_refs();
-            v
-        })
-    }
-
-    fn contains_key(&self, k: &K) -> bool {
-        self.search(k).is_some()
-    }
-}
-
-impl<K: Eq + Hash<S>, V, S, H: Hasher<S>> MutableMap<K, V> for HashMap<K, V, H> {
-    fn find_mut<'a>(&'a mut self, k: &K) -> Option<&'a mut V> {
-        match self.search_mut(k) {
-            Some(bucket) => {
-                let (_, v) = bucket.into_mut_refs();
-                Some(v)
-            }
-            _ => None
-        }
-    }
-
-    fn swap(&mut self, k: K, v: V) -> Option<V> {
-        let hash = self.make_hash(&k);
-        let potential_new_size = self.table.size() + 1;
-        self.make_some_room(potential_new_size);
-
-        let mut retval = None;
-        self.insert_or_replace_with(hash, k, v, |_, val_ref, val| {
-            retval = Some(replace(val_ref, val));
-        });
-        retval
-    }
-
-
-    fn pop(&mut self, k: &K) -> Option<V> {
-        if self.table.size() == 0 {
-            return None
-        }
-
-        let potential_new_size = self.table.size() - 1;
-        self.make_some_room(potential_new_size);
-
-        self.search_mut(k).map(|bucket| {
-            let (_k, val) = pop_internal(bucket);
-            val
-        })
     }
 }
 
@@ -857,7 +777,7 @@ impl<K: Eq + Hash<S>, V, S, H: Hasher<S>> HashMap<K, V, H> {
     /// using equivalence.
     ///
     /// See [pop_equiv](#method.pop_equiv) for an extended example.
-    pub fn contains_key_equiv<Q: Hash<S> + Equiv<K>>(&self, key: &Q) -> bool {
+    pub fn contains_key_equiv<Sized? Q: Hash<S> + Equiv<K>>(&self, key: &Q) -> bool {
         self.search_equiv(key).is_some()
     }
 
@@ -865,7 +785,7 @@ impl<K: Eq + Hash<S>, V, S, H: Hasher<S>> HashMap<K, V, H> {
     /// equivalence.
     ///
     /// See [pop_equiv](#method.pop_equiv) for an extended example.
-    pub fn find_equiv<'a, Q: Hash<S> + Equiv<K>>(&'a self, k: &Q) -> Option<&'a V> {
+    pub fn find_equiv<'a, Sized? Q: Hash<S> + Equiv<K>>(&'a self, k: &Q) -> Option<&'a V> {
         match self.search_equiv(k) {
             None      => None,
             Some(bucket) => {
@@ -921,7 +841,7 @@ impl<K: Eq + Hash<S>, V, S, H: Hasher<S>> HashMap<K, V, H> {
     ///
     /// ```
     #[experimental]
-    pub fn pop_equiv<Q:Hash<S> + Equiv<K>>(&mut self, k: &Q) -> Option<V> {
+    pub fn pop_equiv<Sized? Q:Hash<S> + Equiv<K>>(&mut self, k: &Q) -> Option<V> {
         if self.table.size() == 0 {
             return None
         }
@@ -1062,6 +982,219 @@ impl<K: Eq + Hash<S>, V, S, H: Hasher<S>> HashMap<K, V, H> {
 
         let hash = self.make_hash(&key);
         search_entry_hashed(&mut self.table, hash, key)
+    }
+
+    /// Return the number of elements in the map.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use std::collections::HashMap;
+    ///
+    /// let mut a = HashMap::new();
+    /// assert_eq!(a.len(), 0);
+    /// a.insert(1u, "a");
+    /// assert_eq!(a.len(), 1);
+    /// ```
+    pub fn len(&self) -> uint { self.table.size() }
+
+    /// Return true if the map contains no elements.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use std::collections::HashMap;
+    ///
+    /// let mut a = HashMap::new();
+    /// assert!(a.is_empty());
+    /// a.insert(1u, "a");
+    /// assert!(!a.is_empty());
+    /// ```
+    #[inline]
+    pub fn is_empty(&self) -> bool { self.len() == 0 }
+
+    /// Clears the map, removing all key-value pairs. Keeps the allocated memory
+    /// for reuse.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use std::collections::HashMap;
+    ///
+    /// let mut a = HashMap::new();
+    /// a.insert(1u, "a");
+    /// a.clear();
+    /// assert!(a.is_empty());
+    /// ```
+    pub fn clear(&mut self) {
+        // Prevent reallocations from happening from now on. Makes it possible
+        // for the map to be reused but has a downside: reserves permanently.
+        self.resize_policy.reserve(self.table.size());
+
+        let cap = self.table.capacity();
+        let mut buckets = Bucket::first(&mut self.table);
+
+        while buckets.index() != cap {
+            buckets = match buckets.peek() {
+                Empty(b)  => b.next(),
+                Full(full) => {
+                    let (b, _, _) = full.take();
+                    b.next()
+                }
+            };
+        }
+    }
+
+    /// Returns a reference to the value corresponding to the key.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use std::collections::HashMap;
+    ///
+    /// let mut map = HashMap::new();
+    /// map.insert(1u, "a");
+    /// assert_eq!(map.find(&1), Some(&"a"));
+    /// assert_eq!(map.find(&2), None);
+    /// ```
+    pub fn find<'a>(&'a self, k: &K) -> Option<&'a V> {
+        self.search(k).map(|bucket| {
+            let (_, v) = bucket.into_refs();
+            v
+        })
+    }
+
+    /// Returns true if the map contains a value for the specified key.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use std::collections::HashMap;
+    ///
+    /// let mut map = HashMap::new();
+    /// map.insert(1u, "a");
+    /// assert_eq!(map.contains_key(&1), true);
+    /// assert_eq!(map.contains_key(&2), false);
+    /// ```
+    pub fn contains_key(&self, k: &K) -> bool {
+        self.search(k).is_some()
+    }
+
+    /// Returns a mutable reference to the value corresponding to the key.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use std::collections::HashMap;
+    ///
+    /// let mut map = HashMap::new();
+    /// map.insert(1u, "a");
+    /// match map.find_mut(&1) {
+    ///     Some(x) => *x = "b",
+    ///     None => (),
+    /// }
+    /// assert_eq!(map[1], "b");
+    /// ```
+    pub fn find_mut<'a>(&'a mut self, k: &K) -> Option<&'a mut V> {
+        match self.search_mut(k) {
+            Some(bucket) => {
+                let (_, v) = bucket.into_mut_refs();
+                Some(v)
+            }
+            _ => None
+        }
+    }
+
+    /// Inserts a key-value pair into the map. An existing value for a
+    /// key is replaced by the new value. Returns `true` if the key did
+    /// not already exist in the map.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use std::collections::HashMap;
+    ///
+    /// let mut map = HashMap::new();
+    /// assert_eq!(map.insert(2u, "value"), true);
+    /// assert_eq!(map.insert(2, "value2"), false);
+    /// assert_eq!(map[2], "value2");
+    /// ```
+    #[inline]
+    pub fn insert(&mut self, key: K, value: V) -> bool {
+        self.swap(key, value).is_none()
+    }
+
+    /// Removes a key-value pair from the map. Returns `true` if the key
+    /// was present in the map.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use std::collections::HashMap;
+    ///
+    /// let mut map = HashMap::new();
+    /// assert_eq!(map.remove(&1u), false);
+    /// map.insert(1, "a");
+    /// assert_eq!(map.remove(&1), true);
+    /// ```
+    #[inline]
+    pub fn remove(&mut self, key: &K) -> bool {
+        self.pop(key).is_some()
+    }
+
+    /// Inserts a key-value pair from the map. If the key already had a value
+    /// present in the map, that value is returned. Otherwise, `None` is returned.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use std::collections::HashMap;
+    ///
+    /// let mut map = HashMap::new();
+    /// assert_eq!(map.swap(37u, "a"), None);
+    /// assert_eq!(map.is_empty(), false);
+    ///
+    /// map.insert(37, "b");
+    /// assert_eq!(map.swap(37, "c"), Some("b"));
+    /// assert_eq!(map[37], "c");
+    /// ```
+    pub fn swap(&mut self, k: K, v: V) -> Option<V> {
+        let hash = self.make_hash(&k);
+        let potential_new_size = self.table.size() + 1;
+        self.make_some_room(potential_new_size);
+
+        let mut retval = None;
+        self.insert_or_replace_with(hash, k, v, |_, val_ref, val| {
+            retval = Some(replace(val_ref, val));
+        });
+        retval
+    }
+
+    /// Removes a key from the map, returning the value at the key if the key
+    /// was previously in the map.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use std::collections::HashMap;
+    ///
+    /// let mut map = HashMap::new();
+    /// map.insert(1u, "a");
+    /// assert_eq!(map.pop(&1), Some("a"));
+    /// assert_eq!(map.pop(&1), None);
+    /// ```
+    pub fn pop(&mut self, k: &K) -> Option<V> {
+        if self.table.size() == 0 {
+            return None
+        }
+
+        let potential_new_size = self.table.size() - 1;
+        self.make_some_room(potential_new_size);
+
+        self.search_mut(k).map(|bucket| {
+            let (_k, val) = pop_internal(bucket);
+            val
+        })
     }
 }
 
@@ -1879,11 +2012,11 @@ mod test_map {
         m.insert("baz".to_string(), baz);
 
 
-        assert_eq!(m.find_equiv(&("foo")), Some(&foo));
-        assert_eq!(m.find_equiv(&("bar")), Some(&bar));
-        assert_eq!(m.find_equiv(&("baz")), Some(&baz));
+        assert_eq!(m.find_equiv("foo"), Some(&foo));
+        assert_eq!(m.find_equiv("bar"), Some(&bar));
+        assert_eq!(m.find_equiv("baz"), Some(&baz));
 
-        assert_eq!(m.find_equiv(&("qux")), None);
+        assert_eq!(m.find_equiv("qux"), None);
     }
 
     #[test]

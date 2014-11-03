@@ -408,7 +408,6 @@ pub fn trans_expr_fn<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
                   bcx.fcx.param_substs,
                   id,
                   [],
-                  ty::ty_fn_args(fty),
                   ty::ty_fn_ret(fty),
                   ty::ty_fn_abi(fty),
                   true,
@@ -501,7 +500,6 @@ pub fn trans_unboxed_closure<'blk, 'tcx>(
                   bcx.fcx.param_substs,
                   id,
                   [],
-                  ty::ty_fn_args(function_type),
                   ty::ty_fn_ret(function_type),
                   ty::ty_fn_abi(function_type),
                   true,
@@ -556,7 +554,7 @@ pub fn get_wrapper_for_bare_fn(ccx: &CrateContext,
                                is_local: bool) -> ValueRef {
 
     let def_id = match def {
-        def::DefFn(did, _, _) | def::DefStaticMethod(did, _, _) |
+        def::DefFn(did, _) | def::DefStaticMethod(did, _) |
         def::DefVariant(_, did, _) | def::DefStruct(did) => did,
         _ => {
             ccx.sess().bug(format!("get_wrapper_for_bare_fn: \
