@@ -10,7 +10,6 @@
 //
 // ignore-lexer-test FIXME #15883
 
-use clone::Clone;
 use cmp::{Eq, Equiv, PartialEq};
 use core::kinds::Sized;
 use default::Default;
@@ -22,7 +21,7 @@ use iter;
 use option::{Some, None};
 use result::{Ok, Err};
 
-use super::{HashMap, Entries, MoveEntries, INITIAL_CAPACITY};
+use super::map::{HashMap, Entries, MoveEntries, INITIAL_CAPACITY};
 
 
 // Future Optimization (FIXME!)

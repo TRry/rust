@@ -19,7 +19,6 @@
 use mem;
 use char;
 use char::Char;
-use clone::Clone;
 use cmp;
 use cmp::{PartialEq, Eq};
 use default::Default;
@@ -1526,7 +1525,7 @@ pub trait StrSlice for Sized? {
     /// ```
     fn ends_with(&self, needle: &str) -> bool;
 
-    /// Returns a string with characters that match `to_trim` removed.
+    /// Returns a string with characters that match `to_trim` removed from the left and the right.
     ///
     /// # Arguments
     ///
