@@ -1124,21 +1124,6 @@ enum OptionalInt {
     Value(int),
     Missing,
 }
-
-fn main() {
-    let x = Value(5);
-    let y = Missing;
-
-    match x {
-        Value(n) => println!("x is {}", n),
-        Missing  => println!("x is missing!"),
-    }
-
-    match y {
-        Value(n) => println!("y is {}", n),
-        Missing  => println!("y is missing!"),
-    }
-}
 ```
 
 This enum represents an `int` that we may or may not have. In the `Missing`
@@ -1146,7 +1131,7 @@ case, we have no value, but in the `Value` case, we do. This enum is specific
 to `int`s, though. We can make it usable by any type, but we haven't quite
 gotten there yet!
 
-You can have any number of values in an enum:
+You can also have any number of values in an enum:
 
 ```{rust}
 enum OptionalColor {
@@ -1155,10 +1140,23 @@ enum OptionalColor {
 }
 ```
 
-Enums with values are quite useful, but as I mentioned, they're even more
-useful when they're generic across types. But before we get to generics, let's
-talk about how to fix these big `if`/`else` statements we've been writing. We'll
-do that with `match`.
+And you can also have something like this:
+
+```{rust}
+enum StringResult {
+    StringOK(String),
+    ErrorReason(String),
+}
+```
+Where a `StringResult` is either an `StringOK`, with the result of a computation, or an
+`ErrorReason` with a `String` explaining what caused the computation to fail. These kinds of
+`enum`s are actually very useful and are even part of the standard library.
+
+As you can see `enum`s with values are quite a powerful tool for data representation,
+and can be even more useful when they're generic across types. But before we get to
+generics, let's talk about how to use them with pattern matching, a tool that will
+let us deconstruct this sum type (the type theory term for enums) in a very elegant
+way and avoid all these messy `if`/`else`s.
 
 # Match
 
@@ -1188,7 +1186,7 @@ expression will be evaluated. It's called `match` because of the term 'pattern
 matching,' which `match` is an implementation of.
 
 So what's the big advantage here? Well, there are a few. First of all, `match`
-does 'exhaustiveness checking.' Do you see that last arm, the one with the
+enforces 'exhaustiveness checking.' Do you see that last arm, the one with the
 underscore (`_`)? If we remove that arm, Rust will give us an error:
 
 ```{ignore,notrust}
@@ -1254,6 +1252,37 @@ that we have covered all possible variants of `Ordering`. With our `if`/`else`
 version, if we had forgotten the `Greater` case, for example, our program would
 have happily compiled. If we forget in the `match`, it will not. Rust helps us
 make sure to cover all of our bases.
+
+`match` expressions also allow us to get the values contained in an `enum`
+(also known as destructuring) as follows:
+
+```{rust}
+enum OptionalInt {
+    Value(int),
+    Missing,
+}
+
+fn main() {
+    let x = Value(5);
+    let y = Missing;
+
+    match x {
+        Value(n) => println!("x is {}", n),
+        Missing  => println!("x is missing!"),
+    }
+
+    match y {
+        Value(n) => println!("y is {}", n),
+        Missing  => println!("y is missing!"),
+    }
+}
+```
+
+That is how you can get and use the values contained in `enum`s.
+It can also allow us to treat errors or unexpected computations, for example, a
+function that is not guaranteed to be able to compute a result (an `int` here),
+could return an `OptionalInt`, and we would handle that value with a `match`.
+As you can see, `enum` and `match` used together are quite useful!
 
 `match` is also an expression, which means we can use it on the right
 hand side of a `let` binding or directly where an expression is
@@ -1872,8 +1901,8 @@ result is a link to
 click on that result, we'll be taken to its documentation page.
 
 This page shows us a few things: the type signature of the function, some
-explanatory text, and then an example. Let's modify our code to add in the
-`random` function:
+explanatory text, and then an example. Let's try to modify our code to add in the
+`random` function and see what happens:
 
 ```{rust,ignore}
 use std::io;
@@ -3419,7 +3448,7 @@ let y = &mut x;
 Rust will complain:
 
 ```{ignore,notrust}
-6:19 error: cannot borrow immutable local variable `x` as mutable
+error: cannot borrow immutable local variable `x` as mutable
  let y = &mut x;
               ^
 ```
@@ -3463,7 +3492,7 @@ note: previous borrow ends here
 
 This is a big error message. Let's dig into it for a moment. There are three
 parts: the error and two notes. The error says what we expected, we cannot have
-two pointers that point to the same memory.
+two mutable pointers that point to the same memory.
 
 The two notes give some extra context. Rust's error messages often contain this
 kind of extra information when the error is complex. Rust is telling us two
@@ -3734,10 +3763,10 @@ let y = &mut x;
 This gives us this error:
 
 ```{notrust,ignore}
-8:7 error: cannot use `*x` because it was mutably borrowed
+error: cannot use `*x` because it was mutably borrowed
  *x;
  ^~
- 6:19 note: borrow of `x` occurs here
+note: borrow of `x` occurs here
  let y = &mut x;
               ^
 ```
@@ -3762,7 +3791,7 @@ value that must persist as long as any of several referrers, read on.
 
 ## Rc and Arc
 
-Sometimes, you need a variable that is referenced from multiple places
+Sometimes you need a variable that is referenced from multiple places
 (immutably!), lasting as long as any of those places, and disappearing when it
 is no longer referenced. For instance, in a graph-like data structure, a node
 might be referenced from all of its neighbors. In this case, it is not possible
@@ -3858,7 +3887,7 @@ match x {
 ```
 
 If you're matching on an enum which has variants, you can use `..` to
-ignore the value in the variant:
+ignore the value and type in the variant:
 
 ```{rust}
 enum OptionalInt {
@@ -4530,8 +4559,8 @@ So this would give us the numbers from `2-100`. Well, almost! If you
 compile the example, you'll get a warning:
 
 ```{notrust,ignore}
-2:37 warning: unused result which must be used: iterator adaptors are lazy and
-              do nothing unless consumed, #[warn(unused_must_use)] on by default
+warning: unused result which must be used: iterator adaptors are lazy and
+         do nothing unless consumed, #[warn(unused_must_use)] on by default
  range(1i, 100i).map(|x| x + 1i);
  ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ```
@@ -4572,20 +4601,24 @@ returns `true` or `false`. The new iterator `filter()` produces
 only the elements that that closure returns `true` for:
 
 ```{rust}
-for i in range(1i, 100i).filter(|x| x % 2 == 0) {
+for i in range(1i, 100i).filter(|&x| x % 2 == 0) {
     println!("{}", i);
 }
 ```
 
 This will print all of the even numbers between one and a hundred.
+(Note that because `filter` doesn't consume the elements that are
+being iterated over, it is passed a reference to each element, and
+thus the filter predicate uses the `&x` pattern to extract the integer
+itself.)
 
 You can chain all three things together: start with an iterator, adapt it
 a few times, and then consume the result. Check it out:
 
 ```{rust}
 range(1i, 1000i)
-    .filter(|x| x % 2 == 0)
-    .filter(|x| x % 3 == 0)
+    .filter(|&x| x % 2 == 0)
+    .filter(|&x| x % 3 == 0)
     .take(5)
     .collect::<Vec<int>>();
 ```

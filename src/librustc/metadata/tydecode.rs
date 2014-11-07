@@ -55,6 +55,9 @@ pub enum DefIdSource {
 
     // Identifies a region parameter (`fn foo<'X>() { ... }`).
     RegionParameter,
+
+    // Identifies an unboxed closure
+    UnboxedClosureSource
 }
 pub type conv_did<'a> =
     |source: DefIdSource, ast::DefId|: 'a -> ast::DefId;
@@ -464,7 +467,7 @@ fn parse_ty(st: &mut PState, conv: conv_did) -> ty::t {
       }
       'k' => {
           assert_eq!(next(st), '[');
-          let did = parse_def(st, NominalType, |x,y| conv(x,y));
+          let did = parse_def(st, UnboxedClosureSource, |x,y| conv(x,y));
           let region = parse_region(st, |x,y| conv(x,y));
           let substs = parse_substs(st, |x,y| conv(x,y));
           assert_eq!(next(st), ']');
@@ -672,16 +675,16 @@ fn parse_builtin_bounds(st: &mut PState, _conv: conv_did) -> ty::BuiltinBounds {
     loop {
         match next(st) {
             'S' => {
-                builtin_bounds.add(ty::BoundSend);
+                builtin_bounds.insert(ty::BoundSend);
             }
             'Z' => {
-                builtin_bounds.add(ty::BoundSized);
+                builtin_bounds.insert(ty::BoundSized);
             }
             'P' => {
-                builtin_bounds.add(ty::BoundCopy);
+                builtin_bounds.insert(ty::BoundCopy);
             }
             'T' => {
-                builtin_bounds.add(ty::BoundSync);
+                builtin_bounds.insert(ty::BoundSync);
             }
             '.' => {
                 return builtin_bounds;
