@@ -1,4 +1,3 @@
-
 // Copyright 2012-2014 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
@@ -9,20 +8,24 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// Extending Num and using inherited static methods
+// ignore-android
+// ignore-pretty: does not work well with `--test`
 
-use std::cmp::PartialOrd;
-use std::num::NumCast;
+#![feature(quote)]
 
-pub trait Num {
-    fn from_int(i: int) -> Self;
-    fn gt(&self, other: &Self) -> bool;
+extern crate syntax;
+
+use syntax::ext::base::ExtCtxt;
+
+fn syntax_extension(cx: &ExtCtxt) {
+    let _toks_1 = vec![quote_tokens!(cx, /** comment */ fn foo() {})];
+    let name = quote_tokens!(cx, bar);
+    let _toks_2 = vec![quote_item!(cx, static $name:int = 2;)];
+    let _toks_3 = vec![quote_item!(cx,
+        /// comment
+        fn foo() { let $name:int = 3; }
+    )];
 }
 
-pub trait NumExt: NumCast + PartialOrd { }
-
-fn greater_than_one<T:NumExt>(n: &T) -> bool {
-    n.gt(&NumCast::from(1i).unwrap())
+fn main() {
 }
-
-pub fn main() {}

@@ -37,6 +37,7 @@ use lint::{Context, LintPass, LintArray};
 
 use std::cmp;
 use std::collections::hash_map::{Occupied, Vacant};
+use std::num::SignedInt;
 use std::slice;
 use std::{i8, i16, i32, i64, u8, u16, u32, u64, f32, f64};
 use syntax::abi;
@@ -115,7 +116,7 @@ declare_lint!(UNUSED_COMPARISONS, Warn,
 declare_lint!(OVERFLOWING_LITERALS, Warn,
               "literal out of range for its type")
 
-declare_lint!(EXCEEDING_BITSHIFTS, Allow,
+declare_lint!(EXCEEDING_BITSHIFTS, Deny,
               "shift exceeds the type's number of bits")
 
 pub struct TypeLimits {

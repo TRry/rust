@@ -10,7 +10,7 @@
 
 // The Rust abstract syntax tree.
 
-use codemap::{Span, Spanned, DUMMY_SP, ExpnId, respan};
+use codemap::{Span, Spanned, DUMMY_SP, ExpnId};
 use abi::Abi;
 use ast_util;
 use owned_slice::OwnedSlice;
@@ -19,8 +19,8 @@ use parse::token;
 use ptr::P;
 
 use std::fmt;
-use std::num::Zero;
 use std::fmt::Show;
+use std::num::Int;
 use std::rc::Rc;
 use serialize::{Encodable, Decodable, Encoder, Decoder};
 
@@ -783,13 +783,13 @@ impl TokenTree {
                 TtToken(sp, token::Pound)
             }
             (&TtToken(sp, token::DocComment(name)), 1) => {
-                let doc = MetaNameValue(token::intern_and_get_ident("doc"),
-                                        respan(sp, LitStr(token::get_name(name), CookedStr)));
-                let doc = token::NtMeta(P(respan(sp, doc)));
                 TtDelimited(sp, Rc::new(Delimited {
                     delim: token::Bracket,
                     open_span: sp,
-                    tts: vec![TtToken(sp, token::Interpolated(doc))],
+                    tts: vec![TtToken(sp, token::Ident(token::str_to_ident("doc"),
+                                                       token::Plain)),
+                              TtToken(sp, token::Eq),
+                              TtToken(sp, token::LitStr(name))],
                     close_span: sp,
                 }))
             }
@@ -857,9 +857,9 @@ pub enum Sign {
     Plus
 }
 
-impl<T: PartialOrd+Zero> Sign {
+impl<T: Int> Sign {
     pub fn new(n: T) -> Sign {
-        if n < Zero::zero() {
+        if n < Int::zero() {
             Minus
         } else {
             Plus
