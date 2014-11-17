@@ -235,7 +235,10 @@ impl<T> Option<T> {
     #[inline]
     #[stable]
     pub fn as_ref<'r>(&'r self) -> Option<&'r T> {
-        match *self { Some(ref x) => Some(x), None => None }
+        match *self {
+            Some(ref x) => Some(x),
+            None => None
+        }
     }
 
     /// Convert from `Option<T>` to `Option<&mut T>`
@@ -253,7 +256,10 @@ impl<T> Option<T> {
     #[inline]
     #[unstable = "waiting for mut conventions"]
     pub fn as_mut<'r>(&'r mut self) -> Option<&'r mut T> {
-        match *self { Some(ref mut x) => Some(x), None => None }
+        match *self {
+            Some(ref mut x) => Some(x),
+            None => None
+        }
     }
 
     /// Convert from `Option<T>` to `&mut [T]` (without copying)
@@ -401,7 +407,10 @@ impl<T> Option<T> {
     #[inline]
     #[unstable = "waiting for unboxed closures"]
     pub fn map<U>(self, f: |T| -> U) -> Option<U> {
-        match self { Some(x) => Some(f(x)), None => None }
+        match self {
+            Some(x) => Some(f(x)),
+            None => None
+        }
     }
 
     /// Applies a function to the contained value or returns a default.
@@ -418,7 +427,10 @@ impl<T> Option<T> {
     #[inline]
     #[unstable = "waiting for unboxed closures"]
     pub fn map_or<U>(self, def: U, f: |T| -> U) -> U {
-        match self { None => def, Some(t) => f(t) }
+        match self {
+            Some(t) => f(t),
+            None => def
+        }
     }
 
     /// Applies a function to the contained value or computes a default.
@@ -437,7 +449,10 @@ impl<T> Option<T> {
     #[inline]
     #[unstable = "waiting for unboxed closures"]
     pub fn map_or_else<U>(self, def: || -> U, f: |T| -> U) -> U {
-        match self { None => def(), Some(t) => f(t) }
+        match self {
+            Some(t) => f(t),
+            None => def()
+        }
     }
 
     /// Transforms the `Option<T>` into a `Result<T, E>`, mapping `Some(v)` to
@@ -716,7 +731,6 @@ impl<T: Default> Option<T> {
 impl<T> AsSlice<T> for Option<T> {
     /// Convert from `Option<T>` to `&[T]` (without copying)
     #[inline]
-    #[stable]
     fn as_slice<'a>(&'a self) -> &'a [T] {
         match *self {
             Some(ref x) => slice::ref_slice(x),
@@ -728,6 +742,7 @@ impl<T> AsSlice<T> for Option<T> {
     }
 }
 
+#[stable]
 impl<T> Default for Option<T> {
     #[inline]
     fn default() -> Option<T> { None }
@@ -772,9 +787,10 @@ impl<A> DoubleEndedIterator<A> for Item<A> {
 impl<A> ExactSize<A> for Item<A> {}
 
 /////////////////////////////////////////////////////////////////////////////
-// Free functions
+// FromIterator
 /////////////////////////////////////////////////////////////////////////////
 
+#[stable]
 impl<A, V: FromIterator<A>> FromIterator<Option<A>> for Option<V> {
     /// Takes each element in the `Iterator`: if it is `None`, no further
     /// elements are taken, and the `None` is returned. Should no `None` occur, a

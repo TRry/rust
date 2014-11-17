@@ -83,7 +83,6 @@ pub fn untuple_arguments_if_necessary(ccx: &CrateContext,
                 result.push(tupled_argument);
             }
         }
-        ty::ty_nil => {}
         _ => {
             ccx.tcx().sess.bug("argument to function with \"rust-call\" ABI \
                                 is neither a tuple nor unit")
@@ -186,7 +185,6 @@ pub fn sizing_type_of(cx: &CrateContext, t: ty::t) -> Type {
                                   ppaux::ty_to_string(cx.tcx(), t)).as_slice())
         }
 
-        ty::ty_nil => Type::nil(cx),
         ty::ty_bool => Type::bool(cx),
         ty::ty_char => Type::char(cx),
         ty::ty_int(t) => Type::int_from_ty(cx, t),
@@ -209,6 +207,10 @@ pub fn sizing_type_of(cx: &CrateContext, t: ty::t) -> Type {
             let size = size as u64;
             ensure_array_fits_in_address_space(cx, llty, size, t);
             Type::array(&llty, size)
+        }
+
+        ty::ty_tup(ref tys) if tys.is_empty() => {
+            Type::nil(cx)
         }
 
         ty::ty_tup(..) | ty::ty_enum(..) | ty::ty_unboxed_closure(..) => {
@@ -298,7 +300,6 @@ pub fn type_of(cx: &CrateContext, t: ty::t) -> Type {
     }
 
     let mut llty = match ty::get(t).sty {
-      ty::ty_nil => Type::nil(cx),
       ty::ty_bool => Type::bool(cx),
       ty::ty_char => Type::char(cx),
       ty::ty_int(t) => Type::int_from_ty(cx, t),
@@ -365,6 +366,7 @@ pub fn type_of(cx: &CrateContext, t: ty::t) -> Type {
           let fn_ty = type_of_fn_from_ty(cx, t).ptr_to();
           Type::struct_(cx, [fn_ty, Type::i8p(cx)], false)
       }
+      ty::ty_tup(ref tys) if tys.is_empty() => Type::nil(cx),
       ty::ty_tup(..) => {
           let repr = adt::represent_type(cx, t);
           adt::type_of(cx, &*repr)
@@ -455,7 +457,12 @@ pub fn llvm_type_name(cx: &CrateContext,
 
     let base = ty::item_path_str(cx.tcx(), did);
     let strings: Vec<String> = tps.iter().map(|t| t.repr(cx.tcx())).collect();
-    let tstr = format!("{}<{}>", base, strings);
+    let tstr = if strings.is_empty() {
+        base
+    } else {
+        format!("{}<{}>", base, strings)
+    };
+
     if did.krate == 0 {
         format!("{}.{}", name, tstr)
     } else {

@@ -645,7 +645,6 @@ impl<T> Vec<T> {
     /// assert!(vec.capacity() >= 3);
     /// ```
     #[stable]
-    #[unstable = "matches collection reform specification, waiting for dust to settle"]
     pub fn shrink_to_fit(&mut self) {
         if mem::size_of::<T>() == 0 { return }
 
@@ -941,9 +940,9 @@ impl<T> Vec<T> {
 
     /// Appends an element to the back of a collection.
     ///
-    /// # Failure
+    /// # Panics
     ///
-    /// Fails if the number of elements in the vector overflows a `uint`.
+    /// Panics if the number of elements in the vector overflows a `uint`.
     ///
     /// # Example
     ///
@@ -1462,9 +1461,9 @@ impl<T> Vec<T> {
     /// Converts a `Vec<T>` to a `Vec<U>` where `T` and `U` have the same
     /// size and in case they are not zero-sized the same minimal alignment.
     ///
-    /// # Failure
+    /// # Panics
     ///
-    /// Fails if `T` and `U` have differing sizes or are not zero-sized and
+    /// Panics if `T` and `U` have differing sizes or are not zero-sized and
     /// have differing minimal alignments.
     ///
     /// # Example
@@ -1650,6 +1649,13 @@ impl<T> Vec<T> {
             unsafe { result.set_len(pv.num_u); }
             result
         }
+    }
+}
+
+impl<'a> fmt::FormatWriter for Vec<u8> {
+    fn write(&mut self, buf: &[u8]) -> fmt::Result {
+        self.push_all(buf);
+        Ok(())
     }
 }
 
