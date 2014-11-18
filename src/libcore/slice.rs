@@ -34,6 +34,8 @@
 // * The `raw` and `bytes` submodules.
 // * Boilerplate trait implementations.
 
+pub use self::BinarySearchResult::*;
+
 use mem::transmute;
 use clone::Clone;
 use cmp::{PartialEq, PartialOrd, Eq, Ord, Ordering, Less, Equal, Greater, Equiv};
@@ -973,11 +975,11 @@ pub trait CloneSlicePrelude<T> for Sized? {
     /// let mut dst = [0i, 0, 0];
     /// let src = [1i, 2];
     ///
-    /// assert!(dst.clone_from_slice(src) == 2);
+    /// assert!(dst.clone_from_slice(&src) == 2);
     /// assert!(dst == [1, 2, 0]);
     ///
     /// let src2 = [3i, 4, 5, 6];
-    /// assert!(dst.clone_from_slice(src2) == 3);
+    /// assert!(dst.clone_from_slice(&src2) == 3);
     /// assert!(dst == [3i, 4, 5]);
     /// ```
     fn clone_from_slice(&mut self, &[T]) -> uint;

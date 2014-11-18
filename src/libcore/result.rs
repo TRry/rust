@@ -38,8 +38,8 @@
 //!         return Err("invalid header length");
 //!     }
 //!     match header[0] {
-//!         1 => Ok(Version1),
-//!         2 => Ok(Version2),
+//!         1 => Ok(Version::Version1),
+//!         2 => Ok(Version::Version2),
 //!         _ => Err("invalid version")
 //!     }
 //! }
@@ -276,6 +276,8 @@
 
 #![stable]
 
+pub use self::Result::*;
+
 use std::fmt::Show;
 use slice;
 use slice::AsSlice;
@@ -451,14 +453,14 @@ impl<T, E> Result<T, E> {
     /// let mut x: Result<&str, uint> = Ok("Gold");
     /// {
     ///     let v = x.as_mut_slice();
-    ///     assert!(v == ["Gold"]);
+    ///     assert!(v == &mut ["Gold"]);
     ///     v[0] = "Silver";
-    ///     assert!(v == ["Silver"]);
+    ///     assert!(v == &mut ["Silver"]);
     /// }
     /// assert_eq!(x, Ok("Silver"));
     ///
     /// let mut x: Result<&str, uint> = Err(45);
-    /// assert!(x.as_mut_slice() == []);
+    /// assert!(x.as_mut_slice() == &mut []);
     /// ```
     #[inline]
     #[unstable = "waiting for mut conventions"]

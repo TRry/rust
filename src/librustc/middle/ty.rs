@@ -10,6 +10,32 @@
 
 #![allow(non_camel_case_types)]
 
+pub use self::terr_vstore_kind::*;
+pub use self::type_err::*;
+pub use self::BuiltinBound::*;
+pub use self::InferTy::*;
+pub use self::InferRegion::*;
+pub use self::ImplOrTraitItemId::*;
+pub use self::UnboxedClosureKind::*;
+pub use self::TraitStore::*;
+pub use self::ast_ty_to_ty_cache_entry::*;
+pub use self::Variance::*;
+pub use self::AutoAdjustment::*;
+pub use self::Representability::*;
+pub use self::UnsizeKind::*;
+pub use self::AutoRef::*;
+pub use self::ExprKind::*;
+pub use self::DtorKind::*;
+pub use self::ExplicitSelfCategory::*;
+pub use self::FnOutput::*;
+pub use self::Region::*;
+pub use self::ImplOrTraitItemContainer::*;
+pub use self::BorrowKind::*;
+pub use self::ImplOrTraitItem::*;
+pub use self::BoundRegion::*;
+pub use self::sty::*;
+pub use self::IntVarValue::*;
+
 use back::svh::Svh;
 use driver::session::Session;
 use lint;
@@ -2656,7 +2682,7 @@ pub fn type_contents(cx: &ctxt, ty: t) -> TypeContents {
                        bounds: ExistentialBounds)
                        -> TypeContents {
         // These are the type contents of the (opaque) interior
-        kind_bounds_to_contents(cx, bounds.builtin_bounds, [])
+        kind_bounds_to_contents(cx, bounds.builtin_bounds, &[])
     }
 
     fn kind_bounds_to_contents(cx: &ctxt,
@@ -3189,7 +3215,7 @@ pub fn node_id_to_trait_ref(cx: &ctxt, id: ast::NodeId) -> Rc<ty::TraitRef> {
 }
 
 pub fn try_node_id_to_type(cx: &ctxt, id: ast::NodeId) -> Option<t> {
-    cx.node_types.borrow().find_copy(&id)
+    cx.node_types.borrow().get(&id).cloned()
 }
 
 pub fn node_id_to_type(cx: &ctxt, id: ast::NodeId) -> t {
@@ -3465,43 +3491,45 @@ pub fn adjust_ty(cx: &ctxt,
                         }
                     }
 
-                    match adj.autoref {
-                        None => adjusted_ty,
-                        Some(ref autoref) => adjust_for_autoref(cx, span, adjusted_ty, autoref)
-                    }
+                    adjust_ty_for_autoref(cx, span, adjusted_ty, adj.autoref.as_ref())
                 }
             }
         }
         None => unadjusted_ty
     };
+}
 
-    fn adjust_for_autoref(cx: &ctxt,
-                          span: Span,
-                          ty: ty::t,
-                          autoref: &AutoRef) -> ty::t{
-        match *autoref {
-            AutoPtr(r, m, ref a) => {
-                let adjusted_ty = match a {
-                    &Some(box ref a) => adjust_for_autoref(cx, span, ty, a),
-                    &None => ty
-                };
-                mk_rptr(cx, r, mt {
-                    ty: adjusted_ty,
-                    mutbl: m
-                })
-            }
+pub fn adjust_ty_for_autoref(cx: &ctxt,
+                             span: Span,
+                             ty: ty::t,
+                             autoref: Option<&AutoRef>)
+                             -> ty::t
+{
+    match autoref {
+        None => ty,
 
-            AutoUnsafe(m, ref a) => {
-                let adjusted_ty = match a {
-                    &Some(box ref a) => adjust_for_autoref(cx, span, ty, a),
-                    &None => ty
-                };
-                mk_ptr(cx, mt {ty: adjusted_ty, mutbl: m})
-            }
-
-            AutoUnsize(ref k) => unsize_ty(cx, ty, k, span),
-            AutoUnsizeUniq(ref k) => ty::mk_uniq(cx, unsize_ty(cx, ty, k, span)),
+        Some(&AutoPtr(r, m, ref a)) => {
+            let adjusted_ty = match a {
+                &Some(box ref a) => adjust_ty_for_autoref(cx, span, ty, Some(a)),
+                &None => ty
+            };
+            mk_rptr(cx, r, mt {
+                ty: adjusted_ty,
+                mutbl: m
+            })
         }
+
+        Some(&AutoUnsafe(m, ref a)) => {
+            let adjusted_ty = match a {
+                &Some(box ref a) => adjust_ty_for_autoref(cx, span, ty, Some(a)),
+                &None => ty
+            };
+            mk_ptr(cx, mt {ty: adjusted_ty, mutbl: m})
+        }
+
+        Some(&AutoUnsize(ref k)) => unsize_ty(cx, ty, k, span),
+
+        Some(&AutoUnsizeUniq(ref k)) => ty::mk_uniq(cx, unsize_ty(cx, ty, k, span)),
     }
 }
 
@@ -4051,7 +4079,7 @@ fn lookup_locally_or_in_crate_store<V:Clone>(
      * the crate loading code (and cache the result for the future).
      */
 
-    match map.find_copy(&def_id) {
+    match map.get(&def_id).cloned() {
         Some(v) => { return v; }
         None => { }
     }
@@ -4073,7 +4101,7 @@ pub fn trait_item(cx: &ctxt, trait_did: ast::DefId, idx: uint)
 pub fn trait_items(cx: &ctxt, trait_did: ast::DefId)
                    -> Rc<Vec<ImplOrTraitItem>> {
     let mut trait_items = cx.trait_items_cache.borrow_mut();
-    match trait_items.find_copy(&trait_did) {
+    match trait_items.get(&trait_did).cloned() {
         Some(trait_items) => trait_items,
         None => {
             let def_ids = ty::trait_item_def_ids(cx, trait_did);
@@ -4623,7 +4651,7 @@ pub fn unboxed_closure_upvars(tcx: &ctxt, closure_id: ast::DefId, substs: &Subst
     // This may change if abstract return types of some sort are
     // implemented.
     assert!(closure_id.krate == ast::LOCAL_CRATE);
-    let capture_mode = tcx.capture_modes.borrow().get_copy(&closure_id.node);
+    let capture_mode = tcx.capture_modes.borrow()[closure_id.node].clone();
     match tcx.freevars.borrow().get(&closure_id.node) {
         None => vec![],
         Some(ref freevars) => {
@@ -4632,10 +4660,10 @@ pub fn unboxed_closure_upvars(tcx: &ctxt, closure_id: ast::DefId, substs: &Subst
                 let freevar_ty = node_id_to_type(tcx, freevar_def_id.node);
                 let mut freevar_ty = freevar_ty.subst(tcx, substs);
                 if capture_mode == ast::CaptureByRef {
-                    let borrow = tcx.upvar_borrow_map.borrow().get_copy(&ty::UpvarId {
+                    let borrow = tcx.upvar_borrow_map.borrow()[ty::UpvarId {
                         var_id: freevar_def_id.node,
                         closure_expr_id: closure_id.node
-                    });
+                    }].clone();
                     freevar_ty = mk_rptr(tcx, borrow.region, ty::mt {
                         ty: freevar_ty,
                         mutbl: borrow.kind.to_mutbl_lossy()
@@ -4734,7 +4762,7 @@ pub fn normalize_ty(cx: &ctxt, t: t) -> t {
         fn tcx(&self) -> &ctxt<'tcx> { let TypeNormalizer(c) = *self; c }
 
         fn fold_ty(&mut self, t: ty::t) -> ty::t {
-            match self.tcx().normalized_cache.borrow().find_copy(&t) {
+            match self.tcx().normalized_cache.borrow().get(&t).cloned() {
                 None => {}
                 Some(u) => return u
             }
@@ -4850,7 +4878,7 @@ pub fn required_region_bounds(tcx: &ctxt,
 
     all_bounds.push_all(region_bounds);
 
-    push_region_bounds([],
+    push_region_bounds(&[],
                        builtin_bounds,
                        &mut all_bounds);
 
@@ -4886,7 +4914,7 @@ pub fn required_region_bounds(tcx: &ctxt,
 
 pub fn get_tydesc_ty(tcx: &ctxt) -> Result<t, String> {
     tcx.lang_items.require(TyDescStructLangItem).map(|tydesc_lang_item| {
-        tcx.intrinsic_defs.borrow().find_copy(&tydesc_lang_item)
+        tcx.intrinsic_defs.borrow().get(&tydesc_lang_item).cloned()
             .expect("Failed to resolve TyDesc")
     })
 }
@@ -5037,7 +5065,7 @@ pub fn impl_of_method(tcx: &ctxt, def_id: ast::DefId)
             ImplContainer(def_id) => Some(def_id),
         };
     }
-    match tcx.impl_or_trait_items.borrow().find_copy(&def_id) {
+    match tcx.impl_or_trait_items.borrow().get(&def_id).cloned() {
         Some(trait_item) => {
             match trait_item.container() {
                 TraitContainer(_) => None,
@@ -5055,7 +5083,7 @@ pub fn trait_of_item(tcx: &ctxt, def_id: ast::DefId) -> Option<ast::DefId> {
     if def_id.krate != LOCAL_CRATE {
         return csearch::get_trait_of_item(&tcx.sess.cstore, def_id, tcx);
     }
-    match tcx.impl_or_trait_items.borrow().find_copy(&def_id) {
+    match tcx.impl_or_trait_items.borrow().get(&def_id).cloned() {
         Some(impl_or_trait_item) => {
             match impl_or_trait_item.container() {
                 TraitContainer(def_id) => Some(def_id),
@@ -5444,12 +5472,12 @@ impl<'tcx> mc::Typer<'tcx> for ty::ctxt<'tcx> {
     }
 
     fn upvar_borrow(&self, upvar_id: ty::UpvarId) -> ty::UpvarBorrow {
-        self.upvar_borrow_map.borrow().get_copy(&upvar_id)
+        self.upvar_borrow_map.borrow()[upvar_id].clone()
     }
 
     fn capture_mode(&self, closure_expr_id: ast::NodeId)
                     -> ast::CaptureClause {
-        self.capture_modes.borrow().get_copy(&closure_expr_id)
+        self.capture_modes.borrow()[closure_expr_id].clone()
     }
 
     fn unboxed_closures<'a>(&'a self)

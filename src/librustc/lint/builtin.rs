@@ -24,6 +24,7 @@
 //! `add_builtin!` or `add_builtin_with_new!` invocation in `context.rs`.
 //! Use the former for unit-like structs and the latter for structs with
 //! a `pub fn new()`.
+use self::MethodContext::*;
 
 use metadata::csearch;
 use middle::def::*;
@@ -391,7 +392,7 @@ struct ImproperCTypesVisitor<'a, 'tcx: 'a> {
 
 impl<'a, 'tcx> ImproperCTypesVisitor<'a, 'tcx> {
     fn check_def(&mut self, sp: Span, ty_id: ast::NodeId, path_id: ast::NodeId) {
-        match self.cx.tcx.def_map.borrow().get_copy(&path_id) {
+        match self.cx.tcx.def_map.borrow()[path_id].clone() {
             def::DefPrimTy(ast::TyInt(ast::TyI)) => {
                 self.cx.span_lint(IMPROPER_CTYPES, sp,
                                   "found rust type `int` in foreign module, while \
@@ -622,6 +623,7 @@ impl LintPass for UnusedAttributes {
             "link",
             "link_name",
             "link_section",
+            "linkage",
             "no_builtins",
             "no_mangle",
             "no_split_stack",
@@ -869,7 +871,7 @@ fn method_context(cx: &Context, m: &ast::Method) -> MethodContext {
         node: m.id
     };
 
-    match cx.tcx.impl_or_trait_items.borrow().find_copy(&did) {
+    match cx.tcx.impl_or_trait_items.borrow().get(&did).cloned() {
         None => cx.sess().span_bug(m.span, "missing method descriptor?!"),
         Some(md) => {
             match md {

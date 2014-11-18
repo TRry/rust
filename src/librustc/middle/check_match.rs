@@ -8,6 +8,10 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+pub use self::Constructor::*;
+use self::Usefulness::*;
+use self::WitnessPreference::*;
+
 use middle::const_eval::{compare_const_vals, const_bool, const_float, const_val};
 use middle::const_eval::{const_expr_to_pat, eval_const_expr, lookup_const_by_id};
 use middle::def::*;
@@ -359,7 +363,7 @@ impl<'a, 'tcx> Folder for StaticInliner<'a, 'tcx> {
     fn fold_pat(&mut self, pat: P<Pat>) -> P<Pat> {
         match pat.node {
             PatIdent(..) | PatEnum(..) => {
-                let def = self.tcx.def_map.borrow().find_copy(&pat.id);
+                let def = self.tcx.def_map.borrow().get(&pat.id).cloned();
                 match def {
                     Some(DefConst(did)) => match lookup_const_by_id(self.tcx, did) {
                         Some(const_expr) => {
@@ -749,7 +753,7 @@ pub fn specialize<'a>(cx: &MatchCheckCtxt, r: &[&'a Pat],
             Some(Vec::from_elem(arity, DUMMY_WILD_PAT)),
 
         &PatIdent(_, _, _) => {
-            let opt_def = cx.tcx.def_map.borrow().find_copy(&pat_id);
+            let opt_def = cx.tcx.def_map.borrow().get(&pat_id).cloned();
             match opt_def {
                 Some(DefConst(..)) =>
                     cx.tcx.sess.span_bug(pat_span, "const pattern should've \
@@ -764,7 +768,7 @@ pub fn specialize<'a>(cx: &MatchCheckCtxt, r: &[&'a Pat],
         }
 
         &PatEnum(_, ref args) => {
-            let def = cx.tcx.def_map.borrow().get_copy(&pat_id);
+            let def = cx.tcx.def_map.borrow()[pat_id].clone();
             match def {
                 DefConst(..) =>
                     cx.tcx.sess.span_bug(pat_span, "const pattern should've \
@@ -782,7 +786,7 @@ pub fn specialize<'a>(cx: &MatchCheckCtxt, r: &[&'a Pat],
 
         &PatStruct(_, ref pattern_fields, _) => {
             // Is this a struct or an enum variant?
-            let def = cx.tcx.def_map.borrow().get_copy(&pat_id);
+            let def = cx.tcx.def_map.borrow()[pat_id].clone();
             let class_id = match def {
                 DefConst(..) =>
                     cx.tcx.sess.span_bug(pat_span, "const pattern should've \
@@ -932,7 +936,7 @@ fn check_fn(cx: &mut MatchCheckCtxt,
 
 fn is_refutable<A>(cx: &MatchCheckCtxt, pat: &Pat, refutable: |&Pat| -> A) -> Option<A> {
     let pats = Matrix(vec!(vec!(pat)));
-    match is_useful(cx, &pats, [DUMMY_WILD_PAT], ConstructWitness) {
+    match is_useful(cx, &pats, &[DUMMY_WILD_PAT], ConstructWitness) {
         UsefulWithWitness(pats) => {
             assert_eq!(pats.len(), 1);
             Some(refutable(&*pats[0]))

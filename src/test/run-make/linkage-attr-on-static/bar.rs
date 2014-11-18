@@ -1,4 +1,4 @@
-// Copyright 2012 The Rust Project Developers. See the COPYRIGHT
+// Copyright 2014 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
 //
@@ -8,10 +8,18 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// error-pattern:declaration of `thpppt` shadows
-enum ack { thpppt, ffff, }
+#![feature(linkage)]
+
+#[no_mangle]
+#[linkage = "external"]
+static BAZ: i32 = 21;
+
+extern {
+    fn what() -> i32;
+}
 
 fn main() {
-  let thpppt: int = 42;
-  log(debug, thpppt);
+    unsafe {
+        assert_eq!(what(), BAZ);
+    }
 }

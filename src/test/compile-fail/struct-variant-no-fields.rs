@@ -8,16 +8,6 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// Test that enum variants are in the type namespace.
-
 enum Foo {
-    Foo //~ERROR duplicate definition of type or module `Foo`
+    Bar {} //~ ERROR unit-like struct variant should be written without braces, as `Bar,`
 }
-
-enum Bar {
-    Baz
-}
-
-trait Baz {} //~ERROR duplicate definition of type or module `Baz`
-
-pub fn main() {}

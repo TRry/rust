@@ -8,6 +8,8 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+pub use self::AnnNode::*;
+
 use abi;
 use ast::{FnUnboxedClosureKind, FnMutUnboxedClosureKind};
 use ast::{FnOnceUnboxedClosureKind};
@@ -1853,7 +1855,7 @@ impl<'a> State<'a> {
                 try!(self.commasep(Inconsistent, a.outputs.as_slice(),
                                    |s, &(ref co, ref o, is_rw)| {
                     match co.get().slice_shift_char() {
-                        (Some('='), operand) if is_rw => {
+                        Some(('=', operand)) if is_rw => {
                             try!(s.print_string(format!("+{}", operand).as_slice(),
                                                 ast::CookedStr))
                         }

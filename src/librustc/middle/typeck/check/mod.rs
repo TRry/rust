@@ -76,6 +76,11 @@ type parameter).
 
 */
 
+pub use self::LvaluePreference::*;
+pub use self::DerefArgs::*;
+use self::Expectation::*;
+use self::IsBinopAssignment::*;
+use self::TupleArgumentsFlag::*;
 
 use driver::session::Session;
 use middle::const_eval;
@@ -97,8 +102,6 @@ use middle::typeck::astconv::AstConv;
 use middle::typeck::astconv::{ast_region_to_region, ast_ty_to_ty};
 use middle::typeck::astconv;
 use middle::typeck::check::_match::pat_ctxt;
-use middle::typeck::check::method::{AutoderefReceiver};
-use middle::typeck::check::method::{CheckTraitsAndInherentMethods};
 use middle::typeck::check::regionmanip::replace_late_bound_regions;
 use middle::typeck::CrateCtxt;
 use middle::typeck::infer;
@@ -309,7 +312,7 @@ impl<'a, 'tcx> mem_categorization::Typer<'tcx> for FnCtxt<'a, 'tcx> {
         self.tcx().temporary_scope(rvalue_id)
     }
     fn upvar_borrow(&self, upvar_id: ty::UpvarId) -> ty::UpvarBorrow {
-        self.inh.upvar_borrow_map.borrow().get_copy(&upvar_id)
+        self.inh.upvar_borrow_map.borrow()[upvar_id].clone()
     }
     fn capture_mode(&self, closure_expr_id: ast::NodeId)
                     -> ast::CaptureClause {
@@ -450,7 +453,7 @@ impl<'a, 'tcx, 'v> Visitor<'v> for GatherLocalsVisitor<'a, 'tcx> {
         debug!("Local variable {} is assigned type {}",
                self.fcx.pat_to_string(&*local.pat),
                self.fcx.infcx().ty_to_string(
-                   self.fcx.inh.locals.borrow().get_copy(&local.id)));
+                   self.fcx.inh.locals.borrow()[local.id].clone()));
         visit::walk_local(self, local);
     }
 
@@ -467,7 +470,7 @@ impl<'a, 'tcx, 'v> Visitor<'v> for GatherLocalsVisitor<'a, 'tcx> {
                     debug!("Pattern binding {} is assigned to {} with type {}",
                            token::get_ident(path1.node),
                            self.fcx.infcx().ty_to_string(
-                               self.fcx.inh.locals.borrow().get_copy(&p.id)),
+                               self.fcx.inh.locals.borrow()[p.id].clone()),
                            var_ty.repr(self.fcx.tcx()));
                 }
             _ => {}
@@ -2266,6 +2269,10 @@ fn autoderef_for_index<T>(fcx: &FnCtxt,
                           step: |ty::t, ty::AutoDerefRef| -> Option<T>)
                           -> Option<T>
 {
+    // FIXME(#18741) -- this is almost but not quite the same as the
+    // autoderef that normal method probing does. They could likely be
+    // consolidated.
+
     let (ty, autoderefs, final_mt) =
         autoderef(fcx, base_expr.span, base_ty, Some(base_expr.id), lvalue_pref, |adj_ty, idx| {
             let autoderefref = ty::AutoDerefRef { autoderefs: idx, autoref: None };
@@ -3043,9 +3050,12 @@ fn check_expr_with_unifier(fcx: &FnCtxt,
 
         // Replace any bound regions that appear in the function
         // signature with region variables
-        let (_, fn_sig) = replace_late_bound_regions(fcx.tcx(), fn_sig.binder_id, fn_sig, |br| {
-            fcx.infcx().next_region_var(infer::LateBoundRegion(call_expr.span, br))
-        });
+        let fn_sig =
+            fcx.infcx().replace_late_bound_regions_with_fresh_var(
+                fn_sig.binder_id,
+                call_expr.span,
+                infer::FnCall,
+                fn_sig).0;
 
         // Call the generic checker.
         check_argument_types(fcx,
@@ -3077,14 +3087,12 @@ fn check_expr_with_unifier(fcx: &FnCtxt,
 
         let tps = tps.iter().map(|ast_ty| fcx.to_ty(&**ast_ty)).collect::<Vec<_>>();
         let fn_ty = match method::lookup(fcx,
-                                         expr,
-                                         &*rcvr,
+                                         method_name.span,
                                          method_name.node.name,
                                          expr_t,
-                                         tps.as_slice(),
-                                         DontDerefArgs,
-                                         CheckTraitsAndInherentMethods,
-                                         AutoderefReceiver) {
+                                         tps,
+                                         expr.id,
+                                         rcvr) {
             Ok(method) => {
                 let method_ty = method.ty;
                 let method_call = MethodCall::expr(expr.id);
@@ -3592,8 +3600,7 @@ fn check_expr_with_unifier(fcx: &FnCtxt,
                    expr: &ast::Expr,
                    lvalue_pref: LvaluePreference,
                    base: &ast::Expr,
-                   field: &ast::SpannedIdent,
-                   tys: &[P<ast::Ty>]) {
+                   field: &ast::SpannedIdent) {
         let tcx = fcx.ccx.tcx;
         check_expr_with_lvalue_pref(fcx, base, lvalue_pref);
         let expr_t = structurally_resolved_type(fcx, expr.span,
@@ -3620,42 +3627,29 @@ fn check_expr_with_unifier(fcx: &FnCtxt,
             None => {}
         }
 
-        let tps: Vec<ty::t> = tys.iter().map(|ty| fcx.to_ty(&**ty)).collect();
-        match method::lookup(fcx,
-                             expr,
-                             base,
-                             field.node.name,
-                             expr_t,
-                             tps.as_slice(),
-                             DontDerefArgs,
-                             CheckTraitsAndInherentMethods,
-                             AutoderefReceiver) {
-            Ok(_) => {
-                fcx.type_error_message(
-                    field.span,
-                    |actual| {
-                        format!("attempted to take value of method `{}` on type \
-                                 `{}`", token::get_ident(field.node), actual)
-                    },
-                    expr_t, None);
+        if method::exists(fcx, field.span, field.node.name, expr_t, expr.id) {
+            fcx.type_error_message(
+                field.span,
+                |actual| {
+                    format!("attempted to take value of method `{}` on type \
+                            `{}`", token::get_ident(field.node), actual)
+                },
+                expr_t, None);
 
-                tcx.sess.span_help(field.span,
-                    "maybe a `()` to call it is missing? \
-                     If not, try an anonymous function");
-            }
-
-            Err(_) => {
-                fcx.type_error_message(
-                    expr.span,
-                    |actual| {
-                        format!("attempted access of field `{}` on \
-                                        type `{}`, but no field with that \
-                                        name was found",
-                                       token::get_ident(field.node),
-                                       actual)
-                    },
-                    expr_t, None);
-            }
+            tcx.sess.span_help(field.span,
+                               "maybe a `()` to call it is missing? \
+                               If not, try an anonymous function");
+        } else {
+            fcx.type_error_message(
+                expr.span,
+                |actual| {
+                    format!("attempted access of field `{}` on \
+                            type `{}`, but no field with that \
+                            name was found",
+                            token::get_ident(field.node),
+                            actual)
+                },
+                expr_t, None);
         }
 
         fcx.write_error(expr.id);
@@ -3666,8 +3660,7 @@ fn check_expr_with_unifier(fcx: &FnCtxt,
                        expr: &ast::Expr,
                        lvalue_pref: LvaluePreference,
                        base: &ast::Expr,
-                       idx: codemap::Spanned<uint>,
-                       _tys: &[P<ast::Ty>]) {
+                       idx: codemap::Spanned<uint>) {
         let tcx = fcx.ccx.tcx;
         check_expr_with_lvalue_pref(fcx, base, lvalue_pref);
         let expr_t = structurally_resolved_type(fcx, expr.span,
@@ -4490,11 +4483,11 @@ fn check_expr_with_unifier(fcx: &FnCtxt,
 
         fcx.require_expr_have_sized_type(expr, traits::StructInitializerSized);
       }
-      ast::ExprField(ref base, ref field, ref tys) => {
-        check_field(fcx, expr, lvalue_pref, &**base, field, tys.as_slice());
+      ast::ExprField(ref base, ref field, _) => {
+        check_field(fcx, expr, lvalue_pref, &**base, field);
       }
-      ast::ExprTupField(ref base, idx, ref tys) => {
-        check_tup_field(fcx, expr, lvalue_pref, &**base, idx, tys.as_slice());
+      ast::ExprTupField(ref base, idx, _) => {
+        check_tup_field(fcx, expr, lvalue_pref, &**base, idx);
       }
       ast::ExprIndex(ref base, ref idx) => {
           check_expr_with_lvalue_pref(fcx, &**base, lvalue_pref);

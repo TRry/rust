@@ -183,6 +183,14 @@ the unique type ID as described above *can* be used as identifier. Since it is
 comparatively expensive to construct, though, `ty::type_id()` is still used
 additionally as an optimization for cases where the exact same type has been
 seen before (which is most of the time). */
+use self::FunctionDebugContextRepr::*;
+use self::VariableAccess::*;
+use self::VariableKind::*;
+use self::MemberOffset::*;
+use self::MemberDescriptionFactory::*;
+use self::RecursiveTypeDescription::*;
+use self::EnumDiscriminantInfo::*;
+use self::DebugLocation::*;
 
 use driver::config;
 use driver::config::{FullDebugInfo, LimitedDebugInfo, NoDebugInfo};
@@ -301,11 +309,11 @@ impl TypeMap {
     }
 
     fn find_metadata_for_type(&self, type_: ty::t) -> Option<DIType> {
-        self.type_to_metadata.find_copy(&type_)
+        self.type_to_metadata.get(&type_).cloned()
     }
 
     fn find_metadata_for_unique_id(&self, unique_type_id: UniqueTypeId) -> Option<DIType> {
-        self.unique_id_to_metadata.find_copy(&unique_type_id)
+        self.unique_id_to_metadata.get(&unique_type_id).cloned()
     }
 
     // Get the string representation of a UniqueTypeId. This method will fail if
@@ -341,7 +349,7 @@ impl TypeMap {
         // unique vec box (~[]) -> {HEAP_VEC_BOX<:pointee-uid:>}
         // gc box               -> {GC_BOX<:pointee-uid:>}
 
-        match self.type_to_unique_id.find_copy(&type_) {
+        match self.type_to_unique_id.get(&type_).cloned() {
             Some(unique_type_id) => return unique_type_id,
             None => { /* generate one */}
         };
@@ -499,7 +507,7 @@ impl TypeMap {
             // First, find out the 'real' def_id of the type. Items inlined from
             // other crates have to be mapped back to their source.
             let source_def_id = if def_id.krate == ast::LOCAL_CRATE {
-                match cx.external_srcs().borrow().find_copy(&def_id.node) {
+                match cx.external_srcs().borrow().get(&def_id.node).cloned() {
                     Some(source_def_id) => {
                         // The given def_id identifies the inlined copy of a
                         // type definition, let's take the source of the copy.
@@ -853,7 +861,7 @@ pub fn create_local_var_metadata(bcx: Block, local: &ast::Local) {
     pat_util::pat_bindings(def_map, &*local.pat, |_, node_id, span, path1| {
         let var_ident = path1.node;
 
-        let datum = match bcx.fcx.lllocals.borrow().find_copy(&node_id) {
+        let datum = match bcx.fcx.lllocals.borrow().get(&node_id).cloned() {
             Some(datum) => datum,
             None => {
                 bcx.sess().span_bug(span,
@@ -985,7 +993,7 @@ pub fn create_match_binding_metadata(bcx: Block,
         },
         TrByMove => IndirectVariable {
             alloca: binding.llmatch,
-            address_operations: aops
+            address_operations: &aops
         },
         TrByRef => DirectVariable {
             alloca: binding.llmatch
@@ -1016,7 +1024,7 @@ pub fn create_argument_metadata(bcx: Block, arg: &ast::Arg) {
     let scope_metadata = bcx.fcx.debug_context.get_ref(cx, arg.pat.span).fn_metadata;
 
     pat_util::pat_bindings(def_map, &*arg.pat, |_, node_id, span, path1| {
-        let llarg = match bcx.fcx.lllocals.borrow().find_copy(&node_id) {
+        let llarg = match bcx.fcx.lllocals.borrow().get(&node_id).cloned() {
             Some(v) => v,
             None => {
                 bcx.sess().span_bug(span,
@@ -1368,7 +1376,7 @@ pub fn create_function_debug_context(cx: &CrateContext,
                               param_substs: &param_substs,
                               error_reporting_span: Span) -> DIArray {
         if cx.sess().opts.debuginfo == LimitedDebugInfo {
-            return create_DIArray(DIB(cx), []);
+            return create_DIArray(DIB(cx), &[]);
         }
 
         let mut signature = Vec::with_capacity(fn_decl.inputs.len() + 1);
@@ -1409,7 +1417,7 @@ pub fn create_function_debug_context(cx: &CrateContext,
         let has_self_type = self_type.is_some();
 
         if !generics.is_type_parameterized() && !has_self_type {
-            return create_DIArray(DIB(cx), []);
+            return create_DIArray(DIB(cx), &[]);
         }
 
         name_to_append_suffix_to.push('<');
@@ -1669,7 +1677,7 @@ fn declare_local(bcx: Block,
 }
 
 fn file_metadata(cx: &CrateContext, full_path: &str) -> DIFile {
-    match debug_context(cx).created_files.borrow().find_equiv(full_path) {
+    match debug_context(cx).created_files.borrow().get(full_path) {
         Some(file_metadata) => return *file_metadata,
         None => ()
     }
@@ -1707,7 +1715,7 @@ fn scope_metadata(fcx: &FunctionContext,
     let scope_map = &fcx.debug_context
                         .get_ref(fcx.ccx, error_reporting_span)
                         .scope_map;
-    match scope_map.borrow().find_copy(&node_id) {
+    match scope_map.borrow().get(&node_id).cloned() {
         Some(scope_metadata) => scope_metadata,
         None => {
             let node = fcx.ccx.tcx().map.get(node_id);
@@ -2417,7 +2425,7 @@ fn prepare_enum_metadata(cx: &CrateContext,
         // this cache.
         let cached_discriminant_type_metadata = debug_context(cx).created_enum_disr_types
                                                                  .borrow()
-                                                                 .find_copy(&enum_def_id);
+                                                                 .get(&enum_def_id).cloned();
         match cached_discriminant_type_metadata {
             Some(discriminant_type_metadata) => discriminant_type_metadata,
             None => {
@@ -2645,7 +2653,7 @@ fn create_struct_stub(cx: &CrateContext,
                 // LLVMDIBuilderCreateStructType() wants an empty array. A null
                 // pointer will lead to hard to trace and debug LLVM assertions
                 // later on in llvm/lib/IR/Value.cpp.
-                let empty_array = create_DIArray(DIB(cx), []);
+                let empty_array = create_DIArray(DIB(cx), &[]);
 
                 llvm::LLVMDIBuilderCreateStructType(
                     DIB(cx),
@@ -2688,7 +2696,7 @@ fn fixed_vec_metadata(cx: &CrateContext,
             len as i64)
     };
 
-    let subscripts = create_DIArray(DIB(cx), [subrange]);
+    let subscripts = create_DIArray(DIB(cx), &[subrange]);
     let metadata = unsafe {
         llvm::LLVMDIBuilderCreateArrayType(
             DIB(cx),
@@ -2749,7 +2757,7 @@ fn vec_slice_metadata(cx: &CrateContext,
                                            slice_llvm_type,
                                            slice_type_name.as_slice(),
                                            unique_type_id,
-                                           member_descriptions,
+                                           &member_descriptions,
                                            UNKNOWN_SCOPE_METADATA,
                                            file_metadata,
                                            span);
@@ -2835,7 +2843,7 @@ fn trait_pointer_metadata(cx: &CrateContext,
                             trait_llvm_type,
                             trait_type_name.as_slice(),
                             unique_type_id,
-                            [],
+                            &[],
                             containing_scope,
                             UNKNOWN_FILE_METADATA,
                             codemap::DUMMY_SP)
@@ -3987,7 +3995,7 @@ fn namespace_for_item(cx: &CrateContext, def_id: ast::DefId) -> Rc<NamespaceTree
             current_key.push(name);
 
             let existing_node = debug_context(cx).namespace_map.borrow()
-                                                 .find_copy(&current_key);
+                                                 .get(&current_key).cloned();
             let current_node = match existing_node {
                 Some(existing_node) => existing_node,
                 None => {

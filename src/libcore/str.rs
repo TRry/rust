@@ -16,6 +16,9 @@
 
 #![doc(primitive = "str")]
 
+pub use self::Utf16Item::*;
+pub use self::Searcher::{Naive, TwoWay, TwoWayLong};
+
 use mem;
 use char;
 use char::Char;
@@ -1008,7 +1011,7 @@ impl<'a> Iterator<Utf16Item> for Utf16Items<'a> {
 ///          0x0073, 0xDD1E, 0x0069, 0x0063,
 ///          0xD834];
 ///
-/// assert_eq!(str::utf16_items(v).collect::<Vec<_>>(),
+/// assert_eq!(str::utf16_items(&v).collect::<Vec<_>>(),
 ///            vec![ScalarValue('𝄞'),
 ///                 ScalarValue('m'), ScalarValue('u'), ScalarValue('s'),
 ///                 LoneSurrogate(0xDD1E),
@@ -1030,12 +1033,12 @@ pub fn utf16_items<'a>(v: &'a [u16]) -> Utf16Items<'a> {
 /// // "abcd"
 /// let mut v = ['a' as u16, 'b' as u16, 'c' as u16, 'd' as u16];
 /// // no NULs so no change
-/// assert_eq!(str::truncate_utf16_at_nul(v), v.as_slice());
+/// assert_eq!(str::truncate_utf16_at_nul(&v), v.as_slice());
 ///
 /// // "ab\0d"
 /// v[2] = 0;
 /// let b: &[_] = &['a' as u16, 'b' as u16];
-/// assert_eq!(str::truncate_utf16_at_nul(v), b);
+/// assert_eq!(str::truncate_utf16_at_nul(&v), b);
 /// ```
 pub fn truncate_utf16_at_nul<'a>(v: &'a [u16]) -> &'a [u16] {
     match v.iter().position(|c| *c == 0) {
@@ -1808,21 +1811,21 @@ pub trait StrPrelude for Sized? {
     /// it. This does not allocate a new string; instead, it returns a
     /// slice that point one character beyond the character that was
     /// shifted. If the string does not contain any characters,
-    /// a tuple of None and an empty string is returned instead.
+    /// None is returned instead.
     ///
     /// # Example
     ///
     /// ```rust
     /// let s = "Löwe 老虎 Léopard";
-    /// let (c, s1) = s.slice_shift_char();
-    /// assert_eq!(c, Some('L'));
+    /// let (c, s1) = s.slice_shift_char().unwrap();
+    /// assert_eq!(c, 'L');
     /// assert_eq!(s1, "öwe 老虎 Léopard");
     ///
-    /// let (c, s2) = s1.slice_shift_char();
-    /// assert_eq!(c, Some('ö'));
+    /// let (c, s2) = s1.slice_shift_char().unwrap();
+    /// assert_eq!(c, 'ö');
     /// assert_eq!(s2, "we 老虎 Léopard");
     /// ```
-    fn slice_shift_char<'a>(&'a self) -> (Option<char>, &'a str);
+    fn slice_shift_char<'a>(&'a self) -> Option<(char, &'a str)>;
 
     /// Returns the byte offset of an inner slice relative to an enclosing outer slice.
     ///
@@ -2194,13 +2197,13 @@ impl StrPrelude for str {
     }
 
     #[inline]
-    fn slice_shift_char(&self) -> (Option<char>, &str) {
+    fn slice_shift_char(&self) -> Option<(char, &str)> {
         if self.is_empty() {
-            return (None, self);
+            None
         } else {
             let CharRange {ch, next} = self.char_range_at(0u);
             let next_s = unsafe { raw::slice_bytes(self, next, self.len()) };
-            return (Some(ch), next_s);
+            Some((ch, next_s))
         }
     }
 

@@ -12,6 +12,9 @@
 
 #![allow(non_camel_case_types)]
 
+pub use self::DefLike::*;
+use self::Family::*;
+
 use back::svh::Svh;
 use metadata::cstore::crate_metadata;
 use metadata::common::*;
@@ -295,7 +298,7 @@ fn item_path(item_doc: rbml::Doc) -> Vec<ast_map::PathElem> {
 fn item_name(intr: &IdentInterner, item: rbml::Doc) -> ast::Name {
     let name = reader::get_doc(item, tag_paths_data_name);
     let string = name.as_str_slice();
-    match intr.find_equiv(string) {
+    match intr.find(string) {
         None => token::intern(string),
         Some(val) => val,
     }
@@ -1446,4 +1449,3 @@ pub fn is_associated_type(cdata: Cmd, id: ast::NodeId) -> bool {
         Some(item) => item_sort(item) == 't',
     }
 }
-

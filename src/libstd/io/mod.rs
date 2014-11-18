@@ -221,6 +221,12 @@ responding to errors that may occur while attempting to read the numbers.
 #![experimental]
 #![deny(unused_must_use)]
 
+pub use self::SeekStyle::*;
+pub use self::FileMode::*;
+pub use self::FileAccess::*;
+pub use self::FileType::*;
+pub use self::IoErrorKind::*;
+
 use char::Char;
 use clone::Clone;
 use default::Default;
@@ -521,7 +527,7 @@ pub trait Reader {
     /// Reads a single byte. Returns `Err` on EOF.
     fn read_byte(&mut self) -> IoResult<u8> {
         let mut buf = [0];
-        try!(self.read_at_least(1, buf));
+        try!(self.read_at_least(1, &mut buf));
         Ok(buf[0])
     }
 
@@ -1061,7 +1067,7 @@ pub trait Writer {
     /// that the `write` method is used specifically instead.
     #[inline]
     fn write_line(&mut self, s: &str) -> IoResult<()> {
-        self.write_str(s).and_then(|()| self.write([b'\n']))
+        self.write_str(s).and_then(|()| self.write(&[b'\n']))
     }
 
     /// Write a single char, encoded as UTF-8.
@@ -1217,13 +1223,13 @@ pub trait Writer {
     /// Write a u8 (1 byte).
     #[inline]
     fn write_u8(&mut self, n: u8) -> IoResult<()> {
-        self.write([n])
+        self.write(&[n])
     }
 
     /// Write an i8 (1 byte).
     #[inline]
     fn write_i8(&mut self, n: i8) -> IoResult<()> {
-        self.write([n as u8])
+        self.write(&[n as u8])
     }
 }
 
@@ -1899,6 +1905,7 @@ impl fmt::Show for FilePermission {
 
 #[cfg(test)]
 mod tests {
+    use self::BadReaderBehavior::*;
     use super::{IoResult, Reader, MemReader, NoProgress, InvalidInput};
     use prelude::*;
     use uint;
@@ -1949,7 +1956,7 @@ mod tests {
     fn test_read_at_least() {
         let mut r = BadReader::new(MemReader::new(b"hello, world!".to_vec()),
                                    vec![GoodBehavior(uint::MAX)]);
-        let mut buf = [0u8, ..5];
+        let buf = &mut [0u8, ..5];
         assert!(r.read_at_least(1, buf).unwrap() >= 1);
         assert!(r.read_exact(5).unwrap().len() == 5); // read_exact uses read_at_least
         assert!(r.read_at_least(0, buf).is_ok());

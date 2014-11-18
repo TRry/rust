@@ -728,7 +728,9 @@ fn link_staticlib(sess: &Session, obj_filename: &Path, out_filename: &Path) {
     if sess.target.target.options.morestack {
         ab.add_native_library("morestack").unwrap();
     }
-    ab.add_native_library("compiler-rt").unwrap();
+    if !sess.target.target.options.no_compiler_rt {
+        ab.add_native_library("compiler-rt").unwrap();
+    }
 
     let crates = sess.cstore.get_used_crates(cstore::RequireStatic);
     let mut all_native_libs = vec![];
@@ -879,7 +881,7 @@ fn link_args(cmd: &mut Command,
             v.push_all(morestack.as_vec());
             cmd.arg(v.as_slice());
         } else {
-            cmd.args(["-Wl,--whole-archive", "-lmorestack", "-Wl,--no-whole-archive"]);
+            cmd.args(&["-Wl,--whole-archive", "-lmorestack", "-Wl,--no-whole-archive"]);
         }
     }
 
@@ -997,7 +999,7 @@ fn link_args(cmd: &mut Command,
     if dylib {
         // On mac we need to tell the linker to let this library be rpathed
         if sess.target.target.options.is_like_osx {
-            cmd.args(["-dynamiclib", "-Wl,-dylib"]);
+            cmd.args(&["-dynamiclib", "-Wl,-dylib"]);
 
             if sess.opts.cg.rpath {
                 let mut v = "-Wl,-install_name,@rpath/".as_bytes().to_vec();

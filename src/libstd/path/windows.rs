@@ -12,6 +12,8 @@
 
 //! Windows file path handling
 
+pub use self::PathPrefix::*;
+
 use ascii::AsciiCast;
 use c_str::{CString, ToCStr};
 use clone::Clone;
@@ -1195,7 +1197,7 @@ mod tests {
 
     #[test]
     fn test_paths() {
-        let empty: &[u8] = [];
+        let empty: &[u8] = &[];
         t!(v: Path::new(empty), b".");
         t!(v: Path::new(b"\\"), b"\\");
         t!(v: Path::new(b"a\\b\\c"), b"a\\b\\c");
@@ -1571,14 +1573,14 @@ mod tests {
             (s: $path:expr, $push:expr, $exp:expr) => (
                 {
                     let mut p = Path::new($path);
-                    p.push_many($push);
+                    p.push_many(&$push);
                     assert_eq!(p.as_str(), Some($exp));
                 }
             );
             (v: $path:expr, $push:expr, $exp:expr) => (
                 {
                     let mut p = Path::new($path);
-                    p.push_many($push);
+                    p.push_many(&$push);
                     assert_eq!(p.as_vec(), $exp);
                 }
             )
@@ -1712,14 +1714,14 @@ mod tests {
             (s: $path:expr, $join:expr, $exp:expr) => (
                 {
                     let path = Path::new($path);
-                    let res = path.join_many($join);
+                    let res = path.join_many(&$join);
                     assert_eq!(res.as_str(), Some($exp));
                 }
             );
             (v: $path:expr, $join:expr, $exp:expr) => (
                 {
                     let path = Path::new($path);
-                    let res = path.join_many($join);
+                    let res = path.join_many(&$join);
                     assert_eq!(res.as_vec(), $exp);
                 }
             )
@@ -2252,7 +2254,7 @@ mod tests {
                     let path = Path::new($path);
                     let comps = path.str_components().map(|x|x.unwrap())
                                 .collect::<Vec<&str>>();
-                    let exp: &[&str] = $exp;
+                    let exp: &[&str] = &$exp;
                     assert_eq!(comps.as_slice(), exp);
                     let comps = path.str_components().rev().map(|x|x.unwrap())
                                 .collect::<Vec<&str>>();
@@ -2309,7 +2311,7 @@ mod tests {
                 {
                     let path = Path::new($path);
                     let comps = path.components().collect::<Vec<&[u8]>>();
-                    let exp: &[&[u8]] = $exp;
+                    let exp: &[&[u8]] = &$exp;
                     assert_eq!(comps.as_slice(), exp);
                     let comps = path.components().rev().collect::<Vec<&[u8]>>();
                     let exp = exp.iter().rev().map(|&x|x).collect::<Vec<&[u8]>>();

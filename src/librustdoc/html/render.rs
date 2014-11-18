@@ -32,6 +32,7 @@
 //! for creating the corresponding search index and source file renderings.
 //! These tasks are not parallelized (they haven't been a bottleneck yet), and
 //! both occur before the crate is rendered.
+pub use self::ExternalLocation::*;
 
 use std::collections::{HashMap, HashSet};
 use std::collections::hash_map::{Occupied, Vacant};
@@ -2121,7 +2122,7 @@ impl<'a> fmt::Show for Sidebar<'a> {
 
         fn block(w: &mut fmt::Formatter, short: &str, longty: &str,
                  cur: &clean::Item, cx: &Context) -> fmt::Result {
-            let items = match cx.sidebar.find_equiv(short) {
+            let items = match cx.sidebar.get(short) {
                 Some(items) => items.as_slice(),
                 None => return Ok(())
             };
