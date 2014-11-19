@@ -14,7 +14,7 @@
 
 use metadata::common as c;
 use metadata::cstore as cstore;
-use driver::session::Session;
+use session::Session;
 use metadata::decoder;
 use middle::def;
 use metadata::encoder as e;
@@ -483,8 +483,8 @@ impl tr for def::Def {
 impl tr for ty::Region {
     fn tr(&self, dcx: &DecodeContext) -> ty::Region {
         match *self {
-            ty::ReLateBound(id, br) => {
-                ty::ReLateBound(dcx.tr_id(id), br.tr(dcx))
+            ty::ReLateBound(debruijn, br) => {
+                ty::ReLateBound(debruijn, br.tr(dcx))
             }
             ty::ReEarlyBound(id, space, index, ident) => {
                 ty::ReEarlyBound(dcx.tr_id(id), space, index, ident)
