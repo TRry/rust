@@ -8,14 +8,13 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// ignore-android (FIXME #11419)
-// error-pattern:explicit panic
+// Test that we are able to infer that the type of `x` is `int` based
+// on the expected type from the object.
 
-extern crate native;
+#![feature(unboxed_closures)]
 
-#[start]
-fn start(argc: int, argv: *const *const u8) -> int {
-    native::start(argc, argv, proc() {
-        panic!();
-    })
+fn doit<T>(val: T, f: &Fn(T)) { f.call((val,)) }
+
+pub fn main() {
+    doit(0i, &|&: x /*: int*/ | { x.to_int(); });
 }

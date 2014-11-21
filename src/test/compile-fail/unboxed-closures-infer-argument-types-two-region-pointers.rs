@@ -8,21 +8,22 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// ignore-android (FIXME #11419)
+// That a closure whose expected argument types include two distinct
+// bound regions.
 
-extern crate native;
+#![feature(unboxed_closures)]
 
-static mut set: bool = false;
+use std::cell::Cell;
 
-#[start]
-fn start(argc: int, argv: *const *const u8) -> int {
-    // make sure that native::start always waits for all children to finish
-    native::start(argc, argv, proc() {
-        spawn(proc() {
-            unsafe { set = true; }
-        });
+fn doit<T,F>(val: T, f: &F)
+    where F : Fn(&Cell<&T>, &T)
+{
+    let x = Cell::new(&val);
+    f.call((&x,&val))
+}
+
+pub fn main() {
+    doit(0i, &|&: x, y| {
+        x.set(y); //~ ERROR cannot infer
     });
-
-    // if we didn't set the global, then return a nonzero code
-    if unsafe {set} {0} else {1}
 }

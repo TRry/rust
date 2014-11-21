@@ -1,4 +1,4 @@
-// Copyright 2012 The Rust Project Developers. See the COPYRIGHT
+// Copyright 2014 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
 //
@@ -8,18 +8,17 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// This is (hopefully) a quick test to get a good idea about spawning
-// performance in libgreen.
+// Test that we are able to infer that the type of `x` is `int` based
+// on the expected type from the object.
 
-extern crate green;
+#![feature(unboxed_closures)]
 
-#[start]
-fn start(argc: int, argv: *const *const u8) -> int {
-    green::start(argc, argv, green::basic::event_loop, main)
+fn doit<T,F>(val: T, f: &F)
+    where F : Fn(T)
+{
+    f.call((val,))
 }
 
-fn main() {
-    for _ in range(1u32, 100_000) {
-        spawn(proc() {})
-    }
+pub fn main() {
+    doit(0i, &|&: x /*: int*/ | { x.to_int(); });
 }

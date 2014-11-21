@@ -113,9 +113,9 @@ pub fn ast_region_to_region(tcx: &ty::ctxt, lifetime: &ast::Lifetime)
             ty::ReEarlyBound(id, space, index, lifetime.name)
         }
 
-        Some(&rl::DefFreeRegion(scope_id, id)) => {
+        Some(&rl::DefFreeRegion(scope, id)) => {
             ty::ReFree(ty::FreeRegion {
-                    scope_id: scope_id,
+                    scope: scope,
                     bound_region: ty::BrNamed(ast_util::local_def(id),
                                               lifetime.name)
                 })
@@ -995,7 +995,7 @@ pub fn ast_ty_to_ty<'tcx, AC: AstConv<'tcx>, RS: RegionScope>(
             }
             ast::TyInfer => {
                 // TyInfer also appears as the type of arguments or return
-                // values in a ExprFnBlock, ExprProc, or ExprUnboxedFn, or as
+                // values in a ExprClosure or ExprProc, or as
                 // the type of local variables. Both of these cases are
                 // handled specially and will not descend into this routine.
                 this.ty_infer(ast_ty.span)

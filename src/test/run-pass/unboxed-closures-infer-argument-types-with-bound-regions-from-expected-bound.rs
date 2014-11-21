@@ -8,8 +8,17 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-fn main() {
-    let _x = "test" as &::std::any::Any;
-//~^ ERROR the trait `core::kinds::Sized` is not implemented for the type `str`
-//~^^ ERROR the trait `core::kinds::Sized` is not implemented for the type `str`
+// Test that we are able to infer that the type of `x` is `int` based
+// on the expected type from the object.
+
+#![feature(unboxed_closures)]
+
+fn doit<T,F>(val: T, f: &F)
+    where F : Fn(&T)
+{
+    f.call((&val,))
+}
+
+pub fn main() {
+    doit(0i, &|&: x /*: int*/ | { x.to_int(); });
 }
