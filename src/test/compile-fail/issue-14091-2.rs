@@ -8,7 +8,19 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-enum Bar {
-    Baz { a: int }
-}
+// error-pattern: cannot apply unary operator `!` to type `BytePos`
 
+// Very
+
+// sensitive
+pub struct BytePos(pub u32);
+
+// to particular
+
+// line numberings / offsets
+
+fn main() {
+    let x = BytePos(1);
+
+    assert!(x, x);
+}

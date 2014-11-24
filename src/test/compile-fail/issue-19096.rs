@@ -1,4 +1,4 @@
-// Copyright 2014 The Rust Project Developers. See the COPYRIGHT
+// Copyright 2012 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
 //
@@ -8,7 +8,9 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-enum Bar {
-    Baz { a: int }
-}
+#![feature(tuple_indexing)]
 
+fn main() {
+    let t = (42i, 42i);
+    t.0::<int>; //~ ERROR expected one of `;`, `}`, found `::`
+}

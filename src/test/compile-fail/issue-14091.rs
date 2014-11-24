@@ -8,7 +8,6 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-enum Bar {
-    Baz { a: int }
-}
+// error-pattern: expected `bool`, found `_` (expected bool, found integral variable)
 
+fn main(){assert!(1,1);}
