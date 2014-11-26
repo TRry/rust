@@ -20,7 +20,7 @@ before_script:
 # works as, you know, the only fragile part is device itself and
 # there is no way to actually emulate it
 script: 
-  - python long_travis.py make -j4 
+  - python long_travis.py make -j2 
 
 env:
   global:
