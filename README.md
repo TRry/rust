@@ -15,11 +15,11 @@
 
 ### Pre-built binary
 
-  Is available in Releases section, [direct link](https://github.com/vhbit/rust/releases/download/ios-latest/rust-0.12.0-pre-x86_64-apple-darwin.tar.gz), it is kind of experimental now, will be updated daily. Unpack and install as usual Rust nightly.
+  Is available in Releases section, [direct link](https://github.com/vhbit/rust/releases/download/ios-latest/rust-0.13.0-dev-x86_64-apple-darwin.tar.gz), it is kind of experimental now, will be updated daily. Unpack and install as usual Rust nightly.
   
-    curl -O https://github.com/vhbit/rust/releases/download/ios-latest/rust-0.12.0-pre-x86_64-apple-darwin.tar.gz
-    tar xzf rust-0.12.0-pre-x86_64-apple-darwin.tar.gz
-    cd rust-0.12.0-pre-x86_64-apple-darwin
+    curl -O https://github.com/vhbit/rust/releases/download/ios-latest/rust-0.13.0-dev-x86_64-apple-darwin.tar.gz
+    tar xzf rust-0.13.0-dev-x86_64-apple-darwin.tar.gz
+    cd rust-0.13.0-dev-x86_64-apple-darwin
     ./install.sh
 
 ### Building from source
