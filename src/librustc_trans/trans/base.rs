@@ -965,7 +965,7 @@ pub fn trans_external_path<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>,
 
 pub fn invoke<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
                           llfn: ValueRef,
-                          llargs: Vec<ValueRef> ,
+                          llargs: &[ValueRef],
                           fn_ty: Ty<'tcx>,
                           call_info: Option<NodeInfo>,
                           // FIXME(15064) is_lang_item is a horrible hack, please remove it
@@ -995,9 +995,9 @@ pub fn invoke<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
     }
 
     if need_invoke(bcx) {
-        debug!("invoking {} at {}", llfn, bcx.llbb);
+        debug!("invoking {} at {}", bcx.val_to_string(llfn), bcx.llbb);
         for &llarg in llargs.iter() {
-            debug!("arg: {}", llarg);
+            debug!("arg: {}", bcx.val_to_string(llarg));
         }
         let normal_bcx = bcx.fcx.new_temp_block("normal-return");
         let landing_pad = bcx.fcx.get_landing_pad();
@@ -1015,9 +1015,9 @@ pub fn invoke<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
                               Some(attributes));
         return (llresult, normal_bcx);
     } else {
-        debug!("calling {} at {}", llfn, bcx.llbb);
+        debug!("calling {} at {}", bcx.val_to_string(llfn), bcx.llbb);
         for &llarg in llargs.iter() {
-            debug!("arg: {}", llarg);
+            debug!("arg: {}", bcx.val_to_string(llarg));
         }
 
         match call_info {
