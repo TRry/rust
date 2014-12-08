@@ -29,8 +29,6 @@ use self::MethodContext::*;
 use metadata::csearch;
 use middle::def::*;
 use middle::ty::{mod, Ty};
-use middle::typeck::astconv::ast_ty_to_ty;
-use middle::typeck::{mod, infer};
 use middle::{def, pat_util, stability};
 use middle::const_eval::{eval_const_expr_partial, const_int, const_uint};
 use util::ppaux::{ty_to_string};
@@ -84,7 +82,7 @@ impl LintPass for UnusedCasts {
 
     fn check_expr(&mut self, cx: &Context, e: &ast::Expr) {
         if let ast::ExprCast(ref expr, ref ty) = e.node {
-            let t_t = ast_ty_to_ty(cx, &infer::new_infer_ctxt(cx.tcx), &**ty);
+            let t_t = ty::expr_ty(cx.tcx, e);
             if ty::expr_ty(cx.tcx, &**expr) == t_t {
                 cx.span_lint(UNUSED_TYPECASTS, ty.span, "unnecessary type cast");
             }
@@ -904,7 +902,7 @@ impl NonSnakeCase {
                 let mut buf = String::new();
                 if s.is_empty() { continue; }
                 for ch in s.chars() {
-                    if !buf.is_empty() && buf.as_slice() != "'"
+                    if !buf.is_empty() && buf != "'"
                                        && ch.is_uppercase()
                                        && !last_upper {
                         words.push(buf);
@@ -1430,6 +1428,7 @@ impl LintPass for MissingDoc {
             ast::ItemEnum(..) => "an enum",
             ast::ItemStruct(..) => "a struct",
             ast::ItemTrait(..) => "a trait",
+            ast::ItemTy(..) => "a type alias",
             _ => return
         };
         self.check_missing_docs_attrs(cx, Some(it.id), it.attrs.as_slice(),
@@ -1589,22 +1588,22 @@ impl LintPass for Stability {
             }
             ast::ExprMethodCall(i, _, _) => {
                 span = i.span;
-                let method_call = typeck::MethodCall::expr(e.id);
+                let method_call = ty::MethodCall::expr(e.id);
                 match cx.tcx.method_map.borrow().get(&method_call) {
                     Some(method) => {
                         match method.origin {
-                            typeck::MethodStatic(def_id) => {
+                            ty::MethodStatic(def_id) => {
                                 def_id
                             }
-                            typeck::MethodStaticUnboxedClosure(def_id) => {
+                            ty::MethodStaticUnboxedClosure(def_id) => {
                                 def_id
                             }
-                            typeck::MethodTypeParam(typeck::MethodParam {
+                            ty::MethodTypeParam(ty::MethodParam {
                                 ref trait_ref,
                                 method_num: index,
                                 ..
                             }) |
-                            typeck::MethodTraitObject(typeck::MethodObject {
+                            ty::MethodTraitObject(ty::MethodObject {
                                 ref trait_ref,
                                 method_num: index,
                                 ..

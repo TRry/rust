@@ -62,7 +62,8 @@ use cmp::Ord;
 use mem;
 use num::{ToPrimitive, Int};
 use ops::{Add, Deref};
-use option::{Option, Some, None};
+use option::Option;
+use option::Option::{Some, None};
 use uint;
 
 #[deprecated = "renamed to Extend"] pub use self::Extend as Extendable;
@@ -2036,18 +2037,49 @@ for Inspect<'a, A, T> {
     }
 }
 
-/// An iterator which just modifies the contained state throughout iteration.
+/// An iterator which passes mutable state to a closure and yields the result.
+///
+/// # Example: The Fibonacci Sequence
+///
+/// An iterator that yields sequential Fibonacci numbers, and stops on overflow.
+///
+/// ```rust
+/// use std::iter::Unfold;
+/// use std::num::Int; // For `.checked_add()`
+///
+/// // This iterator will yield up to the last Fibonacci number before the max value of `u32`.
+/// // You can simply change `u32` to `u64` in this line if you want higher values than that.
+/// let mut fibonacci = Unfold::new((Some(0u32), Some(1u32)), |&(ref mut x2, ref mut x1)| {
+///     // Attempt to get the next Fibonacci number
+///     // `x1` will be `None` if previously overflowed.
+///     let next = match (*x2, *x1) {
+///         (Some(x2), Some(x1)) => x2.checked_add(x1),
+///         _ => None,
+///     };
+///
+///     // Shift left: ret <- x2 <- x1 <- next
+///     let ret = *x2;
+///     *x2 = *x1;
+///     *x1 = next;
+///
+///     ret
+/// });
+///
+/// for i in fibonacci {
+///     println!("{}", i);
+/// }
+/// ```
 #[experimental]
 pub struct Unfold<'a, A, St> {
     f: |&mut St|: 'a -> Option<A>,
-    /// Internal state that will be yielded on the next iteration
+    /// Internal state that will be passed to the closure on the next iteration
     pub state: St,
 }
 
 #[experimental]
 impl<'a, A, St> Unfold<'a, A, St> {
     /// Creates a new iterator with the specified closure as the "iterator
-    /// function" and an initial state to eventually pass to the iterator
+    /// function" and an initial state to eventually pass to the closure
     #[inline]
     pub fn new<'a>(initial_state: St, f: |&mut St|: 'a -> Option<A>)
                -> Unfold<'a, A, St> {
@@ -2427,7 +2459,9 @@ pub fn repeat<T: Clone>(elt: T) -> Repeat<T> {
 pub mod order {
     use cmp;
     use cmp::{Eq, Ord, PartialOrd, PartialEq};
-    use option::{Option, Some, None};
+    use cmp::Ordering::{Equal, Less, Greater};
+    use option::Option;
+    use option::Option::{Some, None};
     use super::Iterator;
 
     /// Compare `a` and `b` for equality using `Eq`
@@ -2445,11 +2479,11 @@ pub mod order {
     pub fn cmp<A: Ord, T: Iterator<A>, S: Iterator<A>>(mut a: T, mut b: S) -> cmp::Ordering {
         loop {
             match (a.next(), b.next()) {
-                (None, None) => return cmp::Equal,
-                (None, _   ) => return cmp::Less,
-                (_   , None) => return cmp::Greater,
+                (None, None) => return Equal,
+                (None, _   ) => return Less,
+                (_   , None) => return Greater,
                 (Some(x), Some(y)) => match x.cmp(&y) {
-                    cmp::Equal => (),
+                    Equal => (),
                     non_eq => return non_eq,
                 },
             }
@@ -2461,11 +2495,11 @@ pub mod order {
             -> Option<cmp::Ordering> {
         loop {
             match (a.next(), b.next()) {
-                (None, None) => return Some(cmp::Equal),
-                (None, _   ) => return Some(cmp::Less),
-                (_   , None) => return Some(cmp::Greater),
+                (None, None) => return Some(Equal),
+                (None, _   ) => return Some(Less),
+                (_   , None) => return Some(Greater),
                 (Some(x), Some(y)) => match x.partial_cmp(&y) {
-                    Some(cmp::Equal) => (),
+                    Some(Equal) => (),
                     non_eq => return non_eq,
                 },
             }

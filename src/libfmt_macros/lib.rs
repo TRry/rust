@@ -18,6 +18,11 @@
 #![experimental]
 #![crate_type = "rlib"]
 #![crate_type = "dylib"]
+#![doc(html_logo_url = "http://www.rust-lang.org/logos/rust-logo-128x128-blk-v2.png",
+       html_favicon_url = "http://www.rust-lang.org/favicon.ico",
+       html_root_url = "http://doc.rust-lang.org/nightly/",
+       html_playground_url = "http://play.rust-lang.org/")]
+
 #![feature(macro_rules, globs, import_shadowing)]
 pub use self::Piece::*;
 pub use self::Position::*;
@@ -435,7 +440,7 @@ mod tests {
 
     fn same(fmt: &'static str, p: &[Piece<'static>]) {
         let mut parser = Parser::new(fmt);
-        assert!(p == parser.collect::<Vec<Piece<'static>>>().as_slice());
+        assert!(p == parser.collect::<Vec<Piece<'static>>>());
     }
 
     fn fmtdflt() -> FormatSpec<'static> {

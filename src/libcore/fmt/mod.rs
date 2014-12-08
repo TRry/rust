@@ -17,9 +17,10 @@ use cell::{Cell, Ref, RefMut};
 use iter::{Iterator, IteratorExt, range};
 use kinds::{Copy, Sized};
 use mem;
-use option::{Option, Some, None};
+use option::Option;
+use option::Option::{Some, None};
 use ops::Deref;
-use result::{Ok, Err};
+use result::Result::{Ok, Err};
 use result;
 use slice::SlicePrelude;
 use slice;
@@ -34,6 +35,7 @@ mod float;
 pub mod rt;
 
 #[experimental = "core and I/O reconciliation may alter this definition"]
+/// The type returned by formatter methods.
 pub type Result = result::Result<(), Error>;
 
 /// The error type which is returned from formatting a message into a stream.

@@ -222,14 +222,12 @@ unsafe fn create_context_and_module(sess: &Session, mod_name: &str) -> (ContextR
     sess.target
         .target
         .data_layout
-        .as_slice()
         .with_c_str(|buf| {
         llvm::LLVMSetDataLayout(llmod, buf);
     });
     sess.target
         .target
         .llvm_target
-        .as_slice()
         .with_c_str(|buf| {
         llvm::LLVMRustSetNormalizedTarget(llmod, buf);
     });
@@ -345,10 +343,6 @@ impl<'tcx> SharedCrateContext<'tcx> {
 
     pub fn link_meta<'a>(&'a self) -> &'a LinkMeta {
         &self.link_meta
-    }
-
-    pub fn symbol_hasher<'a>(&'a self) -> &'a RefCell<Sha256> {
-        &self.symbol_hasher
     }
 
     pub fn tcx<'a>(&'a self) -> &'a ty::ctxt<'tcx> {

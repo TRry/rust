@@ -787,7 +787,7 @@ impl<'a, Sized? T> Deref<T> for &'a mut T {
 /// }
 /// ```
 #[lang="deref_mut"]
-pub trait DerefMut<Sized? Result>: Deref<Result> {
+pub trait DerefMut<Sized? Result> for Sized? : Deref<Result> {
     /// The method called to mutably dereference a value
     fn deref_mut<'a>(&'a mut self) -> &'a mut Result;
 }
@@ -831,54 +831,4 @@ impl<F,A,R> FnOnce<A,R> for F
     extern "rust-call" fn call_once(mut self, args: A) -> R {
         self.call_mut(args)
     }
-}
-
-#[cfg(stage0)]
-mod fn_impls {
-    use super::Fn;
-
-    impl<Result> Fn<(),Result> for extern "Rust" fn() -> Result {
-        #[allow(non_snake_case)]
-        extern "rust-call" fn call(&self, _args: ()) -> Result {
-            (*self)()
-        }
-    }
-
-    impl<Result,A0> Fn<(A0,),Result> for extern "Rust" fn(A0) -> Result {
-        #[allow(non_snake_case)]
-        extern "rust-call" fn call(&self, args: (A0,)) -> Result {
-            let (a0,) = args;
-            (*self)(a0)
-        }
-    }
-
-    macro_rules! def_fn(
-        ($($args:ident)*) => (
-            impl<Result$(,$args)*>
-            Fn<($($args,)*),Result>
-            for extern "Rust" fn($($args: $args,)*) -> Result {
-                #[allow(non_snake_case)]
-                extern "rust-call" fn call(&self, args: ($($args,)*)) -> Result {
-                    let ($($args,)*) = args;
-                    (*self)($($args,)*)
-                }
-            }
-        )
-    )
-
-    def_fn!(A0 A1)
-    def_fn!(A0 A1 A2)
-    def_fn!(A0 A1 A2 A3)
-    def_fn!(A0 A1 A2 A3 A4)
-    def_fn!(A0 A1 A2 A3 A4 A5)
-    def_fn!(A0 A1 A2 A3 A4 A5 A6)
-    def_fn!(A0 A1 A2 A3 A4 A5 A6 A7)
-    def_fn!(A0 A1 A2 A3 A4 A5 A6 A7 A8)
-    def_fn!(A0 A1 A2 A3 A4 A5 A6 A7 A8 A9)
-    def_fn!(A0 A1 A2 A3 A4 A5 A6 A7 A8 A9 A10)
-    def_fn!(A0 A1 A2 A3 A4 A5 A6 A7 A8 A9 A10 A11)
-    def_fn!(A0 A1 A2 A3 A4 A5 A6 A7 A8 A9 A10 A11 A12)
-    def_fn!(A0 A1 A2 A3 A4 A5 A6 A7 A8 A9 A10 A11 A12 A13)
-    def_fn!(A0 A1 A2 A3 A4 A5 A6 A7 A8 A9 A10 A11 A12 A13 A14)
-    def_fn!(A0 A1 A2 A3 A4 A5 A6 A7 A8 A9 A10 A11 A12 A13 A14 A15)
 }

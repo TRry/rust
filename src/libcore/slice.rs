@@ -36,13 +36,15 @@
 
 use mem::transmute;
 use clone::Clone;
-use cmp::{PartialEq, PartialOrd, Eq, Ord, Ordering, Less, Equal, Greater, Equiv};
+use cmp::{Ordering, PartialEq, PartialOrd, Eq, Ord, Equiv};
+use cmp::Ordering::{Less, Equal, Greater};
 use cmp;
 use default::Default;
 use iter::*;
 use num::Int;
 use ops;
-use option::{None, Option, Some};
+use option::Option;
+use option::Option::{None, Some};
 use ptr;
 use ptr::RawPtr;
 use mem;
@@ -1702,7 +1704,8 @@ pub mod raw {
     use mem::transmute;
     use ptr::RawPtr;
     use raw::Slice;
-    use option::{None, Option, Some};
+    use option::Option;
+    use option::Option::{None, Some};
 
     /// Form a slice from a pointer and length (as a number of units,
     /// not bytes).
@@ -1781,12 +1784,13 @@ pub mod bytes {
 
     /// Copies data from `src` to `dst`
     ///
-    /// `src` and `dst` must not overlap. Panics if the length of `dst`
-    /// is less than the length of `src`.
+    /// Panics if the length of `dst` is less than the length of `src`.
     #[inline]
     pub fn copy_memory(dst: &mut [u8], src: &[u8]) {
         let len_src = src.len();
         assert!(dst.len() >= len_src);
+        // `dst` is unaliasable, so we know statically it doesn't overlap
+        // with `src`.
         unsafe {
             ptr::copy_nonoverlapping_memory(dst.as_mut_ptr(),
                                             src.as_ptr(),
