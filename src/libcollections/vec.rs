@@ -218,15 +218,9 @@ impl<T> Vec<T> {
         }
     }
 
-    /// Creates a `Vec<T>` directly from the raw constituents.
+    /// Creates a `Vec<T>` directly from the raw components of another vector.
     ///
-    /// This is highly unsafe:
-    ///
-    /// - if `ptr` is null, then `length` and `capacity` should be 0
-    /// - `ptr` must point to an allocation of size `capacity`
-    /// - there must be `length` valid instances of type `T` at the
-    ///   beginning of that allocation
-    /// - `ptr` must be allocated by the default `Vec` allocator
+    /// This is highly unsafe, due to the number of invariants that aren't checked.
     ///
     /// # Example
     ///
@@ -688,11 +682,12 @@ impl<T> Vec<T> {
                 Some(new_cap) => {
                     let amort_cap = new_cap.next_power_of_two();
                     // next_power_of_two will overflow to exactly 0 for really big capacities
-                    if amort_cap == 0 {
-                        self.grow_capacity(new_cap);
+                    let cap = if amort_cap == 0 {
+                        new_cap
                     } else {
-                        self.grow_capacity(amort_cap);
-                    }
+                        amort_cap
+                    };
+                    self.grow_capacity(cap)
                 }
             }
         }
