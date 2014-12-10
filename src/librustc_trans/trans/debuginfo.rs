@@ -251,6 +251,8 @@ static FLAGS_NONE: c_uint = 0;
 #[deriving(Show, Hash, Eq, PartialEq, Clone)]
 struct UniqueTypeId(ast::Name);
 
+impl Copy for UniqueTypeId {}
+
 // The TypeMap is where the CrateDebugContext holds the type metadata nodes
 // created so far. The metadata nodes are indexed by UniqueTypeId, and, for
 // faster lookup, also by Ty. The TypeMap is responsible for creating
@@ -882,7 +884,6 @@ pub fn create_local_var_metadata(bcx: Block, local: &ast::Local) {
 /// Adds the created metadata nodes directly to the crate's IR.
 pub fn create_captured_var_metadata<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
                                                 node_id: ast::NodeId,
-                                                env_data_type: Ty<'tcx>,
                                                 env_pointer: ValueRef,
                                                 env_index: uint,
                                                 captured_by_ref: bool,
@@ -928,7 +929,10 @@ pub fn create_captured_var_metadata<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
     let variable_type = node_id_type(bcx, node_id);
     let scope_metadata = bcx.fcx.debug_context.get_ref(cx, span).fn_metadata;
 
-    let llvm_env_data_type = type_of::type_of(cx, env_data_type);
+    // env_pointer is the alloca containing the pointer to the environment,
+    // so it's type is **EnvironmentType. In order to find out the type of
+    // the environment we have to "dereference" two times.
+    let llvm_env_data_type = val_ty(env_pointer).element_type().element_type();
     let byte_offset_of_var_in_env = machine::llelement_offset(cx,
                                                               llvm_env_data_type,
                                                               env_index);
@@ -2323,6 +2327,8 @@ enum EnumDiscriminantInfo {
     NoDiscriminant
 }
 
+impl Copy for EnumDiscriminantInfo {}
+
 // Returns a tuple of (1) type_metadata_stub of the variant, (2) the llvm_type
 // of the variant, and (3) a MemberDescriptionFactory for producing the
 // descriptions of the fields of the variant. This is a rudimentary version of a
@@ -3047,6 +3053,8 @@ enum DebugLocation {
     KnownLocation { scope: DIScope, line: uint, col: uint },
     UnknownLocation
 }
+
+impl Copy for DebugLocation {}
 
 impl DebugLocation {
     fn new(scope: DIScope, line: uint, col: uint) -> DebugLocation {

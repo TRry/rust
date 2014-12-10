@@ -130,6 +130,7 @@ pub mod demand;
 pub mod method;
 pub mod wf;
 mod closure;
+mod callee;
 
 /// Fields that are part of a `FnCtxt` which are inherited by
 /// closures defined within the function.  For example:
@@ -209,12 +210,16 @@ enum Expectation<'tcx> {
     ExpectCastableToType(Ty<'tcx>),
 }
 
+impl<'tcx> Copy for Expectation<'tcx> {}
+
 #[deriving(Clone)]
 pub struct FnStyleState {
     pub def: ast::NodeId,
     pub fn_style: ast::FnStyle,
     from_fn: bool
 }
+
+impl Copy for FnStyleState {}
 
 impl FnStyleState {
     pub fn function(fn_style: ast::FnStyle, def: ast::NodeId) -> FnStyleState {
@@ -2117,6 +2122,8 @@ pub enum LvaluePreference {
     NoPreference
 }
 
+impl Copy for LvaluePreference {}
+
 /// Executes an autoderef loop for the type `t`. At each step, invokes `should_stop` to decide
 /// whether to terminate the loop. Returns the final type and number of derefs that it performed.
 ///
@@ -2992,6 +2999,8 @@ pub enum DerefArgs {
     DontDerefArgs,
     DoDerefArgs
 }
+
+impl Copy for DerefArgs {}
 
 /// Controls whether the arguments are tupled. This is used for the call
 /// operator.
@@ -5087,8 +5096,17 @@ pub fn instantiate_path<'a, 'tcx>(fcx: &FnCtxt<'a, 'tcx>,
         }
 
         // Case 3. Reference to a method.
-        def::DefStaticMethod(..) => {
+        def::DefStaticMethod(_, providence) |
+        def::DefMethod(_, _, providence) => {
             assert!(path.segments.len() >= 2);
+
+            match providence {
+                def::FromTrait(trait_did) => {
+                    callee::check_legal_trait_for_method_call(fcx.ccx, span, trait_did)
+                }
+                def::FromImpl(_) => {}
+            }
+
             segment_spaces = Vec::from_elem(path.segments.len() - 2, None);
             segment_spaces.push(Some(subst::TypeSpace));
             segment_spaces.push(Some(subst::FnSpace));
@@ -5100,7 +5118,6 @@ pub fn instantiate_path<'a, 'tcx>(fcx: &FnCtxt<'a, 'tcx>,
         def::DefMod(..) |
         def::DefForeignMod(..) |
         def::DefLocal(..) |
-        def::DefMethod(..) |
         def::DefUse(..) |
         def::DefRegion(..) |
         def::DefLabel(..) |

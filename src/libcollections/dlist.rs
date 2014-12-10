@@ -11,9 +11,6 @@
 //! A doubly-linked list with owned nodes.
 //!
 //! The `DList` allows pushing and popping elements at either end.
-//!
-//! `DList` implements the trait `Deque`. It should be imported with
-//! `use collections::Deque`.
 
 // DList is constructed like a singly-linked list over the field `next`.
 // including the last link being None; each Node owns its `next` field.
@@ -39,7 +36,12 @@ pub struct DList<T> {
 }
 
 type Link<T> = Option<Box<Node<T>>>;
-struct Rawlink<T> { p: *mut T }
+
+struct Rawlink<T> {
+    p: *mut T,
+}
+
+impl<T> Copy for Rawlink<T> {}
 
 struct Node<T> {
     next: Link<T>,
@@ -58,6 +60,8 @@ pub struct Items<'a, T:'a> {
 impl<'a, T> Clone for Items<'a, T> {
     fn clone(&self) -> Items<'a, T> { *self }
 }
+
+impl<'a,T> Copy for Items<'a,T> {}
 
 /// An iterator over mutable references to the items of a `DList`.
 pub struct MutItems<'a, T:'a> {

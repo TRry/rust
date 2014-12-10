@@ -21,15 +21,20 @@ use iter::IteratorExt;
 use mem;
 use ops::*;
 use option::*;
+use option::Option::{None, Some};
 use os;
 use path::{Path,GenericPath};
 use result::*;
+use result::Result::{Err, Ok};
 use slice::{AsSlice,SlicePrelude};
 use str;
 use string::String;
 use vec::Vec;
 
-pub struct DynamicLibrary { handle: *mut u8 }
+#[allow(missing_copy_implementations)]
+pub struct DynamicLibrary {
+    handle: *mut u8
+}
 
 impl Drop for DynamicLibrary {
     fn drop(&mut self) {
@@ -210,8 +215,10 @@ pub mod dl {
 
     use c_str::{CString, ToCStr};
     use libc;
+    use kinds::Copy;
     use ptr;
     use result::*;
+    use result::Result::{Err, Ok};
     use string::String;
 
     pub unsafe fn open_external<T: ToCStr>(filename: T) -> *mut u8 {
@@ -261,6 +268,8 @@ pub mod dl {
         Global = 256,
         Local = 0,
     }
+
+    impl Copy for Rtld {}
 
     #[link_name = "dl"]
     extern {

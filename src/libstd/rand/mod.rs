@@ -80,7 +80,7 @@
 //! circle, both centered at the origin. Since the area of a unit circle is π,
 //! we have:
 //!
-//! ```notrust
+//! ```text
 //!     (area of unit circle) / (area of square) = π / 4
 //! ```
 //!
@@ -225,6 +225,7 @@ use cell::RefCell;
 use clone::Clone;
 use io::IoResult;
 use iter::{Iterator, IteratorExt};
+use kinds::Copy;
 use mem;
 use rc::Rc;
 use result::Result::{Ok, Err};
@@ -245,7 +246,11 @@ pub mod reader;
 
 /// The standard RNG. This is designed to be efficient on the current
 /// platform.
-pub struct StdRng { rng: IsaacWordRng }
+pub struct StdRng {
+    rng: IsaacWordRng,
+}
+
+impl Copy for StdRng {}
 
 impl StdRng {
     /// Create a randomly seeded instance of `StdRng`.

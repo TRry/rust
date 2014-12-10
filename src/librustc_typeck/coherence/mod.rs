@@ -18,17 +18,15 @@
 
 use metadata::csearch::{each_impl, get_impl_trait};
 use metadata::csearch;
-use middle::subst;
+use middle::subst::{mod, Subst};
 use middle::ty::{ImplContainer, ImplOrTraitItemId, MethodTraitItemId};
-use middle::ty::{TypeTraitItemId, lookup_item_type};
-use middle::ty::{Ty, ty_bool, ty_char, ty_enum, ty_err};
-use middle::ty::{ty_str, ty_vec, ty_float, ty_infer, ty_int, ty_open};
+use middle::ty::{ParameterEnvironment, TypeTraitItemId, lookup_item_type};
+use middle::ty::{Ty, ty_bool, ty_char, ty_closure, ty_enum, ty_err};
 use middle::ty::{ty_param, Polytype, ty_ptr};
 use middle::ty::{ty_rptr, ty_struct, ty_trait, ty_tup};
+use middle::ty::{ty_str, ty_vec, ty_float, ty_infer, ty_int, ty_open};
 use middle::ty::{ty_uint, ty_unboxed_closure, ty_uniq, ty_bare_fn};
-use middle::ty::{ty_closure};
-use middle::ty::type_is_ty_var;
-use middle::subst::Subst;
+use middle::ty::{type_is_ty_var};
 use middle::ty;
 use CrateCtxt;
 use middle::infer::combine::Combine;
@@ -190,6 +188,9 @@ impl<'a, 'tcx> CoherenceChecker<'a, 'tcx> {
         // do this here, but it's actually the most convenient place, since
         // the coherence tables contain the trait -> type mappings.
         self.populate_destructor_table();
+
+        // Check to make sure implementations of `Copy` are legal.
+        self.check_implementations_of_copy();
     }
 
     fn check_implementation(&self,
@@ -211,6 +212,9 @@ impl<'a, 'tcx> CoherenceChecker<'a, 'tcx> {
                    trait_ref.repr(self.crate_context.tcx),
                    token::get_ident(item.ident));
 
+            enforce_trait_manually_implementable(self.crate_context.tcx,
+                                                 item.span,
+                                                 trait_ref.def_id);
             self.add_trait_impl(trait_ref.def_id, impl_did);
         }
 
@@ -474,6 +478,93 @@ impl<'a, 'tcx> CoherenceChecker<'a, 'tcx> {
             }
         }
     }
+
+    /// Ensures that implementations of the built-in trait `Copy` are legal.
+    fn check_implementations_of_copy(&self) {
+        let tcx = self.crate_context.tcx;
+        let copy_trait = match tcx.lang_items.copy_trait() {
+            Some(id) => id,
+            None => return,
+        };
+
+        let trait_impls = match tcx.trait_impls
+                                   .borrow()
+                                   .get(&copy_trait)
+                                   .cloned() {
+            None => {
+                debug!("check_implementations_of_copy(): no types with \
+                        implementations of `Copy` found");
+                return
+            }
+            Some(found_impls) => found_impls
+        };
+
+        // Clone first to avoid a double borrow error.
+        let trait_impls = trait_impls.borrow().clone();
+
+        for &impl_did in trait_impls.iter() {
+            if impl_did.krate != ast::LOCAL_CRATE {
+                debug!("check_implementations_of_copy(): impl not in this \
+                        crate");
+                continue
+            }
+
+            let self_type = self.get_self_type_for_implementation(impl_did);
+            let span = tcx.map.span(impl_did.node);
+            let param_env = ParameterEnvironment::for_item(tcx,
+                                                           impl_did.node);
+            let self_type = self_type.ty.subst(tcx, &param_env.free_substs);
+
+            match ty::can_type_implement_copy(tcx, self_type, &param_env) {
+                Ok(()) => {}
+                Err(ty::FieldDoesNotImplementCopy(name)) => {
+                    tcx.sess
+                       .span_err(span,
+                                 format!("the trait `Copy` may not be \
+                                          implemented for this type; field \
+                                          `{}` does not implement `Copy`",
+                                         token::get_name(name)).as_slice())
+                }
+                Err(ty::VariantDoesNotImplementCopy(name)) => {
+                    tcx.sess
+                       .span_err(span,
+                                 format!("the trait `Copy` may not be \
+                                          implemented for this type; variant \
+                                          `{}` does not implement `Copy`",
+                                         token::get_name(name)).as_slice())
+                }
+                Err(ty::TypeIsStructural) => {
+                    tcx.sess
+                       .span_err(span,
+                                 "the trait `Copy` may not be implemented \
+                                  for this type; type is not a structure or \
+                                  enumeration")
+                }
+            }
+        }
+    }
+}
+
+fn enforce_trait_manually_implementable(tcx: &ty::ctxt, sp: Span, trait_def_id: ast::DefId) {
+    if tcx.sess.features.borrow().unboxed_closures {
+        // the feature gate allows all of them
+        return
+    }
+    let did = Some(trait_def_id);
+    let li = &tcx.lang_items;
+
+    let trait_name = if did == li.fn_trait() {
+        "Fn"
+    } else if did == li.fn_mut_trait() {
+        "FnMut"
+    } else if did == li.fn_once_trait() {
+        "FnOnce"
+    } else {
+        return // everything OK
+    };
+    span_err!(tcx.sess, sp, E0173, "manual implementations of `{}` are experimental", trait_name);
+    span_help!(tcx.sess, sp,
+               "add `#![feature(unboxed_closures)]` to the crate attributes to enable");
 }
 
 fn subst_receiver_types_in_method_ty<'tcx>(tcx: &ty::ctxt<'tcx>,
