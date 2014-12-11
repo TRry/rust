@@ -26,6 +26,7 @@ use libc;
 
 #[cfg(any(not(target_arch = "arm"), target_os = "ios"))]
 #[repr(C)]
+#[deriving(Copy)]
 pub enum _Unwind_Action {
     _UA_SEARCH_PHASE = 1,
     _UA_CLEANUP_PHASE = 2,
