@@ -33,7 +33,7 @@
 //!
 //! ```{.rust}
 //! extern crate getopts;
-//! use getopts::{optopt,optflag,getopts,OptGroup};
+//! use getopts::{optopt,optflag,getopts,OptGroup,usage};
 //! use std::os;
 //!
 //! fn do_work(inp: &str, out: Option<String>) {
@@ -44,10 +44,9 @@
 //!     }
 //! }
 //!
-//! fn print_usage(program: &str, _opts: &[OptGroup]) {
-//!     println!("Usage: {} [options]", program);
-//!     println!("-o\t\tOutput");
-//!     println!("-h --help\tUsage");
+//! fn print_usage(program: &str, opts: &[OptGroup]) {
+//!     let brief = format!("Usage: {} [options]", program);
+//!     print!("{}", usage(brief.as_slice(), opts));
 //! }
 //!
 //! fn main() {
@@ -88,6 +87,7 @@
        html_playground_url = "http://play.rust-lang.org/")]
 #![feature(globs, phase)]
 #![feature(import_shadowing)]
+#![feature(unboxed_closures)]
 #![deny(missing_docs)]
 
 #[cfg(test)] #[phase(plugin, link)] extern crate log;
@@ -868,8 +868,9 @@ impl Copy for LengthLimit {}
 ///
 /// Panics during iteration if the string contains a non-whitespace
 /// sequence longer than the limit.
-fn each_split_within<'a>(ss: &'a str, lim: uint, it: |&'a str| -> bool)
-                     -> bool {
+fn each_split_within<F>(ss: &str, lim: uint, mut it: F) -> bool where
+    F: FnMut(&str) -> bool
+{
     // Just for fun, let's write this as a state machine:
 
     let mut slice_start = 0;
@@ -1569,10 +1570,10 @@ Options:
     #[test]
     fn test_usage_description_multibyte_handling() {
         let optgroups = vec!(
-            optflag("k", "k\u2013w\u2013",
+            optflag("k", "k\u{2013}w\u{2013}",
                 "The word kiwi is normally spelled with two i's"),
             optflag("a", "apple",
-                "This \u201Cdescription\u201D has some characters that could \
+                "This \u{201C}description\u{201D} has some characters that could \
 confuse the line wrapping; an apple costs 0.51€ in some parts of Europe."));
 
         let expected =

@@ -8,13 +8,20 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-fn is_static<T: 'static>() {}
+// Test equality constraints on associated types. Check that unsupported syntax
+// does not ICE.
 
-fn foo<'a>() {
-    is_static::<proc():'a>();
-    //~^ ERROR does not fulfill the required lifetime
+#![feature(associated_types)]
 
-    is_static::<proc():'static>();
+pub trait Foo {
+    type A;
+    fn boo(&self) -> <Self as Foo>::A;
 }
 
-fn main() { }
+fn foo2<I: Foo>(x: I) {
+    let _: A = x.boo(); //~ERROR use of undeclared
+    let _: I::A = x.boo(); //~ERROR failed to resolve
+    //~^ERROR use of undeclared type name `I::A`
+}
+
+pub fn main() {}

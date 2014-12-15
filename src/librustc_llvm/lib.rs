@@ -23,6 +23,7 @@
 
 #![feature(globs)]
 #![feature(link_args)]
+#![feature(unboxed_closures)]
 
 extern crate libc;
 
@@ -149,7 +150,6 @@ bitflags! {
     }
 }
 
-impl Copy for Attribute {}
 
 #[repr(u64)]
 pub enum OtherAttribute {
@@ -2206,7 +2206,7 @@ pub unsafe extern "C" fn rust_llvm_string_write_impl(sr: RustStringRef,
     (*sr).borrow_mut().push_all(slice);
 }
 
-pub fn build_string(f: |RustStringRef|) -> Option<String> {
+pub fn build_string<F>(f: F) -> Option<String> where F: FnOnce(RustStringRef){
     let mut buf = RefCell::new(Vec::new());
     f(&mut buf as RustStringRepr as RustStringRef);
     String::from_utf8(buf.into_inner()).ok()

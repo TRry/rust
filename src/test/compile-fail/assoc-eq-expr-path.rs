@@ -8,28 +8,21 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-fn foo<T>() {}
-fn bar<T>(_: T) {}
+// Check that an associated type cannot be bound in an expression path.
 
-fn is_send<T: Send>() {}
-fn is_freeze<T: Sync>() {}
-fn is_static<T: 'static>() {}
+#![feature(associated_types)]
+
+trait Foo {
+    type A;
+    fn bar() -> int;
+}
+
+impl Foo for int {
+    type A = uint;
+    fn bar() -> int { 42 }
+}
 
 pub fn main() {
-    foo::<proc()>();
-    foo::<proc()>();
-    foo::<proc():Send>();
-    foo::<proc():Send + Sync>();
-    foo::<proc():'static + Send + Sync>();
-
-    is_send::<proc():Send>();
-    is_freeze::<proc():Sync>();
-    is_static::<proc():'static>();
-
-
-    let a = 3i;
-    bar::<proc()>(proc() {
-        let b = &a;
-        println!("{}", *b);
-    });
+    let x: int = Foo::<A=uint>::bar();
+    //~^ERROR unexpected binding of associated item in expression path
 }

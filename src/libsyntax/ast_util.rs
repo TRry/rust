@@ -174,10 +174,26 @@ pub fn ident_to_path(s: Span, identifier: Ident) -> Path {
                 parameters: ast::AngleBracketedParameters(ast::AngleBracketedParameterData {
                     lifetimes: Vec::new(),
                     types: OwnedSlice::empty(),
+                    bindings: OwnedSlice::empty(),
                 })
             }
         ),
     }
+}
+
+// If path is a single segment ident path, return that ident. Otherwise, return
+// None.
+pub fn path_to_ident(path: &Path) -> Option<Ident> {
+    if path.segments.len() != 1 {
+        return None;
+    }
+
+    let segment = &path.segments[0];
+    if !segment.parameters.is_empty() {
+        return None;
+    }
+
+    Some(segment.identifier)
 }
 
 pub fn ident_to_pat(id: NodeId, s: Span, i: Ident) -> P<Pat> {
@@ -217,14 +233,14 @@ pub fn trait_method_to_ty_method(method: &Method) -> TypeMethod {
                  ref generics,
                  abi,
                  ref explicit_self,
-                 fn_style,
+                 unsafety,
                  ref decl,
                  _,
                  vis) => {
             TypeMethod {
                 ident: ident,
                 attrs: method.attrs.clone(),
-                fn_style: fn_style,
+                unsafety: unsafety,
                 decl: (*decl).clone(),
                 generics: generics.clone(),
                 explicit_self: (*explicit_self).clone(),
@@ -586,6 +602,7 @@ pub fn compute_id_range_for_fn_body(fk: visit::FnKind,
     id_visitor.operation.result
 }
 
+// FIXME(#19596) unbox `it`
 pub fn walk_pat(pat: &Pat, it: |&Pat| -> bool) -> bool {
     if !it(pat) {
         return false;
@@ -616,21 +633,21 @@ pub fn walk_pat(pat: &Pat, it: |&Pat| -> bool) -> bool {
 }
 
 pub trait EachViewItem {
-    fn each_view_item(&self, f: |&ast::ViewItem| -> bool) -> bool;
+    fn each_view_item<F>(&self, f: F) -> bool where F: FnMut(&ast::ViewItem) -> bool;
 }
 
-struct EachViewItemData<'a> {
-    callback: |&ast::ViewItem|: 'a -> bool,
+struct EachViewItemData<F> where F: FnMut(&ast::ViewItem) -> bool {
+    callback: F,
 }
 
-impl<'a, 'v> Visitor<'v> for EachViewItemData<'a> {
+impl<'v, F> Visitor<'v> for EachViewItemData<F> where F: FnMut(&ast::ViewItem) -> bool {
     fn visit_view_item(&mut self, view_item: &ast::ViewItem) {
         let _ = (self.callback)(view_item);
     }
 }
 
 impl EachViewItem for ast::Crate {
-    fn each_view_item(&self, f: |&ast::ViewItem| -> bool) -> bool {
+    fn each_view_item<F>(&self, f: F) -> bool where F: FnMut(&ast::ViewItem) -> bool {
         let mut visit = EachViewItemData {
             callback: f,
         };
@@ -705,7 +722,7 @@ pub trait PostExpansionMethod {
     fn pe_generics<'a>(&'a self) -> &'a ast::Generics;
     fn pe_abi(&self) -> Abi;
     fn pe_explicit_self<'a>(&'a self) -> &'a ast::ExplicitSelf;
-    fn pe_fn_style(&self) -> ast::FnStyle;
+    fn pe_unsafety(&self) -> ast::Unsafety;
     fn pe_fn_decl<'a>(&'a self) -> &'a ast::FnDecl;
     fn pe_body<'a>(&'a self) -> &'a ast::Block;
     fn pe_vis(&self) -> ast::Visibility;
@@ -732,7 +749,7 @@ impl PostExpansionMethod for Method {
     mf_method!(pe_abi,Abi,MethDecl(_,_,abi,_,_,_,_,_),abi)
     mf_method!(pe_explicit_self,&'a ast::ExplicitSelf,
                MethDecl(_,_,_,ref explicit_self,_,_,_,_),explicit_self)
-    mf_method!(pe_fn_style,ast::FnStyle,MethDecl(_,_,_,_,fn_style,_,_,_),fn_style)
+    mf_method!(pe_unsafety,ast::Unsafety,MethDecl(_,_,_,_,unsafety,_,_,_),unsafety)
     mf_method!(pe_fn_decl,&'a ast::FnDecl,MethDecl(_,_,_,_,_,ref decl,_,_),&**decl)
     mf_method!(pe_body,&'a ast::Block,MethDecl(_,_,_,_,_,_,ref body,_),&**body)
     mf_method!(pe_vis,ast::Visibility,MethDecl(_,_,_,_,_,_,_,vis),vis)

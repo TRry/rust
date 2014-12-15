@@ -20,7 +20,6 @@ pub use self::Decl_::*;
 pub use self::ExplicitSelf_::*;
 pub use self::Expr_::*;
 pub use self::FloatTy::*;
-pub use self::FnStyle::*;
 pub use self::FunctionRetTy::*;
 pub use self::ForeignItem_::*;
 pub use self::ImplItem::*;
@@ -255,6 +254,7 @@ impl PathParameters {
         AngleBracketedParameters(AngleBracketedParameterData {
             lifetimes: Vec::new(),
             types: OwnedSlice::empty(),
+            bindings: OwnedSlice::empty(),
         })
     }
 
@@ -307,6 +307,17 @@ impl PathParameters {
             }
         }
     }
+
+    pub fn bindings(&self) -> Vec<&P<TypeBinding>> {
+        match *self {
+            AngleBracketedParameters(ref data) => {
+                data.bindings.iter().collect()
+            }
+            ParenthesizedParameters(_) => {
+                Vec::new()
+            }
+        }
+    }
 }
 
 /// A path like `Foo<'a, T>`
@@ -316,11 +327,14 @@ pub struct AngleBracketedParameterData {
     pub lifetimes: Vec<Lifetime>,
     /// The type parameters for this path segment, if present.
     pub types: OwnedSlice<P<Ty>>,
+    /// Bindings (equality constraints) on associated types, if present.
+    /// E.g., `Foo<A=Bar>`.
+    pub bindings: OwnedSlice<P<TypeBinding>>,
 }
 
 impl AngleBracketedParameterData {
     fn is_empty(&self) -> bool {
-        self.lifetimes.is_empty() && self.types.is_empty()
+        self.lifetimes.is_empty() && self.types.is_empty() && self.bindings.is_empty()
     }
 }
 
@@ -406,11 +420,25 @@ pub struct WhereClause {
 }
 
 #[deriving(Clone, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
-pub struct WherePredicate {
+pub enum WherePredicate {
+    BoundPredicate(WhereBoundPredicate),
+    EqPredicate(WhereEqPredicate)
+}
+
+#[deriving(Clone, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
+pub struct WhereBoundPredicate {
     pub id: NodeId,
     pub span: Span,
     pub ident: Ident,
     pub bounds: OwnedSlice<TyParamBound>,
+}
+
+#[deriving(Clone, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
+pub struct WhereEqPredicate {
+    pub id: NodeId,
+    pub span: Span,
+    pub path: Path,
+    pub ty: P<Ty>,
 }
 
 /// The set of MetaItems that define the compilation environment of the crate,
@@ -562,7 +590,6 @@ pub enum BinOp {
     BiGt,
 }
 
-#[cfg(not(stage0))]
 impl Copy for BinOp {}
 
 #[deriving(Clone, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
@@ -691,7 +718,6 @@ pub enum Expr_ {
     ExprLoop(P<Block>, Option<Ident>),
     ExprMatch(P<Expr>, Vec<Arm>, MatchSource),
     ExprClosure(CaptureClause, Option<UnboxedClosureKind>, P<FnDecl>, P<Block>),
-    ExprProc(P<FnDecl>, P<Block>),
     ExprBlock(P<Block>),
 
     ExprAssign(P<Expr>, P<Expr>),
@@ -1000,7 +1026,7 @@ pub struct TypeField {
 pub struct TypeMethod {
     pub ident: Ident,
     pub attrs: Vec<Attribute>,
-    pub fn_style: FnStyle,
+    pub unsafety: Unsafety,
     pub abi: Abi,
     pub decl: P<FnDecl>,
     pub generics: Generics,
@@ -1119,6 +1145,16 @@ impl FloatTy {
     }
 }
 
+// Bind a type to an associated type: `A=Foo`.
+#[deriving(Clone, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
+pub struct TypeBinding {
+    pub id: NodeId,
+    pub ident: Ident,
+    pub ty: P<Ty>,
+    pub span: Span,
+}
+
+
 // NB PartialEq method appears below.
 #[deriving(Clone, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
 pub struct Ty {
@@ -1161,7 +1197,7 @@ impl fmt::Show for Onceness {
 #[deriving(Clone, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
 pub struct ClosureTy {
     pub lifetimes: Vec<LifetimeDef>,
-    pub fn_style: FnStyle,
+    pub unsafety: Unsafety,
     pub onceness: Onceness,
     pub decl: P<FnDecl>,
     pub bounds: TyParamBounds,
@@ -1169,7 +1205,7 @@ pub struct ClosureTy {
 
 #[deriving(Clone, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
 pub struct BareFnTy {
-    pub fn_style: FnStyle,
+    pub unsafety: Unsafety,
     pub abi: Abi,
     pub lifetimes: Vec<LifetimeDef>,
     pub decl: P<FnDecl>
@@ -1187,8 +1223,6 @@ pub enum Ty_ {
     TyRptr(Option<Lifetime>, MutTy),
     /// A closure (e.g. `|uint| -> bool`)
     TyClosure(P<ClosureTy>),
-    /// A procedure (e.g `proc(uint) -> bool`)
-    TyProc(P<ClosureTy>),
     /// A bare function (e.g. `fn(uint) -> bool`)
     TyBareFn(P<BareFnTy>),
     /// A tuple (`(A, B, C, D,...)`)
@@ -1269,21 +1303,17 @@ pub struct FnDecl {
     pub variadic: bool
 }
 
-#[deriving(Clone, PartialEq, Eq, Encodable, Decodable, Hash)]
-pub enum FnStyle {
-    /// Declared with "unsafe fn"
-    UnsafeFn,
-    /// Declared with "fn"
-    NormalFn,
+#[deriving(Copy, Clone, PartialEq, Eq, Encodable, Decodable, Hash)]
+pub enum Unsafety {
+    Unsafe,
+    Normal,
 }
 
-impl Copy for FnStyle {}
-
-impl fmt::Show for FnStyle {
+impl fmt::Show for Unsafety {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            NormalFn => "normal".fmt(f),
-            UnsafeFn => "unsafe".fmt(f),
+            Unsafety::Normal => "normal".fmt(f),
+            Unsafety::Unsafe => "unsafe".fmt(f),
         }
     }
 }
@@ -1336,7 +1366,7 @@ pub enum Method_ {
              Generics,
              Abi,
              ExplicitSelf,
-             FnStyle,
+             Unsafety,
              P<FnDecl>,
              P<Block>,
              Visibility),
@@ -1574,19 +1604,21 @@ pub struct Item {
 pub enum Item_ {
     ItemStatic(P<Ty>, Mutability, P<Expr>),
     ItemConst(P<Ty>, P<Expr>),
-    ItemFn(P<FnDecl>, FnStyle, Abi, Generics, P<Block>),
+    ItemFn(P<FnDecl>, Unsafety, Abi, Generics, P<Block>),
     ItemMod(Mod),
     ItemForeignMod(ForeignMod),
     ItemTy(P<Ty>, Generics),
     ItemEnum(EnumDef, Generics),
     ItemStruct(P<StructDef>, Generics),
     /// Represents a Trait Declaration
-    ItemTrait(Generics,
+    ItemTrait(Unsafety,
+              Generics,
               Option<TraitRef>, // (optional) default bound not required for Self.
                                 // Currently, only Sized makes sense here.
               TyParamBounds,
               Vec<TraitItem>),
-    ItemImpl(Generics,
+    ItemImpl(Unsafety,
+             Generics,
              Option<TraitRef>, // (optional) trait this impl implements
              P<Ty>, // self
              Vec<ImplItem>),

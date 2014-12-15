@@ -246,7 +246,7 @@ impl<'a> fmt::Show for VarianceTerm<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
             ConstantTerm(c1) => write!(f, "{}", c1),
-            TransformTerm(v1, v2) => write!(f, "({} \u00D7 {})", v1, v2),
+            TransformTerm(v1, v2) => write!(f, "({} \u{00D7} {})", v1, v2),
             InferredTerm(id) => write!(f, "[{}]", { let InferredIndex(i) = id; i })
         }
     }
@@ -358,7 +358,7 @@ impl<'a, 'tcx, 'v> Visitor<'v> for TermsContext<'a, 'tcx> {
         match item.node {
             ast::ItemEnum(_, ref generics) |
             ast::ItemStruct(_, ref generics) |
-            ast::ItemTrait(ref generics, _, _, _) => {
+            ast::ItemTrait(_, ref generics, _, _, _) => {
                 for (i, p) in generics.lifetimes.iter().enumerate() {
                     let id = p.lifetime.id;
                     self.add_inferred(item.id, RegionParam, TypeSpace, i, id);

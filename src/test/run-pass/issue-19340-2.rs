@@ -1,4 +1,4 @@
-// Copyright 2012-2014 The Rust Project Developers. See the COPYRIGHT
+// Copyright 2014 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
 //
@@ -8,12 +8,23 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-struct Foo {
-    f: proc():'static
+enum Homura {
+    Madoka {
+        name: String,
+        age: u32,
+    },
 }
 
-fn call(x: Foo) {
-    x.f(); //~ ERROR does not implement any method in scope named `f`
-}
+fn main() {
+    let homura = Homura::Madoka {
+        name: "Akemi".into_string(),
+        age: 14,
+    };
 
-fn main() {}
+    match homura {
+        Homura::Madoka {
+            name,
+            age,
+        } => (),
+    };
+}

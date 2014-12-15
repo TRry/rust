@@ -23,7 +23,8 @@ Core encoding and decoding interfaces.
        html_root_url = "http://doc.rust-lang.org/nightly/",
        html_playground_url = "http://play.rust-lang.org/")]
 #![allow(unknown_features)]
-#![feature(macro_rules, default_type_params, phase, slicing_syntax, globs, if_let)]
+#![feature(macro_rules, default_type_params, phase, slicing_syntax, globs)]
+#![feature(unboxed_closures)]
 
 // test harness access
 #[cfg(test)]

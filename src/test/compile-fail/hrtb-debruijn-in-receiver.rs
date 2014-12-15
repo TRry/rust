@@ -8,15 +8,21 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-fn is_send<T: Send>() {}
-fn is_freeze<T: Sync>() {}
+// Test the case where the `Self` type has a bound lifetime that must
+// be adjusted in the fn signature. Issue #19537.
 
-fn foo<'a>() {
-    is_send::<proc()>();
-    //~^ ERROR: the trait `core::kinds::Send` is not implemented
+use std::collections::HashMap;
 
-    is_freeze::<proc()>();
-    //~^ ERROR: the trait `core::kinds::Sync` is not implemented
+struct Foo<'a> {
+    map: HashMap<uint, &'a str>
 }
 
-fn main() { }
+impl<'a> Foo<'a> {
+    fn new() -> Foo<'a> { panic!() }
+    fn insert(&'a mut self) { }
+}
+fn main() {
+    let mut foo = Foo::new();
+    foo.insert();
+    foo.insert(); //~ ERROR cannot borrow
+}
