@@ -67,15 +67,13 @@
 //! }
 //! ```
 
+use core::prelude::*;
+
 use collections::string::String;
 use collections::hash;
 use core::fmt;
 use core::kinds::{Sized, marker};
 use core::mem;
-use core::ops::{FnMut, FnOnce};
-use core::prelude::{Clone, Drop, Eq, Iterator};
-use core::prelude::{SlicePrelude, None, Option, Ordering, PartialEq};
-use core::prelude::{PartialOrd, RawPtr, Some, StrPrelude, range};
 use core::ptr;
 use core::raw::Slice;
 use core::slice;
@@ -603,7 +601,7 @@ mod tests {
             assert_eq!(*buf.offset(0), 'f' as libc::c_char);
             assert_eq!(*buf.offset(1), 'o' as libc::c_char);
             assert_eq!(*buf.offset(2), 'o' as libc::c_char);
-            assert_eq!(*buf.offset(3), 0xffu8 as i8);
+            assert_eq!(*buf.offset(3), 0xffu8 as libc::c_char);
             assert_eq!(*buf.offset(4), 0);
         }
     }

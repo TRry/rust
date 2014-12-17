@@ -1,4 +1,4 @@
-// Copyright 2014 The Rust Project Developers. See the COPYRIGHT
+// Copyright 2012 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
 //
@@ -8,22 +8,8 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// Tests that nested vtables work with overloaded calls.
+fn main() {}
 
-#![feature(unboxed_closures)]
-
-use std::ops::Fn;
-
-struct G;
-
-impl<'a, A: Add<int, int>> Fn<(A,), int> for G {
-    extern "rust-call" fn call(&self, (arg,): (A,)) -> int {
-        arg.add(1)
-    }
+impl Type {
+    undef!() //~ ERROR macro undefined: 'undef!'
 }
-
-fn main() {
-    // ICE trigger
-    G(1i);
-}
-

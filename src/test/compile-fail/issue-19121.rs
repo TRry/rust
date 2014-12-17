@@ -8,23 +8,15 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-pub trait OpInt<'a> { fn call(&mut self, int, int) -> int; }
+// Test that a partially specified trait object with unspecified associated
+// type does not ICE.
 
-impl<'a> OpInt<'a> for |int, int|: 'a -> int {
-    fn call(&mut self, a:int, b:int) -> int {
-        (*self)(a, b)
-    }
+#![feature(associated_types)]
+
+trait Foo {
+    type A;
 }
 
-fn squarei<'a>(x: int, op: &'a mut OpInt) -> int { op.call(x, x) }
+fn bar(x: &Foo) {} //~ERROR missing type for associated type `A`
 
-fn muli(x:int, y:int) -> int { x * y }
-
-pub fn main() {
-    let mut f = |x,y| muli(x,y);
-    {
-        let g = &mut f;
-        let h = g as &mut OpInt;
-        squarei(3, h);
-    }
-}
+pub fn main() {}

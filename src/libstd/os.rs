@@ -51,8 +51,8 @@ use ptr::RawPtr;
 use ptr;
 use result::Result;
 use result::Result::{Err, Ok};
-use slice::{AsSlice, SlicePrelude, PartialEqSlicePrelude};
-use slice::CloneSliceAllocPrelude;
+use slice::{AsSlice, SliceExt, PartialEqSliceExt};
+use slice::CloneSliceExt;
 use str::{Str, StrPrelude, StrAllocating};
 use string::{String, ToString};
 use sync::atomic::{AtomicInt, INIT_ATOMIC_INT, SeqCst};
@@ -168,7 +168,7 @@ pub mod windoze {
     use option::Option::None;
     use option;
     use os::TMPBUF_SZ;
-    use slice::{SlicePrelude};
+    use slice::SliceExt;
     use string::String;
     use str::StrPrelude;
     use vec::Vec;
@@ -378,7 +378,7 @@ pub fn getenv_as_bytes(n: &str) -> Option<Vec<u8>> {
             if s.is_null() {
                 None
             } else {
-                Some(CString::new(s as *const i8, false).as_bytes_no_nul().to_vec())
+                Some(CString::new(s as *const libc::c_char, false).as_bytes_no_nul().to_vec())
             }
         })
     }
@@ -1237,7 +1237,7 @@ impl Copy for MapOption {}
 
 /// Possible errors when creating a map.
 pub enum MapError {
-    /// ## The following are POSIX-specific
+    /// # The following are POSIX-specific
     ///
     /// fd was not open for reading or, if using `MapWritable`, was not open for
     /// writing.
@@ -1259,7 +1259,7 @@ pub enum MapError {
     ErrZeroLength,
     /// Unrecognized error. The inner value is the unrecognized errno.
     ErrUnknown(int),
-    /// ## The following are Windows-specific
+    /// # The following are Windows-specific
     ///
     /// Unsupported combination of protection flags
     /// (`MapReadable`/`MapWritable`/`MapExecutable`).

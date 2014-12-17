@@ -459,7 +459,7 @@ impl attr::AttrMetaMethods for Attribute {
 impl<'a> attr::AttrMetaMethods for &'a Attribute {
     fn name(&self) -> InternedString { (**self).name() }
     fn value_str(&self) -> Option<InternedString> { (**self).value_str() }
-    fn meta_item_list<'a>(&'a self) -> Option<&'a [P<ast::MetaItem>]> { None }
+    fn meta_item_list(&self) -> Option<&[P<ast::MetaItem>]> { None }
 }
 
 #[deriving(Clone, Encodable, Decodable, PartialEq)]
@@ -1201,6 +1201,7 @@ pub enum TypeKind {
     TypeEnum,
     TypeFunction,
     TypeModule,
+    TypeConst,
     TypeStatic,
     TypeStruct,
     TypeTrait,
@@ -1841,7 +1842,7 @@ impl Clean<Item> for doctree::Static {
     }
 }
 
-#[deriving(Clone, Encodable, Decodable)]
+#[deriving(Clone, Encodable, Decodable, Show)]
 pub struct Constant {
     pub type_: Type,
     pub expr: String,

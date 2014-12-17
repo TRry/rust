@@ -44,7 +44,7 @@ use result::Result::{Ok, Err};
 use rustrt;
 use rustrt::local::Local;
 use rustrt::task::Task;
-use slice::SlicePrelude;
+use slice::SliceExt;
 use str::StrPrelude;
 use string::String;
 use sys::{fs, tty};
@@ -127,7 +127,7 @@ impl StdinReader {
     ///
     /// This provides access to methods like `chars` and `lines`.
     ///
-    /// ## Example
+    /// # Examples
     ///
     /// ```rust
     /// use std::io;

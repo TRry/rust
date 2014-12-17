@@ -24,7 +24,7 @@ use core::ops;
 use core::raw::Slice as RawSlice;
 
 use hash;
-use slice::CloneSliceAllocPrelude;
+use slice::CloneSliceExt;
 use str;
 use str::{CharRange, CowString, FromStr, StrAllocating, Owned};
 use vec::{DerefVec, Vec, as_vec};
@@ -855,12 +855,30 @@ impl<'a, S: Str> Equiv<S> for String {
     }
 }
 
+// NOTE(stage0): Remove impl after a snapshot
+#[cfg(stage0)]
 #[experimental = "waiting on Add stabilization"]
 impl<S: Str> Add<S, String> for String {
     fn add(&self, other: &S) -> String {
         let mut s = String::from_str(self.as_slice());
         s.push_str(other.as_slice());
         return s;
+    }
+}
+
+#[cfg(not(stage0))]  // NOTE(stage0): Remove cfg after a snapshot
+impl<'a> Add<&'a str, String> for String {
+    fn add(mut self, other: &str) -> String {
+        self.push_str(other);
+        self
+    }
+}
+
+#[cfg(not(stage0))]  // NOTE(stage0): Remove cfg after a snapshot
+impl<'a> Add<String, String> for &'a str {
+    fn add(self, mut other: String) -> String {
+        other.push_str(self);
+        other
     }
 }
 
@@ -1014,7 +1032,7 @@ mod tests {
     use std::prelude::*;
     use test::Bencher;
 
-    use slice::CloneSliceAllocPrelude;
+    use slice::CloneSliceExt;
     use str::{Str, StrPrelude};
     use str;
     use super::{as_string, String, ToString};
@@ -1280,7 +1298,7 @@ mod tests {
     fn test_str_add() {
         let a = String::from_str("12345");
         let b = a + "2";
-        let b = b + String::from_str("2");
+        let b = b + "2";
         assert_eq!(b.len(), 7);
         assert_eq!(b, "1234522");
     }
