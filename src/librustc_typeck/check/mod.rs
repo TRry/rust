@@ -1188,7 +1188,7 @@ fn compare_impl_method<'tcx>(tcx: &ty::ctxt<'tcx>,
 
     // Finally, resolve all regions. This catches wily misuses of lifetime
     // parameters.
-    infcx.resolve_regions_and_report_errors();
+    infcx.resolve_regions_and_report_errors(impl_m_body_id);
 
     /// Check that region bounds on impl method are the same as those on the trait. In principle,
     /// it could be ok for there to be fewer region bounds on the impl method, but this leads to an
@@ -1532,6 +1532,10 @@ impl<'a, 'tcx> AstConv<'tcx> for FnCtxt<'a, 'tcx> {
 
     fn get_trait_def(&self, id: ast::DefId) -> Rc<ty::TraitDef<'tcx>> {
         ty::lookup_trait_def(self.tcx(), id)
+    }
+
+    fn get_free_substs(&self) -> Option<&Substs<'tcx>> {
+        Some(&self.inh.param_env.free_substs)
     }
 
     fn ty_infer(&self, _span: Span) -> Ty<'tcx> {
@@ -3658,22 +3662,25 @@ fn check_expr_with_unifier<'a, 'tcx, F>(fcx: &FnCtxt<'a, 'tcx>,
     let tcx = fcx.ccx.tcx;
     let id = expr.id;
     match expr.node {
-      ast::ExprBox(ref place, ref subexpr) => {
-          check_expr(fcx, &**place);
+      ast::ExprBox(ref opt_place, ref subexpr) => {
+          opt_place.as_ref().map(|place|check_expr(fcx, &**place));
           check_expr(fcx, &**subexpr);
 
           let mut checked = false;
-          if let ast::ExprPath(ref path) = place.node {
-              // FIXME(pcwalton): For now we hardcode the two permissible
-              // places: the exchange heap and the managed heap.
-              let definition = lookup_def(fcx, path.span, place.id);
-              let def_id = definition.def_id();
-              let referent_ty = fcx.expr_ty(&**subexpr);
-              if tcx.lang_items.exchange_heap() == Some(def_id) {
-                  fcx.write_ty(id, ty::mk_uniq(tcx, referent_ty));
-                  checked = true
+          opt_place.as_ref().map(|place| match place.node {
+              ast::ExprPath(ref path) => {
+                  // FIXME(pcwalton): For now we hardcode the two permissible
+                  // places: the exchange heap and the managed heap.
+                  let definition = lookup_def(fcx, path.span, place.id);
+                  let def_id = definition.def_id();
+                  let referent_ty = fcx.expr_ty(&**subexpr);
+                  if tcx.lang_items.exchange_heap() == Some(def_id) {
+                      fcx.write_ty(id, ty::mk_uniq(tcx, referent_ty));
+                      checked = true
+                  }
               }
-          }
+              _ => {}
+          });
 
           if !checked {
               span_err!(tcx.sess, expr.span, E0066,
@@ -4865,6 +4872,7 @@ pub fn polytype_for_def<'a, 'tcx>(fcx: &FnCtxt<'a, 'tcx>,
       def::DefTrait(_) |
       def::DefTy(..) |
       def::DefAssociatedTy(..) |
+      def::DefAssociatedPath(..) |
       def::DefPrimTy(_) |
       def::DefTyParam(..)=> {
         fcx.ccx.tcx.sess.span_bug(sp, "expected value, found type");
@@ -4973,6 +4981,7 @@ pub fn instantiate_path<'a, 'tcx>(fcx: &FnCtxt<'a, 'tcx>,
         def::DefTyParamBinder(..) |
         def::DefTy(..) |
         def::DefAssociatedTy(..) |
+        def::DefAssociatedPath(..) |
         def::DefTrait(..) |
         def::DefPrimTy(..) |
         def::DefTyParam(..) => {

@@ -17,13 +17,13 @@ use core::prelude::*;
 use core::borrow::{Cow, IntoCow};
 use core::default::Default;
 use core::fmt;
+use core::hash;
 use core::mem;
 use core::ptr;
 use core::ops;
 // FIXME: ICE's abound if you import the `Slice` type while importing `Slice` trait
 use core::raw::Slice as RawSlice;
 
-use hash;
 use slice::CloneSliceExt;
 use str;
 use str::{CharRange, CowString, FromStr, StrAllocating, Owned};
@@ -826,6 +826,7 @@ impl StrAllocating for String {
 
 #[stable]
 impl Default for String {
+    #[stable]
     fn default() -> String {
         String::new()
     }
@@ -859,6 +860,16 @@ impl<'a, S: Str> Equiv<S> for String {
 #[cfg(stage0)]
 #[experimental = "waiting on Add stabilization"]
 impl<S: Str> Add<S, String> for String {
+    /// Concatenates `self` and `other` as a new mutable `String`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// let string1 = "foo".to_string();
+    /// let string2 = "bar".to_string();
+    /// let string3 = string1 + string2;
+    /// assert_eq!(string3, "foobar".to_string());
+    /// ```
     fn add(&self, other: &S) -> String {
         let mut s = String::from_str(self.as_slice());
         s.push_str(other.as_slice());
