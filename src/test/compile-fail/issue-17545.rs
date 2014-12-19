@@ -8,11 +8,11 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#![feature(macro_rules)]
+#![feature(unboxed_closures)]
 
-macro_rules! foo ( () => ( x ) )
-
-fn main() {
-    let foo!() = 2;
-    x + 1; //~ ERROR unresolved name `x`
+pub fn foo<'a, F: Fn<(&'a (),), ()>>(bar: F) {
+    bar.call((
+        &(), //~ ERROR borrowed value does not live long enough
+    ));
 }
+fn main() {}

@@ -8,12 +8,6 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-//! Maps are collections of unique keys with corresponding values, and sets are
-//! just unique keys without a corresponding value.
-//!
-//! This crate defines `TrieMap` and `TrieSet`, which require `uint` keys.
-//!
-//! `TrieMap` is ordered.
-
-pub mod map;
-pub mod set;
+fn main() {
+    let _: &Str = &"x";
+}
