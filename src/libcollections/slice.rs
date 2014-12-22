@@ -91,7 +91,7 @@ use alloc::boxed::Box;
 use core::borrow::{BorrowFrom, BorrowFromMut, ToOwned};
 use core::cmp;
 use core::iter::{range_step, MultiplicativeIterator};
-use core::kinds::{Copy, Sized};
+use core::kinds::Sized;
 use core::mem::size_of;
 use core::mem;
 use core::ops::FnMut;
@@ -177,17 +177,15 @@ impl ElementSwaps {
     }
 }
 
+#[deriving(Copy)]
 enum Direction { Pos, Neg }
 
-impl Copy for Direction {}
-
 /// An `Index` and `Direction` together.
+#[deriving(Copy)]
 struct SizeDirection {
     size: uint,
     dir: Direction,
 }
-
-impl Copy for SizeDirection {}
 
 impl Iterator<(uint, uint)> for ElementSwaps {
     #[inline]
@@ -1345,16 +1343,13 @@ pub mod raw {
 #[cfg(test)]
 mod tests {
     use std::boxed::Box;
-    use std::cell::Cell;
-    use std::default::Default;
-    use std::mem;
-    use std::prelude::*;
+    use prelude::*;
+    use core::cell::Cell;
+    use core::default::Default;
+    use core::mem;
     use std::rand::{Rng, task_rng};
     use std::rc::Rc;
-    use std::rt;
-    use slice::*;
-
-    use vec::Vec;
+    use super::ElementSwaps;
 
     fn square(n: uint) -> uint { n * n }
 
@@ -2766,13 +2761,11 @@ mod tests {
 
 #[cfg(test)]
 mod bench {
-    use std::prelude::*;
+    use prelude::*;
+    use core::mem;
+    use core::ptr;
     use std::rand::{weak_rng, Rng};
-    use std::mem;
-    use std::ptr;
     use test::{Bencher, black_box};
-
-    use vec::Vec;
 
     #[bench]
     fn iterator(b: &mut Bencher) {

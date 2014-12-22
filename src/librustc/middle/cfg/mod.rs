@@ -26,11 +26,10 @@ pub struct CFG {
     pub exit: CFGIndex,
 }
 
+#[deriving(Copy)]
 pub struct CFGNodeData {
     pub id: ast::NodeId
 }
-
-impl Copy for CFGNodeData {}
 
 pub struct CFGEdgeData {
     pub exiting_scopes: Vec<ast::NodeId>
@@ -48,5 +47,9 @@ impl CFG {
     pub fn new(tcx: &ty::ctxt,
                blk: &ast::Block) -> CFG {
         construct::construct(tcx, blk)
+    }
+
+    pub fn node_is_reachable(&self, id: ast::NodeId) -> bool {
+        self.graph.depth_traverse(self.entry).any(|node| node.id == id)
     }
 }

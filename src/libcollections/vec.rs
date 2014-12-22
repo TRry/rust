@@ -53,8 +53,8 @@ use core::cmp::max;
 use core::default::Default;
 use core::fmt;
 use core::hash::{mod, Hash};
+use core::iter::repeat;
 use core::kinds::marker::{ContravariantLifetime, InvariantType};
-use core::kinds::Sized;
 use core::mem;
 use core::num::{Int, UnsignedInt};
 use core::ops;
@@ -412,6 +412,33 @@ impl<T: Clone> Vec<T> {
         }
     }
 
+    /// Resizes the `Vec` in-place so that `len()` is equal to `new_len`.
+    ///
+    /// Calls either `extend()` or `truncate()` depending on whether `new_len`
+    /// is larger than the current value of `len()` or not.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// let mut vec = vec!["hello"];
+    /// vec.resize(3, "world");
+    /// assert_eq!(vec, vec!["hello", "world", "world"]);
+    ///
+    /// let mut vec = vec![1i, 2, 3, 4];
+    /// vec.resize(2, 0);
+    /// assert_eq!(vec, vec![1, 2]);
+    /// ```
+    #[unstable = "matches collection reform specification; waiting for dust to settle"]
+    pub fn resize(&mut self, new_len: uint, value: T) {
+        let len = self.len();
+
+        if new_len > len {
+            self.extend(repeat(value).take(new_len - len));
+        } else {
+            self.truncate(new_len);
+        }
+    }
+
     /// Partitions a vector based on a predicate.
     ///
     /// Clones the elements of the vector, partitioning them into two `Vec<T>`s
@@ -443,7 +470,7 @@ impl<T: Clone> Vec<T> {
     }
 }
 
-#[unstable]
+#[stable]
 impl<T:Clone> Clone for Vec<T> {
     fn clone(&self) -> Vec<T> { self.as_slice().to_vec() }
 
@@ -710,20 +737,10 @@ impl<T> Vec<T> {
     #[unstable = "matches collection reform specification, waiting for dust to settle"]
     pub fn reserve(&mut self, additional: uint) {
         if self.cap - self.len < additional {
-            match self.len.checked_add(additional) {
-                None => panic!("Vec::reserve: `uint` overflow"),
-                // if the checked_add
-                Some(new_cap) => {
-                    let amort_cap = new_cap.next_power_of_two();
-                    // next_power_of_two will overflow to exactly 0 for really big capacities
-                    let cap = if amort_cap == 0 {
-                        new_cap
-                    } else {
-                        amort_cap
-                    };
-                    self.grow_capacity(cap)
-                }
-            }
+            let err_msg = "Vec::reserve: `uint` overflow";
+            let new_cap = self.len.checked_add(additional).expect(err_msg)
+                                  .checked_next_power_of_two().expect(err_msg);
+            self.grow_capacity(new_cap);
         }
     }
 
@@ -1128,6 +1145,38 @@ impl<T> Vec<T> {
         }
     }
 
+    /// Creates a draining iterator that clears the `Vec` and iterates over
+    /// the removed items from start to end.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// let mut v = vec!["a".to_string(), "b".to_string()];
+    /// for s in v.drain() {
+    ///     // s has type String, not &String
+    ///     println!("{}", s);
+    /// }
+    /// assert!(v.is_empty());
+    /// ```
+    #[inline]
+    #[unstable = "matches collection reform specification, waiting for dust to settle"]
+    pub fn drain<'a>(&'a mut self) -> Drain<'a, T> {
+        unsafe {
+            let begin = self.ptr as *const T;
+            let end = if mem::size_of::<T>() == 0 {
+                (self.ptr as uint + self.len()) as *const T
+            } else {
+                self.ptr.offset(self.len() as int) as *const T
+            };
+            self.set_len(0);
+            Drain {
+                ptr: begin,
+                end: end,
+                marker: ContravariantLifetime,
+            }
+        }
+    }
+
     /// Clears the vector, removing all values.
     ///
     /// # Examples
@@ -1313,34 +1362,11 @@ impl<T> AsSlice<T> for Vec<T> {
     }
 }
 
-// NOTE(stage0): Remove impl after a snapshot
-#[cfg(stage0)]
-impl<T: Clone, Sized? V: AsSlice<T>> Add<V, Vec<T>> for Vec<T> {
-    #[inline]
-    fn add(&self, rhs: &V) -> Vec<T> {
-        let mut res = Vec::with_capacity(self.len() + rhs.as_slice().len());
-        res.push_all(self.as_slice());
-        res.push_all(rhs.as_slice());
-        res
-    }
-}
-
-
-#[cfg(not(stage0))]  // NOTE(stage0): Remove impl after a snapshot
 impl<'a, T: Clone> Add<&'a [T], Vec<T>> for Vec<T> {
     #[inline]
     fn add(mut self, rhs: &[T]) -> Vec<T> {
         self.push_all(rhs);
         self
-    }
-}
-
-#[cfg(not(stage0))]  // NOTE(stage0): Remove impl after a snapshot
-impl<'a, T: Clone> Add<Vec<T>, Vec<T>> for &'a [T] {
-    #[inline]
-    fn add(self, mut rhs: Vec<T>) -> Vec<T> {
-        rhs.push_all(self);
-        rhs
     }
 }
 
@@ -1384,8 +1410,9 @@ pub struct MoveItems<T> {
 }
 
 impl<T> MoveItems<T> {
-    #[inline]
     /// Drops all items that have not yet been moved and returns the empty vector.
+    #[inline]
+    #[unstable]
     pub fn into_inner(mut self) -> Vec<T> {
         unsafe {
             for _x in self { }
@@ -1395,8 +1422,8 @@ impl<T> MoveItems<T> {
         }
     }
 
-    /// Deprecated, use into_inner() instead
-    #[deprecated = "renamed to into_inner()"]
+    /// Deprecated, use .into_inner() instead
+    #[deprecated = "use .into_inner() instead"]
     pub fn unwrap(self) -> Vec<T> { self.into_inner() }
 }
 
@@ -1469,6 +1496,84 @@ impl<T> Drop for MoveItems<T> {
                 dealloc(self.allocation, self.cap);
             }
         }
+    }
+}
+
+/// An iterator that drains a vector.
+#[unsafe_no_drop_flag]
+pub struct Drain<'a, T> {
+    ptr: *const T,
+    end: *const T,
+    marker: ContravariantLifetime<'a>,
+}
+
+impl<'a, T> Iterator<T> for Drain<'a, T> {
+    #[inline]
+    fn next(&mut self) -> Option<T> {
+        unsafe {
+            if self.ptr == self.end {
+                None
+            } else {
+                if mem::size_of::<T>() == 0 {
+                    // purposefully don't use 'ptr.offset' because for
+                    // vectors with 0-size elements this would return the
+                    // same pointer.
+                    self.ptr = mem::transmute(self.ptr as uint + 1);
+
+                    // Use a non-null pointer value
+                    Some(ptr::read(mem::transmute(1u)))
+                } else {
+                    let old = self.ptr;
+                    self.ptr = self.ptr.offset(1);
+
+                    Some(ptr::read(old))
+                }
+            }
+        }
+    }
+
+    #[inline]
+    fn size_hint(&self) -> (uint, Option<uint>) {
+        let diff = (self.end as uint) - (self.ptr as uint);
+        let size = mem::size_of::<T>();
+        let exact = diff / (if size == 0 {1} else {size});
+        (exact, Some(exact))
+    }
+}
+
+impl<'a, T> DoubleEndedIterator<T> for Drain<'a, T> {
+    #[inline]
+    fn next_back(&mut self) -> Option<T> {
+        unsafe {
+            if self.end == self.ptr {
+                None
+            } else {
+                if mem::size_of::<T>() == 0 {
+                    // See above for why 'ptr.offset' isn't used
+                    self.end = mem::transmute(self.end as uint - 1);
+
+                    // Use a non-null pointer value
+                    Some(ptr::read(mem::transmute(1u)))
+                } else {
+                    self.end = self.end.offset(-1);
+
+                    Some(ptr::read(self.end))
+                }
+            }
+        }
+    }
+}
+
+impl<'a, T> ExactSizeIterator<T> for Drain<'a, T> {}
+
+#[unsafe_destructor]
+impl<'a, T> Drop for Drain<'a, T> {
+    fn drop(&mut self) {
+        // self.ptr == self.end == null if drop has already been called,
+        // so we can use #[unsafe_no_drop_flag].
+
+        // destroy the remaining elements
+        for _x in *self {}
     }
 }
 
@@ -1816,12 +1921,10 @@ impl<'a> fmt::FormatWriter for Vec<u8> {
 
 #[cfg(test)]
 mod tests {
-    extern crate test;
-
-    use std::prelude::*;
-    use std::mem::size_of;
+    use prelude::*;
+    use core::mem::size_of;
     use test::Bencher;
-    use super::{as_vec, unzip, raw, Vec};
+    use super::{as_vec, unzip, raw};
 
     struct DropCounter<'a> {
         count: &'a mut int
@@ -2278,6 +2381,39 @@ mod tests {
             vec2.push(i);
         }
         assert!(vec2 == vec![(), (), ()]);
+    }
+
+    #[test]
+    fn test_drain_items() {
+        let mut vec = vec![1, 2, 3];
+        let mut vec2: Vec<i32> = vec![];
+        for i in vec.drain() {
+            vec2.push(i);
+        }
+        assert_eq!(vec, []);
+        assert_eq!(vec2, [ 1, 2, 3 ]);
+    }
+
+    #[test]
+    fn test_drain_items_reverse() {
+        let mut vec = vec![1, 2, 3];
+        let mut vec2: Vec<i32> = vec![];
+        for i in vec.drain().rev() {
+            vec2.push(i);
+        }
+        assert_eq!(vec, []);
+        assert_eq!(vec2, [ 3, 2, 1 ]);
+    }
+
+    #[test]
+    fn test_drain_items_zero_sized() {
+        let mut vec = vec![(), (), ()];
+        let mut vec2: Vec<()> = vec![];
+        for i in vec.drain() {
+            vec2.push(i);
+        }
+        assert_eq!(vec, []);
+        assert_eq!(vec2, [(), (), ()]);
     }
 
     #[test]

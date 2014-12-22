@@ -38,6 +38,7 @@ use llvm::{BasicBlockRef, Linkage, ValueRef, Vector, get_param};
 use llvm;
 use metadata::{csearch, encoder, loader};
 use middle::astencode;
+use middle::cfg;
 use middle::lang_items::{LangItem, ExchangeMallocFnLangItem, StartFnLangItem};
 use middle::subst;
 use middle::weak_lang_items;
@@ -282,10 +283,10 @@ pub fn decl_rust_fn<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>,
                               fn_ty: Ty<'tcx>, name: &str) -> ValueRef {
     let (inputs, output, abi, env) = match fn_ty.sty {
         ty::ty_bare_fn(ref f) => {
-            (f.sig.inputs.clone(), f.sig.output, f.abi, None)
+            (f.sig.0.inputs.clone(), f.sig.0.output, f.abi, None)
         }
         ty::ty_closure(ref f) => {
-            (f.sig.inputs.clone(), f.sig.output, f.abi, Some(Type::i8p(ccx)))
+            (f.sig.0.inputs.clone(), f.sig.0.output, f.abi, Some(Type::i8p(ccx)))
         }
         ty::ty_unboxed_closure(closure_did, _, ref substs) => {
             let unboxed_closures = ccx.tcx().unboxed_closures.borrow();
@@ -293,8 +294,8 @@ pub fn decl_rust_fn<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>,
             let function_type = unboxed_closure.closure_type.clone();
             let self_type = self_type_for_unboxed_closure(ccx, closure_did, fn_ty);
             let llenvironment_type = type_of_explicit_arg(ccx, self_type);
-            (function_type.sig.inputs.iter().map(|t| t.subst(ccx.tcx(), substs)).collect(),
-             function_type.sig.output.subst(ccx.tcx(), substs),
+            (function_type.sig.0.inputs.iter().map(|t| t.subst(ccx.tcx(), substs)).collect(),
+             function_type.sig.0.output.subst(ccx.tcx(), substs),
              RustCall,
              Some(llenvironment_type))
         }
@@ -565,9 +566,8 @@ pub fn maybe_name_value(cx: &CrateContext, v: ValueRef, s: &str) {
 
 
 // Used only for creating scalar comparison glue.
+#[deriving(Copy)]
 pub enum scalar_type { nil_type, signed_int, unsigned_int, floating_point, }
-
-impl Copy for scalar_type {}
 
 pub fn compare_scalar_types<'blk, 'tcx>(cx: Block<'blk, 'tcx>,
                                         lhs: ValueRef,
@@ -1307,47 +1307,33 @@ pub fn make_return_slot_pointer<'a, 'tcx>(fcx: &FunctionContext<'a, 'tcx>,
     }
 }
 
-struct CheckForNestedReturnsVisitor {
+struct FindNestedReturn {
     found: bool,
-    in_return: bool
 }
 
-impl CheckForNestedReturnsVisitor {
-    fn explicit() -> CheckForNestedReturnsVisitor {
-        CheckForNestedReturnsVisitor { found: false, in_return: false }
-    }
-    fn implicit() -> CheckForNestedReturnsVisitor {
-        CheckForNestedReturnsVisitor { found: false, in_return: true }
+impl FindNestedReturn {
+    fn new() -> FindNestedReturn {
+        FindNestedReturn { found: false }
     }
 }
 
-impl<'v> Visitor<'v> for CheckForNestedReturnsVisitor {
+impl<'v> Visitor<'v> for FindNestedReturn {
     fn visit_expr(&mut self, e: &ast::Expr) {
         match e.node {
             ast::ExprRet(..) => {
-                if self.in_return {
-                    self.found = true;
-                } else {
-                    self.in_return = true;
-                    visit::walk_expr(self, e);
-                    self.in_return = false;
-                }
+                self.found = true;
             }
             _ => visit::walk_expr(self, e)
         }
     }
 }
 
-fn has_nested_returns(tcx: &ty::ctxt, id: ast::NodeId) -> bool {
-    match tcx.map.find(id) {
+fn build_cfg(tcx: &ty::ctxt, id: ast::NodeId) -> (ast::NodeId, Option<cfg::CFG>) {
+    let blk = match tcx.map.find(id) {
         Some(ast_map::NodeItem(i)) => {
             match i.node {
                 ast::ItemFn(_, _, _, _, ref blk) => {
-                    let mut explicit = CheckForNestedReturnsVisitor::explicit();
-                    let mut implicit = CheckForNestedReturnsVisitor::implicit();
-                    visit::walk_item(&mut explicit, &*i);
-                    visit::walk_expr_opt(&mut implicit, &blk.expr);
-                    explicit.found || implicit.found
+                    blk
                 }
                 _ => tcx.sess.bug("unexpected item variant in has_nested_returns")
             }
@@ -1357,11 +1343,7 @@ fn has_nested_returns(tcx: &ty::ctxt, id: ast::NodeId) -> bool {
                 ast::ProvidedMethod(ref m) => {
                     match m.node {
                         ast::MethDecl(_, _, _, _, _, _, ref blk, _) => {
-                            let mut explicit = CheckForNestedReturnsVisitor::explicit();
-                            let mut implicit = CheckForNestedReturnsVisitor::implicit();
-                            visit::walk_method_helper(&mut explicit, &**m);
-                            visit::walk_expr_opt(&mut implicit, &blk.expr);
-                            explicit.found || implicit.found
+                            blk
                         }
                         ast::MethMac(_) => tcx.sess.bug("unexpanded macro")
                     }
@@ -1381,11 +1363,7 @@ fn has_nested_returns(tcx: &ty::ctxt, id: ast::NodeId) -> bool {
                 ast::MethodImplItem(ref m) => {
                     match m.node {
                         ast::MethDecl(_, _, _, _, _, _, ref blk, _) => {
-                            let mut explicit = CheckForNestedReturnsVisitor::explicit();
-                            let mut implicit = CheckForNestedReturnsVisitor::implicit();
-                            visit::walk_method_helper(&mut explicit, &**m);
-                            visit::walk_expr_opt(&mut implicit, &blk.expr);
-                            explicit.found || implicit.found
+                            blk
                         }
                         ast::MethMac(_) => tcx.sess.bug("unexpanded macro")
                     }
@@ -1399,24 +1377,58 @@ fn has_nested_returns(tcx: &ty::ctxt, id: ast::NodeId) -> bool {
         Some(ast_map::NodeExpr(e)) => {
             match e.node {
                 ast::ExprClosure(_, _, _, ref blk) => {
-                    let mut explicit = CheckForNestedReturnsVisitor::explicit();
-                    let mut implicit = CheckForNestedReturnsVisitor::implicit();
-                    visit::walk_expr(&mut explicit, e);
-                    visit::walk_expr_opt(&mut implicit, &blk.expr);
-                    explicit.found || implicit.found
+                    blk
                 }
                 _ => tcx.sess.bug("unexpected expr variant in has_nested_returns")
             }
         }
-
-        Some(ast_map::NodeVariant(..)) | Some(ast_map::NodeStructCtor(..)) => false,
+        Some(ast_map::NodeVariant(..)) |
+        Some(ast_map::NodeStructCtor(..)) => return (ast::DUMMY_NODE_ID, None),
 
         // glue, shims, etc
-        None if id == ast::DUMMY_NODE_ID => false,
+        None if id == ast::DUMMY_NODE_ID => return (ast::DUMMY_NODE_ID, None),
 
         _ => tcx.sess.bug(format!("unexpected variant in has_nested_returns: {}",
                                   tcx.map.path_to_string(id)).as_slice())
+    };
+
+    (blk.id, Some(cfg::CFG::new(tcx, &**blk)))
+}
+
+// Checks for the presence of "nested returns" in a function.
+// Nested returns are when the inner expression of a return expression
+// (the 'expr' in 'return expr') contains a return expression. Only cases
+// where the outer return is actually reachable are considered. Implicit
+// returns from the end of blocks are considered as well.
+//
+// This check is needed to handle the case where the inner expression is
+// part of a larger expression that may have already partially-filled the
+// return slot alloca. This can cause errors related to clean-up due to
+// the clobbering of the existing value in the return slot.
+fn has_nested_returns(tcx: &ty::ctxt, cfg: &cfg::CFG, blk_id: ast::NodeId) -> bool {
+    for n in cfg.graph.depth_traverse(cfg.entry) {
+        match tcx.map.find(n.id) {
+            Some(ast_map::NodeExpr(ex)) => {
+                if let ast::ExprRet(Some(ref ret_expr)) = ex.node {
+                    let mut visitor = FindNestedReturn::new();
+                    visit::walk_expr(&mut visitor, &**ret_expr);
+                    if visitor.found {
+                        return true;
+                    }
+                }
+            }
+            Some(ast_map::NodeBlock(blk)) if blk.id == blk_id => {
+                let mut visitor = FindNestedReturn::new();
+                visit::walk_expr_opt(&mut visitor, &blk.expr);
+                if visitor.found {
+                    return true;
+                }
+            }
+            _ => {}
+        }
     }
+
+    return false;
 }
 
 // NB: must keep 4 fns in sync:
@@ -1455,7 +1467,12 @@ pub fn new_fn_ctxt<'a, 'tcx>(ccx: &'a CrateContext<'a, 'tcx>,
         ty::FnDiverging => false
     };
     let debug_context = debuginfo::create_function_debug_context(ccx, id, param_substs, llfndecl);
-    let nested_returns = has_nested_returns(ccx.tcx(), id);
+    let (blk_id, cfg) = build_cfg(ccx.tcx(), id);
+    let nested_returns = if let Some(ref cfg) = cfg {
+        has_nested_returns(ccx.tcx(), cfg, blk_id)
+    } else {
+        false
+    };
 
     let mut fcx = FunctionContext {
           llfn: llfndecl,
@@ -1474,7 +1491,8 @@ pub fn new_fn_ctxt<'a, 'tcx>(ccx: &'a CrateContext<'a, 'tcx>,
           block_arena: block_arena,
           ccx: ccx,
           debug_context: debug_context,
-          scopes: RefCell::new(Vec::new())
+          scopes: RefCell::new(Vec::new()),
+          cfg: cfg
     };
 
     if has_env {
@@ -1792,13 +1810,11 @@ pub fn build_return_block<'blk, 'tcx>(fcx: &FunctionContext<'blk, 'tcx>,
     }
 }
 
-#[deriving(Clone, Eq, PartialEq)]
+#[deriving(Clone, Copy, Eq, PartialEq)]
 pub enum IsUnboxedClosureFlag {
     NotUnboxedClosure,
     IsUnboxedClosure,
 }
-
-impl Copy for IsUnboxedClosureFlag {}
 
 // trans_closure: Builds an LLVM function out of a source function.
 // If the function closes over its environment a closure will be
@@ -1998,7 +2014,7 @@ pub fn trans_named_tuple_constructor<'blk, 'tcx>(mut bcx: Block<'blk, 'tcx>,
     let tcx = ccx.tcx();
 
     let result_ty = match ctor_ty.sty {
-        ty::ty_bare_fn(ref bft) => bft.sig.output.unwrap(),
+        ty::ty_bare_fn(ref bft) => bft.sig.0.output.unwrap(),
         _ => ccx.sess().bug(
             format!("trans_enum_variant_constructor: \
                      unexpected ctor return type {}",
@@ -2070,7 +2086,7 @@ fn trans_enum_variant_or_tuple_like_struct<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx
     let ctor_ty = ctor_ty.subst(ccx.tcx(), param_substs);
 
     let result_ty = match ctor_ty.sty {
-        ty::ty_bare_fn(ref bft) => bft.sig.output,
+        ty::ty_bare_fn(ref bft) => bft.sig.0.output,
         _ => ccx.sess().bug(
             format!("trans_enum_variant_or_tuple_like_struct: \
                      unexpected ctor return type {}",
@@ -2194,6 +2210,7 @@ pub fn llvm_linkage_by_name(name: &str) -> Option<Linkage> {
 
 
 /// Enum describing the origin of an LLVM `Value`, for linkage purposes.
+#[deriving(Copy)]
 pub enum ValueOrigin {
     /// The LLVM `Value` is in this context because the corresponding item was
     /// assigned to the current compilation unit.
@@ -2203,8 +2220,6 @@ pub enum ValueOrigin {
     /// item is marked `#[inline]`.
     InlinedCopy,
 }
-
-impl Copy for ValueOrigin {}
 
 /// Set the appropriate linkage for an LLVM `ValueRef` (function or global).
 /// If the `llval` is the direct translation of a specific Rust item, `id`
@@ -2439,7 +2454,7 @@ pub fn get_fn_llvm_attributes<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>, fn_ty: Ty<
     // at either 1 or 2 depending on whether there's an env slot or not
     let mut first_arg_offset = if has_env { 2 } else { 1 };
     let mut attrs = llvm::AttrBuilder::new();
-    let ret_ty = fn_sig.output;
+    let ret_ty = fn_sig.0.output;
 
     // These have an odd calling convention, so we need to manually
     // unpack the input ty's
@@ -2447,15 +2462,15 @@ pub fn get_fn_llvm_attributes<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>, fn_ty: Ty<
         ty::ty_unboxed_closure(_, _, _) => {
             assert!(abi == RustCall);
 
-            match fn_sig.inputs[0].sty {
+            match fn_sig.0.inputs[0].sty {
                 ty::ty_tup(ref inputs) => inputs.clone(),
                 _ => ccx.sess().bug("expected tuple'd inputs")
             }
         },
         ty::ty_bare_fn(_) if abi == RustCall => {
-            let mut inputs = vec![fn_sig.inputs[0]];
+            let mut inputs = vec![fn_sig.0.inputs[0]];
 
-            match fn_sig.inputs[1].sty {
+            match fn_sig.0.inputs[1].sty {
                 ty::ty_tup(ref t_in) => {
                     inputs.push_all(t_in.as_slice());
                     inputs
@@ -2463,7 +2478,7 @@ pub fn get_fn_llvm_attributes<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>, fn_ty: Ty<
                 _ => ccx.sess().bug("expected tuple'd inputs")
             }
         }
-        _ => fn_sig.inputs.clone()
+        _ => fn_sig.0.inputs.clone()
     };
 
     if let ty::FnConverging(ret_ty) = ret_ty {
@@ -2942,7 +2957,7 @@ pub fn crate_ctxt_to_encode_parms<'a, 'tcx>(cx: &'a SharedCrateContext<'tcx>,
     encoder::EncodeParams {
         diag: cx.sess().diagnostic(),
         tcx: cx.tcx(),
-        reexports2: cx.exp_map2(),
+        reexports: cx.export_map(),
         item_symbols: cx.item_symbols(),
         link_meta: cx.link_meta(),
         cstore: &cx.sess().cstore,
@@ -3075,7 +3090,7 @@ fn internalize_symbols(cx: &SharedCrateContext, reachable: &HashSet<String>) {
 
 pub fn trans_crate<'tcx>(analysis: ty::CrateAnalysis<'tcx>)
                          -> (ty::ctxt<'tcx>, CrateTranslation) {
-    let ty::CrateAnalysis { ty_cx: tcx, exp_map2, reachable, name, .. } = analysis;
+    let ty::CrateAnalysis { ty_cx: tcx, export_map, reachable, name, .. } = analysis;
     let krate = tcx.map.krate();
 
     // Before we touch LLVM, make sure that multithreading is enabled.
@@ -3102,7 +3117,7 @@ pub fn trans_crate<'tcx>(analysis: ty::CrateAnalysis<'tcx>)
     let shared_ccx = SharedCrateContext::new(link_meta.crate_name.as_slice(),
                                              codegen_units,
                                              tcx,
-                                             exp_map2,
+                                             export_map,
                                              Sha256::new(),
                                              link_meta.clone(),
                                              reachable);

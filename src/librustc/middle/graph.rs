@@ -34,6 +34,7 @@
 
 use std::fmt::{Formatter, Error, Show};
 use std::uint;
+use std::collections::BitvSet;
 
 pub struct Graph<N,E> {
     nodes: Vec<Node<N>> ,
@@ -60,29 +61,23 @@ impl<E: Show> Show for Edge<E> {
     }
 }
 
-#[deriving(Clone, PartialEq, Show)]
+#[deriving(Clone, Copy, PartialEq, Show)]
 pub struct NodeIndex(pub uint);
 #[allow(non_upper_case_globals)]
 pub const InvalidNodeIndex: NodeIndex = NodeIndex(uint::MAX);
 
-impl Copy for NodeIndex {}
-
-#[deriving(PartialEq, Show)]
+#[deriving(Copy, PartialEq, Show)]
 pub struct EdgeIndex(pub uint);
 #[allow(non_upper_case_globals)]
 pub const InvalidEdgeIndex: EdgeIndex = EdgeIndex(uint::MAX);
 
-impl Copy for EdgeIndex {}
-
 // Use a private field here to guarantee no more instances are created:
-#[deriving(Show)]
+#[deriving(Copy, Show)]
 pub struct Direction { repr: uint }
 #[allow(non_upper_case_globals)]
 pub const Outgoing: Direction = Direction { repr: 0 };
 #[allow(non_upper_case_globals)]
 pub const Incoming: Direction = Direction { repr: 1 };
-
-impl Copy for Direction {}
 
 impl NodeIndex {
     fn get(&self) -> uint { let NodeIndex(v) = *self; v }
@@ -293,6 +288,40 @@ impl<N,E> Graph<N,E> {
                 changed |= op(iteration, EdgeIndex(i), edge);
             }
         }
+    }
+
+    pub fn depth_traverse<'a>(&'a self, start: NodeIndex) -> DepthFirstTraversal<'a, N, E>  {
+        DepthFirstTraversal {
+            graph: self,
+            stack: vec![start],
+            visited: BitvSet::new()
+        }
+    }
+}
+
+pub struct DepthFirstTraversal<'g, N:'g, E:'g> {
+    graph: &'g Graph<N, E>,
+    stack: Vec<NodeIndex>,
+    visited: BitvSet
+}
+
+impl<'g, N, E> Iterator<&'g N> for DepthFirstTraversal<'g, N, E> {
+    fn next(&mut self) -> Option<&'g N> {
+        while let Some(idx) = self.stack.pop() {
+            if !self.visited.insert(idx.node_id()) {
+                continue;
+            }
+            self.graph.each_outgoing_edge(idx, |_, e| -> bool {
+                if !self.visited.contains(&e.target().node_id()) {
+                    self.stack.push(e.target());
+                }
+                true
+            });
+
+            return Some(self.graph.node_data(idx));
+        }
+
+        return None;
     }
 }
 

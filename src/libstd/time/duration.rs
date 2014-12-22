@@ -13,7 +13,6 @@
 #![experimental]
 
 use {fmt, i64};
-use kinds::Copy;
 use ops::{Add, Sub, Mul, Div, Neg, FnOnce};
 use option::Option;
 use option::Option::{Some, None};
@@ -47,7 +46,7 @@ macro_rules! try_opt {
 
 /// ISO 8601 time duration with nanosecond precision.
 /// This also allows for the negative duration; see individual methods for details.
-#[deriving(Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[deriving(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Duration {
     secs: i64,
     nanos: i32, // Always 0 <= nanos < NANOS_PER_SEC
@@ -64,8 +63,6 @@ pub const MAX: Duration = Duration {
     secs: i64::MAX / MILLIS_PER_SEC,
     nanos: (i64::MAX % MILLIS_PER_SEC) as i32 * NANOS_PER_MILLI
 };
-
-impl Copy for Duration {}
 
 impl Duration {
     /// Makes a new `Duration` with given number of weeks.
@@ -290,21 +287,6 @@ impl Neg<Duration> for Duration {
     }
 }
 
-// NOTE(stage0): Remove impl after a snapshot
-#[cfg(stage0)]
-impl Add<Duration,Duration> for Duration {
-    fn add(&self, rhs: &Duration) -> Duration {
-        let mut secs = self.secs + rhs.secs;
-        let mut nanos = self.nanos + rhs.nanos;
-        if nanos >= NANOS_PER_SEC {
-            nanos -= NANOS_PER_SEC;
-            secs += 1;
-        }
-        Duration { secs: secs, nanos: nanos }
-    }
-}
-
-#[cfg(not(stage0))]  // NOTE(stage0): Remove cfg after a snapshot
 impl Add<Duration, Duration> for Duration {
     fn add(self, rhs: Duration) -> Duration {
         let mut secs = self.secs + rhs.secs;
@@ -317,21 +299,6 @@ impl Add<Duration, Duration> for Duration {
     }
 }
 
-// NOTE(stage0): Remove impl after a snapshot
-#[cfg(stage0)]
-impl Sub<Duration,Duration> for Duration {
-    fn sub(&self, rhs: &Duration) -> Duration {
-        let mut secs = self.secs - rhs.secs;
-        let mut nanos = self.nanos - rhs.nanos;
-        if nanos < 0 {
-            nanos += NANOS_PER_SEC;
-            secs -= 1;
-        }
-        Duration { secs: secs, nanos: nanos }
-    }
-}
-
-#[cfg(not(stage0))]  // NOTE(stage0): Remove cfg after a snapshot
 impl Sub<Duration, Duration> for Duration {
     fn sub(self, rhs: Duration) -> Duration {
         let mut secs = self.secs - rhs.secs;
@@ -344,19 +311,6 @@ impl Sub<Duration, Duration> for Duration {
     }
 }
 
-// NOTE(stage0): Remove impl after a snapshot
-#[cfg(stage0)]
-impl Mul<i32,Duration> for Duration {
-    fn mul(&self, rhs: &i32) -> Duration {
-        // Multiply nanoseconds as i64, because it cannot overflow that way.
-        let total_nanos = self.nanos as i64 * *rhs as i64;
-        let (extra_secs, nanos) = div_mod_floor_64(total_nanos, NANOS_PER_SEC as i64);
-        let secs = self.secs * *rhs as i64 + extra_secs;
-        Duration { secs: secs, nanos: nanos as i32 }
-    }
-}
-
-#[cfg(not(stage0))]  // NOTE(stage0): Remove cfg after a snapshot
 impl Mul<i32, Duration> for Duration {
     fn mul(self, rhs: i32) -> Duration {
         // Multiply nanoseconds as i64, because it cannot overflow that way.
@@ -367,27 +321,6 @@ impl Mul<i32, Duration> for Duration {
     }
 }
 
-// NOTE(stage0): Remove impl after a snapshot
-#[cfg(stage0)]
-impl Div<i32,Duration> for Duration {
-    fn div(&self, rhs: &i32) -> Duration {
-        let mut secs = self.secs / *rhs as i64;
-        let carry = self.secs - secs * *rhs as i64;
-        let extra_nanos = carry * NANOS_PER_SEC as i64 / *rhs as i64;
-        let mut nanos = self.nanos / *rhs + extra_nanos as i32;
-        if nanos >= NANOS_PER_SEC {
-            nanos -= NANOS_PER_SEC;
-            secs += 1;
-        }
-        if nanos < 0 {
-            nanos += NANOS_PER_SEC;
-            secs -= 1;
-        }
-        Duration { secs: secs, nanos: nanos }
-    }
-}
-
-#[cfg(not(stage0))]  // NOTE(stage0): Remove cfg after a snapshot
 impl Div<i32, Duration> for Duration {
     fn div(self, rhs: i32) -> Duration {
         let mut secs = self.secs / rhs as i64;

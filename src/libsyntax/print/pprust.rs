@@ -45,18 +45,16 @@ pub trait PpAnn {
     fn post(&self, _state: &mut State, _node: AnnNode) -> IoResult<()> { Ok(()) }
 }
 
+#[deriving(Copy)]
 pub struct NoAnn;
-
-impl Copy for NoAnn {}
 
 impl PpAnn for NoAnn {}
 
+#[deriving(Copy)]
 pub struct CurrentCommentAndLiteral {
     cur_cmnt: uint,
     cur_lit: uint,
 }
-
-impl Copy for CurrentCommentAndLiteral {}
 
 pub struct State<'a> {
     pub s: pp::Printer,
@@ -757,7 +755,7 @@ impl<'a> State<'a> {
             ast::TyFixedLengthVec(ref ty, ref v) => {
                 try!(word(&mut self.s, "["));
                 try!(self.print_type(&**ty));
-                try!(word(&mut self.s, ", .."));
+                try!(word(&mut self.s, "; "));
                 try!(self.print_expr(&**v));
                 try!(word(&mut self.s, "]"));
             }
@@ -1533,8 +1531,7 @@ impl<'a> State<'a> {
                 try!(self.ibox(indent_unit));
                 try!(word(&mut self.s, "["));
                 try!(self.print_expr(&**element));
-                try!(word(&mut self.s, ","));
-                try!(word(&mut self.s, ".."));
+                try!(self.word_space(";"));
                 try!(self.print_expr(&**count));
                 try!(word(&mut self.s, "]"));
                 try!(self.end());
@@ -2439,11 +2436,25 @@ impl<'a> State<'a> {
             }
 
             match predicate {
-                &ast::WherePredicate::BoundPredicate(ast::WhereBoundPredicate{ident,
+                &ast::WherePredicate::BoundPredicate(ast::WhereBoundPredicate{ref bounded_ty,
                                                                               ref bounds,
                                                                               ..}) => {
-                    try!(self.print_ident(ident));
+                    try!(self.print_type(&**bounded_ty));
                     try!(self.print_bounds(":", bounds.as_slice()));
+                }
+                &ast::WherePredicate::RegionPredicate(ast::WhereRegionPredicate{ref lifetime,
+                                                                                ref bounds,
+                                                                                ..}) => {
+                    try!(self.print_lifetime(lifetime));
+                    try!(word(&mut self.s, ":"));
+
+                    for (i, bound) in bounds.iter().enumerate() {
+                        try!(self.print_lifetime(bound));
+
+                        if i != 0 {
+                            try!(word(&mut self.s, ":"));
+                        }
+                    }
                 }
                 &ast::WherePredicate::EqPredicate(ast::WhereEqPredicate{ref path, ref ty, ..}) => {
                     try!(self.print_path(path, false));

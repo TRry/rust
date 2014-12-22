@@ -19,9 +19,8 @@ pub use self::DefRegion::*;
 use self::ScopeChain::*;
 
 use session::Session;
-use middle::def;
+use middle::def::{mod, DefMap};
 use middle::region;
-use middle::resolve::DefMap;
 use middle::subst;
 use middle::ty;
 use std::fmt;
@@ -34,7 +33,7 @@ use syntax::visit;
 use syntax::visit::Visitor;
 use util::nodemap::NodeMap;
 
-#[deriving(Clone, PartialEq, Eq, Hash, Encodable, Decodable, Show)]
+#[deriving(Clone, Copy, PartialEq, Eq, Hash, Encodable, Decodable, Show)]
 pub enum DefRegion {
     DefStaticRegion,
     DefEarlyBoundRegion(/* space */ subst::ParamSpace,
@@ -45,8 +44,6 @@ pub enum DefRegion {
     DefFreeRegion(/* block scope */ region::CodeExtent,
                   /* lifetime decl */ ast::NodeId),
 }
-
-impl Copy for DefRegion {}
 
 // maps the id of each lifetime reference to the lifetime decl
 // that it corresponds to
@@ -108,7 +105,8 @@ impl<'a, 'v> Visitor<'v> for LifetimeContext<'a> {
                 ast::ItemTy(_, ref generics) |
                 ast::ItemEnum(_, ref generics) |
                 ast::ItemStruct(_, ref generics) |
-                ast::ItemTrait(_, ref generics, _, _, _) => {
+                ast::ItemTrait(_, ref generics, _, _, _) |
+                ast::ItemImpl(_, ref generics, _, _, _) => {
                     // These kinds of items have only early bound lifetime parameters.
                     let lifetimes = &generics.lifetimes;
                     let early_scope = EarlyScope(subst::TypeSpace, lifetimes, &ROOT_SCOPE);
@@ -116,12 +114,6 @@ impl<'a, 'v> Visitor<'v> for LifetimeContext<'a> {
                         this.check_lifetime_defs(old_scope, lifetimes);
                         visit::walk_item(this, item);
                     });
-                }
-                ast::ItemImpl(_, ref generics, _, _, _) => {
-                    // Impls have both early- and late-bound lifetimes.
-                    this.visit_early_late(subst::TypeSpace, generics, |this| {
-                        visit::walk_item(this, item);
-                    })
                 }
             }
         });
@@ -214,12 +206,20 @@ impl<'a, 'v> Visitor<'v> for LifetimeContext<'a> {
         }
         for predicate in generics.where_clause.predicates.iter() {
             match predicate {
-                &ast::WherePredicate::BoundPredicate(ast::WhereBoundPredicate{ ident,
+                &ast::WherePredicate::BoundPredicate(ast::WhereBoundPredicate{ ref bounded_ty,
                                                                                ref bounds,
-                                                                               span,
                                                                                .. }) => {
-                    self.visit_ident(span, ident);
+                    self.visit_ty(&**bounded_ty);
                     visit::walk_ty_param_bounds_helper(self, bounds);
+                }
+                &ast::WherePredicate::RegionPredicate(ast::WhereRegionPredicate{ref lifetime,
+                                                                                ref bounds,
+                                                                                .. }) => {
+
+                    self.visit_lifetime_ref(lifetime);
+                    for bound in bounds.iter() {
+                        self.visit_lifetime_ref(bound);
+                    }
                 }
                 &ast::WherePredicate::EqPredicate(ast::WhereEqPredicate{ id,
                                                                          ref path,
@@ -553,8 +553,20 @@ fn early_bound_lifetime_names(generics: &ast::Generics) -> Vec<ast::Name> {
         }
         for predicate in generics.where_clause.predicates.iter() {
             match predicate {
-                &ast::WherePredicate::BoundPredicate(ast::WhereBoundPredicate{ref bounds, ..}) => {
+                &ast::WherePredicate::BoundPredicate(ast::WhereBoundPredicate{ref bounds,
+                                                                              ref bounded_ty,
+                                                                              ..}) => {
+                    collector.visit_ty(&**bounded_ty);
                     visit::walk_ty_param_bounds_helper(&mut collector, bounds);
+                }
+                &ast::WherePredicate::RegionPredicate(ast::WhereRegionPredicate{ref lifetime,
+                                                                                ref bounds,
+                                                                                ..}) => {
+                    collector.visit_lifetime_ref(lifetime);
+
+                    for bound in bounds.iter() {
+                        collector.visit_lifetime_ref(bound);
+                    }
                 }
                 &ast::WherePredicate::EqPredicate(_) => unimplemented!()
             }

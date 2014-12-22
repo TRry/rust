@@ -73,13 +73,11 @@ use std::rc::Rc;
 // These are passed around by the code generating functions to track the
 // destination of a computation's value.
 
-#[deriving(PartialEq)]
+#[deriving(Copy, PartialEq)]
 pub enum Dest {
     SaveIn(ValueRef),
     Ignore,
 }
-
-impl Copy for Dest {}
 
 impl Dest {
     pub fn to_string(&self, ccx: &CrateContext) -> String {
@@ -316,10 +314,10 @@ fn apply_adjustments<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
                                           bcx.ty_to_string(unadjusted_ty)).as_slice())
             },
             &ty::UnsizeVtable(ty::TyTrait { ref principal, .. }, _) => {
-                let substs = principal.substs.with_self_ty(unadjusted_ty).erase_regions();
+                let substs = principal.substs().with_self_ty(unadjusted_ty).erase_regions();
                 let trait_ref =
-                    Rc::new(ty::TraitRef { def_id: principal.def_id,
-                                           substs: substs });
+                    Rc::new(ty::Binder(ty::TraitRef { def_id: principal.def_id(),
+                                                      substs: substs }));
                 let trait_ref = trait_ref.subst(bcx.tcx(), bcx.fcx.param_substs);
                 let box_ty = mk_ty(unadjusted_ty);
                 PointerCast(bcx,
@@ -928,7 +926,29 @@ fn trans_rvalue_stmt_unadjusted<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
             controlflow::trans_cont(bcx, expr.id, label_opt)
         }
         ast::ExprRet(ref ex) => {
-            controlflow::trans_ret(bcx, ex.as_ref().map(|e| &**e))
+            // Check to see if the return expression itself is reachable.
+            // This can occur when the inner expression contains a return
+            let reachable = if let Some(ref cfg) = bcx.fcx.cfg {
+                cfg.node_is_reachable(expr.id)
+            } else {
+                true
+            };
+
+            if reachable {
+                controlflow::trans_ret(bcx, ex.as_ref().map(|e| &**e))
+            } else {
+                // If it's not reachable, just translate the inner expression
+                // directly. This avoids having to manage a return slot when
+                // it won't actually be used anyway.
+                if let &Some(ref x) = ex {
+                    bcx = trans_into(bcx, &**x, Ignore);
+                }
+                // Mark the end of the block as unreachable. Once we get to
+                // a return expression, there's no more we should be doing
+                // after this.
+                Unreachable(bcx);
+                bcx
+            }
         }
         ast::ExprWhile(ref cond, ref body, _) => {
             controlflow::trans_while(bcx, expr.id, &**cond, &**body)
@@ -1889,7 +1909,7 @@ fn float_cast(bcx: Block,
     } else { llsrc };
 }
 
-#[deriving(PartialEq, Show)]
+#[deriving(Copy, PartialEq, Show)]
 pub enum cast_kind {
     cast_pointer,
     cast_integral,
@@ -1897,8 +1917,6 @@ pub enum cast_kind {
     cast_enum,
     cast_other,
 }
-
-impl Copy for cast_kind {}
 
 pub fn cast_type_kind<'tcx>(tcx: &ty::ctxt<'tcx>, t: Ty<'tcx>) -> cast_kind {
     match t.sty {

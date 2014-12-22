@@ -163,33 +163,24 @@ impl<'a, 'tcx> Clean<Crate> for visit_ast::RustdocVisitor<'a, 'tcx> {
             };
             let mut tmp = Vec::new();
             for child in m.items.iter_mut() {
-                let inner = match child.inner {
-                    ModuleItem(ref mut m) => m,
+                match child.inner {
+                    ModuleItem(..) => {}
                     _ => continue,
-                };
+                }
                 let prim = match PrimitiveType::find(child.attrs.as_slice()) {
                     Some(prim) => prim,
                     None => continue,
                 };
                 primitives.push(prim);
-                let mut i = Item {
+                tmp.push(Item {
                     source: Span::empty(),
                     name: Some(prim.to_url_str().to_string()),
-                    attrs: Vec::new(),
-                    visibility: None,
+                    attrs: child.attrs.clone(),
+                    visibility: Some(ast::Public),
                     stability: None,
                     def_id: ast_util::local_def(prim.to_node_id()),
                     inner: PrimitiveItem(prim),
-                };
-                // Push one copy to get indexed for the whole crate, and push a
-                // another copy in the proper location which will actually get
-                // documented. The first copy will also serve as a redirect to
-                // the other copy.
-                tmp.push(i.clone());
-                i.visibility = Some(ast::Public);
-                i.attrs = child.attrs.clone();
-                inner.items.push(i);
-
+                });
             }
             m.items.extend(tmp.into_iter());
         }
@@ -575,6 +566,12 @@ impl Clean<TyParamBound> for ty::BuiltinBound {
     }
 }
 
+impl<'tcx> Clean<TyParamBound> for ty::PolyTraitRef<'tcx> {
+    fn clean(&self, cx: &DocContext) -> TyParamBound {
+        self.0.clean(cx)
+    }
+}
+
 impl<'tcx> Clean<TyParamBound> for ty::TraitRef<'tcx> {
     fn clean(&self, cx: &DocContext) -> TyParamBound {
         let tcx = match cx.tcx_opt() {
@@ -687,7 +684,7 @@ impl Clean<Option<Lifetime>> for ty::Region {
 
 #[deriving(Clone, Encodable, Decodable, PartialEq)]
 pub struct WherePredicate {
-    pub name: String,
+    pub ty: Type,
     pub bounds: Vec<TyParamBound>
 }
 
@@ -696,11 +693,12 @@ impl Clean<WherePredicate> for ast::WherePredicate {
         match *self {
             ast::WherePredicate::BoundPredicate(ref wbp) => {
                 WherePredicate {
-                    name: wbp.ident.clean(cx),
+                    ty: wbp.bounded_ty.clean(cx),
                     bounds: wbp.bounds.clean(cx)
                 }
             }
-            ast::WherePredicate::EqPredicate(_) => {
+            // FIXME(#20048)
+            _ => {
                 unimplemented!();
             }
         }
@@ -913,7 +911,7 @@ impl<'tcx> Clean<Type> for ty::FnOutput<'tcx> {
     }
 }
 
-impl<'a, 'tcx> Clean<FnDecl> for (ast::DefId, &'a ty::FnSig<'tcx>) {
+impl<'a, 'tcx> Clean<FnDecl> for (ast::DefId, &'a ty::PolyFnSig<'tcx>) {
     fn clean(&self, cx: &DocContext) -> FnDecl {
         let (did, sig) = *self;
         let mut names = if did.node != 0 {
@@ -925,10 +923,10 @@ impl<'a, 'tcx> Clean<FnDecl> for (ast::DefId, &'a ty::FnSig<'tcx>) {
             let _ = names.next();
         }
         FnDecl {
-            output: Return(sig.output.clean(cx)),
+            output: Return(sig.0.output.clean(cx)),
             attrs: Vec::new(),
             inputs: Arguments {
-                values: sig.inputs.iter().map(|t| {
+                values: sig.0.inputs.iter().map(|t| {
                     Argument {
                         type_: t.clean(cx),
                         id: 0,
@@ -1082,14 +1080,14 @@ impl<'tcx> Clean<Item> for ty::Method<'tcx> {
             ty::StaticExplicitSelfCategory => (ast::SelfStatic.clean(cx),
                                                self.fty.sig.clone()),
             s => {
-                let sig = ty::FnSig {
-                    inputs: self.fty.sig.inputs[1..].to_vec(),
-                    ..self.fty.sig.clone()
-                };
+                let sig = ty::Binder(ty::FnSig {
+                    inputs: self.fty.sig.0.inputs[1..].to_vec(),
+                    ..self.fty.sig.0.clone()
+                });
                 let s = match s {
                     ty::ByValueExplicitSelfCategory => SelfValue,
                     ty::ByReferenceExplicitSelfCategory(..) => {
-                        match self.fty.sig.inputs[0].sty {
+                        match self.fty.sig.0.inputs[0].sty {
                             ty::ty_rptr(r, mt) => {
                                 SelfBorrowed(r.clean(cx), mt.mutbl.clean(cx))
                             }
@@ -1097,7 +1095,7 @@ impl<'tcx> Clean<Item> for ty::Method<'tcx> {
                         }
                     }
                     ty::ByBoxExplicitSelfCategory => {
-                        SelfExplicit(self.fty.sig.inputs[0].clean(cx))
+                        SelfExplicit(self.fty.sig.0.inputs[0].clean(cx))
                     }
                     ty::StaticExplicitSelfCategory => unreachable!(),
                 };
@@ -1182,7 +1180,7 @@ pub enum Type {
     PolyTraitRef(Vec<TyParamBound>),
 }
 
-#[deriving(Clone, Encodable, Decodable, PartialEq, Eq, Hash)]
+#[deriving(Clone, Copy, Encodable, Decodable, PartialEq, Eq, Hash)]
 pub enum PrimitiveType {
     Int, I8, I16, I32, I64,
     Uint, U8, U16, U32, U64,
@@ -1194,9 +1192,7 @@ pub enum PrimitiveType {
     PrimitiveTuple,
 }
 
-impl Copy for PrimitiveType {}
-
-#[deriving(Clone, Encodable, Decodable)]
+#[deriving(Clone, Copy, Encodable, Decodable)]
 pub enum TypeKind {
     TypeEnum,
     TypeFunction,
@@ -1208,8 +1204,6 @@ pub enum TypeKind {
     TypeVariant,
     TypeTypedef,
 }
-
-impl Copy for TypeKind {}
 
 impl PrimitiveType {
     fn from_str(s: &str) -> Option<PrimitiveType> {
@@ -1391,8 +1385,10 @@ impl<'tcx> Clean<Type> for ty::Ty<'tcx> {
             }
             ty::ty_struct(did, ref substs) |
             ty::ty_enum(did, ref substs) |
-            ty::ty_trait(box ty::TyTrait { principal: ty::TraitRef { def_id: did, ref substs },
-                                           .. }) => {
+            ty::ty_trait(box ty::TyTrait {
+                principal: ty::Binder(ty::TraitRef { def_id: did, ref substs }),
+                .. }) =>
+            {
                 let fqn = csearch::get_item_path(cx.tcx(), did);
                 let fqn: Vec<String> = fqn.into_iter().map(|i| {
                     i.to_string()
@@ -1865,13 +1861,11 @@ impl Clean<Item> for doctree::Constant {
     }
 }
 
-#[deriving(Show, Clone, Encodable, Decodable, PartialEq)]
+#[deriving(Copy, Show, Clone, Encodable, Decodable, PartialEq)]
 pub enum Mutability {
     Mutable,
     Immutable,
 }
-
-impl Copy for Mutability {}
 
 impl Clean<Mutability> for ast::Mutability {
     fn clean(&self, _: &DocContext) -> Mutability {

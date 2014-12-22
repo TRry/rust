@@ -758,6 +758,7 @@ impl<A: Ord> Ord for DList<A> {
     }
 }
 
+#[stable]
 impl<A: Clone> Clone for DList<A> {
     fn clone(&self) -> DList<A> {
         self.iter().map(|x| x.clone()).collect()
@@ -788,14 +789,14 @@ impl<S: Writer, A: Hash<S>> Hash<S> for DList<A> {
 
 #[cfg(test)]
 mod tests {
-    use std::prelude::*;
+    use prelude::*;
     use std::rand;
     use std::hash;
+    use std::task::spawn;
     use test::Bencher;
     use test;
 
     use super::{DList, Node, ListInsertion};
-    use vec::Vec;
 
     pub fn check_links<T>(list: &DList<T>) {
         let mut len = 0u;

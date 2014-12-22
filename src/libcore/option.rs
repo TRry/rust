@@ -149,7 +149,6 @@ use cmp::{Eq, Ord};
 use default::Default;
 use iter::{Iterator, IteratorExt, DoubleEndedIterator, FromIterator};
 use iter::{ExactSizeIterator};
-use kinds::Copy;
 use mem;
 use result::Result;
 use result::Result::{Ok, Err};
@@ -164,7 +163,7 @@ use ops::{Deref, FnOnce};
 // which basically means it must be `Option`.
 
 /// The `Option` type.
-#[deriving(Clone, PartialEq, PartialOrd, Eq, Ord, Show, Hash)]
+#[deriving(Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Show, Hash)]
 #[stable]
 pub enum Option<T> {
     /// No value
@@ -820,6 +819,7 @@ impl<'a, A> DoubleEndedIterator<&'a A> for Iter<'a, A> {
 
 impl<'a, A> ExactSizeIterator<&'a A> for Iter<'a, A> {}
 
+#[stable]
 impl<'a, A> Clone for Iter<'a, A> {
     fn clone(&self) -> Iter<'a, A> {
         Iter { inner: self.inner.clone() }
@@ -920,7 +920,3 @@ impl<A, V: FromIterator<A>> FromIterator<Option<A>> for Option<V> {
         }
     }
 }
-
-#[stable]
-impl<T:Copy> Copy for Option<T> {}
-

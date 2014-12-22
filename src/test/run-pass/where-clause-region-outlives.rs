@@ -8,28 +8,10 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#[deriving(Clone)]
-pub struct Foo {
-    f: fn(char, |char| -> char) -> char
-}
-
-impl Foo {
-    fn bar(&self) -> char {
-        ((*self).f)('a', |c: char| c)
-    }
-}
-
-fn bla(c: char, cb: |char| -> char) -> char {
-    cb(c)
-}
-
-pub fn make_foo() -> Foo {
-    Foo {
-        f: bla
-    }
-}
+struct A<'a, 'b> where 'a : 'b { x: &'a int, y: &'b int }
 
 fn main() {
-    let a = make_foo();
-    assert_eq!(a.bar(), 'a');
+    let x = 1i;
+    let y = 1i;
+    let a = A { x: &x, y: &y };
 }

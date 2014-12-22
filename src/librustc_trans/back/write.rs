@@ -33,7 +33,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use libc::{c_uint, c_int, c_void};
 
-#[deriving(Clone, PartialEq, PartialOrd, Ord, Eq)]
+#[deriving(Clone, Copy, PartialEq, PartialOrd, Ord, Eq)]
 pub enum OutputType {
     OutputTypeBitcode,
     OutputTypeAssembly,
@@ -41,8 +41,6 @@ pub enum OutputType {
     OutputTypeObject,
     OutputTypeExe,
 }
-
-impl Copy for OutputType {}
 
 pub fn llvm_err(handler: &diagnostic::Handler, msg: String) -> ! {
     unsafe {
@@ -607,6 +605,7 @@ pub fn run_passes(sess: &Session,
                 modules_config.emit_obj = true;
                 metadata_config.emit_obj = true;
             },
+            config::OutputTypeDepInfo => {}
         }
     }
 
@@ -779,6 +778,7 @@ pub fn run_passes(sess: &Session,
                     link_obj(&crate_output.temp_path(config::OutputTypeObject));
                 }
             }
+            config::OutputTypeDepInfo => {}
         }
     }
     let user_wants_bitcode = user_wants_bitcode;

@@ -86,7 +86,6 @@
        html_root_url = "http://doc.rust-lang.org/nightly/",
        html_playground_url = "http://play.rust-lang.org/")]
 #![feature(globs, phase)]
-#![feature(import_shadowing)]
 #![feature(unboxed_closures)]
 #![deny(missing_docs)]
 
@@ -118,7 +117,7 @@ pub enum Name {
 }
 
 /// Describes whether an option has an argument.
-#[deriving(Clone, PartialEq, Eq)]
+#[deriving(Clone, Copy, PartialEq, Eq)]
 pub enum HasArg {
     /// The option requires an argument.
     Yes,
@@ -128,10 +127,8 @@ pub enum HasArg {
     Maybe,
 }
 
-impl Copy for HasArg {}
-
 /// Describes how often an option may occur.
-#[deriving(Clone, PartialEq, Eq)]
+#[deriving(Clone, Copy, PartialEq, Eq)]
 pub enum Occur {
     /// The option occurs once.
     Req,
@@ -140,8 +137,6 @@ pub enum Occur {
     /// The option occurs zero or more times.
     Multi,
 }
-
-impl Copy for Occur {}
 
 /// A description of a possible option.
 #[deriving(Clone, PartialEq, Eq)]
@@ -211,7 +206,7 @@ pub enum Fail {
 }
 
 /// The type of failure that occurred.
-#[deriving(PartialEq, Eq)]
+#[deriving(Copy, PartialEq, Eq)]
 #[allow(missing_docs)]
 pub enum FailType {
     ArgumentMissing_,
@@ -220,8 +215,6 @@ pub enum FailType {
     OptionDuplicated_,
     UnexpectedArgument_,
 }
-
-impl Copy for FailType {}
 
 /// The result of parsing a command line with a set of options.
 pub type Result = result::Result<Matches, Fail>;
@@ -839,22 +832,22 @@ pub fn short_usage(program_name: &str, opts: &[OptGroup]) -> String {
     line
 }
 
+#[deriving(Copy)]
 enum SplitWithinState {
     A,  // leading whitespace, initial state
     B,  // words
     C,  // internal and trailing whitespace
 }
-impl Copy for SplitWithinState {}
+#[deriving(Copy)]
 enum Whitespace {
     Ws, // current char is whitespace
     Cr  // current char is not whitespace
 }
-impl Copy for Whitespace {}
+#[deriving(Copy)]
 enum LengthLimit {
     UnderLim, // current char makes current substring still fit in limit
     OverLim   // current char makes current substring no longer fit in limit
 }
-impl Copy for LengthLimit {}
 
 
 /// Splits a string into substrings with possibly internal whitespace,

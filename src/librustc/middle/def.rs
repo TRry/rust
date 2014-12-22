@@ -10,12 +10,17 @@
 
 pub use self::Def::*;
 pub use self::MethodProvenance::*;
+pub use self::TraitItemKind::*;
 
 use middle::subst::ParamSpace;
+use middle::ty::{ExplicitSelfCategory, StaticExplicitSelfCategory};
+use util::nodemap::NodeMap;
 use syntax::ast;
 use syntax::ast_util::local_def;
 
-#[deriving(Clone, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
+use std::cell::RefCell;
+
+#[deriving(Clone, Copy, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
 pub enum Def {
     DefFn(ast::DefId, bool /* is_ctor */),
     DefStaticMethod(/* method */ ast::DefId, MethodProvenance),
@@ -56,15 +61,25 @@ pub enum Def {
     DefMethod(ast::DefId /* method */, Option<ast::DefId> /* trait */, MethodProvenance),
 }
 
-impl Copy for Def {}
+// Definition mapping
+pub type DefMap = RefCell<NodeMap<Def>>;
+// This is the replacement export map. It maps a module to all of the exports
+// within.
+pub type ExportMap = NodeMap<Vec<Export>>;
 
-#[deriving(Clone, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
+#[deriving(Copy)]
+pub struct Export {
+    pub name: ast::Name,    // The name of the target.
+    pub def_id: ast::DefId, // The definition of the target.
+}
+
+#[deriving(Clone, Copy, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
 pub enum MethodProvenance {
     FromTrait(ast::DefId),
     FromImpl(ast::DefId),
 }
 
-#[deriving(Clone, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
+#[deriving(Clone, Copy, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
 pub enum TyParamProvenance {
     FromSelf(ast::DefId),
     FromParam(ast::DefId),
@@ -81,8 +96,6 @@ impl MethodProvenance {
     }
 }
 
-impl Copy for MethodProvenance {}
-
 impl TyParamProvenance {
     pub fn def_id(&self) -> ast::DefId {
         match *self {
@@ -92,7 +105,24 @@ impl TyParamProvenance {
     }
 }
 
-impl Copy for TyParamProvenance {}
+#[deriving(Clone, Copy, Eq, PartialEq)]
+pub enum TraitItemKind {
+    NonstaticMethodTraitItemKind,
+    StaticMethodTraitItemKind,
+    TypeTraitItemKind,
+}
+
+impl TraitItemKind {
+    pub fn from_explicit_self_category(explicit_self_category:
+                                       ExplicitSelfCategory)
+                                       -> TraitItemKind {
+        if explicit_self_category == StaticExplicitSelfCategory {
+            StaticMethodTraitItemKind
+        } else {
+            NonstaticMethodTraitItemKind
+        }
+    }
+}
 
 impl Def {
     pub fn def_id(&self) -> ast::DefId {
@@ -128,4 +158,3 @@ impl Def {
         }
     }
 }
-

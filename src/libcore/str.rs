@@ -21,17 +21,18 @@ pub use self::Searcher::{Naive, TwoWay, TwoWayLong};
 
 use char::Char;
 use char;
+use clone::Clone;
 use cmp::{Eq, mod};
 use default::Default;
 use iter::{Map, Iterator, IteratorExt, DoubleEndedIterator};
 use iter::{DoubleEndedIteratorExt, ExactSizeIterator};
 use iter::range;
-use kinds::{Copy, Sized};
+use kinds::Sized;
 use mem;
 use num::Int;
 use option::Option;
 use option::Option::{None, Some};
-use ops::FnMut;
+use ops::{Fn, FnMut};
 use ptr::RawPtr;
 use raw::{Repr, Slice};
 use slice::{mod, SliceExt};
@@ -164,12 +165,10 @@ Section: Iterators
 /// Iterator for the char (representing *Unicode Scalar Values*) of a string
 ///
 /// Created with the method `.chars()`.
-#[deriving(Clone)]
+#[deriving(Clone, Copy)]
 pub struct Chars<'a> {
     iter: slice::Items<'a, u8>
 }
-
-impl<'a> Copy for Chars<'a> {}
 
 // Return the initial codepoint accumulator for the first byte.
 // The first byte is special, only want bottom 5 bits for width 2, 4 bits
@@ -316,7 +315,23 @@ impl<'a> DoubleEndedIterator<(uint, char)> for CharOffsets<'a> {
 
 /// External iterator for a string's bytes.
 /// Use with the `std::iter` module.
-pub type Bytes<'a> = Map<&'a u8, u8, slice::Items<'a, u8>, fn(&u8) -> u8>;
+pub type Bytes<'a> = Map<&'a u8, u8, slice::Items<'a, u8>, BytesFn>;
+
+/// A temporary new type wrapper that ensures that the `Bytes` iterator
+/// is cloneable.
+#[deriving(Copy)]
+#[experimental = "iterator type instability"]
+pub struct BytesFn(fn(&u8) -> u8);
+
+impl<'a> Fn(&'a u8) -> u8 for BytesFn {
+    extern "rust-call" fn call(&self, (ptr,): (&'a u8,)) -> u8 {
+        (self.0)(ptr)
+    }
+}
+
+impl Clone for BytesFn {
+    fn clone(&self) -> BytesFn { *self }
+}
 
 /// An iterator over the substrings of a string, separated by `sep`.
 #[deriving(Clone)]
@@ -981,15 +996,13 @@ pub struct Utf16Items<'a> {
     iter: slice::Items<'a, u16>
 }
 /// The possibilities for values decoded from a `u16` stream.
-#[deriving(PartialEq, Eq, Clone, Show)]
+#[deriving(Copy, PartialEq, Eq, Clone, Show)]
 pub enum Utf16Item {
     /// A valid codepoint.
     ScalarValue(char),
     /// An invalid surrogate without its pair.
     LoneSurrogate(u16)
 }
-
-impl Copy for Utf16Item {}
 
 impl Utf16Item {
     /// Convert `self` to a `char`, taking `LoneSurrogate`s to the
@@ -1127,14 +1140,13 @@ pub fn utf8_char_width(b: u8) -> uint {
 /// Struct that contains a `char` and the index of the first byte of
 /// the next `char` in a string.  This can be used as a data structure
 /// for iterating over the UTF-8 bytes of a string.
+#[deriving(Copy)]
 pub struct CharRange {
     /// Current `char`
     pub ch: char,
     /// Index of the first byte of the next `char`
     pub next: uint,
 }
-
-impl Copy for CharRange {}
 
 /// Mask of the value bits of a continuation byte
 const CONT_MASK: u8 = 0b0011_1111u8;
@@ -2009,7 +2021,7 @@ impl StrPrelude for str {
     fn bytes(&self) -> Bytes {
         fn deref(&x: &u8) -> u8 { x }
 
-        self.as_bytes().iter().map(deref)
+        self.as_bytes().iter().map(BytesFn(deref))
     }
 
     #[inline]

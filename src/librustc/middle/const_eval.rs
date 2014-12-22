@@ -28,7 +28,7 @@ use syntax::visit::{mod, Visitor};
 use syntax::{ast_map, ast_util, codemap};
 
 use std::rc::Rc;
-use std::collections::hash_map::Vacant;
+use std::collections::hash_map::Entry::Vacant;
 
 //
 // This pass classifies expressions by their constant-ness.
@@ -62,13 +62,12 @@ use std::collections::hash_map::Vacant;
 //   - Non-constants: everything else.
 //
 
+#[deriving(Copy)]
 pub enum constness {
     integral_const,
     general_const,
     non_const
 }
-
-impl Copy for constness {}
 
 type constness_cache = DefIdMap<constness>;
 

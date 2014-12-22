@@ -28,9 +28,9 @@
 #![allow(non_snake_case)]
 #![allow(unused_imports)]
 
-pub use self::MemoryMapKind::*;
-pub use self::MapOption::*;
-pub use self::MapError::*;
+use self::MemoryMapKind::*;
+use self::MapOption::*;
+use self::MapError::*;
 
 use clone::Clone;
 use error::{FromError, Error};
@@ -361,6 +361,7 @@ pub fn join_paths<T: BytesContainer>(paths: &[T]) -> Result<Vec<u8>, &'static st
 }
 
 /// A low-level OS in-memory pipe.
+#[deriving(Copy)]
 pub struct Pipe {
     /// A file descriptor representing the reading end of the pipe. Data written
     /// on the `out` file descriptor can be read from this file descriptor.
@@ -369,8 +370,6 @@ pub struct Pipe {
     /// to this file descriptor can be read from the `input` file descriptor.
     pub writer: c_int,
 }
-
-impl Copy for Pipe {}
 
 /// Creates a new low-level OS in-memory pipe.
 ///
@@ -861,6 +860,7 @@ pub enum MapOption {
 impl Copy for MapOption {}
 
 /// Possible errors when creating a map.
+#[deriving(Copy)]
 pub enum MapError {
     /// # The following are POSIX-specific
     ///
@@ -904,8 +904,6 @@ pub enum MapError {
     /// value of `GetLastError`.
     ErrMapViewOfFile(uint)
 }
-
-impl Copy for MapError {}
 
 impl fmt::Show for MapError {
     fn fmt(&self, out: &mut fmt::Formatter) -> fmt::Result {
@@ -1427,7 +1425,6 @@ mod arch_consts {
 #[cfg(test)]
 mod tests {
     use prelude::*;
-    use c_str::ToCStr;
     use option;
     use os::{env, getcwd, getenv, make_absolute};
     use os::{split_paths, join_paths, setenv, unsetenv};
@@ -1620,8 +1617,8 @@ mod tests {
         use result::Result::{Ok, Err};
 
         let chunk = match os::MemoryMap::new(16, &[
-            os::MapReadable,
-            os::MapWritable
+            os::MapOption::MapReadable,
+            os::MapOption::MapWritable
         ]) {
             Ok(chunk) => chunk,
             Err(msg) => panic!("{}", msg)
@@ -1663,10 +1660,10 @@ mod tests {
         file.write_u8(0);
 
         let chunk = MemoryMap::new(size / 2, &[
-            MapReadable,
-            MapWritable,
-            MapFd(get_fd(&file)),
-            MapOffset(size / 2)
+            MapOption::MapReadable,
+            MapOption::MapWritable,
+            MapOption::MapFd(get_fd(&file)),
+            MapOption::MapOffset(size / 2)
         ]).unwrap();
         assert!(chunk.len > 0);
 

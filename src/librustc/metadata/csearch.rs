@@ -19,7 +19,6 @@ use metadata::cstore;
 use metadata::decoder;
 use middle::def;
 use middle::lang_items;
-use middle::resolve;
 use middle::ty;
 
 use rbml;
@@ -33,13 +32,12 @@ use syntax::parse::token;
 
 use std::collections::hash_map::HashMap;
 
+#[deriving(Copy)]
 pub struct MethodInfo {
     pub name: ast::Name,
     pub def_id: ast::DefId,
     pub vis: ast::Visibility,
 }
-
-impl Copy for MethodInfo {}
 
 pub fn get_symbol(cstore: &cstore::CStore, def: ast::DefId) -> String {
     let cdata = cstore.get_crate_data(def.krate);
@@ -149,7 +147,7 @@ pub fn get_impl_or_trait_item<'tcx>(tcx: &ty::ctxt<'tcx>, def: ast::DefId)
 }
 
 pub fn get_trait_item_name_and_kind(cstore: &cstore::CStore, def: ast::DefId)
-                                    -> (ast::Name, resolve::TraitItemKind) {
+                                    -> (ast::Name, def::TraitItemKind) {
     let cdata = cstore.get_crate_data(def.krate);
     decoder::get_trait_item_name_and_kind(cstore.intr.clone(),
                                           &*cdata,

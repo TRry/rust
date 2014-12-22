@@ -223,12 +223,11 @@ impl MacResult for MacItems {
 
 /// Fill-in macro expansion result, to allow compilation to continue
 /// after hitting errors.
+#[deriving(Copy)]
 pub struct DummyResult {
     expr_only: bool,
     span: Span
 }
-
-impl Copy for DummyResult {}
 
 impl DummyResult {
     /// Create a default MacResult that can be anything.
@@ -491,7 +490,7 @@ impl<'a> ExtCtxt<'a> {
 
     /// Returns a `Folder` for deeply expanding all macros in a AST node.
     pub fn expander<'b>(&'b mut self) -> expand::MacroExpander<'b, 'a> {
-        expand::MacroExpander { cx: self }
+        expand::MacroExpander::new(self)
     }
 
     pub fn new_parser_from_tts(&self, tts: &[ast::TokenTree])

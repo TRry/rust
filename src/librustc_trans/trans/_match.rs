@@ -193,12 +193,11 @@ use llvm::{ValueRef, BasicBlockRef};
 use middle::check_match::StaticInliner;
 use middle::check_match;
 use middle::const_eval;
-use middle::def;
+use middle::def::{mod, DefMap};
 use middle::expr_use_visitor as euv;
 use middle::lang_items::StrEqFnLangItem;
 use middle::mem_categorization as mc;
 use middle::pat_util::*;
-use middle::resolve::DefMap;
 use trans::adt;
 use trans::base::*;
 use trans::build::{AddCase, And, BitCast, Br, CondBr, GEPi, InBoundsGEP, Load};
@@ -228,10 +227,8 @@ use syntax::codemap::Span;
 use syntax::fold::Folder;
 use syntax::ptr::P;
 
-#[deriving(Show)]
+#[deriving(Copy, Show)]
 struct ConstantExpr<'a>(&'a ast::Expr);
-
-impl<'a> Copy for ConstantExpr<'a> {}
 
 impl<'a> ConstantExpr<'a> {
     fn eq(self, other: ConstantExpr<'a>, tcx: &ty::ctxt) -> bool {
@@ -301,7 +298,7 @@ impl<'a, 'tcx> Opt<'a, 'tcx> {
     }
 }
 
-#[deriving(PartialEq)]
+#[deriving(Copy, PartialEq)]
 pub enum BranchKind {
     NoBranch,
     Single,
@@ -310,22 +307,18 @@ pub enum BranchKind {
     CompareSliceLength
 }
 
-impl Copy for BranchKind {}
-
 pub enum OptResult<'blk, 'tcx: 'blk> {
     SingleResult(Result<'blk, 'tcx>),
     RangeResult(Result<'blk, 'tcx>, Result<'blk, 'tcx>),
     LowerBound(Result<'blk, 'tcx>)
 }
 
-#[deriving(Clone)]
+#[deriving(Clone, Copy)]
 pub enum TransBindingMode {
     TrByCopy(/* llbinding */ ValueRef),
     TrByMove,
     TrByRef,
 }
-
-impl Copy for TransBindingMode {}
 
 /// Information about a pattern binding:
 /// - `llmatch` is a pointer to a stack slot.  The stack slot contains a
@@ -334,7 +327,7 @@ impl Copy for TransBindingMode {}
 /// - `trmode` is the trans binding mode
 /// - `id` is the node id of the binding
 /// - `ty` is the Rust type of the binding
-#[deriving(Clone)]
+#[deriving(Clone, Copy)]
 pub struct BindingInfo<'tcx> {
     pub llmatch: ValueRef,
     pub trmode: TransBindingMode,
@@ -342,8 +335,6 @@ pub struct BindingInfo<'tcx> {
     pub span: Span,
     pub ty: Ty<'tcx>,
 }
-
-impl<'tcx> Copy for BindingInfo<'tcx> {}
 
 type BindingsMap<'tcx> = FnvHashMap<Ident, BindingInfo<'tcx>>;
 

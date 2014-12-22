@@ -27,7 +27,6 @@ use metadata::tydecode::{parse_ty_data, parse_region_data, parse_def_id,
                          parse_predicate_data};
 use middle::def;
 use middle::lang_items;
-use middle::resolve::{TraitItemKind, TypeTraitItemKind};
 use middle::subst;
 use middle::ty::{ImplContainer, TraitContainer};
 use middle::ty::{mod, Ty};
@@ -450,14 +449,12 @@ pub fn get_symbol(data: &[u8], id: ast::NodeId) -> String {
 }
 
 // Something that a name can resolve to.
-#[deriving(Clone,Show)]
+#[deriving(Copy, Clone, Show)]
 pub enum DefLike {
     DlDef(def::Def),
     DlImpl(ast::DefId),
     DlField
 }
-
-impl Copy for DefLike {}
 
 /// Iterates over the language items in the given crate.
 pub fn each_lang_item<F>(cdata: Cmd, mut f: F) -> bool where
@@ -704,7 +701,7 @@ pub fn get_enum_variants<'tcx>(intr: Rc<IdentInterner>, cdata: Cmd, id: ast::Nod
         let name = item_name(&*intr, item);
         let (ctor_ty, arg_tys, arg_names) = match ctor_ty.sty {
             ty::ty_bare_fn(ref f) =>
-                (Some(ctor_ty), f.sig.inputs.clone(), None),
+                (Some(ctor_ty), f.sig.0.inputs.clone(), None),
             _ => { // Nullary or struct enum variant.
                 let mut arg_names = Vec::new();
                 let arg_tys = get_struct_fields(intr.clone(), cdata, did.node)
@@ -787,15 +784,15 @@ pub fn get_impl_items(cdata: Cmd, impl_id: ast::NodeId)
 pub fn get_trait_item_name_and_kind(intr: Rc<IdentInterner>,
                                     cdata: Cmd,
                                     id: ast::NodeId)
-                                    -> (ast::Name, TraitItemKind) {
+                                    -> (ast::Name, def::TraitItemKind) {
     let doc = lookup_item(id, cdata.data());
     let name = item_name(&*intr, doc);
     match item_sort(doc) {
         'r' | 'p' => {
             let explicit_self = get_explicit_self(doc);
-            (name, TraitItemKind::from_explicit_self_category(explicit_self))
+            (name, def::TraitItemKind::from_explicit_self_category(explicit_self))
         }
-        't' => (name, TypeTraitItemKind),
+        't' => (name, def::TypeTraitItemKind),
         c => {
             panic!("get_trait_item_name_and_kind(): unknown trait item kind \
                    in metadata: `{}`", c)

@@ -35,7 +35,7 @@
 pub use self::ExternalLocation::*;
 
 use std::cell::RefCell;
-use std::collections::hash_map::{Occupied, Vacant};
+use std::collections::hash_map::Entry::{Occupied, Vacant};
 use std::collections::{HashMap, HashSet};
 use std::default::Default;
 use std::fmt;
@@ -225,12 +225,11 @@ struct Source<'a>(&'a str);
 // Helper structs for rendering items/sidebars and carrying along contextual
 // information
 
+#[deriving(Copy)]
 struct Item<'a> {
     cx: &'a Context,
     item: &'a clean::Item,
 }
-
-impl<'a> Copy for Item<'a> {}
 
 struct Sidebar<'a> { cx: &'a Context, item: &'a clean::Item, }
 

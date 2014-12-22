@@ -31,18 +31,14 @@ pub trait Pos {
 
 /// A byte offset. Keep this small (currently 32-bits), as AST contains
 /// a lot of them.
-#[deriving(Clone, PartialEq, Eq, Hash, PartialOrd, Show)]
+#[deriving(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Show)]
 pub struct BytePos(pub u32);
-
-impl Copy for BytePos {}
 
 /// A character offset. Because of multibyte utf8 characters, a byte offset
 /// is not equivalent to a character offset. The CodeMap will convert BytePos
 /// values to CharPos values as necessary.
-#[deriving(PartialEq, Hash, PartialOrd, Show)]
+#[deriving(Copy, PartialEq, Hash, PartialOrd, Show)]
 pub struct CharPos(pub uint);
-
-impl Copy for CharPos {}
 
 // FIXME: Lots of boilerplate in these impls, but so far my attempts to fix
 // have been unsuccessful
@@ -52,30 +48,12 @@ impl Pos for BytePos {
     fn to_uint(&self) -> uint { let BytePos(n) = *self; n as uint }
 }
 
-// NOTE(stage0): Remove impl after a snapshot
-#[cfg(stage0)]
-impl Add<BytePos, BytePos> for BytePos {
-    fn add(&self, rhs: &BytePos) -> BytePos {
-        BytePos((self.to_uint() + rhs.to_uint()) as u32)
-    }
-}
-
-#[cfg(not(stage0))]  // NOTE(stage0): Remove cfg after a snapshot
 impl Add<BytePos, BytePos> for BytePos {
     fn add(self, rhs: BytePos) -> BytePos {
         BytePos((self.to_uint() + rhs.to_uint()) as u32)
     }
 }
 
-// NOTE(stage0): Remove impl after a snapshot
-#[cfg(stage0)]
-impl Sub<BytePos, BytePos> for BytePos {
-    fn sub(&self, rhs: &BytePos) -> BytePos {
-        BytePos((self.to_uint() - rhs.to_uint()) as u32)
-    }
-}
-
-#[cfg(not(stage0))]  // NOTE(stage0): Remove cfg after a snapshot
 impl Sub<BytePos, BytePos> for BytePos {
     fn sub(self, rhs: BytePos) -> BytePos {
         BytePos((self.to_uint() - rhs.to_uint()) as u32)
@@ -87,30 +65,12 @@ impl Pos for CharPos {
     fn to_uint(&self) -> uint { let CharPos(n) = *self; n }
 }
 
-// NOTE(stage0): Remove impl after a snapshot
-#[cfg(stage0)]
-impl Add<CharPos,CharPos> for CharPos {
-    fn add(&self, rhs: &CharPos) -> CharPos {
-        CharPos(self.to_uint() + rhs.to_uint())
-    }
-}
-
-#[cfg(not(stage0))]  // NOTE(stage0): Remove cfg after a snapshot
 impl Add<CharPos, CharPos> for CharPos {
     fn add(self, rhs: CharPos) -> CharPos {
         CharPos(self.to_uint() + rhs.to_uint())
     }
 }
 
-// NOTE(stage0): Remove impl after a snapshot
-#[cfg(stage0)]
-impl Sub<CharPos,CharPos> for CharPos {
-    fn sub(&self, rhs: &CharPos) -> CharPos {
-        CharPos(self.to_uint() - rhs.to_uint())
-    }
-}
-
-#[cfg(not(stage0))]  // NOTE(stage0): Remove cfg after a snapshot
 impl Sub<CharPos, CharPos> for CharPos {
     fn sub(self, rhs: CharPos) -> CharPos {
         CharPos(self.to_uint() - rhs.to_uint())
@@ -121,7 +81,7 @@ impl Sub<CharPos, CharPos> for CharPos {
 /// are *absolute* positions from the beginning of the codemap, not positions
 /// relative to FileMaps. Methods on the CodeMap can be used to relate spans back
 /// to the original source.
-#[deriving(Clone, Show, Hash)]
+#[deriving(Clone, Copy, Show, Hash)]
 pub struct Span {
     pub lo: BytePos,
     pub hi: BytePos,
@@ -130,17 +90,13 @@ pub struct Span {
     pub expn_id: ExpnId
 }
 
-impl Copy for Span {}
-
 pub const DUMMY_SP: Span = Span { lo: BytePos(0), hi: BytePos(0), expn_id: NO_EXPANSION };
 
-#[deriving(Clone, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
+#[deriving(Clone, Copy, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
 pub struct Spanned<T> {
     pub node: T,
     pub span: Span,
 }
-
-impl<T:Copy> Copy for Spanned<T> {}
 
 impl PartialEq for Span {
     fn eq(&self, other: &Span) -> bool {
@@ -219,15 +175,13 @@ pub struct FileMapAndLine { pub fm: Rc<FileMap>, pub line: uint }
 pub struct FileMapAndBytePos { pub fm: Rc<FileMap>, pub pos: BytePos }
 
 /// The syntax with which a macro was invoked.
-#[deriving(Clone, Hash, Show)]
+#[deriving(Clone, Copy, Hash, Show)]
 pub enum MacroFormat {
     /// e.g. #[deriving(...)] <item>
     MacroAttribute,
     /// e.g. `format!()`
     MacroBang
 }
-
-impl Copy for MacroFormat {}
 
 #[deriving(Clone, Hash, Show)]
 pub struct NameAndSpan {
@@ -264,10 +218,8 @@ pub struct ExpnInfo {
     pub callee: NameAndSpan
 }
 
-#[deriving(PartialEq, Eq, Clone, Show, Hash, Encodable, Decodable)]
+#[deriving(Copy, PartialEq, Eq, Clone, Show, Hash, Encodable, Decodable)]
 pub struct ExpnId(u32);
-
-impl Copy for ExpnId {}
 
 pub const NO_EXPANSION: ExpnId = ExpnId(-1);
 
@@ -290,14 +242,13 @@ pub struct FileLines {
 }
 
 /// Identifies an offset of a multi-byte character in a FileMap
+#[deriving(Copy)]
 pub struct MultiByteChar {
     /// The absolute offset of the character in the CodeMap
     pub pos: BytePos,
     /// The number of bytes, >=2
     pub bytes: uint,
 }
-
-impl Copy for MultiByteChar {}
 
 /// A single source in the CodeMap
 pub struct FileMap {

@@ -32,7 +32,6 @@ pub use self::LitIntType::*;
 pub use self::LocalSource::*;
 pub use self::Mac_::*;
 pub use self::MacStmtStyle::*;
-pub use self::MatchSource::*;
 pub use self::MetaItem_::*;
 pub use self::Method_::*;
 pub use self::Mutability::*;
@@ -80,13 +79,11 @@ use serialize::{Encodable, Decodable, Encoder, Decoder};
 /// table) and a SyntaxContext to track renaming and
 /// macro expansion per Flatt et al., "Macros
 /// That Work Together"
-#[deriving(Clone, Hash, PartialOrd, Eq, Ord)]
+#[deriving(Clone, Copy, Hash, PartialOrd, Eq, Ord)]
 pub struct Ident {
     pub name: Name,
     pub ctxt: SyntaxContext
 }
-
-impl Copy for Ident {}
 
 impl Ident {
     /// Construct an identifier with the given name and an empty context:
@@ -160,10 +157,8 @@ pub const ILLEGAL_CTXT : SyntaxContext = 1;
 
 /// A name is a part of an identifier, representing a string or gensym. It's
 /// the result of interning.
-#[deriving(Eq, Ord, PartialEq, PartialOrd, Hash, Encodable, Decodable, Clone)]
+#[deriving(Copy, Eq, Ord, PartialEq, PartialOrd, Hash, Encodable, Decodable, Clone)]
 pub struct Name(pub u32);
-
-impl Copy for Name {}
 
 impl Name {
     pub fn as_str<'a>(&'a self) -> &'a str {
@@ -201,14 +196,12 @@ impl<D:Decoder<E>, E> Decodable<D, E> for Ident {
 /// Function name (not all functions have names)
 pub type FnIdent = Option<Ident>;
 
-#[deriving(Clone, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
+#[deriving(Clone, Copy, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
 pub struct Lifetime {
     pub id: NodeId,
     pub span: Span,
     pub name: Name
 }
-
-impl Copy for Lifetime {}
 
 #[deriving(Clone, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
 pub struct LifetimeDef {
@@ -353,13 +346,11 @@ pub type CrateNum = u32;
 
 pub type NodeId = u32;
 
-#[deriving(Clone, Eq, Ord, PartialOrd, PartialEq, Encodable, Decodable, Hash, Show)]
+#[deriving(Clone, Copy, Eq, Ord, PartialOrd, PartialEq, Encodable, Decodable, Hash, Show)]
 pub struct DefId {
     pub krate: CrateNum,
     pub node: NodeId,
 }
-
-impl Copy for DefId {}
 
 /// Item definitions in the currently-compiled crate would have the CrateNum
 /// LOCAL_CRATE in their DefId.
@@ -423,15 +414,22 @@ pub struct WhereClause {
 #[deriving(Clone, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
 pub enum WherePredicate {
     BoundPredicate(WhereBoundPredicate),
+    RegionPredicate(WhereRegionPredicate),
     EqPredicate(WhereEqPredicate)
 }
 
 #[deriving(Clone, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
 pub struct WhereBoundPredicate {
-    pub id: NodeId,
     pub span: Span,
-    pub ident: Ident,
+    pub bounded_ty: P<Ty>,
     pub bounds: OwnedSlice<TyParamBound>,
+}
+
+#[deriving(Clone, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
+pub struct WhereRegionPredicate {
+    pub span: Span,
+    pub lifetime: Lifetime,
+    pub bounds: Vec<Lifetime>,
 }
 
 #[deriving(Clone, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
@@ -513,15 +511,13 @@ pub struct FieldPat {
     pub is_shorthand: bool,
 }
 
-#[deriving(Clone, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
+#[deriving(Clone, Copy, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
 pub enum BindingMode {
     BindByRef(Mutability),
     BindByValue(Mutability),
 }
 
-impl Copy for BindingMode {}
-
-#[deriving(Clone, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
+#[deriving(Clone, Copy, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
 pub enum PatWildKind {
     /// Represents the wildcard pattern `_`
     PatWildSingle,
@@ -529,8 +525,6 @@ pub enum PatWildKind {
     /// Represents the wildcard pattern `..`
     PatWildMulti,
 }
-
-impl Copy for PatWildKind {}
 
 #[deriving(Clone, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
 pub enum Pat_ {
@@ -561,15 +555,13 @@ pub enum Pat_ {
     PatMac(Mac),
 }
 
-#[deriving(Clone, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
+#[deriving(Clone, Copy, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
 pub enum Mutability {
     MutMutable,
     MutImmutable,
 }
 
-impl Copy for Mutability {}
-
-#[deriving(Clone, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
+#[deriving(Clone, Copy, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
 pub enum BinOp {
     BiAdd,
     BiSub,
@@ -591,17 +583,13 @@ pub enum BinOp {
     BiGt,
 }
 
-impl Copy for BinOp {}
-
-#[deriving(Clone, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
+#[deriving(Clone, Copy, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
 pub enum UnOp {
     UnUniq,
     UnDeref,
     UnNot,
     UnNeg
 }
-
-impl Copy for UnOp {}
 
 pub type Stmt = Spanned<Stmt_>;
 
@@ -634,13 +622,11 @@ pub enum MacStmtStyle {
 
 /// Where a local declaration came from: either a true `let ... =
 /// ...;`, or one desugared from the pattern of a for loop.
-#[deriving(Clone, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
+#[deriving(Clone, Copy, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
 pub enum LocalSource {
     LocalLet,
     LocalFor,
 }
-
-impl Copy for LocalSource {}
 
 // FIXME (pending discussion of #1697, #2178...): local should really be
 // a refinement on pat.
@@ -683,21 +669,17 @@ pub struct Field {
 
 pub type SpannedIdent = Spanned<Ident>;
 
-#[deriving(Clone, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
+#[deriving(Clone, Copy, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
 pub enum BlockCheckMode {
     DefaultBlock,
     UnsafeBlock(UnsafeSource),
 }
 
-impl Copy for BlockCheckMode {}
-
-#[deriving(Clone, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
+#[deriving(Clone, Copy, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
 pub enum UnsafeSource {
     CompilerGenerated,
     UserProvided,
 }
-
-impl Copy for UnsafeSource {}
 
 #[deriving(Clone, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
 pub struct Expr {
@@ -775,22 +757,18 @@ pub struct QPath {
     pub item_name: Ident,
 }
 
-#[deriving(Clone, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
+#[deriving(Clone, Copy, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
 pub enum MatchSource {
-    MatchNormal,
-    MatchIfLetDesugar,
-    MatchWhileLetDesugar,
+    Normal,
+    IfLetDesugar { contains_else_clause: bool },
+    WhileLetDesugar,
 }
 
-impl Copy for MatchSource {}
-
-#[deriving(Clone, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
+#[deriving(Clone, Copy, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
 pub enum CaptureClause {
     CaptureByValue,
     CaptureByRef,
 }
-
-impl Copy for CaptureClause {}
 
 /// A delimited sequence of token trees
 #[deriving(Clone, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
@@ -842,13 +820,11 @@ pub struct SequenceRepetition {
 
 /// A Kleene-style [repetition operator](http://en.wikipedia.org/wiki/Kleene_star)
 /// for token sequences.
-#[deriving(Clone, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
+#[deriving(Clone, Copy, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
 pub enum KleeneOp {
     ZeroOrMore,
     OneOrMore,
 }
-
-impl Copy for KleeneOp {}
 
 /// When the main rust parser encounters a syntax-extension invocation, it
 /// parses the arguments to the invocation as a token-tree. This is a very
@@ -959,23 +935,19 @@ pub enum Mac_ {
     MacInvocTT(Path, Vec<TokenTree> , SyntaxContext),   // new macro-invocation
 }
 
-#[deriving(Clone, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
+#[deriving(Clone, Copy, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
 pub enum StrStyle {
     CookedStr,
     RawStr(uint)
 }
 
-impl Copy for StrStyle {}
-
 pub type Lit = Spanned<Lit_>;
 
-#[deriving(Clone, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
+#[deriving(Clone, Copy, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
 pub enum Sign {
     Minus,
     Plus
 }
-
-impl Copy for Sign {}
 
 impl<T> Sign where T: Int {
     pub fn new(n: T) -> Sign {
@@ -987,14 +959,12 @@ impl<T> Sign where T: Int {
     }
 }
 
-#[deriving(Clone, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
+#[deriving(Clone, Copy, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
 pub enum LitIntType {
     SignedIntLit(IntTy, Sign),
     UnsignedIntLit(UintTy),
     UnsuffixedIntLit(Sign)
 }
-
-impl Copy for LitIntType {}
 
 impl LitIntType {
     pub fn suffix_len(&self) -> uint {
@@ -1082,7 +1052,7 @@ pub struct Typedef {
     pub typ: P<Ty>,
 }
 
-#[deriving(Clone, PartialEq, Eq, Encodable, Decodable, Hash)]
+#[deriving(Clone, Copy, PartialEq, Eq, Encodable, Decodable, Hash)]
 pub enum IntTy {
     TyI,
     TyI8,
@@ -1090,8 +1060,6 @@ pub enum IntTy {
     TyI32,
     TyI64,
 }
-
-impl Copy for IntTy {}
 
 impl fmt::Show for IntTy {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -1109,7 +1077,7 @@ impl IntTy {
     }
 }
 
-#[deriving(Clone, PartialEq, Eq, Encodable, Decodable, Hash)]
+#[deriving(Clone, Copy, PartialEq, Eq, Encodable, Decodable, Hash)]
 pub enum UintTy {
     TyU,
     TyU8,
@@ -1117,8 +1085,6 @@ pub enum UintTy {
     TyU32,
     TyU64,
 }
-
-impl Copy for UintTy {}
 
 impl UintTy {
     pub fn suffix_len(&self) -> uint {
@@ -1136,13 +1102,11 @@ impl fmt::Show for UintTy {
     }
 }
 
-#[deriving(Clone, PartialEq, Eq, Encodable, Decodable, Hash)]
+#[deriving(Clone, Copy, PartialEq, Eq, Encodable, Decodable, Hash)]
 pub enum FloatTy {
     TyF32,
     TyF64,
 }
-
-impl Copy for FloatTy {}
 
 impl fmt::Show for FloatTy {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -1177,7 +1141,7 @@ pub struct Ty {
 }
 
 /// Not represented directly in the AST, referred to by name through a ty_path.
-#[deriving(Clone, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
+#[deriving(Clone, Copy, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
 pub enum PrimTy {
     TyInt(IntTy),
     TyUint(UintTy),
@@ -1187,15 +1151,11 @@ pub enum PrimTy {
     TyChar
 }
 
-impl Copy for PrimTy {}
-
-#[deriving(Clone, PartialEq, Eq, Encodable, Decodable, Hash)]
+#[deriving(Clone, Copy, PartialEq, Eq, Encodable, Decodable, Hash)]
 pub enum Onceness {
     Once,
     Many
 }
-
-impl Copy for Onceness {}
 
 impl fmt::Show for Onceness {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -1259,13 +1219,11 @@ pub enum Ty_ {
     TyInfer,
 }
 
-#[deriving(Clone, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
+#[deriving(Clone, Copy, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
 pub enum AsmDialect {
     AsmAtt,
     AsmIntel
 }
-
-impl Copy for AsmDialect {}
 
 #[deriving(Clone, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
 pub struct InlineAsm {
@@ -1433,13 +1391,11 @@ pub struct Variant_ {
 
 pub type Variant = Spanned<Variant_>;
 
-#[deriving(Clone, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
+#[deriving(Clone, Copy, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
 pub enum PathListItem_ {
     PathListIdent { name: Ident, id: NodeId },
     PathListMod { id: NodeId }
 }
-
-impl Copy for PathListItem_ {}
 
 impl PathListItem_ {
     pub fn id(&self) -> NodeId {
@@ -1494,18 +1450,14 @@ pub type Attribute = Spanned<Attribute_>;
 /// Distinguishes between Attributes that decorate items and Attributes that
 /// are contained as statements within items. These two cases need to be
 /// distinguished for pretty-printing.
-#[deriving(Clone, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
+#[deriving(Clone, Copy, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
 pub enum AttrStyle {
     AttrOuter,
     AttrInner,
 }
 
-impl Copy for AttrStyle {}
-
-#[deriving(Clone, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
+#[deriving(Clone, Copy, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
 pub struct AttrId(pub uint);
-
-impl Copy for AttrId {}
 
 /// Doc-comments are promoted to attributes that have is_sugared_doc = true
 #[deriving(Clone, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
@@ -1536,13 +1488,11 @@ pub struct PolyTraitRef {
     pub trait_ref: TraitRef
 }
 
-#[deriving(Clone, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
+#[deriving(Clone, Copy, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
 pub enum Visibility {
     Public,
     Inherited,
 }
-
-impl Copy for Visibility {}
 
 impl Visibility {
     pub fn inherit_from(&self, parent_visibility: Visibility) -> Visibility {
@@ -1572,14 +1522,12 @@ impl StructField_ {
 
 pub type StructField = Spanned<StructField_>;
 
-#[deriving(Clone, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
+#[deriving(Clone, Copy, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
 pub enum StructFieldKind {
     NamedField(Ident, Visibility),
     /// Element of a tuple-like struct
     UnnamedField(Visibility),
 }
-
-impl Copy for StructFieldKind {}
 
 impl StructFieldKind {
     pub fn is_unnamed(&self) -> bool {
@@ -1682,14 +1630,12 @@ impl ForeignItem_ {
     }
 }
 
-#[deriving(Clone, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
+#[deriving(Clone, Copy, PartialEq, Eq, Encodable, Decodable, Hash, Show)]
 pub enum UnboxedClosureKind {
     FnUnboxedClosureKind,
     FnMutUnboxedClosureKind,
     FnOnceUnboxedClosureKind,
 }
-
-impl Copy for UnboxedClosureKind {}
 
 /// The data we save and restore about an inlined item or method.  This is not
 /// part of the AST that we parse from a file, but it becomes part of the tree

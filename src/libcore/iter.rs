@@ -59,7 +59,6 @@ pub use self::MinMaxResult::*;
 use clone::Clone;
 use cmp;
 use cmp::Ord;
-use kinds::Copy;
 use mem;
 use num::{ToPrimitive, Int};
 use ops::{Add, Deref, FnMut};
@@ -1168,15 +1167,13 @@ impl<A, I> CloneIteratorExt for I where I: Iterator<A> + Clone {
 }
 
 /// An iterator that repeats endlessly
-#[deriving(Clone)]
+#[deriving(Clone, Copy)]
 #[must_use = "iterator adaptors are lazy and do nothing unless consumed"]
 #[stable]
 pub struct Cycle<T> {
     orig: T,
     iter: T,
 }
-
-impl<T:Copy> Copy for Cycle<T> {}
 
 impl<A, T: Clone + Iterator<A>> Iterator<A> for Cycle<T> {
     #[inline]
@@ -1389,6 +1386,7 @@ pub struct Map<A, B, I: Iterator<A>, F: FnMut(A) -> B> {
 }
 
 // FIXME(#19839) Remove in favor of `#[deriving(Clone)]`
+#[stable]
 impl<A, B, I, F> Clone for Map<A, B, I, F> where
     I: Clone + Iterator<A>,
     F: Clone + FnMut(A) -> B,
@@ -1463,6 +1461,7 @@ pub struct Filter<A, I, P> where I: Iterator<A>, P: FnMut(&A) -> bool {
 }
 
 // FIXME(#19839) Remove in favor of `#[deriving(Clone)]`
+#[stable]
 impl<A, I, P> Clone for Filter<A, I, P> where
     I: Clone + Iterator<A>,
     P: Clone + FnMut(&A) -> bool,
@@ -1521,6 +1520,7 @@ pub struct FilterMap<A, B, I, F> where I: Iterator<A>, F: FnMut(A) -> Option<B> 
 }
 
 // FIXME(#19839) Remove in favor of `#[deriving(Clone)]`
+#[stable]
 impl<A, B, I, F> Clone for FilterMap<A, B, I, F> where
     I: Clone + Iterator<A>,
     F: Clone + FnMut(A) -> Option<B>,
@@ -1635,12 +1635,11 @@ impl<A, T: RandomAccessIterator<A>> RandomAccessIterator<(uint, A)> for Enumerat
 /// An iterator with a `peek()` that returns an optional reference to the next element.
 #[must_use = "iterator adaptors are lazy and do nothing unless consumed"]
 #[stable]
+#[deriving(Copy)]
 pub struct Peekable<A, T> {
     iter: T,
     peeked: Option<A>,
 }
-
-impl<T:Copy,A:Copy> Copy for Peekable<A,T> {}
 
 impl<A, T: Iterator<A>> Iterator<A> for Peekable<A, T> {
     #[inline]
@@ -1697,6 +1696,7 @@ pub struct SkipWhile<A, I, P> where I: Iterator<A>, P: FnMut(&A) -> bool {
 }
 
 // FIXME(#19839) Remove in favor of `#[deriving(Clone)]`
+#[stable]
 impl<A, I, P> Clone for SkipWhile<A, I, P> where
     I: Clone + Iterator<A>,
     P: Clone + FnMut(&A) -> bool,
@@ -1740,6 +1740,7 @@ pub struct TakeWhile<A, I, P> where I: Iterator<A>, P: FnMut(&A) -> bool {
 }
 
 // FIXME(#19839) Remove in favor of `#[deriving(Clone)]`
+#[stable]
 impl<A, I, P> Clone for TakeWhile<A, I, P> where
     I: Clone + Iterator<A>,
     P: Clone + FnMut(&A) -> bool,
@@ -1915,6 +1916,7 @@ pub struct Scan<A, B, I, St, F> where I: Iterator<A>, F: FnMut(&mut St, A) -> Op
 }
 
 // FIXME(#19839) Remove in favor of `#[deriving(Clone)]`
+#[stable]
 impl<A, B, I, St, F> Clone for Scan<A, B, I, St, F> where
     I: Clone + Iterator<A>,
     St: Clone,
@@ -1959,6 +1961,7 @@ pub struct FlatMap<A, B, I, U, F> where I: Iterator<A>, U: Iterator<B>, F: FnMut
 }
 
 // FIXME(#19839) Remove in favor of `#[deriving(Clone)]`
+#[stable]
 impl<A, B, I, U, F> Clone for FlatMap<A, B, I, U, F> where
     I: Clone + Iterator<A>,
     U: Clone + Iterator<B>,
@@ -2119,6 +2122,7 @@ pub struct Inspect<A, I, F> where I: Iterator<A>, F: FnMut(&A) {
 }
 
 // FIXME(#19839) Remove in favor of `#[deriving(Clone)]`
+#[stable]
 impl<A, I, F> Clone for Inspect<A, I, F> where
     I: Clone + Iterator<A>,
     F: Clone + FnMut(&A),
@@ -2226,6 +2230,7 @@ pub struct Unfold<A, St, F> where F: FnMut(&mut St) -> Option<A> {
 }
 
 // FIXME(#19839) Remove in favor of `#[deriving(Clone)]`
+#[stable]
 impl<A, St, F> Clone for Unfold<A, St, F> where
     F: Clone + FnMut(&mut St) -> Option<A>,
     St: Clone,
@@ -2267,7 +2272,7 @@ impl<A, St, F> Iterator<A> for Unfold<A, St, F> where F: FnMut(&mut St) -> Optio
 
 /// An infinite iterator starting at `start` and advancing by `step` with each
 /// iteration
-#[deriving(Clone)]
+#[deriving(Clone, Copy)]
 #[unstable = "may be renamed"]
 pub struct Counter<A> {
     /// The current state the counter is at (next value to be yielded)
@@ -2275,8 +2280,6 @@ pub struct Counter<A> {
     /// The amount that this iterator is stepping by
     step: A,
 }
-
-impl<A:Copy> Copy for Counter<A> {}
 
 /// Creates a new counter with the specified start/step
 #[inline]
@@ -2301,15 +2304,13 @@ impl<A: Add<A, A> + Clone> Iterator<A> for Counter<A> {
 }
 
 /// An iterator over the range [start, stop)
-#[deriving(Clone)]
+#[deriving(Clone, Copy)]
 #[unstable = "may be refactored due to numerics reform or ops reform"]
 pub struct Range<A> {
     state: A,
     stop: A,
     one: A,
 }
-
-impl<A:Copy> Copy for Range<A> {}
 
 /// Returns an iterator over the given range [start, stop) (that is, starting
 /// at start (inclusive), and ending at stop (exclusive)).

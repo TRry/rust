@@ -12,7 +12,7 @@
 
 //! Windows file path handling
 
-pub use self::PathPrefix::*;
+use self::PathPrefix::*;
 
 use ascii::AsciiCast;
 use c_str::{CString, ToCStr};
@@ -22,7 +22,6 @@ use hash;
 use io::Writer;
 use iter::{AdditiveIterator, DoubleEndedIteratorExt, Extend};
 use iter::{Iterator, IteratorExt, Map};
-use kinds::Copy;
 use mem;
 use option::Option;
 use option::Option::{Some, None};
@@ -970,7 +969,7 @@ pub fn is_sep_byte_verbatim(u: &u8) -> bool {
 }
 
 /// Prefix types for Path
-#[deriving(PartialEq, Clone, Show)]
+#[deriving(Copy, PartialEq, Clone, Show)]
 pub enum PathPrefix {
     /// Prefix `\\?\`, uint is the length of the following component
     VerbatimPrefix(uint),
@@ -985,8 +984,6 @@ pub enum PathPrefix {
     /// Prefix `C:` for any alphabetic character
     DiskPrefix
 }
-
-impl Copy for PathPrefix {}
 
 fn parse_prefix<'a>(mut path: &'a str) -> Option<PathPrefix> {
     if path.starts_with("\\\\") {
@@ -1120,6 +1117,7 @@ fn prefix_len(p: Option<PathPrefix>) -> uint {
 mod tests {
     use prelude::*;
     use super::*;
+    use super::PathPrefix::*;
     use super::parse_prefix;
 
     macro_rules! t {

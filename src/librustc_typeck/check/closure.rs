@@ -129,7 +129,7 @@ fn check_unboxed_closure<'a,'tcx>(fcx: &FnCtxt<'a,'tcx>,
 
     // Tuple up the arguments and insert the resulting function type into
     // the `unboxed_closures` table.
-    fn_ty.sig.inputs = vec![ty::mk_tup(fcx.tcx(), fn_ty.sig.inputs)];
+    fn_ty.sig.0.inputs = vec![ty::mk_tup(fcx.tcx(), fn_ty.sig.0.inputs)];
 
     debug!("unboxed_closure for {} --> sig={} kind={}",
            expr_def_id.repr(fcx.tcx()),
@@ -180,7 +180,7 @@ fn deduce_unboxed_closure_expectations_from_expected_type<'a,'tcx>(
 
 fn deduce_unboxed_closure_expectations_from_trait_ref<'a,'tcx>(
     fcx: &FnCtxt<'a,'tcx>,
-    trait_ref: &ty::TraitRef<'tcx>)
+    trait_ref: &ty::PolyTraitRef<'tcx>)
     -> Option<(ty::FnSig<'tcx>, ty::UnboxedClosureKind)>
 {
     let tcx = fcx.tcx();
@@ -188,15 +188,15 @@ fn deduce_unboxed_closure_expectations_from_trait_ref<'a,'tcx>(
     debug!("deduce_unboxed_closure_expectations_from_object_type({})",
            trait_ref.repr(tcx));
 
-    let kind = match tcx.lang_items.fn_trait_kind(trait_ref.def_id) {
+    let kind = match tcx.lang_items.fn_trait_kind(trait_ref.def_id()) {
         Some(k) => k,
         None => { return None; }
     };
 
     debug!("found object type {}", kind);
 
-    let arg_param_ty = *trait_ref.substs.types.get(subst::TypeSpace, 0);
-    let arg_param_ty = fcx.infcx().resolve_type_vars_if_possible(arg_param_ty);
+    let arg_param_ty = *trait_ref.substs().types.get(subst::TypeSpace, 0);
+    let arg_param_ty = fcx.infcx().resolve_type_vars_if_possible(&arg_param_ty);
     debug!("arg_param_ty {}", arg_param_ty.repr(tcx));
 
     let input_tys = match arg_param_ty.sty {
@@ -205,8 +205,8 @@ fn deduce_unboxed_closure_expectations_from_trait_ref<'a,'tcx>(
     };
     debug!("input_tys {}", input_tys.repr(tcx));
 
-    let ret_param_ty = *trait_ref.substs.types.get(subst::TypeSpace, 1);
-    let ret_param_ty = fcx.infcx().resolve_type_vars_if_possible(ret_param_ty);
+    let ret_param_ty = *trait_ref.substs().types.get(subst::TypeSpace, 1);
+    let ret_param_ty = fcx.infcx().resolve_type_vars_if_possible(&ret_param_ty);
     debug!("ret_param_ty {}", ret_param_ty.repr(tcx));
 
     let fn_sig = ty::FnSig {
@@ -261,44 +261,43 @@ fn check_boxed_closure<'a,'tcx>(fcx: &FnCtxt<'a,'tcx>,
     // Find the expected input/output types (if any). Substitute
     // fresh bound regions for any bound regions we find in the
     // expected types so as to avoid capture.
-    let expected_sty = expected.map_to_option(fcx, |x| Some((*x).clone()));
-    let (expected_sig,
-         expected_onceness,
-         expected_bounds) = {
-        match expected_sty {
-            Some(ty::ty_closure(ref cenv)) => {
-                let (sig, _) =
-                    ty::replace_late_bound_regions(
-                        tcx,
-                        &cenv.sig,
-                        |_, debruijn| fcx.inh.infcx.fresh_bound_region(debruijn));
-                let onceness = match (&store, &cenv.store) {
-                    // As the closure type and onceness go, only three
-                    // combinations are legit:
-                    //      once closure
-                    //      many closure
-                    //      once proc
-                    // If the actual and expected closure type disagree with
-                    // each other, set expected onceness to be always Once or
-                    // Many according to the actual type. Otherwise, it will
-                    // yield either an illegal "many proc" or a less known
-                    // "once closure" in the error message.
-                    (&ty::UniqTraitStore, &ty::UniqTraitStore) |
-                    (&ty::RegionTraitStore(..), &ty::RegionTraitStore(..)) =>
-                        cenv.onceness,
-                    (&ty::UniqTraitStore, _) => ast::Once,
-                    (&ty::RegionTraitStore(..), _) => ast::Many,
-                };
-                (Some(sig), onceness, cenv.bounds)
-            }
-            _ => {
-                // Not an error! Means we're inferring the closure type
-                let region = fcx.infcx().next_region_var(
-                    infer::AddrOfRegion(expr.span));
-                let bounds = ty::region_existential_bound(region);
-                let onceness = ast::Many;
-                (None, onceness, bounds)
-            }
+    let expected_cenv = expected.map_to_option(fcx, |ty| match ty.sty {
+        ty::ty_closure(ref cenv) => Some(cenv),
+        _ => None
+    });
+    let (expected_sig, expected_onceness, expected_bounds) = match expected_cenv {
+        Some(cenv) => {
+            let (sig, _) =
+                ty::replace_late_bound_regions(
+                    tcx,
+                    &cenv.sig,
+                    |_, debruijn| fcx.inh.infcx.fresh_bound_region(debruijn));
+            let onceness = match (&store, &cenv.store) {
+                // As the closure type and onceness go, only three
+                // combinations are legit:
+                //      once closure
+                //      many closure
+                //      once proc
+                // If the actual and expected closure type disagree with
+                // each other, set expected onceness to be always Once or
+                // Many according to the actual type. Otherwise, it will
+                // yield either an illegal "many proc" or a less known
+                // "once closure" in the error message.
+                (&ty::UniqTraitStore, &ty::UniqTraitStore) |
+                (&ty::RegionTraitStore(..), &ty::RegionTraitStore(..)) =>
+                    cenv.onceness,
+                (&ty::UniqTraitStore, _) => ast::Once,
+                (&ty::RegionTraitStore(..), _) => ast::Many,
+            };
+            (Some(sig), onceness, cenv.bounds)
+        }
+        _ => {
+            // Not an error! Means we're inferring the closure type
+            let region = fcx.infcx().next_region_var(
+                infer::AddrOfRegion(expr.span));
+            let bounds = ty::region_existential_bound(region);
+            let onceness = ast::Many;
+            (None, onceness, bounds)
         }
     };
 

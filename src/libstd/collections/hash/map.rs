@@ -10,7 +10,7 @@
 //
 // ignore-lexer-test FIXME #15883
 
-pub use self::Entry::*;
+use self::Entry::*;
 use self::SearchResult::*;
 use self::VacantEntryState::*;
 
@@ -30,17 +30,19 @@ use option::Option::{Some, None};
 use result::Result;
 use result::Result::{Ok, Err};
 
-use super::table;
 use super::table::{
+    mod,
     Bucket,
-    Empty,
     EmptyBucket,
-    Full,
     FullBucket,
     FullBucketImm,
     FullBucketMut,
     RawTable,
     SafeHash
+};
+use super::table::BucketState::{
+    Empty,
+    Full,
 };
 
 const INITIAL_LOG2_CAP: uint = 5;
@@ -379,7 +381,7 @@ fn robin_hood<'a, K: 'a, V: 'a>(mut bucket: FullBucketMut<'a, K, V>,
             assert!(probe.index() != idx_end);
 
             let full_bucket = match probe.peek() {
-                table::Empty(bucket) => {
+                Empty(bucket) => {
                     // Found a hole!
                     let b = bucket.put(old_hash, old_key, old_val);
                     // Now that it's stolen, just read the value's pointer
@@ -390,7 +392,7 @@ fn robin_hood<'a, K: 'a, V: 'a>(mut bucket: FullBucketMut<'a, K, V>,
                                .into_mut_refs()
                                .1;
                 },
-                table::Full(bucket) => bucket
+                Full(bucket) => bucket
             };
 
             let probe_ib = full_bucket.index() - full_bucket.distance();
@@ -623,10 +625,10 @@ impl<K: Eq + Hash<S>, V, S, H: Hasher<S>> HashMap<K, V, H> {
     /// Resizes the internal vectors to a new capacity. It's your responsibility to:
     ///   1) Make sure the new capacity is enough for all the elements, accounting
     ///      for the load factor.
-    ///   2) Ensure new_capacity is a power of two.
+    ///   2) Ensure new_capacity is a power of two or zero.
     fn resize(&mut self, new_capacity: uint) {
         assert!(self.table.size() <= new_capacity);
-        assert!(new_capacity.is_power_of_two());
+        assert!(new_capacity.is_power_of_two() || new_capacity == 0);
 
         let mut old_table = replace(&mut self.table, RawTable::new(new_capacity));
         let old_size = old_table.size();
@@ -982,6 +984,35 @@ impl<K: Eq + Hash<S>, V, S, H: Hasher<S>> HashMap<K, V, H> {
     #[unstable = "matches collection reform specification, waiting for dust to settle"]
     pub fn is_empty(&self) -> bool { self.len() == 0 }
 
+    /// Clears the map, returning all key-value pairs as an iterator. Keeps the
+    /// allocated memory for reuse.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use std::collections::HashMap;
+    ///
+    /// let mut a = HashMap::new();
+    /// a.insert(1u, "a");
+    /// a.insert(2u, "b");
+    ///
+    /// for (k, v) in a.drain().take(1) {
+    ///     assert!(k == 1 || k == 2);
+    ///     assert!(v == "a" || v == "b");
+    /// }
+    ///
+    /// assert!(a.is_empty());
+    /// ```
+    #[inline]
+    #[unstable = "matches collection reform specification, waiting for dust to settle"]
+    pub fn drain(&mut self) -> Drain<K, V> {
+        fn last_two<A, B, C>((_, b, c): (A, B, C)) -> (B, C) { (b, c) }
+
+        Drain {
+            inner: self.table.drain().map(last_two),
+        }
+    }
+
     /// Clears the map, removing all key-value pairs. Keeps the allocated memory
     /// for reuse.
     ///
@@ -996,16 +1027,9 @@ impl<K: Eq + Hash<S>, V, S, H: Hasher<S>> HashMap<K, V, H> {
     /// assert!(a.is_empty());
     /// ```
     #[unstable = "matches collection reform specification, waiting for dust to settle"]
+    #[inline]
     pub fn clear(&mut self) {
-        let cap = self.table.capacity();
-        let mut buckets = Bucket::first(&mut self.table);
-
-        while buckets.index() != cap {
-            buckets = match buckets.peek() {
-                Empty(b)   => b.next(),
-                Full(full) => full.take().0.next(),
-            };
-        }
+        self.drain();
     }
 
     /// Deprecated: Renamed to `get`.
@@ -1306,6 +1330,16 @@ pub struct Values<'a, K: 'a, V: 'a> {
     inner: Map<(&'a K, &'a V), &'a V, Entries<'a, K, V>, fn((&'a K, &'a V)) -> &'a V>
 }
 
+/// HashMap drain iterator
+pub struct Drain<'a, K: 'a, V: 'a> {
+    inner: iter::Map<
+        (SafeHash, K, V),
+        (K, V),
+        table::Drain<'a, K, V>,
+        fn((SafeHash, K, V)) -> (K, V),
+    >
+}
+
 /// A view into a single occupied location in a HashMap
 pub struct OccupiedEntry<'a, K:'a, V:'a> {
     elem: FullBucket<K, V, &'a mut RawTable<K, V>>,
@@ -1358,6 +1392,17 @@ impl<'a, K, V> Iterator<&'a K> for Keys<'a, K, V> {
 impl<'a, K, V> Iterator<&'a V> for Values<'a, K, V> {
     #[inline] fn next(&mut self) -> Option<(&'a V)> { self.inner.next() }
     #[inline] fn size_hint(&self) -> (uint, Option<uint>) { self.inner.size_hint() }
+}
+
+impl<'a, K: 'a, V: 'a> Iterator<(K, V)> for Drain<'a, K, V> {
+    #[inline]
+    fn next(&mut self) -> Option<(K, V)> {
+        self.inner.next()
+    }
+    #[inline]
+    fn size_hint(&self) -> (uint, Option<uint>) {
+        self.inner.size_hint()
+    }
 }
 
 impl<'a, K, V> OccupiedEntry<'a, K, V> {
@@ -1427,10 +1472,9 @@ mod test_map {
     use prelude::*;
 
     use super::HashMap;
-    use super::{Occupied, Vacant};
-    use cmp::Equiv;
+    use super::Entry::{Occupied, Vacant};
     use hash;
-    use iter::{Iterator,range_inclusive,range_step_inclusive};
+    use iter::{range_inclusive, range_step_inclusive};
     use cell::RefCell;
     use rand::{weak_rng, Rng};
 
