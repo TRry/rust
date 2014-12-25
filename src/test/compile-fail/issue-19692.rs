@@ -8,13 +8,11 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-pub static X: &'static str = "foobarbaz";
-pub static Y: &'static [u8] = include_bytes!("lib.rs");
+struct Homura;
 
-trait Foo {}
-impl Foo for uint {}
-
-pub fn dummy() {
-    // force the vtable to be created
-    let _x = &1u as &Foo;
+fn akemi(homura: Homura) {
+    let Some(ref madoka) = Some(homura.kaname()); //~ ERROR does not implement any method
+    madoka.clone(); //~ ERROR the type of this value must be known
 }
+
+fn main() { }
