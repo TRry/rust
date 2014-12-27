@@ -8,8 +8,23 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use target::TargetOptions;
 use std::default::Default;
+use std::io::Command;
+use target::TargetOptions;
+
+pub fn get_sdk_root(sdk_name: &str) -> String {
+    let mut child = match Command::new("xcrun")
+                                  .arg("--show-sdk-path")
+                                  .arg("-sdk")
+                                  .arg(sdk_name)
+                                  .spawn() {
+        Ok(child) => child,
+        Err(e) => panic!("failed to get {} SDK path: {}", sdk_name, e),
+    };
+
+    child.stdout.as_mut().unwrap().read_to_string().unwrap().as_slice().trim().to_string()
+}
+
 
 pub fn opts() -> TargetOptions {
     TargetOptions {

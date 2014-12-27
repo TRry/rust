@@ -8,7 +8,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use target::Target;
+use target::{Target, TargetOptions};
 
 pub fn target() -> Target {
     Target {
@@ -22,7 +22,12 @@ pub fn target() -> Target {
         target_word_size: "32".to_string(),
         arch: "x86".to_string(),
         target_os: "ios".to_string(),
-
-        options: super::apple_base::opts()
+        options: TargetOptions {
+            executables: true,
+            dynamic_linking: false,
+            pre_link_args: vec!["-arch".to_string(), "i386".to_string(), "-Wl,-syslibroot".to_string(), 
+                                super::apple_base::get_sdk_root("iphonesimulator")],
+            .. super::apple_base::opts()
+        }
     }
 }
