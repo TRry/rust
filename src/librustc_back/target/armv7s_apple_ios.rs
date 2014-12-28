@@ -13,13 +13,13 @@ use target::{Target, TargetOptions};
 pub fn target() -> Target {
     Target {
         data_layout: "e-p:32:32-f64:32:64-v64:32:64-v128:32:128-a:0:32-n32-S32".to_string(),
-        llvm_target: "arm-apple-ios".to_string(),
+        llvm_target: "armv7s-apple-ios".to_string(),
         target_endian: "little".to_string(),
         target_word_size: "32".to_string(),
         arch: "arm".to_string(),
         target_os: "ios".to_string(),
         options: TargetOptions {
-            features: "+v7,+thumb2,+vfp3,+neon".to_string(),
+            features: "+v7,+vfp4,+neon".to_string(),
             executables: true,
             dynamic_linking: false,
             // Although there is an experimental implementation of LLVM which
@@ -27,7 +27,7 @@ pub fn target() -> Target {
             // http://lists.cs.uiuc.edu/pipermail/llvm-commits/Week-of-Mon-20140505/216350.html
             // It looks like it might be never accepted to upstream LLVM.
             morestack: false,
-            pre_link_args: vec!["-arch".to_string(), "armv7".to_string(), "-Wl,-syslibroot".to_string(),
+            pre_link_args: vec!["-arch".to_string(), "armv7s".to_string(), "-Wl,-syslibroot".to_string(),
                                 super::apple_base::get_sdk_root("iphoneos")],
             .. super::apple_base::opts()
         }

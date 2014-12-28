@@ -21,7 +21,7 @@ CFG_GCCISH_DEF_FLAG_arm-apple-ios := -Wl,-exported_symbols_list,
 CFG_GCCISH_PRE_LIB_FLAGS_arm-apple-ios :=
 CFG_GCCISH_POST_LIB_FLAGS_arm-apple-ios :=
 CFG_DEF_SUFFIX_arm-apple-ios := .darwin.def
-CFG_LLC_FLAGS_arm-apple-ios := -mattr=+vfp3,+v7,+thumb2,+neon -march=arm
+CFG_LLC_FLAGS_arm-apple-ios := -mattr=+vfp3,+v7,+neon -march=arm
 CFG_INSTALL_NAME_arm-apple-ios = -Wl,-install_name,@rpath/$(1)
 CFG_EXE_SUFFIX_arm-apple-ios :=
 CFG_WINDOWSY_arm-apple-ios :=
