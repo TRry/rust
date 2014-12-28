@@ -17,6 +17,8 @@ use trans::cabi_x86;
 use trans::cabi_x86_64;
 use trans::cabi_x86_win64;
 use trans::cabi_arm;
+use trans::cabi_arm_ios;
+use trans::cabi_arm_ios_thumb;
 use trans::cabi_mips;
 use trans::type_::Type;
 
@@ -114,7 +116,15 @@ pub fn compute_abi_info(ccx: &CrateContext,
         } else {
             cabi_x86_64::compute_abi_info(ccx, atys, rty, ret_def)
         },
-        "arm" => cabi_arm::compute_abi_info(ccx, atys, rty, ret_def),
+        "arm" => if ccx.sess().target.target_os == "ios" {
+            if ccx.sess().target.arch.as_slice().starts_with("thumb") {
+                cabi_arm_ios_thumb::compute_abi_info(ccx, atys, rty, ret_def)
+            } else {
+                cabi_arm_ios::compute_abi_info(ccx, atys, rty, ret_def)
+            }
+        } else {
+            cabi_arm::compute_abi_info(ccx, atys, rty, ret_def)
+        },
         "mips" => cabi_mips::compute_abi_info(ccx, atys, rty, ret_def),
         a => ccx.sess().fatal((format!("unrecognized arch \"{}\" in target specification", a))
                               []),
