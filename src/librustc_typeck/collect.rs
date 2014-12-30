@@ -259,7 +259,7 @@ fn collect_trait_methods<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>,
                                    trait_def: &ty::TraitDef<'tcx>) {
     let tcx = ccx.tcx;
     if let ast_map::NodeItem(item) = tcx.map.get(trait_id) {
-        if let ast::ItemTrait(_, _, _, _, ref trait_items) = item.node {
+        if let ast::ItemTrait(_, _, _, ref trait_items) = item.node {
             // For each method, construct a suitable ty::Method and
             // store it into the `tcx.impl_or_trait_items` table:
             for trait_item in trait_items.iter() {
@@ -355,7 +355,7 @@ fn collect_trait_methods<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>,
             m.def_id,
             Polytype {
                 generics: m.generics.clone(),
-                ty: ty::mk_bare_fn(ccx.tcx, Some(m.def_id), m.fty.clone()) });
+                ty: ty::mk_bare_fn(ccx.tcx, Some(m.def_id), ccx.tcx.mk_bare_fn(m.fty.clone())) });
     }
 
     fn ty_method_of_trait_method<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>,
@@ -529,7 +529,7 @@ fn convert_methods<'a,'tcx,'i,I>(ccx: &CrateCtxt<'a, 'tcx>,
                                        untransformed_rcvr_ty,
                                        rcvr_ty_generics,
                                        rcvr_visibility));
-        let fty = ty::mk_bare_fn(tcx, Some(m_def_id), mty.fty.clone());
+        let fty = ty::mk_bare_fn(tcx, Some(m_def_id), tcx.mk_bare_fn(mty.fty.clone()));
         debug!("method {} (id {}) has type {}",
                 m.pe_ident().repr(tcx),
                 m.id,
@@ -627,11 +627,6 @@ pub fn ensure_no_ty_param_bounds(ccx: &CrateCtxt,
                 ast::RegionTyParamBound(..) => { }
             }
         }
-
-        match ty_param.unbound {
-            Some(_) => { warn = true; }
-            None => { }
-        }
     }
 
     if warn {
@@ -651,7 +646,7 @@ fn is_associated_type_valid_for_param(ty: Ty,
                                       generics: &ty::Generics)
                                       -> bool {
     if let ty::ty_param(param_ty) = ty.sty {
-        let type_parameter = generics.types.get(param_ty.space, param_ty.idx);
+        let type_parameter = generics.types.get(param_ty.space, param_ty.idx as uint);
         for trait_bound in type_parameter.bounds.trait_bounds.iter() {
             if trait_bound.def_id() == trait_id {
                 return true
@@ -1146,7 +1141,7 @@ pub fn convert(ccx: &CrateCtxt, it: &ast::Item) {
                                                AllowEqConstraints::DontAllow);
             }
         },
-        ast::ItemTrait(_, _, _, _, ref trait_methods) => {
+        ast::ItemTrait(_, _, _, ref trait_methods) => {
             let trait_def = trait_def_of_item(ccx, it);
 
             debug!("trait_def: ident={} trait_def={}",
@@ -1264,7 +1259,7 @@ pub fn convert_struct<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>,
     tcx.struct_fields.borrow_mut().insert(local_def(id), Rc::new(field_tys));
 
     let substs = mk_item_substs(ccx, &pty.generics);
-    let selfty = ty::mk_struct(tcx, local_def(id), substs);
+    let selfty = ty::mk_struct(tcx, local_def(id), tcx.mk_substs(substs));
 
     // If this struct is enum-like or tuple-like, create the type of its
     // constructor.
@@ -1338,13 +1333,12 @@ pub fn trait_def_of_item<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>,
         return def.clone();
     }
 
-    let (unsafety, generics, unbound, bounds, items) = match it.node {
+    let (unsafety, generics, bounds, items) = match it.node {
         ast::ItemTrait(unsafety,
                        ref generics,
-                       ref unbound,
                        ref supertraits,
                        ref items) => {
-            (unsafety, generics, unbound, supertraits, items.as_slice())
+            (unsafety, generics, supertraits, items.as_slice())
         }
         ref s => {
             tcx.sess.span_bug(
@@ -1353,11 +1347,11 @@ pub fn trait_def_of_item<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>,
         }
     };
 
-    let substs = mk_trait_substs(ccx, it.id, generics, items);
+    let substs = ccx.tcx.mk_substs(mk_trait_substs(ccx, it.id, generics, items));
 
     let ty_generics = ty_generics_for_trait(ccx,
                                             it.id,
-                                            &substs,
+                                            substs,
                                             generics,
                                             items);
 
@@ -1367,7 +1361,6 @@ pub fn trait_def_of_item<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>,
                                 token::SELF_KEYWORD_NAME,
                                 self_param_ty,
                                 bounds.as_slice(),
-                                unbound,
                                 it.span);
 
     let substs = mk_item_substs(ccx, &ty_generics);
@@ -1377,7 +1370,7 @@ pub fn trait_def_of_item<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>,
         bounds: bounds,
         trait_ref: Rc::new(ty::TraitRef {
             def_id: def_id,
-            substs: substs
+            substs: ccx.tcx.mk_substs(substs)
         })
     });
     tcx.trait_defs.borrow_mut().insert(def_id, trait_def.clone());
@@ -1397,7 +1390,7 @@ pub fn trait_def_of_item<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>,
                     .enumerate()
                     .map(|(i, def)| ty::ReEarlyBound(def.lifetime.id,
                                                      subst::TypeSpace,
-                                                     i,
+                                                     i as u32,
                                                      def.lifetime.name))
                     .collect();
 
@@ -1407,7 +1400,7 @@ pub fn trait_def_of_item<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>,
                     .iter()
                     .enumerate()
                     .map(|(i, def)| ty::mk_param(ccx.tcx, subst::TypeSpace,
-                                                 i, local_def(def.id)))
+                                                 i as u32, local_def(def.id)))
                     .collect();
 
         // ...and also create generics synthesized from the associated types.
@@ -1465,7 +1458,7 @@ pub fn ty_of_item<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>, it: &ast::Item)
             };
             let pty = Polytype {
                 generics: ty_generics,
-                ty: ty::mk_bare_fn(ccx.tcx, Some(local_def(it.id)), tofd)
+                ty: ty::mk_bare_fn(ccx.tcx, Some(local_def(it.id)), ccx.tcx.mk_bare_fn(tofd))
             };
             debug!("type of {} (id {}) is {}",
                     token::get_ident(it.ident),
@@ -1502,7 +1495,7 @@ pub fn ty_of_item<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>, it: &ast::Item)
                 generics,
                 DontCreateTypeParametersForAssociatedTypes);
             let substs = mk_item_substs(ccx, &ty_generics);
-            let t = ty::mk_enum(tcx, local_def(it.id), substs);
+            let t = ty::mk_enum(tcx, local_def(it.id), tcx.mk_substs(substs));
             let pty = Polytype {
                 generics: ty_generics,
                 ty: t
@@ -1520,7 +1513,7 @@ pub fn ty_of_item<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>, it: &ast::Item)
                 generics,
                 DontCreateTypeParametersForAssociatedTypes);
             let substs = mk_item_substs(ccx, &ty_generics);
-            let t = ty::mk_struct(tcx, local_def(it.id), substs);
+            let t = ty::mk_struct(tcx, local_def(it.id), tcx.mk_substs(substs));
             let pty = Polytype {
                 generics: ty_generics,
                 ty: t
@@ -1598,7 +1591,7 @@ fn ty_generics_for_type_or_impl<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>,
 
 fn ty_generics_for_trait<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>,
                                    trait_id: ast::NodeId,
-                                   substs: &subst::Substs<'tcx>,
+                                   substs: &'tcx subst::Substs<'tcx>,
                                    ast_generics: &ast::Generics,
                                    items: &[ast::TraitItem])
                                    -> ty::Generics<'tcx>
@@ -1621,7 +1614,7 @@ fn ty_generics_for_trait<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>,
                         ccx,
                         subst::AssocSpace,
                         &associated_type.ty_param,
-                        generics.types.len(subst::AssocSpace),
+                        generics.types.len(subst::AssocSpace) as u32,
                         Some(local_def(trait_id)));
                 ccx.tcx.ty_param_defs.borrow_mut().insert(associated_type.ty_param.id,
                                                           def.clone());
@@ -1639,7 +1632,7 @@ fn ty_generics_for_trait<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>,
 
     let self_trait_ref =
         Rc::new(ty::Binder(ty::TraitRef { def_id: local_def(trait_id),
-                                          substs: (*substs).clone() }));
+                                          substs: substs }));
 
     let def = ty::TypeParameterDef {
         space: subst::SelfSpace,
@@ -1683,29 +1676,37 @@ fn ty_generics_for_fn_or_method<'tcx,AC>(
                 create_type_parameters_for_associated_types)
 }
 
-// Add the Sized bound, unless the type parameter is marked as `Sized?`.
+// Add the Sized bound, unless the type parameter is marked as `?Sized`.
 fn add_unsized_bound<'tcx,AC>(this: &AC,
-                              unbound: &Option<ast::TraitRef>,
                               bounds: &mut ty::BuiltinBounds,
-                              desc: &str,
+                              ast_bounds: &[ast::TyParamBound],
                               span: Span)
                               where AC: AstConv<'tcx> {
+    // Try to find an unbound in bounds.
+    let mut unbound = None;
+    for ab in ast_bounds.iter() {
+        if let &ast::TraitTyParamBound(ref ptr, ast::TraitBoundModifier::Maybe) = ab  {
+            if unbound.is_none() {
+                assert!(ptr.bound_lifetimes.is_empty());
+                unbound = Some(ptr.trait_ref.clone());
+            } else {
+                this.tcx().sess.span_err(span, "type parameter has more than one relaxed default \
+                                                bound, only one is supported");
+            }
+        }
+    }
+
     let kind_id = this.tcx().lang_items.require(SizedTraitLangItem);
     match unbound {
-        &Some(ref tpb) => {
+        Some(ref tpb) => {
             // FIXME(#8559) currently requires the unbound to be built-in.
             let trait_def_id = ty::trait_ref_to_def_id(this.tcx(), tpb);
             match kind_id {
                 Ok(kind_id) if trait_def_id != kind_id => {
                     this.tcx().sess.span_warn(span,
-                                              format!("default bound relaxed \
-                                                       for a {}, but this \
-                                                       does nothing because \
-                                                       the given bound is not \
-                                                       a default. \
-                                                       Only `Sized?` is \
-                                                       supported",
-                                                      desc)[]);
+                                              "default bound relaxed for a type parameter, but \
+                                               this does nothing because the given bound is not \
+                                               a default. Only `?Sized` is supported");
                     ty::try_add_builtin_trait(this.tcx(),
                                               kind_id,
                                               bounds);
@@ -1717,7 +1718,7 @@ fn add_unsized_bound<'tcx,AC>(this: &AC,
             ty::try_add_builtin_trait(this.tcx(), kind_id.unwrap(), bounds);
         }
         // No lang item for Sized, so we can't add it as a bound.
-        &None => {}
+        None => {}
     }
 }
 
@@ -1746,7 +1747,7 @@ fn ty_generics<'tcx,AC>(this: &AC,
                              .collect();
         let def = ty::RegionParameterDef { name: l.lifetime.name,
                                            space: space,
-                                           index: i,
+                                           index: i as u32,
                                            def_id: local_def(l.lifetime.id),
                                            bounds: bounds };
         debug!("ty_generics: def for region param: {}", def);
@@ -1775,7 +1776,7 @@ fn ty_generics<'tcx,AC>(this: &AC,
         let def = get_or_create_type_parameter_def(&gcx,
                                                    space,
                                                    param,
-                                                   i,
+                                                   i as u32,
                                                    None);
         debug!("ty_generics: def for type param: {}, {}",
                def.repr(this.tcx()),
@@ -1788,7 +1789,7 @@ fn ty_generics<'tcx,AC>(this: &AC,
                                                           .get_slice(space)
                                                           .iter() {
         assert!(result.types.get_slice(space).len() ==
-                associated_type_param.index);
+                associated_type_param.index as uint);
         debug!("ty_generics: def for associated type: {}, {}",
                associated_type_param.repr(this.tcx()),
                space);
@@ -1807,7 +1808,7 @@ fn ty_generics<'tcx,AC>(this: &AC,
 
                 for bound in bound_pred.bounds.iter() {
                     match bound {
-                        &ast::TyParamBound::TraitTyParamBound(ref poly_trait_ref) => {
+                        &ast::TyParamBound::TraitTyParamBound(ref poly_trait_ref, _) => {
                             let trait_ref = astconv::instantiate_poly_trait_ref(
                                 this,
                                 &ExplicitRscope,
@@ -1880,7 +1881,7 @@ fn ty_generics<'tcx,AC>(this: &AC,
             for bound in param.bounds.iter() {
                 // In the above example, `ast_trait_ref` is `Iterator`.
                 let ast_trait_ref = match *bound {
-                    ast::TraitTyParamBound(ref r) => r,
+                    ast::TraitTyParamBound(ref r, _) => r,
                     ast::RegionTyParamBound(..) => { continue; }
                 };
 
@@ -1915,7 +1916,7 @@ fn ty_generics<'tcx,AC>(this: &AC,
                         name: associated_type_def.name,
                         def_id: associated_type_def.def_id,
                         space: space,
-                        index: types.len() + index,
+                        index: types.len() as u32 + index,
                         bounds: ty::ParamBounds {
                             builtin_bounds: associated_type_def.bounds.builtin_bounds,
 
@@ -1963,7 +1964,7 @@ fn ty_generics<'tcx,AC>(this: &AC,
 fn get_or_create_type_parameter_def<'tcx,AC>(this: &AC,
                                              space: subst::ParamSpace,
                                              param: &ast::TyParam,
-                                             index: uint,
+                                             index: u32,
                                              associated_with: Option<ast::DefId>)
                                              -> ty::TypeParameterDef<'tcx>
     where AC: AstConv<'tcx>
@@ -1978,7 +1979,6 @@ fn get_or_create_type_parameter_def<'tcx,AC>(this: &AC,
                                 param.ident.name,
                                 param_ty,
                                 param.bounds[],
-                                &param.unbound,
                                 param.span);
     let default = match param.default {
         None => None,
@@ -2023,7 +2023,6 @@ fn compute_bounds<'tcx,AC>(this: &AC,
                            name_of_bounded_thing: ast::Name,
                            param_ty: ty::ParamTy,
                            ast_bounds: &[ast::TyParamBound],
-                           unbound: &Option<ast::TraitRef>,
                            span: Span)
                            -> ty::ParamBounds<'tcx>
                            where AC: AstConv<'tcx> {
@@ -2032,11 +2031,9 @@ fn compute_bounds<'tcx,AC>(this: &AC,
                                              param_ty,
                                              ast_bounds);
 
-
     add_unsized_bound(this,
-                      unbound,
                       &mut param_bounds.builtin_bounds,
-                      "type parameter",
+                      ast_bounds,
                       span);
 
     check_bounds_compatible(this.tcx(),
@@ -2143,13 +2140,13 @@ pub fn ty_of_foreign_fn_decl<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>,
     let t_fn = ty::mk_bare_fn(
         ccx.tcx,
         None,
-        ty::BareFnTy {
+        ccx.tcx.mk_bare_fn(ty::BareFnTy {
             abi: abi,
             unsafety: ast::Unsafety::Unsafe,
             sig: ty::Binder(ty::FnSig {inputs: input_tys,
-                                       output: output,
-                                       variadic: decl.variadic}),
-        });
+                            output: output,
+                            variadic: decl.variadic})
+        }));
     let pty = Polytype {
         generics: ty_generics_for_fn_or_method,
         ty: t_fn

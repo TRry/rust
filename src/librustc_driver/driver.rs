@@ -32,7 +32,6 @@ use serialize::{json, Encodable};
 use std::io;
 use std::io::fs;
 use std::os;
-use arena::TypedArena;
 use syntax::ast;
 use syntax::ast_map;
 use syntax::attr;
@@ -79,11 +78,22 @@ pub fn compile_input(sess: Session,
 
         if stop_after_phase_2(&sess) { return; }
 
-        let type_arena = TypedArena::new();
-        let analysis = phase_3_run_analysis_passes(sess, ast_map, &type_arena, id);
+        let arenas = ty::CtxtArenas::new();
+        let analysis = phase_3_run_analysis_passes(sess, ast_map, &arenas, id);
         phase_save_analysis(&analysis.ty_cx.sess, analysis.ty_cx.map.krate(), &analysis, outdir);
+
+        if log_enabled!(::log::INFO) {
+            println!("Pre-trans");
+            analysis.ty_cx.print_debug_stats();
+        }
+
         if stop_after_phase_3(&analysis.ty_cx.sess) { return; }
         let (tcx, trans) = phase_4_translate_to_llvm(analysis);
+
+        if log_enabled!(::log::INFO) {
+            println!("Post-trans");
+            tcx.print_debug_stats();
+        }
 
         // Discard interned strings as they are no longer required.
         token::get_ident_interner().clear();
@@ -331,7 +341,7 @@ pub fn assign_node_ids_and_map<'ast>(sess: &Session,
 /// structures carrying the results of the analysis.
 pub fn phase_3_run_analysis_passes<'tcx>(sess: Session,
                                          ast_map: ast_map::Map<'tcx>,
-                                         type_arena: &'tcx TypedArena<ty::TyS<'tcx>>,
+                                         arenas: &'tcx ty::CtxtArenas<'tcx>,
                                          name: String) -> ty::CrateAnalysis<'tcx> {
     let time_passes = sess.time_passes();
     let krate = ast_map.krate();
@@ -342,6 +352,11 @@ pub fn phase_3_run_analysis_passes<'tcx>(sess: Session,
     let lang_items = time(time_passes, "language item collection", (), |_|
                           middle::lang_items::collect_language_items(krate, &sess));
 
+    let make_glob_map = if save_analysis(&sess) {
+        resolve::MakeGlobMap::Yes
+    } else {
+        resolve::MakeGlobMap::No
+    };
     let resolve::CrateMap {
         def_map,
         freevars,
@@ -349,10 +364,15 @@ pub fn phase_3_run_analysis_passes<'tcx>(sess: Session,
         export_map,
         trait_map,
         external_exports,
-        last_private_map
+        last_private_map,
+        glob_map,
     } =
         time(time_passes, "resolution", (),
-             |_| resolve::resolve_crate(&sess, &lang_items, krate));
+             |_| resolve::resolve_crate(&sess,
+                                        &ast_map,
+                                        &lang_items,
+                                        krate,
+                                        make_glob_map));
 
     // Discard MTWT tables that aren't required past resolution.
     syntax::ext::mtwt::clear_tables();
@@ -381,7 +401,7 @@ pub fn phase_3_run_analysis_passes<'tcx>(sess: Session,
          middle::check_static_recursion::check_crate(&sess, krate, &def_map, &ast_map));
 
     let ty_cx = ty::mk_ctxt(sess,
-                            type_arena,
+                            arenas,
                             def_map,
                             named_region_map,
                             ast_map,
@@ -454,14 +474,19 @@ pub fn phase_3_run_analysis_passes<'tcx>(sess: Session,
         public_items: public_items,
         reachable: reachable_map,
         name: name,
+        glob_map: glob_map,
     }
+}
+
+fn save_analysis(sess: &Session) -> bool {
+    (sess.opts.debugging_opts & config::SAVE_ANALYSIS) != 0
 }
 
 pub fn phase_save_analysis(sess: &Session,
                            krate: &ast::Crate,
                            analysis: &ty::CrateAnalysis,
                            odir: &Option<Path>) {
-    if (sess.opts.debugging_opts & config::SAVE_ANALYSIS) == 0 {
+    if !save_analysis(sess) {
         return;
     }
     time(sess.time_passes(), "save analysis", krate, |krate|

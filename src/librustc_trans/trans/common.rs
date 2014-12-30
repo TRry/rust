@@ -59,7 +59,7 @@ pub use trans::context::CrateContext;
 fn type_is_newtype_immediate<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>,
                                        ty: Ty<'tcx>) -> bool {
     match ty.sty {
-        ty::ty_struct(def_id, ref substs) => {
+        ty::ty_struct(def_id, substs) => {
             let fields = ty::struct_fields(ccx.tcx(), def_id, substs);
             fields.len() == 1 &&
                 fields[0].name ==
@@ -190,8 +190,8 @@ pub fn validate_substs(substs: &Substs) {
 }
 
 // work around bizarre resolve errors
-pub type RvalueDatum<'tcx> = datum::Datum<'tcx, datum::Rvalue>;
-pub type LvalueDatum<'tcx> = datum::Datum<'tcx, datum::Lvalue>;
+type RvalueDatum<'tcx> = datum::Datum<'tcx, datum::Rvalue>;
+type LvalueDatum<'tcx> = datum::Datum<'tcx, datum::Lvalue>;
 
 // Function context.  Every LLVM function we create will have one of
 // these.
@@ -463,8 +463,12 @@ impl<'blk, 'tcx> mc::Typer<'tcx> for BlockS<'blk, 'tcx> {
         self.tcx()
     }
 
-    fn node_ty(&self, id: ast::NodeId) -> mc::McResult<Ty<'tcx>> {
-        Ok(node_id_type(self, id))
+    fn node_ty(&self, id: ast::NodeId) -> Ty<'tcx> {
+        node_id_type(self, id)
+    }
+
+    fn expr_ty_adjusted(&self, expr: &ast::Expr) -> Ty<'tcx> {
+        expr_ty_adjusted(self, expr)
     }
 
     fn node_method_ty(&self, method_call: ty::MethodCall) -> Option<Ty<'tcx>> {
@@ -473,6 +477,16 @@ impl<'blk, 'tcx> mc::Typer<'tcx> for BlockS<'blk, 'tcx> {
             .borrow()
             .get(&method_call)
             .map(|method| monomorphize_type(self, method.ty))
+    }
+
+    fn node_method_origin(&self, method_call: ty::MethodCall)
+                          -> Option<ty::MethodOrigin<'tcx>>
+    {
+        self.tcx()
+            .method_map
+            .borrow()
+            .get(&method_call)
+            .map(|method| method.origin.clone())
     }
 
     fn adjustments<'a>(&'a self) -> &'a RefCell<NodeMap<ty::AutoAdjustment<'tcx>>> {
@@ -736,6 +750,7 @@ pub fn is_undef(val: ValueRef) -> bool {
     }
 }
 
+#[allow(dead_code)] // potentially useful
 pub fn is_null(val: ValueRef) -> bool {
     unsafe {
         llvm::LLVMIsNull(val) != False
@@ -752,11 +767,11 @@ pub fn node_id_type<'blk, 'tcx>(bcx: &BlockS<'blk, 'tcx>, id: ast::NodeId) -> Ty
     monomorphize_type(bcx, t)
 }
 
-pub fn expr_ty<'blk, 'tcx>(bcx: Block<'blk, 'tcx>, ex: &ast::Expr) -> Ty<'tcx> {
+pub fn expr_ty<'blk, 'tcx>(bcx: &BlockS<'blk, 'tcx>, ex: &ast::Expr) -> Ty<'tcx> {
     node_id_type(bcx, ex.id)
 }
 
-pub fn expr_ty_adjusted<'blk, 'tcx>(bcx: Block<'blk, 'tcx>, ex: &ast::Expr) -> Ty<'tcx> {
+pub fn expr_ty_adjusted<'blk, 'tcx>(bcx: &BlockS<'blk, 'tcx>, ex: &ast::Expr) -> Ty<'tcx> {
     monomorphize_type(bcx, ty::expr_ty_adjusted(bcx.tcx(), ex))
 }
 
