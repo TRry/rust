@@ -700,9 +700,9 @@ pub fn collect_crate_types(session: &Session,
 
     // If we're generating a test executable, then ignore all other output
     // styles at all other locations
-    if session.opts.test {
-        return vec!(config::CrateTypeExecutable)
-    }
+    // if session.opts.test && !cfg!(test_as_lib) {
+    //    return vec!(config::CrateTypeExecutable)
+    // }
 
     // Only check command line flags if present. If no types are specified by
     // command line, then reuse the empty `base` Vec to hold the types that
