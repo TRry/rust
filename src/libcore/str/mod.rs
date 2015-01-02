@@ -1027,7 +1027,7 @@ pub fn truncate_utf16_at_nul<'a>(v: &'a [u16]) -> &'a [u16] {
 }
 
 // https://tools.ietf.org/html/rfc3629
-static UTF8_CHAR_WIDTH: [u8, ..256] = [
+static UTF8_CHAR_WIDTH: [u8; 256] = [
 1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
 1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1, // 0x1F
 1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
@@ -1143,6 +1143,7 @@ pub mod traits {
     use ops;
     use str::{Str, StrExt, eq_slice};
 
+    #[stable]
     impl Ord for str {
         #[inline]
         fn cmp(&self, other: &str) -> Ordering {
@@ -1158,6 +1159,7 @@ pub mod traits {
         }
     }
 
+    #[stable]
     impl PartialEq for str {
         #[inline]
         fn eq(&self, other: &str) -> bool {
@@ -1167,8 +1169,10 @@ pub mod traits {
         fn ne(&self, other: &str) -> bool { !(*self).eq(other) }
     }
 
+    #[stable]
     impl Eq for str {}
 
+    #[stable]
     impl PartialOrd for str {
         #[inline]
         fn partial_cmp(&self, other: &str) -> Option<Ordering> {

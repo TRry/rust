@@ -12,15 +12,18 @@ use back::link::exported_name;
 use session;
 use llvm::ValueRef;
 use llvm;
+use middle::infer;
 use middle::subst;
-use middle::subst::Subst;
+use middle::subst::{Subst, Substs};
+use middle::traits;
+use middle::ty_fold::{TypeFolder, TypeFoldable};
 use trans::base::{set_llvm_fn_attrs, set_inline_hint};
 use trans::base::{trans_enum_variant, push_ctxt, get_item_val};
 use trans::base::{trans_fn, decl_internal_rust_fn};
 use trans::base;
 use trans::common::*;
 use trans::foreign;
-use middle::ty::{mod, Ty};
+use middle::ty::{mod, HasProjectionTypes, Ty};
 use util::ppaux::Repr;
 
 use syntax::abi;
@@ -28,6 +31,7 @@ use syntax::ast;
 use syntax::ast_map;
 use syntax::ast_util::{local_def, PostExpansionMethod};
 use syntax::attr;
+use syntax::codemap::DUMMY_SP;
 use std::hash::{sip, Hash};
 
 pub fn monomorphic_fn<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>,
@@ -92,7 +96,12 @@ pub fn monomorphic_fn<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>,
     }
 
     debug!("monomorphic_fn about to subst into {}", llitem_ty.repr(ccx.tcx()));
+
     let mono_ty = llitem_ty.subst(ccx.tcx(), psubsts);
+    debug!("mono_ty = {} (post-substitution)", mono_ty.repr(ccx.tcx()));
+
+    let mono_ty = normalize_associated_type(ccx.tcx(), &mono_ty);
+    debug!("mono_ty = {} (post-normalization)", mono_ty.repr(ccx.tcx()));
 
     ccx.stats().n_monos.set(ccx.stats().n_monos.get() + 1);
 
@@ -130,7 +139,7 @@ pub fn monomorphic_fn<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>,
 
     // This shouldn't need to option dance.
     let mut hash_id = Some(hash_id);
-    let mk_lldecl = |abi: abi::Abi| {
+    let mut mk_lldecl = |&mut : abi: abi::Abi| {
         let lldecl = if abi != abi::Rust {
             foreign::decl_rust_fn_with_foreign_abi(ccx, mono_ty, s[])
         } else {
@@ -140,7 +149,7 @@ pub fn monomorphic_fn<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>,
         ccx.monomorphized().borrow_mut().insert(hash_id.take().unwrap(), lldecl);
         lldecl
     };
-    let setup_lldecl = |lldecl, attrs: &[ast::Attribute]| {
+    let setup_lldecl = |&: lldecl, attrs: &[ast::Attribute]| {
         base::update_linkage(ccx, lldecl, None, base::OriginalTranslation);
         set_llvm_fn_attrs(ccx, attrs, lldecl);
 
@@ -281,4 +290,53 @@ pub fn monomorphic_fn<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>,
 pub struct MonoId<'tcx> {
     pub def: ast::DefId,
     pub params: subst::VecPerParamSpace<Ty<'tcx>>
+}
+
+/// Monomorphizes a type from the AST by first applying the in-scope
+/// substitutions and then normalizing any associated types.
+pub fn apply_param_substs<'tcx,T>(tcx: &ty::ctxt<'tcx>,
+                                  param_substs: &Substs<'tcx>,
+                                  value: &T)
+                                  -> T
+    where T : TypeFoldable<'tcx> + Repr<'tcx> + HasProjectionTypes + Clone
+{
+    assert!(param_substs.regions.is_erased());
+
+    let substituted = value.subst(tcx, param_substs);
+    normalize_associated_type(tcx, &substituted)
+}
+
+/// Removes associated types, if any. Since this during
+/// monomorphization, we know that only concrete types are involved,
+/// and hence we can be sure that all associated types will be
+/// completely normalized away.
+pub fn normalize_associated_type<'tcx,T>(tcx: &ty::ctxt<'tcx>, value: &T) -> T
+    where T : TypeFoldable<'tcx> + Repr<'tcx> + HasProjectionTypes + Clone
+{
+    debug!("normalize_associated_type(t={})", value.repr(tcx));
+
+    if !value.has_projection_types() {
+        return value.clone();
+    }
+
+    // FIXME(#20304) -- cache
+
+    let infcx = infer::new_infer_ctxt(tcx);
+    let param_env = ty::empty_parameter_environment();
+    let mut selcx = traits::SelectionContext::new(&infcx, &param_env, tcx);
+    let cause = traits::ObligationCause::dummy();
+    let traits::Normalized { value: result, obligations } =
+        traits::normalize(&mut selcx, cause, value);
+
+    debug!("normalize_associated_type: result={} obligations={}",
+           result.repr(tcx),
+           obligations.repr(tcx));
+
+    let mut fulfill_cx = traits::FulfillmentContext::new();
+    for obligation in obligations.into_iter() {
+        fulfill_cx.register_predicate_obligation(&infcx, obligation);
+    }
+    let result = drain_fulfillment_cx(DUMMY_SP, &infcx, &param_env, &mut fulfill_cx, &result);
+
+    result
 }

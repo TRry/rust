@@ -104,7 +104,7 @@ fn int_to_str_bytes_common<T, F>(num: T, radix: uint, sign: SignFormat, mut f: F
     // This is just for integral types, the largest of which is a u64. The
     // smallest base that we can have is 2, so the most number of digits we're
     // ever going to have is 64
-    let mut buf = [0u8, ..64];
+    let mut buf = [0u8; 64];
     let mut cur = 0;
 
     // Loop at least once to make sure at least a `0` gets emitted.
@@ -321,10 +321,10 @@ pub fn float_to_str_bytes_common<T: Float>(
         // cut off the one extra digit, and depending on its value
         // round the remaining ones.
         if limit_digits && dig == digit_count {
-            let ascii2value = |chr: u8| {
+            let ascii2value = |&: chr: u8| {
                 (chr as char).to_digit(radix).unwrap()
             };
-            let value2ascii = |val: uint| {
+            let value2ascii = |&: val: uint| {
                 char::from_digit(val, radix).unwrap() as u8
             };
 

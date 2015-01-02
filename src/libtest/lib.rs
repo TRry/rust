@@ -990,8 +990,8 @@ fn run_tests<F>(opts: &TestOpts,
 
     try!(callback(TeFiltered(filtered_descs)));
 
-    let (filtered_tests, filtered_benchs_and_metrics) =
-        filtered_tests.partition(|e| {
+    let (filtered_tests, filtered_benchs_and_metrics): (Vec<_>, _) =
+        filtered_tests.into_iter().partition(|e| {
             match e.testfn {
                 StaticTestFn(_) | DynTestFn(_) => true,
                 _ => false
@@ -1387,7 +1387,7 @@ impl Bencher {
         if n == 0 { n = 1; }
 
         let mut total_run = Duration::nanoseconds(0);
-        let samples : &mut [f64] = &mut [0.0_f64, ..50];
+        let samples : &mut [f64] = &mut [0.0_f64; 50];
         loop {
             let mut summ = None;
             let mut summ5 = None;

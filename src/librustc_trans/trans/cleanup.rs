@@ -63,7 +63,7 @@ pub const EXIT_MAX: uint = 2;
 pub enum CleanupScopeKind<'blk, 'tcx: 'blk> {
     CustomScopeKind,
     AstScopeKind(ast::NodeId),
-    LoopScopeKind(ast::NodeId, [Block<'blk, 'tcx>, ..EXIT_MAX])
+    LoopScopeKind(ast::NodeId, [Block<'blk, 'tcx>; EXIT_MAX])
 }
 
 impl<'blk, 'tcx: 'blk> fmt::Show for CleanupScopeKind<'blk, 'tcx> {
@@ -146,7 +146,7 @@ impl<'blk, 'tcx> CleanupMethods<'blk, 'tcx> for FunctionContext<'blk, 'tcx> {
 
     fn push_loop_cleanup_scope(&self,
                                id: ast::NodeId,
-                               exits: [Block<'blk, 'tcx>, ..EXIT_MAX]) {
+                               exits: [Block<'blk, 'tcx>; EXIT_MAX]) {
         debug!("push_loop_cleanup_scope({})",
                self.ccx.tcx().map.node_to_string(id));
         assert_eq!(Some(id), self.top_ast_scope());
@@ -279,10 +279,10 @@ impl<'blk, 'tcx> CleanupMethods<'blk, 'tcx> for FunctionContext<'blk, 'tcx> {
                          cleanup_scope: ScopeId,
                          val: ValueRef,
                          ty: Ty<'tcx>) {
-        if !ty::type_needs_drop(self.ccx.tcx(), ty) { return; }
+        if !common::type_needs_drop(self.ccx.tcx(), ty) { return; }
         let drop = box DropValue {
             is_immediate: false,
-            must_unwind: ty::type_needs_unwind_cleanup(self.ccx.tcx(), ty),
+            must_unwind: common::type_needs_unwind_cleanup(self.ccx, ty),
             val: val,
             ty: ty,
             zero: false
@@ -301,10 +301,10 @@ impl<'blk, 'tcx> CleanupMethods<'blk, 'tcx> for FunctionContext<'blk, 'tcx> {
                                   cleanup_scope: ScopeId,
                                   val: ValueRef,
                                   ty: Ty<'tcx>) {
-        if !ty::type_needs_drop(self.ccx.tcx(), ty) { return; }
+        if !common::type_needs_drop(self.ccx.tcx(), ty) { return; }
         let drop = box DropValue {
             is_immediate: false,
-            must_unwind: ty::type_needs_unwind_cleanup(self.ccx.tcx(), ty),
+            must_unwind: common::type_needs_unwind_cleanup(self.ccx, ty),
             val: val,
             ty: ty,
             zero: true
@@ -325,10 +325,10 @@ impl<'blk, 'tcx> CleanupMethods<'blk, 'tcx> for FunctionContext<'blk, 'tcx> {
                                val: ValueRef,
                                ty: Ty<'tcx>) {
 
-        if !ty::type_needs_drop(self.ccx.tcx(), ty) { return; }
+        if !common::type_needs_drop(self.ccx.tcx(), ty) { return; }
         let drop = box DropValue {
             is_immediate: true,
-            must_unwind: ty::type_needs_unwind_cleanup(self.ccx.tcx(), ty),
+            must_unwind: common::type_needs_unwind_cleanup(self.ccx, ty),
             val: val,
             ty: ty,
             zero: false
@@ -736,7 +736,7 @@ impl<'blk, 'tcx> CleanupHelperMethods<'blk, 'tcx> for FunctionContext<'blk, 'tcx
                         let f = base::decl_cdecl_fn(self.ccx,
                                                     "rust_eh_personality",
                                                     fty,
-                                                    ty::mk_i32());
+                                                    self.ccx.tcx().types.i32);
                         *personality = Some(f);
                         f
                     }
@@ -1058,7 +1058,7 @@ pub trait CleanupMethods<'blk, 'tcx> {
     fn push_ast_cleanup_scope(&self, id: NodeInfo);
     fn push_loop_cleanup_scope(&self,
                                id: ast::NodeId,
-                               exits: [Block<'blk, 'tcx>, ..EXIT_MAX]);
+                               exits: [Block<'blk, 'tcx>; EXIT_MAX]);
     fn push_custom_cleanup_scope(&self) -> CustomScopeIndex;
     fn push_custom_cleanup_scope_with_debug_loc(&self,
                                                 debug_loc: NodeInfo)

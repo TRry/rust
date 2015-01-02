@@ -140,7 +140,7 @@ pub trait Rng {
     /// ```rust
     /// use std::rand::{thread_rng, Rng};
     ///
-    /// let mut v = [0u8, .. 13579];
+    /// let mut v = [0u8; 13579];
     /// thread_rng().fill_bytes(&mut v);
     /// println!("{}", v.as_slice());
     /// ```
@@ -271,7 +271,8 @@ pub trait Rng {
     /// let choices = [1i, 2, 4, 8, 16, 32];
     /// let mut rng = thread_rng();
     /// println!("{}", rng.choose(&choices));
-    /// assert_eq!(rng.choose(choices[..0]), None);
+    /// # // replace with slicing syntax when it's stable!
+    /// assert_eq!(rng.choose(choices.slice_to(0)), None);
     /// ```
     fn choose<'a, T>(&mut self, values: &'a [T]) -> Option<&'a T> {
         if values.is_empty() {
@@ -428,9 +429,9 @@ impl Rng for XorShiftRng {
     }
 }
 
-impl SeedableRng<[u32, .. 4]> for XorShiftRng {
+impl SeedableRng<[u32; 4]> for XorShiftRng {
     /// Reseed an XorShiftRng. This will panic if `seed` is entirely 0.
-    fn reseed(&mut self, seed: [u32, .. 4]) {
+    fn reseed(&mut self, seed: [u32; 4]) {
         assert!(!seed.iter().all(|&x| x == 0),
                 "XorShiftRng.reseed called with an all zero seed.");
 
@@ -441,7 +442,7 @@ impl SeedableRng<[u32, .. 4]> for XorShiftRng {
     }
 
     /// Create a new XorShiftRng. This will panic if `seed` is entirely 0.
-    fn from_seed(seed: [u32, .. 4]) -> XorShiftRng {
+    fn from_seed(seed: [u32; 4]) -> XorShiftRng {
         assert!(!seed.iter().all(|&x| x == 0),
                 "XorShiftRng::from_seed called with an all zero seed.");
 

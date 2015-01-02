@@ -1017,8 +1017,6 @@ pub trait Writer {
     /// decide whether their stream needs to be buffered or not.
     fn flush(&mut self) -> IoResult<()> { Ok(()) }
 
-    // NOTE(stage0): Remove cfg after a snapshot
-    #[cfg(not(stage0))]
     /// Writes a formatted string into this writer, returning any error
     /// encountered.
     ///
@@ -1057,45 +1055,6 @@ pub trait Writer {
     }
 
 
-    // NOTE(stage0): Remove method after a snapshot
-    #[cfg(stage0)]
-    /// Writes a formatted string into this writer, returning any error
-    /// encountered.
-    ///
-    /// This method is primarily used to interface with the `format_args!`
-    /// macro, but it is rare that this should explicitly be called. The
-    /// `write!` macro should be favored to invoke this method instead.
-    ///
-    /// # Errors
-    ///
-    /// This function will return any I/O error reported while formatting.
-    fn write_fmt(&mut self, fmt: &fmt::Arguments) -> IoResult<()> {
-        // Create a shim which translates a Writer to a FormatWriter and saves
-        // off I/O errors. instead of discarding them
-        struct Adaptor<'a, T:'a> {
-            inner: &'a mut T,
-            error: IoResult<()>,
-        }
-
-        impl<'a, T: Writer> fmt::FormatWriter for Adaptor<'a, T> {
-            fn write(&mut self, bytes: &[u8]) -> fmt::Result {
-                match self.inner.write(bytes) {
-                    Ok(()) => Ok(()),
-                    Err(e) => {
-                        self.error = Err(e);
-                        Err(fmt::Error)
-                    }
-                }
-            }
-        }
-
-        let mut output = Adaptor { inner: self, error: Ok(()) };
-        match fmt::write(&mut output, fmt) {
-            Ok(()) => Ok(()),
-            Err(..) => output.error
-        }
-    }
-
     /// Write a rust string into this sink.
     ///
     /// The bytes written will be the UTF-8 encoded version of the input string.
@@ -1122,7 +1081,7 @@ pub trait Writer {
     /// Write a single char, encoded as UTF-8.
     #[inline]
     fn write_char(&mut self, c: char) -> IoResult<()> {
-        let mut buf = [0u8, ..4];
+        let mut buf = [0u8; 4];
         let n = c.encode_utf8(buf.as_mut_slice()).unwrap_or(0);
         self.write(buf[..n])
     }
@@ -2009,7 +1968,7 @@ mod tests {
     fn test_read_at_least() {
         let mut r = BadReader::new(MemReader::new(b"hello, world!".to_vec()),
                                    vec![GoodBehavior(uint::MAX)]);
-        let buf = &mut [0u8, ..5];
+        let buf = &mut [0u8; 5];
         assert!(r.read_at_least(1, buf).unwrap() >= 1);
         assert!(r.read_exact(5).unwrap().len() == 5); // read_exact uses read_at_least
         assert!(r.read_at_least(0, buf).is_ok());

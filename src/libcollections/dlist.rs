@@ -770,6 +770,7 @@ impl<A> Extend<A> for DList<A> {
     }
 }
 
+#[stable]
 impl<A: PartialEq> PartialEq for DList<A> {
     fn eq(&self, other: &DList<A>) -> bool {
         self.len() == other.len() &&
@@ -782,14 +783,17 @@ impl<A: PartialEq> PartialEq for DList<A> {
     }
 }
 
+#[stable]
 impl<A: Eq> Eq for DList<A> {}
 
+#[stable]
 impl<A: PartialOrd> PartialOrd for DList<A> {
     fn partial_cmp(&self, other: &DList<A>) -> Option<Ordering> {
         iter::order::partial_cmp(self.iter(), other.iter())
     }
 }
 
+#[stable]
 impl<A: Ord> Ord for DList<A> {
     #[inline]
     fn cmp(&self, other: &DList<A>) -> Ordering {
@@ -1290,8 +1294,10 @@ mod tests {
                     v.pop();
                 }
                 1 => {
-                    m.pop_front();
-                    v.remove(0);
+                    if !v.is_empty() {
+                        m.pop_front();
+                        v.remove(0);
+                    }
                 }
                 2 | 4 =>  {
                     m.push_front(-i);
@@ -1316,7 +1322,7 @@ mod tests {
 
     #[bench]
     fn bench_collect_into(b: &mut test::Bencher) {
-        let v = &[0i, ..64];
+        let v = &[0i; 64];
         b.iter(|| {
             let _: DList<int> = v.iter().map(|x| *x).collect();
         })
@@ -1378,7 +1384,7 @@ mod tests {
 
     #[bench]
     fn bench_iter(b: &mut test::Bencher) {
-        let v = &[0i, ..128];
+        let v = &[0i; 128];
         let m: DList<int> = v.iter().map(|&x|x).collect();
         b.iter(|| {
             assert!(m.iter().count() == 128);
@@ -1386,7 +1392,7 @@ mod tests {
     }
     #[bench]
     fn bench_iter_mut(b: &mut test::Bencher) {
-        let v = &[0i, ..128];
+        let v = &[0i; 128];
         let mut m: DList<int> = v.iter().map(|&x|x).collect();
         b.iter(|| {
             assert!(m.iter_mut().count() == 128);
@@ -1394,7 +1400,7 @@ mod tests {
     }
     #[bench]
     fn bench_iter_rev(b: &mut test::Bencher) {
-        let v = &[0i, ..128];
+        let v = &[0i; 128];
         let m: DList<int> = v.iter().map(|&x|x).collect();
         b.iter(|| {
             assert!(m.iter().rev().count() == 128);
@@ -1402,7 +1408,7 @@ mod tests {
     }
     #[bench]
     fn bench_iter_mut_rev(b: &mut test::Bencher) {
-        let v = &[0i, ..128];
+        let v = &[0i; 128];
         let mut m: DList<int> = v.iter().map(|&x|x).collect();
         b.iter(|| {
             assert!(m.iter_mut().rev().count() == 128);

@@ -16,6 +16,7 @@ use self::FormatState::*;
 use self::FormatOp::*;
 use std::ascii::OwnedAsciiExt;
 use std::mem::replace;
+use std::iter::repeat;
 
 #[deriving(Copy, PartialEq)]
 enum States {
@@ -52,9 +53,9 @@ pub enum Param {
 /// Container for static and dynamic variable arrays
 pub struct Variables {
     /// Static variables A-Z
-    sta: [Param, ..26],
+    sta: [Param; 26],
     /// Dynamic variables a-z
-    dyn: [Param, ..26]
+    dyn: [Param; 26]
 }
 
 impl Variables {
@@ -508,7 +509,7 @@ fn format(val: Param, op: FormatOp, flags: Flags) -> Result<Vec<u8> ,String> {
             if flags.precision > s.len() {
                 let mut s_ = Vec::with_capacity(flags.precision);
                 let n = flags.precision - s.len();
-                s_.grow(n, b'0');
+                s_.extend(repeat(b'0').take(n));
                 s_.extend(s.into_iter());
                 s = s_;
             }
@@ -560,10 +561,10 @@ fn format(val: Param, op: FormatOp, flags: Flags) -> Result<Vec<u8> ,String> {
     if flags.width > s.len() {
         let n = flags.width - s.len();
         if flags.left {
-            s.grow(n, b' ');
+            s.extend(repeat(b' ').take(n));
         } else {
             let mut s_ = Vec::with_capacity(flags.width);
-            s_.grow(n, b' ');
+            s_.extend(repeat(b' ').take(n));
             s_.extend(s.into_iter());
             s = s_;
         }

@@ -198,6 +198,7 @@ use middle::subst::{mod, Subst, Substs};
 use trans::{mod, adt, machine, type_of};
 use trans::common::*;
 use trans::_match::{BindingInfo, TrByCopy, TrByMove, TrByRef};
+use trans::monomorphize;
 use trans::type_::Type;
 use middle::ty::{mod, Ty};
 use middle::pat_util;
@@ -212,7 +213,7 @@ use std::ptr;
 use std::rc::{Rc, Weak};
 use syntax::util::interner::Interner;
 use syntax::codemap::{Span, Pos};
-use syntax::{ast, codemap, ast_util, ast_map};
+use syntax::{ast, codemap, ast_util, ast_map, attr};
 use syntax::ast_util::PostExpansionMethod;
 use syntax::parse::token::{mod, special_idents};
 
@@ -426,8 +427,8 @@ impl<'tcx> TypeMap<'tcx> {
 
                 from_def_id_and_substs(self,
                                        cx,
-                                       trait_data.principal.def_id(),
-                                       trait_data.principal.substs(),
+                                       trait_data.principal_def_id(),
+                                       trait_data.principal.0.substs,
                                        &mut unique_type_id);
             },
             ty::ty_bare_fn(_, &ty::BareFnTy{ unsafety, abi, ref sig } ) => {
@@ -740,7 +741,16 @@ pub fn finalize(cx: &CrateContext) {
     }
 
     debug!("finalize");
-    compile_unit_metadata(cx);
+    let _ = compile_unit_metadata(cx);
+
+    if needs_gdb_debug_scripts_section(cx) {
+        // Add a .debug_gdb_scripts section to this compile-unit. This will
+        // cause GDB to try and load the gdb_load_rust_pretty_printers.py file,
+        // which activates the Rust pretty printers for binary this section is
+        // contained in.
+        get_or_insert_gdb_debug_scripts_section_global(cx);
+    }
+
     unsafe {
         llvm::LLVMDIBuilderFinalize(DIB(cx));
         llvm::LLVMDIBuilderDispose(DIB(cx));
@@ -1438,7 +1448,9 @@ pub fn create_function_debug_context<'a, 'tcx>(cx: &CrateContext<'a, 'tcx>,
                 assert_type_for_node_id(cx, fn_ast_id, error_reporting_span);
 
                 let return_type = ty::node_id_to_type(cx.tcx(), fn_ast_id);
-                let return_type = return_type.subst(cx.tcx(), param_substs);
+                let return_type = monomorphize::apply_param_substs(cx.tcx(),
+                                                                   param_substs,
+                                                                   &return_type);
                 signature.push(type_metadata(cx, return_type, codemap::DUMMY_SP));
             }
         }
@@ -1447,7 +1459,9 @@ pub fn create_function_debug_context<'a, 'tcx>(cx: &CrateContext<'a, 'tcx>,
         for arg in fn_decl.inputs.iter() {
             assert_type_for_node_id(cx, arg.pat.id, arg.pat.span);
             let arg_type = ty::node_id_to_type(cx.tcx(), arg.pat.id);
-            let arg_type = arg_type.subst(cx.tcx(), param_substs);
+            let arg_type = monomorphize::apply_param_substs(cx.tcx(),
+                                                            param_substs,
+                                                            &arg_type);
             signature.push(type_metadata(cx, arg_type, codemap::DUMMY_SP));
         }
 
@@ -1459,8 +1473,10 @@ pub fn create_function_debug_context<'a, 'tcx>(cx: &CrateContext<'a, 'tcx>,
                                          param_substs: &Substs<'tcx>,
                                          file_metadata: DIFile,
                                          name_to_append_suffix_to: &mut String)
-                                         -> DIArray {
+                                         -> DIArray
+    {
         let self_type = param_substs.self_ty();
+        let self_type = monomorphize::normalize_associated_type(cx.tcx(), &self_type);
 
         // Only true for static default methods:
         let has_self_type = self_type.is_some();
@@ -1579,7 +1595,7 @@ fn create_DIArray(builder: DIBuilderRef, arr: &[DIDescriptor]) -> DIArray {
     };
 }
 
-fn compile_unit_metadata(cx: &CrateContext) {
+fn compile_unit_metadata(cx: &CrateContext) -> DIDescriptor {
     let work_dir = &cx.sess().working_dir;
     let compile_unit_name = match cx.sess().local_crate_source_file {
         None => fallback_path(cx),
@@ -1614,7 +1630,7 @@ fn compile_unit_metadata(cx: &CrateContext) {
                            (option_env!("CFG_VERSION")).expect("CFG_VERSION"));
 
     let compile_unit_name = compile_unit_name.as_ptr();
-    work_dir.as_vec().with_c_str(|work_dir| {
+    return work_dir.as_vec().with_c_str(|work_dir| {
         producer.with_c_str(|producer| {
             "".with_c_str(|flags| {
                 "".with_c_str(|split_name| {
@@ -1628,7 +1644,7 @@ fn compile_unit_metadata(cx: &CrateContext) {
                             cx.sess().opts.optimize != config::No,
                             flags,
                             0,
-                            split_name);
+                            split_name)
                     }
                 })
             })
@@ -2473,7 +2489,7 @@ fn prepare_enum_metadata<'a, 'tcx>(cx: &CrateContext<'a, 'tcx>,
         })
         .collect();
 
-    let discriminant_type_metadata = |inttype| {
+    let discriminant_type_metadata = |&: inttype| {
         // We can reuse the type of the discriminant for all monomorphized
         // instances of an enum because it doesn't depend on any type parameters.
         // The def_id, uniquely identifying the enum's polytype acts as key in
@@ -2487,9 +2503,10 @@ fn prepare_enum_metadata<'a, 'tcx>(cx: &CrateContext<'a, 'tcx>,
                 let discriminant_llvm_type = adt::ll_inttype(cx, inttype);
                 let (discriminant_size, discriminant_align) =
                     size_and_align_of(cx, discriminant_llvm_type);
-                let discriminant_base_type_metadata = type_metadata(cx,
-                                                                    adt::ty_of_inttype(inttype),
-                                                                    codemap::DUMMY_SP);
+                let discriminant_base_type_metadata =
+                    type_metadata(cx,
+                                  adt::ty_of_inttype(cx.tcx(), inttype),
+                                  codemap::DUMMY_SP);
                 let discriminant_name = get_enum_discriminant_name(cx, enum_def_id);
 
                 let discriminant_type_metadata = discriminant_name.get().with_c_str(|name| {
@@ -2797,7 +2814,7 @@ fn vec_slice_metadata<'a, 'tcx>(cx: &CrateContext<'a, 'tcx>,
         MemberDescription {
             name: "length".to_string(),
             llvm_type: member_llvm_types[1],
-            type_metadata: type_metadata(cx, ty::mk_uint(), span),
+            type_metadata: type_metadata(cx, cx.tcx().types.uint, span),
             offset: ComputedMemberOffset,
             flags: FLAGS_NONE
         },
@@ -2877,7 +2894,7 @@ fn trait_pointer_metadata<'a, 'tcx>(cx: &CrateContext<'a, 'tcx>,
     // But it does not describe the trait's methods.
 
     let def_id = match trait_type.sty {
-        ty::ty_trait(box ty::TyTrait { ref principal, .. }) => principal.def_id(),
+        ty::ty_trait(ref data) => data.principal_def_id(),
         _ => {
             let pp_type_name = ppaux::ty_to_string(cx.tcx(), trait_type);
             cx.sess().bug(format!("debuginfo: Unexpected trait-object type in \
@@ -2963,7 +2980,7 @@ fn type_metadata<'a, 'tcx>(cx: &CrateContext<'a, 'tcx>,
         }
         // FIXME Can we do better than this for unsized vec/str fields?
         ty::ty_vec(typ, None) => fixed_vec_metadata(cx, unique_type_id, typ, 0, usage_site_span),
-        ty::ty_str => fixed_vec_metadata(cx, unique_type_id, ty::mk_i8(), 0, usage_site_span),
+        ty::ty_str => fixed_vec_metadata(cx, unique_type_id, cx.tcx().types.i8, 0, usage_site_span),
         ty::ty_trait(..) => {
             MetadataCreationResult::new(
                         trait_pointer_metadata(cx, t, None, unique_type_id),
@@ -2975,7 +2992,7 @@ fn type_metadata<'a, 'tcx>(cx: &CrateContext<'a, 'tcx>,
                     vec_slice_metadata(cx, t, typ, unique_type_id, usage_site_span)
                 }
                 ty::ty_str => {
-                    vec_slice_metadata(cx, t, ty::mk_u8(), unique_type_id, usage_site_span)
+                    vec_slice_metadata(cx, t, cx.tcx().types.u8, unique_type_id, usage_site_span)
                 }
                 ty::ty_trait(..) => {
                     MetadataCreationResult::new(
@@ -3388,10 +3405,7 @@ fn create_scope_map(cx: &CrateContext,
                     if need_new_scope {
                         // Create a new lexical scope and push it onto the stack
                         let loc = cx.sess().codemap().lookup_char_pos(pat.span.lo);
-                        let file_metadata = file_metadata(cx,
-                                                          loc.file
-                                                             .name
-                                                             []);
+                        let file_metadata = file_metadata(cx, loc.file.name[]);
                         let parent_scope = scope_stack.last().unwrap().scope_metadata;
 
                         let scope_metadata = unsafe {
@@ -3810,8 +3824,8 @@ fn push_debuginfo_type_name<'a, 'tcx>(cx: &CrateContext<'a, 'tcx>,
             output.push(']');
         },
         ty::ty_trait(ref trait_data) => {
-            push_item_name(cx, trait_data.principal.def_id(), false, output);
-            push_type_params(cx, trait_data.principal.substs(), output);
+            push_item_name(cx, trait_data.principal_def_id(), false, output);
+            push_type_params(cx, trait_data.principal.0.substs, output);
         },
         ty::ty_bare_fn(_, &ty::BareFnTy{ unsafety, abi, ref sig } ) => {
             if unsafety == ast::Unsafety::Unsafe {
@@ -3919,9 +3933,10 @@ fn push_debuginfo_type_name<'a, 'tcx>(cx: &CrateContext<'a, 'tcx>,
         ty::ty_unboxed_closure(..) => {
             output.push_str("closure");
         }
-        ty::ty_err      |
+        ty::ty_err |
         ty::ty_infer(_) |
         ty::ty_open(_) |
+        ty::ty_projection(..) |
         ty::ty_param(_) => {
             cx.sess().bug(format!("debuginfo: Trying to create type name for \
                 unexpected type: {}", ppaux::ty_to_string(cx.tcx(), t))[]);
@@ -4103,3 +4118,76 @@ fn namespace_for_item(cx: &CrateContext, def_id: ast::DefId) -> Rc<NamespaceTree
         }
     })
 }
+
+
+//=-----------------------------------------------------------------------------
+// .debug_gdb_scripts binary section
+//=-----------------------------------------------------------------------------
+
+/// Inserts a side-effect free instruction sequence that makes sure that the
+/// .debug_gdb_scripts global is referenced, so it isn't removed by the linker.
+pub fn insert_reference_to_gdb_debug_scripts_section_global(ccx: &CrateContext) {
+    if needs_gdb_debug_scripts_section(ccx) {
+        let empty = b"".to_c_str();
+        let gdb_debug_scripts_section_global =
+            get_or_insert_gdb_debug_scripts_section_global(ccx);
+        unsafe {
+            let volative_load_instruction =
+                llvm::LLVMBuildLoad(ccx.raw_builder(),
+                                    gdb_debug_scripts_section_global,
+                                    empty.as_ptr());
+            llvm::LLVMSetVolatile(volative_load_instruction, llvm::True);
+        }
+    }
+}
+
+/// Allocates the global variable responsible for the .debug_gdb_scripts binary
+/// section.
+fn get_or_insert_gdb_debug_scripts_section_global(ccx: &CrateContext)
+                                                  -> llvm::ValueRef {
+    let section_var_name = b"__rustc_debug_gdb_scripts_section__".to_c_str();
+
+    let section_var = unsafe {
+        llvm::LLVMGetNamedGlobal(ccx.llmod(), section_var_name.as_ptr())
+    };
+
+    if section_var == ptr::null_mut() {
+        let section_name = b".debug_gdb_scripts".to_c_str();
+        let section_contents = b"\x01gdb_load_rust_pretty_printers.py\0";
+
+        unsafe {
+            let llvm_type = Type::array(&Type::i8(ccx),
+                                        section_contents.len() as u64);
+            let section_var = llvm::LLVMAddGlobal(ccx.llmod(),
+                                                  llvm_type.to_ref(),
+                                                  section_var_name.as_ptr());
+            llvm::LLVMSetSection(section_var, section_name.as_ptr());
+            llvm::LLVMSetInitializer(section_var, C_bytes(ccx, section_contents));
+            llvm::LLVMSetGlobalConstant(section_var, llvm::True);
+            llvm::LLVMSetUnnamedAddr(section_var, llvm::True);
+            llvm::SetLinkage(section_var, llvm::Linkage::LinkOnceODRLinkage);
+            // This should make sure that the whole section is not larger than
+            // the string it contains. Otherwise we get a warning from GDB.
+            llvm::LLVMSetAlignment(section_var, 1);
+            section_var
+        }
+    } else {
+        section_var
+    }
+}
+
+fn needs_gdb_debug_scripts_section(ccx: &CrateContext) -> bool {
+    let omit_gdb_pretty_printer_section =
+        attr::contains_name(ccx.tcx()
+                               .map
+                               .krate()
+                               .attrs
+                               .as_slice(),
+                            "omit_gdb_pretty_printer_section");
+
+    !omit_gdb_pretty_printer_section &&
+    !ccx.sess().target.target.options.is_like_osx &&
+    !ccx.sess().target.target.options.is_like_windows &&
+    ccx.sess().opts.debuginfo != NoDebugInfo
+}
+

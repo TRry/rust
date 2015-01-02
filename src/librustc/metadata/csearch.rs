@@ -62,7 +62,7 @@ pub fn each_child_of_item<F>(cstore: &cstore::CStore,
     F: FnMut(decoder::DefLike, ast::Name, ast::Visibility),
 {
     let crate_data = cstore.get_crate_data(def_id.krate);
-    let get_crate_data: decoder::GetCrateDataCb = |cnum| {
+    let get_crate_data = |&mut: cnum| {
         cstore.get_crate_data(cnum)
     };
     decoder::each_child_of_item(cstore.intr.clone(),
@@ -79,7 +79,7 @@ pub fn each_top_level_item_of_crate<F>(cstore: &cstore::CStore,
     F: FnMut(decoder::DefLike, ast::Name, ast::Visibility),
 {
     let crate_data = cstore.get_crate_data(cnum);
-    let get_crate_data: decoder::GetCrateDataCb = |cnum| {
+    let get_crate_data = |&mut: cnum| {
         cstore.get_crate_data(cnum)
     };
     decoder::each_top_level_item_of_crate(cstore.intr.clone(),
@@ -226,7 +226,7 @@ pub fn get_struct_field_attrs(cstore: &cstore::CStore, def: ast::DefId) -> HashM
 
 pub fn get_type<'tcx>(tcx: &ty::ctxt<'tcx>,
                       def: ast::DefId)
-                      -> ty::Polytype<'tcx> {
+                      -> ty::TypeScheme<'tcx> {
     let cstore = &tcx.sess.cstore;
     let cdata = cstore.get_crate_data(def.krate);
     decoder::get_type(&*cdata, def.node, tcx)
@@ -239,7 +239,7 @@ pub fn get_trait_def<'tcx>(tcx: &ty::ctxt<'tcx>, def: ast::DefId) -> ty::TraitDe
 }
 
 pub fn get_field_type<'tcx>(tcx: &ty::ctxt<'tcx>, class_id: ast::DefId,
-                            def: ast::DefId) -> ty::Polytype<'tcx> {
+                            def: ast::DefId) -> ty::TypeScheme<'tcx> {
     let cstore = &tcx.sess.cstore;
     let cdata = cstore.get_crate_data(class_id.krate);
     let all_items = reader::get_doc(rbml::Doc::new(cdata.data()), tag_items);
@@ -257,7 +257,7 @@ pub fn get_field_type<'tcx>(tcx: &ty::ctxt<'tcx>, class_id: ast::DefId,
                     def)).to_string()
         });
     let ty = decoder::item_type(def, the_field, tcx, &*cdata);
-    ty::Polytype {
+    ty::TypeScheme {
         generics: ty::Generics::empty(),
         ty: ty,
     }

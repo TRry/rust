@@ -8,12 +8,18 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use super::{FulfillmentError, FulfillmentErrorCode,
-            ObligationCauseCode, SelectionError,
-            PredicateObligation, OutputTypeParameterMismatch};
+use super::{
+    FulfillmentError,
+    FulfillmentErrorCode,
+    MismatchedProjectionTypes,
+    ObligationCauseCode,
+    OutputTypeParameterMismatch,
+    PredicateObligation,
+    SelectionError,
+};
 
 use middle::infer::InferCtxt;
-use middle::ty::{mod};
+use middle::ty::{mod, AsPredicate, ReferencesError, ToPolyTraitRef};
 use syntax::codemap::Span;
 use util::ppaux::{Repr, UserString};
 
@@ -30,9 +36,29 @@ fn report_fulfillment_error<'a, 'tcx>(infcx: &InferCtxt<'a, 'tcx>,
         FulfillmentErrorCode::CodeSelectionError(ref e) => {
             report_selection_error(infcx, &error.obligation, e);
         }
+        FulfillmentErrorCode::CodeProjectionError(ref e) => {
+            report_projection_error(infcx, &error.obligation, e);
+        }
         FulfillmentErrorCode::CodeAmbiguity => {
             maybe_report_ambiguity(infcx, &error.obligation);
         }
+    }
+}
+
+pub fn report_projection_error<'a, 'tcx>(infcx: &InferCtxt<'a, 'tcx>,
+                                         obligation: &PredicateObligation<'tcx>,
+                                         error: &MismatchedProjectionTypes<'tcx>)
+{
+    let predicate =
+        infcx.resolve_type_vars_if_possible(&obligation.predicate);
+    if !predicate.references_error() {
+        infcx.tcx.sess.span_err(
+            obligation.cause.span,
+            format!(
+                "type mismatch resolving `{}`: {}",
+                predicate.user_string(infcx.tcx),
+                ty::type_err_to_str(infcx.tcx, &error.err)).as_slice());
+        note_obligation_cause(infcx, obligation);
     }
 }
 
@@ -43,71 +69,38 @@ pub fn report_selection_error<'a, 'tcx>(infcx: &InferCtxt<'a, 'tcx>,
     match *error {
         SelectionError::Overflow => {
             // We could track the stack here more precisely if we wanted, I imagine.
-            match obligation.trait_ref {
-                ty::Predicate::Trait(ref trait_ref) => {
-                    let trait_ref =
-                        infcx.resolve_type_vars_if_possible(&**trait_ref);
-                    infcx.tcx.sess.span_err(
-                        obligation.cause.span,
-                        format!(
-                            "overflow evaluating the trait `{}` for the type `{}`",
-                            trait_ref.user_string(infcx.tcx),
-                            trait_ref.self_ty().user_string(infcx.tcx))[]);
-                }
-
-                ty::Predicate::Equate(ref predicate) => {
-                    let predicate = infcx.resolve_type_vars_if_possible(predicate);
-                    let err = infcx.equality_predicate(obligation.cause.span,
-                                                       &predicate).unwrap_err();
-
-                    infcx.tcx.sess.span_err(
-                        obligation.cause.span,
-                        format!(
-                            "the requirement `{}` is not satisfied (`{}`)",
-                            predicate.user_string(infcx.tcx),
-                            ty::type_err_to_str(infcx.tcx, &err)).as_slice());
-                }
-
-                ty::Predicate::TypeOutlives(..) |
-                ty::Predicate::RegionOutlives(..) => {
-                    infcx.tcx.sess.span_err(
-                        obligation.cause.span,
-                        format!("overflow evaluating lifetime predicate").as_slice());
-                }
-            }
-
-            let current_limit = infcx.tcx.sess.recursion_limit.get();
-            let suggested_limit = current_limit * 2;
-            infcx.tcx.sess.span_note(
+            let predicate =
+                infcx.resolve_type_vars_if_possible(&obligation.predicate);
+            infcx.tcx.sess.span_err(
                 obligation.cause.span,
                 format!(
-                    "consider adding a `#![recursion_limit=\"{}\"]` attribute to your crate",
-                    suggested_limit)[]);
+                    "overflow evaluating the requirement `{}`",
+                    predicate.user_string(infcx.tcx)).as_slice());
+
+            suggest_new_overflow_limit(infcx, obligation.cause.span);
 
             note_obligation_cause(infcx, obligation);
         }
         SelectionError::Unimplemented => {
-            match obligation.trait_ref {
-                ty::Predicate::Trait(ref trait_ref) => {
-                    let trait_ref =
-                        infcx.resolve_type_vars_if_possible(
-                            &**trait_ref);
-                    if !ty::type_is_error(trait_ref.self_ty()) {
+            match obligation.predicate {
+                ty::Predicate::Trait(ref trait_predicate) => {
+                    let trait_predicate =
+                        infcx.resolve_type_vars_if_possible(trait_predicate);
+                    if !trait_predicate.references_error() {
+                        let trait_ref = trait_predicate.to_poly_trait_ref();
                         infcx.tcx.sess.span_err(
                             obligation.cause.span,
                             format!(
                                 "the trait `{}` is not implemented for the type `{}`",
                                 trait_ref.user_string(infcx.tcx),
                                 trait_ref.self_ty().user_string(infcx.tcx)).as_slice());
-                        note_obligation_cause(infcx, obligation);
                     }
                 }
 
                 ty::Predicate::Equate(ref predicate) => {
                     let predicate = infcx.resolve_type_vars_if_possible(predicate);
                     let err = infcx.equality_predicate(obligation.cause.span,
-                                                       &predicate).unwrap_err();
-
+                                                             &predicate).unwrap_err();
                     infcx.tcx.sess.span_err(
                         obligation.cause.span,
                         format!(
@@ -116,9 +109,22 @@ pub fn report_selection_error<'a, 'tcx>(infcx: &InferCtxt<'a, 'tcx>,
                             ty::type_err_to_str(infcx.tcx, &err)).as_slice());
                 }
 
-                ty::Predicate::TypeOutlives(..) |
-                ty::Predicate::RegionOutlives(..) => {
-                    let predicate = infcx.resolve_type_vars_if_possible(&obligation.trait_ref);
+                ty::Predicate::RegionOutlives(ref predicate) => {
+                    let predicate = infcx.resolve_type_vars_if_possible(predicate);
+                    let err = infcx.region_outlives_predicate(obligation.cause.span,
+                                                              &predicate).unwrap_err();
+                    infcx.tcx.sess.span_err(
+                        obligation.cause.span,
+                        format!(
+                            "the requirement `{}` is not satisfied (`{}`)",
+                            predicate.user_string(infcx.tcx),
+                            ty::type_err_to_str(infcx.tcx, &err)).as_slice());
+                }
+
+                ty::Predicate::Projection(..) |
+                ty::Predicate::TypeOutlives(..) => {
+                    let predicate =
+                        infcx.resolve_type_vars_if_possible(&obligation.predicate);
                     infcx.tcx.sess.span_err(
                         obligation.cause.span,
                         format!(
@@ -128,12 +134,8 @@ pub fn report_selection_error<'a, 'tcx>(infcx: &InferCtxt<'a, 'tcx>,
             }
         }
         OutputTypeParameterMismatch(ref expected_trait_ref, ref actual_trait_ref, ref e) => {
-            let expected_trait_ref =
-                infcx.resolve_type_vars_if_possible(
-                    &**expected_trait_ref);
-            let actual_trait_ref =
-                infcx.resolve_type_vars_if_possible(
-                    &**actual_trait_ref);
+            let expected_trait_ref = infcx.resolve_type_vars_if_possible(&*expected_trait_ref);
+            let actual_trait_ref = infcx.resolve_type_vars_if_possible(&*actual_trait_ref);
             if !ty::type_is_error(actual_trait_ref.self_ty()) {
                 infcx.tcx.sess.span_err(
                     obligation.cause.span,
@@ -150,127 +152,114 @@ pub fn report_selection_error<'a, 'tcx>(infcx: &InferCtxt<'a, 'tcx>,
     }
 }
 
-fn maybe_report_ambiguity<'a, 'tcx>(infcx: &InferCtxt<'a, 'tcx>,
-                                    obligation: &PredicateObligation<'tcx>) {
+pub fn maybe_report_ambiguity<'a, 'tcx>(infcx: &InferCtxt<'a, 'tcx>,
+                                        obligation: &PredicateObligation<'tcx>) {
     // Unable to successfully determine, probably means
     // insufficient type information, but could mean
     // ambiguous impls. The latter *ought* to be a
     // coherence violation, so we don't report it here.
 
-    let trait_ref = match obligation.trait_ref {
-        ty::Predicate::Trait(ref trait_ref) => {
-            infcx.resolve_type_vars_if_possible(&**trait_ref)
-        }
-        _ => {
-            infcx.tcx.sess.span_bug(
-                obligation.cause.span,
-                format!("ambiguity from something other than a trait: {}",
-                        obligation.trait_ref.repr(infcx.tcx)).as_slice());
-        }
-    };
-    let self_ty = trait_ref.self_ty();
+    let predicate = infcx.resolve_type_vars_if_possible(&obligation.predicate);
 
-    debug!("maybe_report_ambiguity(trait_ref={}, self_ty={}, obligation={})",
-           trait_ref.repr(infcx.tcx),
-           self_ty.repr(infcx.tcx),
+    debug!("maybe_report_ambiguity(predicate={}, obligation={})",
+           predicate.repr(infcx.tcx),
            obligation.repr(infcx.tcx));
-    let all_types = &trait_ref.substs().types;
-    if all_types.iter().any(|&t| ty::type_is_error(t)) {
-    } else if all_types.iter().any(|&t| ty::type_needs_infer(t)) {
-        // This is kind of a hack: it frequently happens that some earlier
-        // error prevents types from being fully inferred, and then we get
-        // a bunch of uninteresting errors saying something like "<generic
-        // #0> doesn't implement Sized".  It may even be true that we
-        // could just skip over all checks where the self-ty is an
-        // inference variable, but I was afraid that there might be an
-        // inference variable created, registered as an obligation, and
-        // then never forced by writeback, and hence by skipping here we'd
-        // be ignoring the fact that we don't KNOW the type works
-        // out. Though even that would probably be harmless, given that
-        // we're only talking about builtin traits, which are known to be
-        // inhabited. But in any case I just threw in this check for
-        // has_errors() to be sure that compilation isn't happening
-        // anyway. In that case, why inundate the user.
-        if !infcx.tcx.sess.has_errors() {
-            if infcx.tcx.lang_items.sized_trait()
-                  .map_or(false, |sized_id| sized_id == trait_ref.def_id()) {
-                infcx.tcx.sess.span_err(
+
+    match predicate {
+        ty::Predicate::Trait(ref data) => {
+            let trait_ref = data.to_poly_trait_ref();
+            let self_ty = trait_ref.self_ty();
+            let all_types = &trait_ref.substs().types;
+            if all_types.iter().any(|&t| ty::type_is_error(t)) {
+            } else if all_types.iter().any(|&t| ty::type_needs_infer(t)) {
+                // This is kind of a hack: it frequently happens that some earlier
+                // error prevents types from being fully inferred, and then we get
+                // a bunch of uninteresting errors saying something like "<generic
+                // #0> doesn't implement Sized".  It may even be true that we
+                // could just skip over all checks where the self-ty is an
+                // inference variable, but I was afraid that there might be an
+                // inference variable created, registered as an obligation, and
+                // then never forced by writeback, and hence by skipping here we'd
+                // be ignoring the fact that we don't KNOW the type works
+                // out. Though even that would probably be harmless, given that
+                // we're only talking about builtin traits, which are known to be
+                // inhabited. But in any case I just threw in this check for
+                // has_errors() to be sure that compilation isn't happening
+                // anyway. In that case, why inundate the user.
+                if !infcx.tcx.sess.has_errors() {
+                    if
+                        infcx.tcx.lang_items.sized_trait()
+                        .map_or(false, |sized_id| sized_id == trait_ref.def_id())
+                    {
+                        infcx.tcx.sess.span_err(
+                            obligation.cause.span,
+                            format!(
+                                "unable to infer enough type information about `{}`; \
+                                 type annotations required",
+                                self_ty.user_string(infcx.tcx)).as_slice());
+                    } else {
+                        infcx.tcx.sess.span_err(
+                            obligation.cause.span,
+                            format!(
+                                "type annotations required: cannot resolve `{}`",
+                                predicate.user_string(infcx.tcx)).as_slice());
+                        note_obligation_cause(infcx, obligation);
+                    }
+                }
+            } else if !infcx.tcx.sess.has_errors() {
+                // Ambiguity. Coherence should have reported an error.
+                infcx.tcx.sess.span_bug(
                     obligation.cause.span,
                     format!(
-                        "unable to infer enough type information about `{}`; type annotations \
-                         required",
-                        self_ty.user_string(infcx.tcx)).as_slice());
-            } else {
-                infcx.tcx.sess.span_err(
-                    obligation.cause.span,
-                    format!(
-                        "unable to infer enough type information to \
-                         locate the impl of the trait `{}` for \
-                         the type `{}`; type annotations required",
+                        "coherence failed to report ambiguity: \
+                         cannot locate the impl of the trait `{}` for \
+                         the type `{}`",
                         trait_ref.user_string(infcx.tcx),
-                        self_ty.user_string(infcx.tcx))[]);
+                        self_ty.user_string(infcx.tcx)).as_slice());
+            }
+        }
+
+        _ => {
+            if !infcx.tcx.sess.has_errors() {
+                infcx.tcx.sess.span_err(
+                    obligation.cause.span,
+                    format!(
+                        "type annotations required: cannot resolve `{}`",
+                        predicate.user_string(infcx.tcx)).as_slice());
                 note_obligation_cause(infcx, obligation);
             }
         }
-    } else if !infcx.tcx.sess.has_errors() {
-         // Ambiguity. Coherence should have reported an error.
-        infcx.tcx.sess.span_bug(
-            obligation.cause.span,
-            format!(
-                "coherence failed to report ambiguity: \
-                 cannot locate the impl of the trait `{}` for \
-                 the type `{}`",
-                trait_ref.user_string(infcx.tcx),
-                self_ty.user_string(infcx.tcx))[]);
     }
 }
 
 fn note_obligation_cause<'a, 'tcx>(infcx: &InferCtxt<'a, 'tcx>,
                                    obligation: &PredicateObligation<'tcx>)
 {
-    let trait_ref = match obligation.trait_ref {
-        ty::Predicate::Trait(ref trait_ref) => {
-            infcx.resolve_type_vars_if_possible(&**trait_ref)
-        }
-        _ => {
-            infcx.tcx.sess.span_bug(
-                obligation.cause.span,
-                format!("ambiguity from something other than a trait: {}",
-                        obligation.trait_ref.repr(infcx.tcx)).as_slice());
-        }
-    };
-
     note_obligation_cause_code(infcx,
-                               &trait_ref,
+                               &obligation.predicate,
                                obligation.cause.span,
-                               &obligation.cause.code)
+                               &obligation.cause.code);
 }
 
 fn note_obligation_cause_code<'a, 'tcx>(infcx: &InferCtxt<'a, 'tcx>,
-                                        trait_ref: &ty::PolyTraitRef<'tcx>,
+                                        _predicate: &ty::Predicate<'tcx>,
                                         cause_span: Span,
                                         cause_code: &ObligationCauseCode<'tcx>)
 {
     let tcx = infcx.tcx;
-    let trait_name = ty::item_path_str(tcx, trait_ref.def_id());
     match *cause_code {
         ObligationCauseCode::MiscObligation => { }
         ObligationCauseCode::ItemObligation(item_def_id) => {
             let item_name = ty::item_path_str(tcx, item_def_id);
             tcx.sess.span_note(
                 cause_span,
-                format!(
-                    "the trait `{}` must be implemented because it is required by `{}`",
-                    trait_name,
-                    item_name).as_slice());
+                format!("required by `{}`", item_name).as_slice());
         }
         ObligationCauseCode::ObjectCastObligation(object_ty) => {
             tcx.sess.span_note(
                 cause_span,
                 format!(
-                    "the trait `{}` must be implemented for the cast \
-                     to the object type `{}`",
-                    trait_name,
+                    "required for the cast to the object type `{}`",
                     infcx.ty_to_string(object_ty)).as_slice());
         }
         ObligationCauseCode::RepeatVec => {
@@ -323,27 +312,32 @@ fn note_obligation_cause_code<'a, 'tcx>(infcx: &InferCtxt<'a, 'tcx>,
             span_note!(tcx.sess, cause_span,
                        "shared static variables must have a type that implements `Sync`");
         }
-        ObligationCauseCode::BuiltinDerivedObligation(ref root_trait_ref, ref root_cause_code) => {
-            let root_trait_ref =
-                infcx.resolve_type_vars_if_possible(&**root_trait_ref);
+        ObligationCauseCode::BuiltinDerivedObligation(ref data) => {
+            let parent_trait_ref = infcx.resolve_type_vars_if_possible(&data.parent_trait_ref);
             span_note!(tcx.sess, cause_span,
-                       "the type `{}` must implement `{}` because it appears within the type `{}`",
-                       trait_ref.self_ty().user_string(infcx.tcx),
-                       trait_ref.user_string(infcx.tcx),
-                       root_trait_ref.self_ty().user_string(infcx.tcx));
-            note_obligation_cause_code(infcx, &root_trait_ref, cause_span, &**root_cause_code);
+                       "required because it appears within the type `{}`",
+                       parent_trait_ref.0.self_ty().user_string(infcx.tcx));
+            let parent_predicate = parent_trait_ref.as_predicate();
+            note_obligation_cause_code(infcx, &parent_predicate, cause_span, &*data.parent_code);
         }
-        ObligationCauseCode::ImplDerivedObligation(ref root_trait_ref, ref root_cause_code) => {
-            let root_trait_ref =
-                infcx.resolve_type_vars_if_possible(&**root_trait_ref);
+        ObligationCauseCode::ImplDerivedObligation(ref data) => {
+            let parent_trait_ref = infcx.resolve_type_vars_if_possible(&data.parent_trait_ref);
             span_note!(tcx.sess, cause_span,
-                       "the type `{}` must implement `{}` due to the requirements \
-                        on the impl of `{}` for the type `{}`",
-                       trait_ref.self_ty().user_string(infcx.tcx),
-                       trait_ref.user_string(infcx.tcx),
-                       root_trait_ref.user_string(infcx.tcx),
-                       root_trait_ref.self_ty().user_string(infcx.tcx));
-            note_obligation_cause_code(infcx, &root_trait_ref, cause_span, &**root_cause_code);
+                       "required because of the requirements on the impl of `{}` for `{}`",
+                       parent_trait_ref.user_string(infcx.tcx),
+                       parent_trait_ref.0.self_ty().user_string(infcx.tcx));
+            let parent_predicate = parent_trait_ref.as_predicate();
+            note_obligation_cause_code(infcx, &parent_predicate, cause_span, &*data.parent_code);
         }
     }
+}
+
+pub fn suggest_new_overflow_limit(infcx: &InferCtxt, span: Span) {
+    let current_limit = infcx.tcx.sess.recursion_limit.get();
+    let suggested_limit = current_limit * 2;
+    infcx.tcx.sess.span_note(
+        span,
+        format!(
+            "consider adding a `#![recursion_limit=\"{}\"]` attribute to your crate",
+            suggested_limit)[]);
 }

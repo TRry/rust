@@ -55,7 +55,7 @@ use trans::cleanup::CleanupMethods;
 use trans::cleanup;
 use trans::closure;
 use trans::common::{Block, C_bool, C_bytes_in_context, C_i32, C_integral};
-use trans::common::{C_null, C_struct_in_context, C_u64, C_u8, C_uint, C_undef};
+use trans::common::{C_null, C_struct_in_context, C_u64, C_u8, C_undef};
 use trans::common::{CrateContext, ExternMap, FunctionContext};
 use trans::common::{NodeInfo, Result};
 use trans::common::{node_id_type, return_type_is_void};
@@ -73,7 +73,7 @@ use trans::glue;
 use trans::inline;
 use trans::intrinsic;
 use trans::machine;
-use trans::machine::{llsize_of, llsize_of_real, llalign_of_min};
+use trans::machine::{llsize_of, llsize_of_real};
 use trans::meth;
 use trans::monomorphize;
 use trans::tvec;
@@ -281,6 +281,8 @@ pub fn kind_for_unboxed_closure(ccx: &CrateContext, closure_id: ast::DefId)
 
 pub fn decl_rust_fn<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>,
                               fn_ty: Ty<'tcx>, name: &str) -> ValueRef {
+    let fn_ty = monomorphize::normalize_associated_type(ccx.tcx(), &fn_ty);
+
     let (inputs, output, abi, env) = match fn_ty.sty {
         ty::ty_bare_fn(_, ref f) => {
             (f.sig.0.inputs.clone(), f.sig.0.output, f.abi, None)
@@ -392,30 +394,6 @@ pub fn malloc_raw_dyn<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
         None);
 
     Result::new(r.bcx, PointerCast(r.bcx, r.val, llty_ptr))
-}
-
-pub fn malloc_raw_dyn_proc<'blk, 'tcx>(bcx: Block<'blk, 'tcx>, t: Ty<'tcx>)
-                                       -> Result<'blk, 'tcx> {
-    let _icx = push_ctxt("malloc_raw_dyn_proc");
-    let ccx = bcx.ccx();
-
-    // Grab the TypeRef type of ptr_ty.
-    let ptr_ty = ty::mk_uniq(bcx.tcx(), t);
-    let ptr_llty = type_of(ccx, ptr_ty);
-
-    let llty = type_of(bcx.ccx(), t);
-    let size = llsize_of(bcx.ccx(), llty);
-    let llalign = C_uint(ccx, llalign_of_min(bcx.ccx(), llty));
-
-    // Allocate space and store the destructor pointer:
-    let Result {bcx, val: llbox} = malloc_raw_dyn(bcx, ptr_llty, t, size, llalign);
-    let dtor_ptr = GEPi(bcx, llbox, &[0u, abi::BOX_FIELD_DROP_GLUE]);
-    let drop_glue_field_ty = type_of(ccx, ty::mk_nil_ptr(bcx.tcx()));
-    let drop_glue = PointerCast(bcx, glue::get_drop_glue(ccx, ty::mk_uniq(bcx.tcx(), t)),
-                                drop_glue_field_ty);
-    Store(bcx, drop_glue, dtor_ptr);
-
-    Result::new(bcx, llbox)
 }
 
 // Type descriptor and type glue stuff
@@ -576,12 +554,12 @@ pub fn compare_scalar_types<'blk, 'tcx>(cx: Block<'blk, 'tcx>,
                                         t: Ty<'tcx>,
                                         op: ast::BinOp)
                                         -> Result<'blk, 'tcx> {
-    let f = |a| Result::new(cx, compare_scalar_values(cx, lhs, rhs, a, op));
+    let f = |&: a| Result::new(cx, compare_scalar_values(cx, lhs, rhs, a, op));
 
     match t.sty {
         ty::ty_tup(ref tys) if tys.is_empty() => f(nil_type),
         ty::ty_bool | ty::ty_uint(_) | ty::ty_char => f(unsigned_int),
-        ty::ty_ptr(mt) if ty::type_is_sized(cx.tcx(), mt.ty) => f(unsigned_int),
+        ty::ty_ptr(mt) if common::type_is_sized(cx.tcx(), mt.ty) => f(unsigned_int),
         ty::ty_int(_) => f(signed_int),
         ty::ty_float(_) => f(floating_point),
             // Should never get here, because t is scalar.
@@ -719,7 +697,7 @@ pub fn iter_structural_ty<'a, 'blk, 'tcx>(cx: Block<'blk, 'tcx>,
         return cx;
     }
 
-    let (data_ptr, info) = if ty::type_is_sized(cx.tcx(), t) {
+    let (data_ptr, info) = if common::type_is_sized(cx.tcx(), t) {
         (av, None)
     } else {
         let data = GEPi(cx, av, &[0, abi::FAT_PTR_ADDR]);
@@ -736,7 +714,7 @@ pub fn iter_structural_ty<'a, 'blk, 'tcx>(cx: Block<'blk, 'tcx>,
                   let field_ty = field_ty.mt.ty;
                   let llfld_a = adt::trans_field_ptr(cx, &*repr, data_ptr, discr, i);
 
-                  let val = if ty::type_is_sized(cx.tcx(), field_ty) {
+                  let val = if common::type_is_sized(cx.tcx(), field_ty) {
                       llfld_a
                   } else {
                       let boxed_ty = ty::mk_open(cx.tcx(), field_ty);
@@ -786,7 +764,7 @@ pub fn iter_structural_ty<'a, 'blk, 'tcx>(cx: Block<'blk, 'tcx>,
                                     substs, f);
               }
               (_match::Switch, Some(lldiscrim_a)) => {
-                  cx = f(cx, lldiscrim_a, ty::mk_int());
+                  cx = f(cx, lldiscrim_a, cx.tcx().types.int);
                   let unr_cx = fcx.new_temp_block("enum-iter-unr");
                   Unreachable(unr_cx);
                   let llswitch = Switch(cx, lldiscrim_a, unr_cx.llbb,
@@ -1453,7 +1431,8 @@ pub fn new_fn_ctxt<'a, 'tcx>(ccx: &'a CrateContext<'a, 'tcx>,
 
     let uses_outptr = match output_type {
         ty::FnConverging(output_type) => {
-            let substd_output_type = output_type.subst(ccx.tcx(), param_substs);
+            let substd_output_type =
+                monomorphize::apply_param_substs(ccx.tcx(), param_substs, &output_type);
             type_of::return_uses_outptr(ccx, substd_output_type)
         }
         ty::FnDiverging => false
@@ -1512,7 +1491,7 @@ pub fn init_function<'a, 'tcx>(fcx: &'a FunctionContext<'a, 'tcx>,
     if let ty::FnConverging(output_type) = output {
         // This shouldn't need to recompute the return type,
         // as new_fn_ctxt did it already.
-        let substd_output_type = output_type.subst(fcx.ccx.tcx(), fcx.param_substs);
+        let substd_output_type = fcx.monomorphize(&output_type);
         if !return_type_is_void(fcx.ccx, substd_output_type) {
             // If the function returns nil/bot, there is no real return
             // value, so do not set `llretslotptr`.
@@ -1732,7 +1711,7 @@ pub fn finish_fn<'blk, 'tcx>(fcx: &'blk FunctionContext<'blk, 'tcx>,
 
     // This shouldn't need to recompute the return type,
     // as new_fn_ctxt did it already.
-    let substd_retty = retty.subst(fcx.ccx.tcx(), fcx.param_substs);
+    let substd_retty = fcx.monomorphize(&retty);
     build_return_block(fcx, ret_cx, substd_retty);
 
     debuginfo::clear_source_location(fcx);
@@ -1765,7 +1744,7 @@ pub fn build_return_block<'blk, 'tcx>(fcx: &FunctionContext<'blk, 'tcx>,
                 retptr.erase_from_parent();
             }
 
-            let retval = if retty == ty::FnConverging(ty::mk_bool()) {
+            let retval = if retty == ty::FnConverging(fcx.ccx.tcx().types.bool) {
                 Trunc(ret_cx, retval, Type::i1(fcx.ccx))
             } else {
                 retval
@@ -2074,7 +2053,7 @@ fn trans_enum_variant_or_tuple_like_struct<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx
                                                      param_substs: &Substs<'tcx>,
                                                      llfndecl: ValueRef) {
     let ctor_ty = ty::node_id_to_type(ccx.tcx(), ctor_id);
-    let ctor_ty = ctor_ty.subst(ccx.tcx(), param_substs);
+    let ctor_ty = monomorphize::apply_param_substs(ccx.tcx(), param_substs, &ctor_ty);
 
     let result_ty = match ctor_ty.sty {
         ty::ty_bare_fn(_, ref bft) => bft.sig.0.output,
@@ -2522,7 +2501,7 @@ pub fn get_fn_llvm_attributes<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>, fn_ty: Ty<
             match ret_ty.sty {
                 // `~` pointer return values never alias because ownership
                 // is transferred
-                ty::ty_uniq(it) if !ty::type_is_sized(ccx.tcx(), it) => {}
+                ty::ty_uniq(it) if !common::type_is_sized(ccx.tcx(), it) => {}
                 ty::ty_uniq(_) => {
                     attrs.ret(llvm::NoAliasAttribute);
                 }
@@ -2533,7 +2512,7 @@ pub fn get_fn_llvm_attributes<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>, fn_ty: Ty<
             match ret_ty.sty {
                 // These are not really pointers but pairs, (pointer, len)
                 ty::ty_uniq(it) |
-                ty::ty_rptr(_, ty::mt { ty: it, .. }) if !ty::type_is_sized(ccx.tcx(), it) => {}
+                ty::ty_rptr(_, ty::mt { ty: it, .. }) if !common::type_is_sized(ccx.tcx(), it) => {}
                 ty::ty_uniq(inner) | ty::ty_rptr(_, ty::mt { ty: inner, .. }) => {
                     let llret_sz = llsize_of_real(ccx, type_of::type_of(ccx, inner));
                     attrs.ret(llvm::DereferenceableAttribute(llret_sz));
@@ -2673,6 +2652,8 @@ pub fn create_entry_wrapper(ccx: &CrateContext,
         unsafe {
             llvm::LLVMPositionBuilderAtEnd(bld, llbb);
 
+            debuginfo::insert_reference_to_gdb_debug_scripts_section_global(ccx);
+
             let (start_fn, args) = if use_start_lang_item {
                 let start_def_id = match ccx.tcx().lang_items.require(StartFnLangItem) {
                     Ok(id) => id,
@@ -2764,10 +2745,11 @@ pub fn get_item_val(ccx: &CrateContext, id: ast::NodeId) -> ValueRef {
     }
 
     let item = ccx.tcx().map.get(id);
+    debug!("get_item_val: id={} item={}", id, item);
     let val = match item {
         ast_map::NodeItem(i) => {
             let ty = ty::node_id_to_type(ccx.tcx(), i.id);
-            let sym = || exported_name(ccx, id, ty, i.attrs[]);
+            let sym = |&:| exported_name(ccx, id, ty, i.attrs[]);
 
             let v = match i.node {
                 ast::ItemStatic(_, _, ref expr) => {
@@ -3031,14 +3013,14 @@ fn internalize_symbols(cx: &SharedCrateContext, reachable: &HashSet<String>) {
     unsafe {
         let mut declared = HashSet::new();
 
-        let iter_globals = |llmod| {
+        let iter_globals = |&: llmod| {
             ValueIter {
                 cur: llvm::LLVMGetFirstGlobal(llmod),
                 step: llvm::LLVMGetNextGlobal,
             }
         };
 
-        let iter_functions = |llmod| {
+        let iter_functions = |&: llmod| {
             ValueIter {
                 cur: llvm::LLVMGetFirstFunction(llmod),
                 step: llvm::LLVMGetNextFunction,

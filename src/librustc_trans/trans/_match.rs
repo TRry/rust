@@ -410,15 +410,15 @@ fn expand_nested_bindings<'a, 'p, 'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
     }).collect()
 }
 
-type EnterPatterns<'a, 'p> = |&[&'p ast::Pat]|: 'a -> Option<Vec<&'p ast::Pat>>;
-
-fn enter_match<'a, 'b, 'p, 'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
-                                       dm: &DefMap,
-                                       m: &[Match<'a, 'p, 'blk, 'tcx>],
-                                       col: uint,
-                                       val: ValueRef,
-                                       e: EnterPatterns<'b, 'p>)
-                                       -> Vec<Match<'a, 'p, 'blk, 'tcx>> {
+fn enter_match<'a, 'b, 'p, 'blk, 'tcx, F>(bcx: Block<'blk, 'tcx>,
+                                          dm: &DefMap,
+                                          m: &[Match<'a, 'p, 'blk, 'tcx>],
+                                          col: uint,
+                                          val: ValueRef,
+                                          mut e: F)
+                                          -> Vec<Match<'a, 'p, 'blk, 'tcx>> where
+    F: FnMut(&[&'p ast::Pat]) -> Option<Vec<&'p ast::Pat>>,
+{
     debug!("enter_match(bcx={}, m={}, col={}, val={})",
            bcx.to_str(),
            m.repr(bcx.tcx()),
@@ -606,9 +606,9 @@ fn extract_variant_args<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
                                     val: ValueRef)
                                     -> ExtractedBlock<'blk, 'tcx> {
     let _icx = push_ctxt("match::extract_variant_args");
-    let args = Vec::from_fn(adt::num_args(repr, disr_val), |i| {
+    let args = range(0, adt::num_args(repr, disr_val)).map(|i| {
         adt::trans_field_ptr(bcx, repr, val, disr_val, i)
-    });
+    }).collect();
 
     ExtractedBlock { vals: args, bcx: bcx }
 }
@@ -748,7 +748,7 @@ fn pick_column_to_specialize(def_map: &DefMap, m: &[Match]) -> Option<uint> {
         }
     }
 
-    let column_score: |&[Match], uint| -> uint = |m, col| {
+    let column_score = |&: m: &[Match], col: uint| -> uint {
         let total_score = m.iter()
             .map(|row| row.pats[col])
             .map(|pat| pat_score(def_map, pat))
@@ -1122,7 +1122,7 @@ fn compile_submatch_continue<'a, 'p, 'blk, 'tcx>(mut bcx: Block<'blk, 'tcx>,
                     let t = if kind == Compare {
                         left_ty
                     } else {
-                        ty::mk_uint() // vector length
+                        tcx.types.uint // vector length
                     };
                     let Result { bcx: after_cx, val: matches } = {
                         match opt.trans(bcx) {
@@ -1263,7 +1263,7 @@ fn is_discr_reassigned(bcx: Block, discr: &ast::Expr, body: &ast::Expr) -> bool 
     };
     {
         let param_env = ty::empty_parameter_environment();
-        let mut visitor = euv::ExprUseVisitor::new(&mut rc, bcx, param_env);
+        let mut visitor = euv::ExprUseVisitor::new(&mut rc, bcx, &param_env);
         visitor.walk_expr(body);
     }
     rc.reassigned

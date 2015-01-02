@@ -398,7 +398,7 @@ fn primitive_link(f: &mut fmt::Formatter,
                 Some(root) => {
                     try!(write!(f, "<a href='{}{}/primitive.{}.html'>",
                                 root,
-                                path.0.head().unwrap(),
+                                path.0.first().unwrap(),
                                 prim.to_url_str()));
                     needs_termination = true;
                 }
@@ -435,15 +435,14 @@ impl fmt::Show for clean::Type {
             clean::TyParamBinder(id) => {
                 f.write(cache().typarams[ast_util::local_def(id)].as_bytes())
             }
-            clean::Generic(did) => {
-                f.write(cache().typarams[did].as_bytes())
+            clean::Generic(ref name) => {
+                f.write(name.as_bytes())
             }
             clean::ResolvedPath{ did, ref typarams, ref path } => {
                 try!(resolved_path(f, did, path, false));
                 tybounds(f, typarams)
             }
             clean::Infer => write!(f, "_"),
-            clean::Self(..) => f.write("Self".as_bytes()),
             clean::Primitive(prim) => primitive_link(f, prim, prim.to_string()),
             clean::Closure(ref decl) => {
                 write!(f, "{style}{lifetimes}|{args}|{bounds}{arrow}",

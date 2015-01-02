@@ -14,7 +14,7 @@
 
 #![allow(deprecated)] // to_be32
 
-use std::iter::range_step;
+use std::iter::{range_step, repeat};
 use std::num::Int;
 use std::slice::bytes::{MutableByteVector, copy_memory};
 use serialize::hex::ToHex;
@@ -111,7 +111,7 @@ trait FixedBuffer {
 
 /// A FixedBuffer of 64 bytes useful for implementing Sha256 which has a 64 byte blocksize.
 struct FixedBuffer64 {
-    buffer: [u8, ..64],
+    buffer: [u8; 64],
     buffer_idx: uint,
 }
 
@@ -119,7 +119,7 @@ impl FixedBuffer64 {
     /// Create a new FixedBuffer64
     fn new() -> FixedBuffer64 {
         return FixedBuffer64 {
-            buffer: [0u8, ..64],
+            buffer: [0u8; 64],
             buffer_idx: 0
         };
     }
@@ -258,7 +258,7 @@ pub trait Digest {
     /// Convenience function that retrieves the result of a digest as a
     /// newly allocated vec of bytes.
     fn result_bytes(&mut self) -> Vec<u8> {
-        let mut buf = Vec::from_elem((self.output_bits()+7)/8, 0u8);
+        let mut buf: Vec<u8> = repeat(0u8).take((self.output_bits()+7)/8).collect();
         self.result(buf.as_mut_slice());
         buf
     }
@@ -284,7 +284,7 @@ struct Engine256State {
 }
 
 impl Engine256State {
-    fn new(h: &[u32, ..8]) -> Engine256State {
+    fn new(h: &[u32; 8]) -> Engine256State {
         return Engine256State {
             h0: h[0],
             h1: h[1],
@@ -297,7 +297,7 @@ impl Engine256State {
         };
     }
 
-    fn reset(&mut self, h: &[u32, ..8]) {
+    fn reset(&mut self, h: &[u32; 8]) {
         self.h0 = h[0];
         self.h1 = h[1];
         self.h2 = h[2];
@@ -342,7 +342,7 @@ impl Engine256State {
         let mut g = self.h6;
         let mut h = self.h7;
 
-        let mut w = [0u32, ..64];
+        let mut w = [0u32; 64];
 
         // Sha-512 and Sha-256 use basically the same calculations which are implemented
         // by these macros. Inlining the calculations seems to result in better generated code.
@@ -408,7 +408,7 @@ impl Engine256State {
     }
 }
 
-static K32: [u32, ..64] = [
+static K32: [u32; 64] = [
     0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5,
     0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
     0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3,
@@ -437,7 +437,7 @@ struct Engine256 {
 }
 
 impl Engine256 {
-    fn new(h: &[u32, ..8]) -> Engine256 {
+    fn new(h: &[u32; 8]) -> Engine256 {
         return Engine256 {
             length_bits: 0,
             buffer: FixedBuffer64::new(),
@@ -446,7 +446,7 @@ impl Engine256 {
         }
     }
 
-    fn reset(&mut self, h: &[u32, ..8]) {
+    fn reset(&mut self, h: &[u32; 8]) {
         self.length_bits = 0;
         self.buffer.reset();
         self.state.reset(h);
@@ -515,7 +515,7 @@ impl Digest for Sha256 {
     fn output_bits(&self) -> uint { 256 }
 }
 
-static H256: [u32, ..8] = [
+static H256: [u32; 8] = [
     0x6a09e667,
     0xbb67ae85,
     0x3c6ef372,
@@ -530,11 +530,12 @@ static H256: [u32, ..8] = [
 mod tests {
     extern crate rand;
 
-    use super::{Digest, Sha256, FixedBuffer};
-    use self::rand::isaac::IsaacRng;
     use self::rand::Rng;
+    use self::rand::isaac::IsaacRng;
     use serialize::hex::FromHex;
+    use std::iter::repeat;
     use std::num::Int;
+    use super::{Digest, Sha256, FixedBuffer};
 
     // A normal addition - no overflow occurs
     #[test]
@@ -612,7 +613,7 @@ mod tests {
     /// correct.
     fn test_digest_1million_random<D: Digest>(digest: &mut D, blocksize: uint, expected: &str) {
         let total_size = 1000000;
-        let buffer = Vec::from_elem(blocksize * 2, 'a' as u8);
+        let buffer: Vec<u8> = repeat('a' as u8).take(blocksize * 2).collect();
         let mut rng = IsaacRng::new_unseeded();
         let mut count = 0;
 
@@ -657,7 +658,7 @@ mod bench {
     #[bench]
     pub fn sha256_10(b: &mut Bencher) {
         let mut sh = Sha256::new();
-        let bytes = [1u8, ..10];
+        let bytes = [1u8; 10];
         b.iter(|| {
             sh.input(&bytes);
         });
@@ -667,7 +668,7 @@ mod bench {
     #[bench]
     pub fn sha256_1k(b: &mut Bencher) {
         let mut sh = Sha256::new();
-        let bytes = [1u8, ..1024];
+        let bytes = [1u8; 1024];
         b.iter(|| {
             sh.input(&bytes);
         });
@@ -677,7 +678,7 @@ mod bench {
     #[bench]
     pub fn sha256_64k(b: &mut Bencher) {
         let mut sh = Sha256::new();
-        let bytes = [1u8, ..65536];
+        let bytes = [1u8; 65536];
         b.iter(|| {
             sh.input(&bytes);
         });

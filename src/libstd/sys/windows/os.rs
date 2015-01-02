@@ -17,14 +17,14 @@ use prelude::*;
 
 use fmt;
 use io::{IoResult, IoError};
-use libc::{c_int, c_char, c_void};
+use iter::repeat;
+use libc::{c_int, c_void};
 use libc;
 use os;
 use path::BytesContainer;
 use ptr;
-use sync::atomic::{AtomicInt, INIT_ATOMIC_INT, SeqCst};
-use sys::fs::FileDesc;
 use slice;
+use sys::fs::FileDesc;
 
 use os::TMPBUF_SZ;
 use libc::types::os::arch::extra::DWORD;
@@ -80,7 +80,7 @@ pub fn error_string(errnum: i32) -> String {
     // MAKELANGID(LANG_SYSTEM_DEFAULT, SUBLANG_SYS_DEFAULT)
     let langId = 0x0800 as DWORD;
 
-    let mut buf = [0 as WCHAR, ..TMPBUF_SZ];
+    let mut buf = [0 as WCHAR; TMPBUF_SZ];
 
     unsafe {
         let res = FormatMessageW(FORMAT_MESSAGE_FROM_SYSTEM |
@@ -112,7 +112,7 @@ pub unsafe fn pipe() -> IoResult<(FileDesc, FileDesc)> {
     // fully understand. Here we explicitly make the pipe non-inheritable,
     // which means to pass it to a subprocess they need to be duplicated
     // first, as in std::run.
-    let mut fds = [0, ..2];
+    let mut fds = [0; 2];
     match libc::pipe(fds.as_mut_ptr(), 1024 as ::libc::c_uint,
                      (libc::O_BINARY | libc::O_NOINHERIT) as c_int) {
         0 => {
@@ -124,13 +124,15 @@ pub unsafe fn pipe() -> IoResult<(FileDesc, FileDesc)> {
     }
 }
 
-pub fn fill_utf16_buf_and_decode(f: |*mut u16, DWORD| -> DWORD) -> Option<String> {
+pub fn fill_utf16_buf_and_decode<F>(mut f: F) -> Option<String> where
+    F: FnMut(*mut u16, DWORD) -> DWORD,
+{
     unsafe {
         let mut n = TMPBUF_SZ as DWORD;
         let mut res = None;
         let mut done = false;
         while !done {
-            let mut buf = Vec::from_elem(n as uint, 0u16);
+            let mut buf: Vec<u16> = repeat(0u16).take(n as uint).collect();
             let k = f(buf.as_mut_ptr(), n);
             if k == (0 as DWORD) {
                 done = true;
@@ -162,7 +164,7 @@ pub fn getcwd() -> IoResult<Path> {
     use libc::GetCurrentDirectoryW;
     use io::OtherIoError;
 
-    let mut buf = [0 as u16, ..BUF_BYTES];
+    let mut buf = [0 as u16; BUF_BYTES];
     unsafe {
         if libc::GetCurrentDirectoryW(buf.len() as DWORD, buf.as_mut_ptr()) == 0 as DWORD {
             return Err(IoError::last_error());

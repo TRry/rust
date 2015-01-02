@@ -23,7 +23,7 @@ pub use self::freshen::TypeFreshener;
 
 use middle::subst;
 use middle::subst::Substs;
-use middle::ty::{TyVid, IntVid, FloatVid, RegionVid};
+use middle::ty::{TyVid, IntVid, FloatVid, RegionVid, UnconstrainedNumeric};
 use middle::ty::replace_late_bound_regions;
 use middle::ty::{mod, Ty};
 use middle::ty_fold::{TypeFolder, TypeFoldable};
@@ -139,7 +139,7 @@ pub enum TypeOrigin {
 pub enum ValuePairs<'tcx> {
     Types(ty::expected_found<Ty<'tcx>>),
     TraitRefs(ty::expected_found<Rc<ty::TraitRef<'tcx>>>),
-    PolyTraitRefs(ty::expected_found<Rc<ty::PolyTraitRef<'tcx>>>),
+    PolyTraitRefs(ty::expected_found<ty::PolyTraitRef<'tcx>>),
 }
 
 /// The trace designates the path through inference that we took to
@@ -231,6 +231,9 @@ pub enum LateBoundRegionConversionTime {
 
     /// when two higher-ranked types are compared
     HigherRankedType,
+
+    /// when projecting an associated type
+    AssocTypeProjection(ast::Name),
 }
 
 /// Reasons to create a region inference variable
@@ -324,7 +327,7 @@ pub fn common_supertype<'a, 'tcx>(cx: &InferCtxt<'a, 'tcx>,
         Ok(t) => t,
         Err(ref err) => {
             cx.report_and_explain_type_error(trace, err);
-            ty::mk_err()
+            cx.tcx.types.err
         }
     }
 }
@@ -407,8 +410,8 @@ pub fn mk_eqty<'a, 'tcx>(cx: &InferCtxt<'a, 'tcx>,
 pub fn mk_sub_poly_trait_refs<'a, 'tcx>(cx: &InferCtxt<'a, 'tcx>,
                                    a_is_expected: bool,
                                    origin: TypeOrigin,
-                                   a: Rc<ty::PolyTraitRef<'tcx>>,
-                                   b: Rc<ty::PolyTraitRef<'tcx>>)
+                                   a: ty::PolyTraitRef<'tcx>,
+                                   b: ty::PolyTraitRef<'tcx>)
                                    -> ures<'tcx>
 {
     debug!("mk_sub_trait_refs({} <: {})",
@@ -520,6 +523,25 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
 
     pub fn freshener<'b>(&'b self) -> TypeFreshener<'b, 'tcx> {
         freshen::TypeFreshener::new(self)
+    }
+
+    pub fn type_is_unconstrained_numeric(&'a self, ty: Ty) -> UnconstrainedNumeric {
+        use middle::ty::UnconstrainedNumeric::{Neither, UnconstrainedInt, UnconstrainedFloat};
+        match ty.sty {
+            ty::ty_infer(ty::IntVar(vid)) => {
+                match self.int_unification_table.borrow_mut().get(self.tcx, vid).value {
+                    None => UnconstrainedInt,
+                    _ => Neither,
+                }
+            },
+            ty::ty_infer(ty::FloatVar(vid)) => {
+                match self.float_unification_table.borrow_mut().get(self.tcx, vid).value {
+                    None => return UnconstrainedFloat,
+                    _ => Neither,
+                }
+            },
+            _ => Neither,
+        }
     }
 
     pub fn combine_fields<'b>(&'b self, a_is_expected: bool, trace: TypeTrace<'tcx>)
@@ -703,8 +725,8 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
     pub fn sub_poly_trait_refs(&self,
                                a_is_expected: bool,
                                origin: TypeOrigin,
-                               a: Rc<ty::PolyTraitRef<'tcx>>,
-                               b: Rc<ty::PolyTraitRef<'tcx>>)
+                               a: ty::PolyTraitRef<'tcx>,
+                               b: ty::PolyTraitRef<'tcx>)
                                -> ures<'tcx>
     {
         debug!("sub_poly_trait_refs({} <: {})",
@@ -715,7 +737,7 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
                 origin: origin,
                 values: PolyTraitRefs(expected_found(a_is_expected, a.clone(), b.clone()))
             };
-            self.sub(a_is_expected, trace).binders(&*a, &*b).to_ures()
+            self.sub(a_is_expected, trace).binders(&a, &b).to_ures()
         })
     }
 
@@ -750,7 +772,7 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
                          -> T
         where T : TypeFoldable<'tcx> + Repr<'tcx>
     {
-        /*! See `higher_ranked::leak_check` */
+        /*! See `higher_ranked::plug_leaks` */
 
         higher_ranked::plug_leaks(self, skol_map, snapshot, value)
     }
@@ -796,7 +818,7 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
     }
 
     pub fn next_ty_vars(&self, n: uint) -> Vec<Ty<'tcx>> {
-        Vec::from_fn(n, |_i| self.next_ty_var())
+        range(0, n).map(|_i| self.next_ty_var()).collect()
     }
 
     pub fn next_int_var_id(&self) -> IntVid {
@@ -861,10 +883,7 @@ impl<'a, 'tcx> InferCtxt<'a, 'tcx> {
         let region_param_defs = generics.regions.get_slice(subst::TypeSpace);
         let regions = self.region_vars_for_defs(span, region_param_defs);
 
-        let assoc_type_parameter_count = generics.types.len(subst::AssocSpace);
-        let assoc_type_parameters = self.next_ty_vars(assoc_type_parameter_count);
-
-        subst::Substs::new_trait(type_parameters, regions, assoc_type_parameters, self_ty)
+        subst::Substs::new_trait(type_parameters, regions, self_ty)
     }
 
     pub fn fresh_bound_region(&self, debruijn: ty::DebruijnIndex) -> ty::Region {
@@ -1058,12 +1077,12 @@ impl<'tcx> TypeTrace<'tcx> {
         self.origin.span()
     }
 
-    pub fn dummy() -> TypeTrace<'tcx> {
+    pub fn dummy(tcx: &ty::ctxt<'tcx>) -> TypeTrace<'tcx> {
         TypeTrace {
             origin: Misc(codemap::DUMMY_SP),
             values: Types(ty::expected_found {
-                expected: ty::mk_err(),
-                found: ty::mk_err(),
+                expected: tcx.types.err,
+                found: tcx.types.err,
             })
         }
     }
