@@ -9,11 +9,12 @@
 // except according to those terms.
 
 use std::cmp::PartialEq;
+use std::ops::{Add, Sub, Mul};
 
 pub trait MyNum : Add<Self,Self> + Sub<Self,Self> + Mul<Self,Self> + PartialEq + Clone {
 }
 
-#[deriving(Clone, Show)]
+#[derive(Clone, Show)]
 pub struct MyInt {
     pub val: int
 }

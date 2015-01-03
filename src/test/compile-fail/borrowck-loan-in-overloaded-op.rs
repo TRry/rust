@@ -8,8 +8,9 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+use std::ops::Add;
 
-#[deriving(Clone)]
+#[derive(Clone)]
 struct foo(Box<uint>);
 
 impl Add<foo, foo> for foo {
