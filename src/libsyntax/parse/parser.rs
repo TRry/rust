@@ -65,8 +65,8 @@ use ast::{ViewItem, ViewItem_, ViewItemExternCrate, ViewItemUse};
 use ast::{ViewPath, ViewPathGlob, ViewPathList, ViewPathSimple};
 use ast::{Visibility, WhereClause};
 use ast;
-use ast_util::{mod, as_prec, ident_to_path, operator_prec};
-use codemap::{mod, Span, BytePos, Spanned, spanned, mk_sp, DUMMY_SP};
+use ast_util::{self, as_prec, ident_to_path, operator_prec};
+use codemap::{self, Span, BytePos, Spanned, spanned, mk_sp, DUMMY_SP};
 use diagnostic;
 use ext::tt::macro_parser;
 use parse;
@@ -75,7 +75,7 @@ use parse::classify;
 use parse::common::{SeqSep, seq_sep_none, seq_sep_trailing_allowed};
 use parse::lexer::{Reader, TokenAndSpan};
 use parse::obsolete::*;
-use parse::token::{mod, MatchNt, SubstNt, InternedString};
+use parse::token::{self, MatchNt, SubstNt, InternedString};
 use parse::token::{keywords, special_idents};
 use parse::{new_sub_parser_from_file, ParseSess};
 use print::pprust;
@@ -89,7 +89,6 @@ use std::mem;
 use std::num::Float;
 use std::rc::Rc;
 use std::slice;
-use std::str::from_str;
 
 bitflags! {
     flags Restrictions: u8 {
@@ -106,7 +105,7 @@ type ItemInfo = (Ident, Item_, Option<Vec<Attribute> >);
 
 /// How to parse a path. There are four different kinds of paths, all of which
 /// are parsed somewhat differently.
-#[deriving(Copy, PartialEq)]
+#[derive(Copy, PartialEq)]
 pub enum PathParsingMode {
     /// A path with no type parameters; e.g. `foo::bar::Baz`
     NoTypesAllowed,
@@ -119,7 +118,7 @@ pub enum PathParsingMode {
 }
 
 /// How to parse a bound, whether to allow bound modifiers such as `?`.
-#[deriving(Copy, PartialEq)]
+#[derive(Copy, PartialEq)]
 pub enum BoundParsingMode {
     Bare,
     Modified,
@@ -318,7 +317,7 @@ pub struct Parser<'a> {
     pub expected_tokens: Vec<TokenType>,
 }
 
-#[deriving(PartialEq, Eq, Clone)]
+#[derive(PartialEq, Eq, Clone)]
 pub enum TokenType {
     Token(token::Token),
     Operator,
@@ -4802,6 +4801,13 @@ impl<'a> Parser<'a> {
         // allow this to be parsed as a trait.
         let could_be_trait = self.token != token::OpenDelim(token::Paren);
 
+        let neg_span = self.span;
+        let polarity = if self.eat(&token::Not) {
+            ast::ImplPolarity::Negative
+        } else {
+            ast::ImplPolarity::Positive
+        };
+
         // Parse the trait.
         let mut ty = self.parse_ty_sum();
 
@@ -4824,6 +4830,14 @@ impl<'a> Parser<'a> {
             ty = self.parse_ty_sum();
             opt_trait_ref
         } else {
+            match polarity {
+                ast::ImplPolarity::Negative => {
+                    // This is a negated type implementation
+                    // `impl !MyType {}`, which is not allowed.
+                    self.span_err(neg_span, "inherent implementation can't be negated");
+                },
+                _ => {}
+            }
             None
         };
 
@@ -4833,7 +4847,7 @@ impl<'a> Parser<'a> {
         let ident = ast_util::impl_pretty_name(&opt_trait, &*ty);
 
         (ident,
-         ItemImpl(unsafety, generics, opt_trait, ty, impl_items),
+         ItemImpl(unsafety, polarity, generics, opt_trait, ty, impl_items),
          Some(attrs))
     }
 

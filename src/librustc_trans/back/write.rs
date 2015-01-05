@@ -1,4 +1,4 @@
-// Copyright 2013-2014 The Rust Project Developers. See the COPYRIGHT
+// Copyright 2013-2015 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
 //
@@ -34,7 +34,7 @@ use std::sync::mpsc::channel;
 use std::thread;
 use libc::{c_uint, c_int, c_void};
 
-#[deriving(Clone, Copy, PartialEq, PartialOrd, Ord, Eq)]
+#[derive(Clone, Copy, PartialEq, PartialOrd, Ord, Eq)]
 pub enum OutputType {
     OutputTypeBitcode,
     OutputTypeAssembly,
@@ -86,7 +86,7 @@ struct Diagnostic {
 // We use an Arc instead of just returning a list of diagnostics from the
 // child task because we need to make sure that the messages are seen even
 // if the child task panics (for example, when `fatal` is called).
-#[deriving(Clone)]
+#[derive(Clone)]
 struct SharedEmitter {
     buffer: Arc<Mutex<Vec<Diagnostic>>>,
 }
@@ -256,7 +256,7 @@ fn create_target_machine(sess: &Session) -> TargetMachineRef {
 
 
 /// Module-specific configuration for `optimize_and_codegen`.
-#[deriving(Clone)]
+#[derive(Clone)]
 struct ModuleConfig {
     /// LLVM TargetMachine to use for codegen.
     tm: TargetMachineRef,
@@ -1028,6 +1028,12 @@ unsafe fn configure_llvm(sess: &Session) {
         llvm::LLVMInitializeARMTargetMC();
         llvm::LLVMInitializeARMAsmPrinter();
         llvm::LLVMInitializeARMAsmParser();
+
+        llvm::LLVMInitializeAArch64TargetInfo();
+        llvm::LLVMInitializeAArch64Target();
+        llvm::LLVMInitializeAArch64TargetMC();
+        llvm::LLVMInitializeAArch64AsmPrinter();
+        llvm::LLVMInitializeAArch64AsmParser();
 
         llvm::LLVMInitializeMipsTargetInfo();
         llvm::LLVMInitializeMipsTarget();

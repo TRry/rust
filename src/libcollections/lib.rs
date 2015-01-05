@@ -66,7 +66,7 @@ pub mod vec;
 pub mod vec_map;
 
 pub mod bitv {
-    pub use bit::{Bitv, Iter, from_fn, from_bytes};
+    pub use bit::{Bitv, Iter};
 }
 
 pub mod bitv_set {
@@ -103,14 +103,13 @@ mod std {
 mod prelude {
     // from core.
     pub use core::borrow::IntoCow;
-    pub use core::char::Char;
     pub use core::clone::Clone;
-    pub use core::cmp::{PartialEq, Eq, Equiv, PartialOrd, Ord};
+    pub use core::cmp::{PartialEq, Eq, PartialOrd, Ord};
     pub use core::cmp::Ordering::{Less, Equal, Greater};
     pub use core::iter::range;
     pub use core::iter::{FromIterator, Extend, IteratorExt};
     pub use core::iter::{Iterator, DoubleEndedIterator, RandomAccessIterator};
-    pub use core::iter::{IteratorCloneExt, CloneIteratorExt, DoubleEndedIteratorExt};
+    pub use core::iter::{IteratorCloneExt, CloneIteratorExt};
     pub use core::iter::{IteratorOrdExt, MutableDoubleEndedIterator, ExactSizeIterator};
     pub use core::kinds::{Copy, Send, Sized, Sync};
     pub use core::mem::drop;
@@ -123,15 +122,14 @@ mod prelude {
 
     // in core and collections (may differ).
     pub use slice::{AsSlice, SliceExt};
-    pub use str::{from_str, Str, StrExt};
+    pub use str::{Str, StrExt};
 
     // from other crates.
     pub use alloc::boxed::Box;
-    pub use unicode::char::UnicodeChar;
+    pub use unicode::char::CharExt;
 
     // from collections.
     pub use slice::SliceConcatExt;
-    pub use str::IntoMaybeOwned;
     pub use string::{String, ToString};
     pub use vec::Vec;
 }

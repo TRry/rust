@@ -40,13 +40,12 @@
 
 // ignore-android see #10393 #13206
 
-#![feature(slicing_syntax, unboxed_closures)]
+#![feature(associated_types, slicing_syntax, unboxed_closures)]
 
 extern crate libc;
 
 use std::io::stdio::{stdin_raw, stdout_raw};
 use std::io::{IoResult, EndOfFile};
-use std::num::{div_rem};
 use std::ptr::{copy_memory, Unique};
 use std::thread::Thread;
 
@@ -150,7 +149,9 @@ struct MutDnaSeqs<'a> { s: &'a mut [u8] }
 fn mut_dna_seqs<'a>(s: &'a mut [u8]) -> MutDnaSeqs<'a> {
     MutDnaSeqs { s: s }
 }
-impl<'a> Iterator<&'a mut [u8]> for MutDnaSeqs<'a> {
+impl<'a> Iterator for MutDnaSeqs<'a> {
+    type Item = &'a mut [u8];
+
     fn next(&mut self) -> Option<&'a mut [u8]> {
         let tmp = std::mem::replace(&mut self.s, &mut []);
         let tmp = match memchr(tmp, b'\n') {
@@ -187,7 +188,8 @@ fn reverse_complement(seq: &mut [u8], tables: &Tables) {
         i += LINE_LEN + 1;
     }
 
-    let (div, rem) = div_rem(len, 4);
+    let div = len / 4;
+    let rem = len % 4;
     unsafe {
         let mut left = seq.as_mut_ptr() as *mut u16;
         // This is slow if len % 2 != 0 but still faster than bytewise operations.
@@ -229,7 +231,7 @@ unsafe impl<T: 'static> Send for Racy<T> {}
 /// The closure `f` is run in parallel with an element of `iter`.
 fn parallel<'a, I, T, F>(mut iter: I, f: F)
         where T: 'a+Send + Sync,
-              I: Iterator<&'a mut [T]>,
+              I: Iterator<Item=&'a mut [T]>,
               F: Fn(&mut [T]) + Sync {
     use std::mem;
     use std::raw::Repr;

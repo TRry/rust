@@ -33,7 +33,7 @@ use super::{util};
 use middle::fast_reject;
 use middle::mem_categorization::Typer;
 use middle::subst::{Subst, Substs, TypeSpace, VecPerParamSpace};
-use middle::ty::{mod, AsPredicate, RegionEscape, ToPolyTraitRef, Ty};
+use middle::ty::{self, AsPredicate, RegionEscape, ToPolyTraitRef, Ty};
 use middle::infer;
 use middle::infer::{InferCtxt, TypeFreshener};
 use middle::ty_fold::TypeFoldable;
@@ -46,7 +46,6 @@ use util::ppaux::Repr;
 
 pub struct SelectionContext<'cx, 'tcx:'cx> {
     infcx: &'cx InferCtxt<'cx, 'tcx>,
-    param_env: &'cx ty::ParameterEnvironment<'tcx>,
     closure_typer: &'cx (ty::UnboxedClosureTyper<'tcx>+'cx),
 
     /// Freshener used specifically for skolemizing entries on the
@@ -84,7 +83,7 @@ struct TraitObligationStack<'prev, 'tcx: 'prev> {
     previous: Option<&'prev TraitObligationStack<'prev, 'tcx>>
 }
 
-#[deriving(Clone)]
+#[derive(Clone)]
 pub struct SelectionCache<'tcx> {
     hashmap: RefCell<HashMap<Rc<ty::TraitRef<'tcx>>,
                              SelectionResult<'tcx, SelectionCandidate<'tcx>>>>,
@@ -96,7 +95,7 @@ pub enum MethodMatchResult {
     MethodDidNotMatch,
 }
 
-#[deriving(Copy, Show)]
+#[derive(Copy, Show)]
 pub enum MethodMatchedData {
     // In the case of a precise match, we don't really need to store
     // how the match was found. So don't.
@@ -131,7 +130,7 @@ pub enum MethodMatchedData {
 /// matching where clause. Part of the reason for this is that where
 /// clauses can give additional information (like, the types of output
 /// parameters) that would have to be inferred from the impl.
-#[deriving(PartialEq,Eq,Show,Clone)]
+#[derive(PartialEq,Eq,Show,Clone)]
 enum SelectionCandidate<'tcx> {
     BuiltinCandidate(ty::BuiltinBound),
     ParamCandidate(ty::PolyTraitRef<'tcx>),
@@ -172,7 +171,7 @@ enum BuiltinBoundConditions<'tcx> {
     AmbiguousBuiltin
 }
 
-#[deriving(Show)]
+#[derive(Show)]
 enum EvaluationResult<'tcx> {
     EvaluatedToOk,
     EvaluatedToAmbig,
@@ -181,12 +180,10 @@ enum EvaluationResult<'tcx> {
 
 impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
     pub fn new(infcx: &'cx InferCtxt<'cx, 'tcx>,
-               param_env: &'cx ty::ParameterEnvironment<'tcx>,
                closure_typer: &'cx ty::UnboxedClosureTyper<'tcx>)
                -> SelectionContext<'cx, 'tcx> {
         SelectionContext {
             infcx: infcx,
-            param_env: param_env,
             closure_typer: closure_typer,
             freshener: infcx.freshener(),
             intercrate: false,
@@ -194,12 +191,10 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
     }
 
     pub fn intercrate(infcx: &'cx InferCtxt<'cx, 'tcx>,
-                      param_env: &'cx ty::ParameterEnvironment<'tcx>,
                       closure_typer: &'cx ty::UnboxedClosureTyper<'tcx>)
                       -> SelectionContext<'cx, 'tcx> {
         SelectionContext {
             infcx: infcx,
-            param_env: param_env,
             closure_typer: closure_typer,
             freshener: infcx.freshener(),
             intercrate: true,
@@ -210,12 +205,12 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
         self.infcx
     }
 
-    pub fn param_env(&self) -> &'cx ty::ParameterEnvironment<'tcx> {
-        self.param_env
-    }
-
     pub fn tcx(&self) -> &'cx ty::ctxt<'tcx> {
         self.infcx.tcx
+    }
+
+    pub fn param_env(&self) -> &'cx ty::ParameterEnvironment<'cx, 'tcx> {
+        self.closure_typer.param_env()
     }
 
     ///////////////////////////////////////////////////////////////////////////
@@ -297,7 +292,7 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
                                                 stack: Option<&TraitObligationStack<'o, 'tcx>>,
                                                 mut predicates: I)
                                                 -> EvaluationResult<'tcx>
-        where I : Iterator<&'a PredicateObligation<'tcx>>, 'tcx:'a
+        where I : Iterator<Item=&'a PredicateObligation<'tcx>>, 'tcx:'a
     {
         let mut result = EvaluatedToOk;
         for obligation in predicates {
@@ -650,7 +645,7 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
         // it's not worth going to more trouble to increase the
         // hit-rate I don't think.
         if self.intercrate {
-            return &self.param_env.selection_cache;
+            return &self.param_env().selection_cache;
         }
 
         // If the trait refers to any parameters in scope, then use
@@ -659,7 +654,7 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
             cache_fresh_trait_pred.0.input_types().iter().any(
                 |&t| ty::type_has_self(t) || ty::type_has_params(t))
         {
-            return &self.param_env.selection_cache;
+            return &self.param_env().selection_cache;
         }
 
         // If the trait refers to unbound type variables, and there
@@ -668,11 +663,11 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
         // common case, then we can use the global environment.
         // See the discussion in doc.rs for more details.
         if
-            !self.param_env.caller_bounds.is_empty() &&
+            !self.param_env().caller_bounds.is_empty() &&
             cache_fresh_trait_pred.0.input_types().iter().any(
                 |&t| ty::type_has_ty_infer(t))
         {
-            return &self.param_env.selection_cache;
+            return &self.param_env().selection_cache;
         }
 
         // Otherwise, we can use the global cache.
@@ -902,7 +897,7 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
                obligation.repr(self.tcx()));
 
         let caller_trait_refs: Vec<_> =
-            self.param_env.caller_bounds.predicates.iter()
+            self.param_env().caller_bounds.predicates.iter()
             .filter_map(|o| o.to_opt_poly_trait_ref())
             .collect();
 
@@ -2315,9 +2310,9 @@ impl<'o, 'tcx> TraitObligationStack<'o, 'tcx> {
     }
 }
 
-impl<'o, 'tcx> Iterator<&'o TraitObligationStack<'o,'tcx>>
-           for Option<&'o TraitObligationStack<'o, 'tcx>>
-{
+impl<'o, 'tcx> Iterator for Option<&'o TraitObligationStack<'o, 'tcx>> {
+    type Item = &'o TraitObligationStack<'o,'tcx>;
+
     fn next(&mut self) -> Option<&'o TraitObligationStack<'o, 'tcx>> {
         match *self {
             Some(o) => {

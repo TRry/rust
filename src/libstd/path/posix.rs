@@ -15,7 +15,7 @@ use clone::Clone;
 use cmp::{PartialEq, Eq, PartialOrd, Ord, Ordering};
 use hash;
 use io::Writer;
-use iter::{DoubleEndedIteratorExt, AdditiveIterator, Extend};
+use iter::{AdditiveIterator, Extend};
 use iter::{Iterator, IteratorExt, Map};
 use option::Option;
 use option::Option::{None, Some};
@@ -35,7 +35,7 @@ pub type StrComponents<'a> =
     Map<&'a [u8], Option<&'a str>, Components<'a>, fn(&[u8]) -> Option<&str>>;
 
 /// Represents a POSIX file path
-#[deriving(Clone)]
+#[derive(Clone)]
 pub struct Path {
     repr: Vec<u8>, // assumed to never be empty or contain NULs
     sepidx: Option<uint> // index of the final separator in repr
@@ -449,11 +449,11 @@ mod tests {
     use super::*;
 
     use clone::Clone;
-    use iter::{IteratorExt, DoubleEndedIteratorExt};
-    use option::Option::{mod, Some, None};
+    use iter::IteratorExt;
+    use option::Option::{self, Some, None};
     use path::GenericPath;
     use slice::{AsSlice, SliceExt};
-    use str::{mod, Str, StrExt};
+    use str::{self, Str, StrExt};
     use string::ToString;
     use vec::Vec;
 

@@ -16,11 +16,12 @@ use self::PathPrefix::*;
 
 use ascii::AsciiExt;
 use c_str::{CString, ToCStr};
+use char::CharExt;
 use clone::Clone;
 use cmp::{PartialEq, Eq, PartialOrd, Ord, Ordering};
 use hash;
 use io::Writer;
-use iter::{AdditiveIterator, DoubleEndedIteratorExt, Extend};
+use iter::{AdditiveIterator, Extend};
 use iter::{Iterator, IteratorExt, Map, repeat};
 use mem;
 use option::Option;
@@ -28,7 +29,6 @@ use option::Option::{Some, None};
 use slice::{SliceExt, SliceConcatExt};
 use str::{SplitTerminator, FromStr, StrExt};
 use string::{String, ToString};
-use unicode::char::UnicodeChar;
 use vec::Vec;
 
 use super::{contains_nul, BytesContainer, GenericPath, GenericPathUnsafe};
@@ -78,7 +78,7 @@ pub type Components<'a> =
 //
 // The only error condition imposed here is valid utf-8. All other invalid paths are simply
 // preserved by the data structure; let the Windows API error out on them.
-#[deriving(Clone)]
+#[derive(Clone)]
 pub struct Path {
     repr: String, // assumed to never be empty
     prefix: Option<PathPrefix>,
@@ -969,7 +969,7 @@ pub fn is_sep_byte_verbatim(u: &u8) -> bool {
 }
 
 /// Prefix types for Path
-#[deriving(Copy, PartialEq, Clone, Show)]
+#[derive(Copy, PartialEq, Clone, Show)]
 pub enum PathPrefix {
     /// Prefix `\\?\`, uint is the length of the following component
     VerbatimPrefix(uint),
@@ -1124,8 +1124,8 @@ mod tests {
     use super::*;
 
     use clone::Clone;
-    use iter::{IteratorExt, DoubleEndedIteratorExt};
-    use option::Option::{mod, Some, None};
+    use iter::IteratorExt;
+    use option::Option::{self, Some, None};
     use path::GenericPath;
     use slice::{AsSlice, SliceExt};
     use str::Str;

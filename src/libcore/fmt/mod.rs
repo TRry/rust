@@ -24,7 +24,7 @@ use result::Result::{Ok, Err};
 use result;
 use slice::SliceExt;
 use slice;
-use str::{mod, StrExt, Utf8Error};
+use str::{self, StrExt, Utf8Error};
 
 pub use self::num::radix;
 pub use self::num::Radix;
@@ -44,7 +44,7 @@ pub type Result = result::Result<(), Error>;
 /// occurred. Any extra information must be arranged to be transmitted through
 /// some other means.
 #[experimental = "core and I/O reconciliation may alter this definition"]
-#[deriving(Copy)]
+#[derive(Copy)]
 pub struct Error;
 
 /// A collection of methods that are required to format a message into a stream.
@@ -122,7 +122,7 @@ enum Void {}
 /// compile time it is ensured that the function and the value have the correct
 /// types, and then this struct is used to canonicalize arguments to one type.
 #[experimental = "implementation detail of the `format_args!` macro"]
-#[deriving(Copy)]
+#[derive(Copy)]
 pub struct Argument<'a> {
     value: &'a Void,
     formatter: fn(&Void, &mut Formatter) -> Result,
@@ -199,7 +199,7 @@ impl<'a> Arguments<'a> {
 /// macro validates the format string at compile-time so usage of the `write`
 /// and `format` functions can be safely performed.
 #[stable]
-#[deriving(Copy)]
+#[derive(Copy)]
 pub struct Arguments<'a> {
     // Format string pieces to print.
     pieces: &'a [&'a str],
@@ -388,7 +388,7 @@ impl<'a> Formatter<'a> {
                         prefix: &str,
                         buf: &str)
                         -> Result {
-        use char::Char;
+        use char::CharExt;
         use fmt::rt::{FlagAlternate, FlagSignPlus, FlagSignAwareZeroPad};
 
         let mut width = buf.len();
@@ -504,7 +504,7 @@ impl<'a> Formatter<'a> {
     fn with_padding<F>(&mut self, padding: uint, default: rt::Alignment, f: F) -> Result where
         F: FnOnce(&mut Formatter) -> Result,
     {
-        use char::Char;
+        use char::CharExt;
         let align = match self.align {
             rt::AlignUnknown => default,
             _ => self.align
@@ -613,7 +613,7 @@ impl Show for str {
 
 impl Show for char {
     fn fmt(&self, f: &mut Formatter) -> Result {
-        use char::Char;
+        use char::CharExt;
 
         let mut utf8 = [0u8; 4];
         let amt = self.encode_utf8(&mut utf8).unwrap_or(0);

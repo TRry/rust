@@ -8,16 +8,16 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// This file was auto-generated using 'src/etc/generate-deriving-span-tests.py'
+#![feature(optin_builtin_traits)]
 
-extern crate rand;
+// pp-exact
 
+trait UnsafeTrait {
+    fn foo(&self);
+}
 
-struct Error;
+impl !UnsafeTrait for int {
+    fn foo(&self) { }
+}
 
-#[derive(Zero)]   //~ ERROR not implemented
-struct Struct(
-    Error
-);
-
-fn main() {}
+pub fn main() { }

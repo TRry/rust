@@ -17,7 +17,7 @@ use serialize::{Encodable, Decodable, Encoder, Decoder};
 
 /// A non-growable owned slice. This is a separate type to allow the
 /// representation to change.
-#[deriving(Hash, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct OwnedSlice<T> {
     data: Box<[T]>
 }
@@ -77,7 +77,7 @@ impl<T: Clone> Clone for OwnedSlice<T> {
 }
 
 impl<T> FromIterator<T> for OwnedSlice<T> {
-    fn from_iter<I: Iterator<T>>(iter: I) -> OwnedSlice<T> {
+    fn from_iter<I: Iterator<Item=T>>(iter: I) -> OwnedSlice<T> {
         OwnedSlice::from_vec(iter.collect())
     }
 }

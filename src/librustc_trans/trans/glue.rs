@@ -26,6 +26,7 @@ use trans::build::*;
 use trans::callee;
 use trans::cleanup;
 use trans::cleanup::CleanupMethods;
+use trans::consts;
 use trans::common::*;
 use trans::datum;
 use trans::debuginfo;
@@ -34,7 +35,7 @@ use trans::machine::*;
 use trans::tvec;
 use trans::type_::Type;
 use trans::type_of::{type_of, sizing_type_of, align_of};
-use middle::ty::{mod, Ty};
+use middle::ty::{self, Ty};
 use util::ppaux::{ty_to_short_str, Repr};
 use util::ppaux;
 
@@ -577,9 +578,7 @@ pub fn emit_tydescs(ccx: &CrateContext) {
         // before being put into the tydesc because we only have a singleton
         // tydesc type. Then we'll recast each function to its real type when
         // calling it.
-        let drop_glue = unsafe {
-            llvm::LLVMConstPointerCast(get_drop_glue(ccx, ti.ty), glue_fn_ty.to_ref())
-        };
+        let drop_glue = consts::ptrcast(get_drop_glue(ccx, ti.ty), glue_fn_ty);
         ccx.stats().n_real_glues.set(ccx.stats().n_real_glues.get() + 1);
 
         let tydesc = C_named_struct(ccx.tydesc_type(),

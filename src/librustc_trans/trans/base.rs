@@ -43,8 +43,8 @@ use middle::lang_items::{LangItem, ExchangeMallocFnLangItem, StartFnLangItem};
 use middle::subst;
 use middle::weak_lang_items;
 use middle::subst::{Subst, Substs};
-use middle::ty::{mod, Ty, UnboxedClosureTyper};
-use session::config::{mod, NoDebugInfo, FullDebugInfo};
+use middle::ty::{self, Ty, UnboxedClosureTyper};
+use session::config::{self, NoDebugInfo, FullDebugInfo};
 use session::Session;
 use trans::_match;
 use trans::adt;
@@ -511,7 +511,7 @@ pub fn get_res_dtor<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>,
         // Since we're in trans we don't care for any region parameters
         let substs = subst::Substs::erased(substs.types.clone());
 
-        let (val, _) = monomorphize::monomorphic_fn(ccx, did, &substs, None);
+        let (val, _, _) = monomorphize::monomorphic_fn(ccx, did, &substs, None);
 
         val
     } else if did.krate == ast::LOCAL_CRATE {
@@ -547,7 +547,7 @@ pub fn maybe_name_value(cx: &CrateContext, v: ValueRef, s: &str) {
 
 
 // Used only for creating scalar comparison glue.
-#[deriving(Copy)]
+#[derive(Copy)]
 pub enum scalar_type { nil_type, signed_int, unsigned_int, floating_point, }
 
 pub fn compare_scalar_types<'blk, 'tcx>(cx: Block<'blk, 'tcx>,
@@ -731,7 +731,8 @@ pub fn iter_structural_ty<'a, 'blk, 'tcx>(cx: Block<'blk, 'tcx>,
       }
       ty::ty_unboxed_closure(def_id, _, substs) => {
           let repr = adt::represent_type(cx.ccx(), t);
-          let upvars = ty::unboxed_closure_upvars(cx.tcx(), def_id, substs).unwrap();
+          let typer = common::NormalizingUnboxedClosureTyper::new(cx.tcx());
+          let upvars = typer.unboxed_closure_upvars(def_id, substs).unwrap();
           for (i, upvar) in upvars.iter().enumerate() {
               let llupvar = adt::trans_field_ptr(cx, &*repr, data_ptr, 0, i);
               cx = f(cx, llupvar, upvar.ty);
@@ -1451,6 +1452,7 @@ pub fn new_fn_ctxt<'a, 'tcx>(ccx: &'a CrateContext<'a, 'tcx>,
           llfn: llfndecl,
           llenv: None,
           llretslotptr: Cell::new(None),
+          param_env: ty::empty_parameter_environment(ccx.tcx()),
           alloca_insert_pt: Cell::new(None),
           llreturn: Cell::new(None),
           needs_ret_allocas: nested_returns,
@@ -1782,7 +1784,7 @@ pub fn build_return_block<'blk, 'tcx>(fcx: &FunctionContext<'blk, 'tcx>,
     }
 }
 
-#[deriving(Clone, Copy, Eq, PartialEq)]
+#[derive(Clone, Copy, Eq, PartialEq)]
 pub enum IsUnboxedClosureFlag {
     NotUnboxedClosure,
     IsUnboxedClosure,
@@ -2204,7 +2206,7 @@ pub fn llvm_linkage_by_name(name: &str) -> Option<Linkage> {
 
 
 /// Enum describing the origin of an LLVM `Value`, for linkage purposes.
-#[deriving(Copy)]
+#[derive(Copy)]
 pub enum ValueOrigin {
     /// The LLVM `Value` is in this context because the corresponding item was
     /// assigned to the current compilation unit.
@@ -2315,7 +2317,7 @@ pub fn trans_item(ccx: &CrateContext, item: &ast::Item) {
         let mut v = TransItemVisitor{ ccx: ccx };
         v.visit_block(&**body);
       }
-      ast::ItemImpl(_, ref generics, _, _, ref impl_items) => {
+      ast::ItemImpl(_, _, ref generics, _, _, ref impl_items) => {
         meth::trans_impl(ccx,
                          item.ident,
                          impl_items[],
@@ -3070,7 +3072,9 @@ fn internalize_symbols(cx: &SharedCrateContext, reachable: &HashSet<String>) {
         step: unsafe extern "C" fn(ValueRef) -> ValueRef,
     }
 
-    impl Iterator<ValueRef> for ValueIter {
+    impl Iterator for ValueIter {
+        type Item = ValueRef;
+
         fn next(&mut self) -> Option<ValueRef> {
             let old = self.cur;
             if !old.is_null() {

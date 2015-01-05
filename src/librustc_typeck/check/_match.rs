@@ -12,7 +12,7 @@ use middle::def;
 use middle::infer;
 use middle::pat_util::{PatIdMap, pat_id_map, pat_is_binding, pat_is_const};
 use middle::subst::{Substs};
-use middle::ty::{mod, Ty};
+use middle::ty::{self, Ty};
 use check::{check_expr, check_expr_has_type, check_expr_with_expectation};
 use check::{check_expr_coercable_to_type, demand, FnCtxt, Expectation};
 use check::{instantiate_path, structurally_resolved_type, valid_range_bounds};
@@ -496,7 +496,7 @@ pub fn check_struct_pat_fields<'a, 'tcx>(pcx: &pat_ctxt<'a, 'tcx>,
 
     // Typecheck each field.
     for &Spanned { node: ref field, span } in fields.iter() {
-        let field_type = match used_fields.entry(field.ident.name) {
+        let field_type = match used_fields.entry(&field.ident.name) {
             Occupied(occupied) => {
                 span_err!(tcx.sess, span, E0025,
                     "field `{}` bound multiple times in the pattern",
@@ -507,7 +507,7 @@ pub fn check_struct_pat_fields<'a, 'tcx>(pcx: &pat_ctxt<'a, 'tcx>,
                 tcx.types.err
             }
             Vacant(vacant) => {
-                vacant.set(span);
+                vacant.insert(span);
                 field_type_map.get(&field.ident.name).cloned()
                     .unwrap_or_else(|| {
                         span_err!(tcx.sess, span, E0026,

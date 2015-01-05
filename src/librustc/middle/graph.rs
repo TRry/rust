@@ -61,18 +61,18 @@ impl<E: Show> Show for Edge<E> {
     }
 }
 
-#[deriving(Clone, Copy, PartialEq, Show)]
+#[derive(Clone, Copy, PartialEq, Show)]
 pub struct NodeIndex(pub uint);
 #[allow(non_upper_case_globals)]
 pub const InvalidNodeIndex: NodeIndex = NodeIndex(uint::MAX);
 
-#[deriving(Copy, PartialEq, Show)]
+#[derive(Copy, PartialEq, Show)]
 pub struct EdgeIndex(pub uint);
 #[allow(non_upper_case_globals)]
 pub const InvalidEdgeIndex: EdgeIndex = EdgeIndex(uint::MAX);
 
 // Use a private field here to guarantee no more instances are created:
-#[deriving(Copy, Show)]
+#[derive(Copy, Show)]
 pub struct Direction { repr: uint }
 #[allow(non_upper_case_globals)]
 pub const Outgoing: Direction = Direction { repr: 0 };
@@ -305,7 +305,9 @@ pub struct DepthFirstTraversal<'g, N:'g, E:'g> {
     visited: BitvSet
 }
 
-impl<'g, N, E> Iterator<&'g N> for DepthFirstTraversal<'g, N, E> {
+impl<'g, N, E> Iterator for DepthFirstTraversal<'g, N, E> {
+    type Item = &'g N;
+
     fn next(&mut self) -> Option<&'g N> {
         while let Some(idx) = self.stack.pop() {
             if !self.visited.insert(idx.node_id()) {

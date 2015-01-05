@@ -30,10 +30,6 @@ impl<R: Reader> LimitReader<R> {
     /// Consumes the `LimitReader`, returning the underlying `Reader`.
     pub fn into_inner(self) -> R { self.inner }
 
-    /// Deprecated, use into_inner() instead
-    #[deprecated = "renamed to into_inner"]
-    pub fn unwrap(self) -> R { self.into_inner() }
-
     /// Returns the number of bytes that can be read before the `LimitReader`
     /// will return EOF.
     ///
@@ -81,7 +77,7 @@ impl<R: Buffer> Buffer for LimitReader<R> {
 }
 
 /// A `Writer` which ignores bytes written to it, like /dev/null.
-#[deriving(Copy)]
+#[derive(Copy)]
 pub struct NullWriter;
 
 impl Writer for NullWriter {
@@ -90,7 +86,7 @@ impl Writer for NullWriter {
 }
 
 /// A `Reader` which returns an infinite stream of 0 bytes, like /dev/zero.
-#[deriving(Copy)]
+#[derive(Copy)]
 pub struct ZeroReader;
 
 impl Reader for ZeroReader {
@@ -111,7 +107,7 @@ impl Buffer for ZeroReader {
 }
 
 /// A `Reader` which is always at EOF, like /dev/null.
-#[deriving(Copy)]
+#[derive(Copy)]
 pub struct NullReader;
 
 impl Reader for NullReader {
@@ -163,13 +159,13 @@ impl Writer for MultiWriter {
 
 /// A `Reader` which chains input from multiple `Reader`s, reading each to
 /// completion before moving onto the next.
-#[deriving(Clone)]
+#[derive(Clone)]
 pub struct ChainedReader<I, R> {
     readers: I,
     cur_reader: Option<R>,
 }
 
-impl<R: Reader, I: Iterator<R>> ChainedReader<I, R> {
+impl<R: Reader, I: Iterator<Item=R>> ChainedReader<I, R> {
     /// Creates a new `ChainedReader`
     pub fn new(mut readers: I) -> ChainedReader<I, R> {
         let r = readers.next();
@@ -177,7 +173,7 @@ impl<R: Reader, I: Iterator<R>> ChainedReader<I, R> {
     }
 }
 
-impl<R: Reader, I: Iterator<R>> Reader for ChainedReader<I, R> {
+impl<R: Reader, I: Iterator<Item=R>> Reader for ChainedReader<I, R> {
     fn read(&mut self, buf: &mut [u8]) -> io::IoResult<uint> {
         loop {
             let err = match self.cur_reader {
@@ -219,10 +215,6 @@ impl<R: Reader, W: Writer> TeeReader<R, W> {
         let TeeReader { reader, writer } = self;
         (reader, writer)
     }
-
-    /// Deprecated, use into_inner() instead
-    #[deprecated = "renamed to into_inner"]
-    pub fn unwrap(self) -> (R, W) { self.into_inner() }
 }
 
 impl<R: Reader, W: Writer> Reader for TeeReader<R, W> {
@@ -247,12 +239,12 @@ pub fn copy<R: Reader, W: Writer>(r: &mut R, w: &mut W) -> io::IoResult<()> {
 }
 
 /// An adaptor converting an `Iterator<u8>` to a `Reader`.
-#[deriving(Clone)]
+#[derive(Clone)]
 pub struct IterReader<T> {
     iter: T,
 }
 
-impl<T: Iterator<u8>> IterReader<T> {
+impl<T: Iterator<Item=u8>> IterReader<T> {
     /// Creates a new `IterReader` which will read from the specified
     /// `Iterator`.
     pub fn new(iter: T) -> IterReader<T> {
@@ -260,7 +252,7 @@ impl<T: Iterator<u8>> IterReader<T> {
     }
 }
 
-impl<T: Iterator<u8>> Reader for IterReader<T> {
+impl<T: Iterator<Item=u8>> Reader for IterReader<T> {
     #[inline]
     fn read(&mut self, buf: &mut [u8]) -> io::IoResult<uint> {
         let mut len = 0;

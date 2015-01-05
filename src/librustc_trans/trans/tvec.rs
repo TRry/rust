@@ -19,6 +19,7 @@ use trans::build::*;
 use trans::cleanup;
 use trans::cleanup::CleanupMethods;
 use trans::common::*;
+use trans::consts;
 use trans::datum::*;
 use trans::expr::{Dest, Ignore, SaveIn};
 use trans::expr;
@@ -27,7 +28,7 @@ use trans::machine;
 use trans::machine::{nonzero_llsize_of, llsize_of_alloc};
 use trans::type_::Type;
 use trans::type_of;
-use middle::ty::{mod, Ty};
+use middle::ty::{self, Ty};
 use util::ppaux::ty_to_string;
 
 use syntax::ast;
@@ -89,7 +90,7 @@ pub fn make_drop_glue_unboxed<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
     })
 }
 
-#[deriving(Copy)]
+#[derive(Copy)]
 pub struct VecTypes<'tcx> {
     pub unit_ty: Ty<'tcx>,
     pub llunit_ty: Type,
@@ -213,15 +214,13 @@ pub fn trans_lit_str<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
     match dest {
         Ignore => bcx,
         SaveIn(lldest) => {
-            unsafe {
-                let bytes = str_lit.get().len();
-                let llbytes = C_uint(bcx.ccx(), bytes);
-                let llcstr = C_cstr(bcx.ccx(), str_lit, false);
-                let llcstr = llvm::LLVMConstPointerCast(llcstr, Type::i8p(bcx.ccx()).to_ref());
-                Store(bcx, llcstr, GEPi(bcx, lldest, &[0u, abi::FAT_PTR_ADDR]));
-                Store(bcx, llbytes, GEPi(bcx, lldest, &[0u, abi::FAT_PTR_EXTRA]));
-                bcx
-            }
+            let bytes = str_lit.get().len();
+            let llbytes = C_uint(bcx.ccx(), bytes);
+            let llcstr = C_cstr(bcx.ccx(), str_lit, false);
+            let llcstr = consts::ptrcast(llcstr, Type::i8p(bcx.ccx()));
+            Store(bcx, llcstr, GEPi(bcx, lldest, &[0u, abi::FAT_PTR_ADDR]));
+            Store(bcx, llbytes, GEPi(bcx, lldest, &[0u, abi::FAT_PTR_EXTRA]));
+            bcx
         }
     }
 }

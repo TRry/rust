@@ -35,8 +35,7 @@
 pub use self::ExternalLocation::*;
 
 use std::cell::RefCell;
-use std::cmp::Ordering::{mod, Less, Greater, Equal};
-use std::collections::hash_map::Entry::{Occupied, Vacant};
+use std::cmp::Ordering::{self, Less, Greater, Equal};
 use std::collections::{HashMap, HashSet};
 use std::default::Default;
 use std::fmt;
@@ -74,7 +73,7 @@ use stability_summary;
 /// It is intended that this context is a lightweight object which can be fairly
 /// easily cloned because it is cloned per work-job (about once per item in the
 /// rustdoc tree).
-#[deriving(Clone)]
+#[derive(Clone)]
 pub struct Context {
     /// Current hierarchy of components leading down to what's currently being
     /// rendered
@@ -129,7 +128,7 @@ pub struct Implementor {
 }
 
 /// Metadata about implementations for a type.
-#[deriving(Clone)]
+#[derive(Clone)]
 pub struct Impl {
     pub impl_: clean::Impl,
     pub dox: Option<String>,
@@ -145,7 +144,7 @@ pub struct Impl {
 /// to be a fairly large and expensive structure to clone. Instead this adheres
 /// to `Send` so it may be stored in a `Arc` instance and shared among the various
 /// rendering tasks.
-#[deriving(Default)]
+#[derive(Default)]
 pub struct Cache {
     /// Mapping of typaram ids to the name of the type parameter. This is used
     /// when pretty-printing a type (so pretty printing doesn't have to
@@ -225,7 +224,7 @@ struct Source<'a>(&'a str);
 // Helper structs for rendering items/sidebars and carrying along contextual
 // information
 
-#[deriving(Copy)]
+#[derive(Copy)]
 struct Item<'a> {
     cx: &'a Context,
     item: &'a clean::Item,
@@ -822,10 +821,8 @@ impl DocFolder for Cache {
         if let clean::ImplItem(ref i) = item.inner {
             match i.trait_ {
                 Some(clean::ResolvedPath{ did, .. }) => {
-                    let v = match self.implementors.entry(did) {
-                        Vacant(entry) => entry.set(Vec::with_capacity(1)),
-                        Occupied(entry) => entry.into_mut(),
-                    };
+                    let v = self.implementors.entry(&did).get().unwrap_or_else(
+                        |vacant_entry| vacant_entry.insert(Vec::with_capacity(1)));
                     v.push(Implementor {
                         def_id: item.def_id,
                         generics: i.generics.clone(),
@@ -1014,10 +1011,8 @@ impl DocFolder for Cache {
                         };
 
                         if let Some(did) = did {
-                            let v = match self.impls.entry(did) {
-                                Vacant(entry) => entry.set(Vec::with_capacity(1)),
-                                Occupied(entry) => entry.into_mut(),
-                            };
+                            let v = self.impls.entry(&did).get().unwrap_or_else(
+                                |vacant_entry| vacant_entry.insert(Vec::with_capacity(1)));
                             v.push(Impl {
                                 impl_: i,
                                 dox: dox,
@@ -1264,10 +1259,9 @@ impl Context {
                 None => continue,
                 Some(ref s) => s.to_string(),
             };
-            let v = match map.entry(short.to_string()) {
-                Vacant(entry) => entry.set(Vec::with_capacity(1)),
-                Occupied(entry) => entry.into_mut(),
-            };
+            let short = short.to_string();
+            let v = map.entry(&short).get().unwrap_or_else(
+                |vacant_entry| vacant_entry.insert(Vec::with_capacity(1)));
             v.push(myname);
         }
 

@@ -225,7 +225,7 @@ pub use self::FileMode::*;
 pub use self::FileAccess::*;
 pub use self::IoErrorKind::*;
 
-use char::Char;
+use char::CharExt;
 use clone::Clone;
 use default::Default;
 use error::{FromError, Error};
@@ -248,7 +248,6 @@ use str;
 use string::String;
 use uint;
 use unicode;
-use unicode::char::UnicodeChar;
 use vec::Vec;
 
 // Reexports
@@ -263,7 +262,6 @@ pub use self::timer::Timer;
 pub use self::net::ip::IpAddr;
 pub use self::net::tcp::TcpListener;
 pub use self::net::tcp::TcpStream;
-pub use self::net::udp::UdpStream;
 pub use self::pipe::PipeStream;
 pub use self::process::{Process, Command};
 pub use self::tempfile::TempDir;
@@ -301,7 +299,7 @@ pub type IoResult<T> = Result<T, IoError>;
 /// # FIXME
 ///
 /// Is something like this sufficient? It's kind of archaic
-#[deriving(PartialEq, Eq, Clone)]
+#[derive(PartialEq, Eq, Clone)]
 pub struct IoError {
     /// An enumeration which can be matched against for determining the flavor
     /// of error.
@@ -368,7 +366,7 @@ impl FromError<IoError> for Box<Error> {
 }
 
 /// A list specifying general categories of I/O error.
-#[deriving(Copy, PartialEq, Eq, Clone, Show)]
+#[derive(Copy, PartialEq, Eq, Clone, Show)]
 pub enum IoErrorKind {
     /// Any I/O error not part of this list.
     OtherIoError,
@@ -863,23 +861,6 @@ pub trait Reader {
 }
 
 /// A reader which can be converted to a RefReader.
-#[deprecated = "use ByRefReader instead"]
-pub trait AsRefReader {
-    /// Creates a wrapper around a mutable reference to the reader.
-    ///
-    /// This is useful to allow applying adaptors while still
-    /// retaining ownership of the original value.
-    fn by_ref<'a>(&'a mut self) -> RefReader<'a, Self>;
-}
-
-#[allow(deprecated)]
-impl<T: Reader> AsRefReader for T {
-    fn by_ref<'a>(&'a mut self) -> RefReader<'a, T> {
-        RefReader { inner: self }
-    }
-}
-
-/// A reader which can be converted to a RefReader.
 pub trait ByRefReader {
     /// Creates a wrapper around a mutable reference to the reader.
     ///
@@ -1036,21 +1017,7 @@ pub trait Writer {
             error: IoResult<()>,
         }
 
-        #[cfg(not(stage0))]
         impl<'a, Sized? T: Writer> fmt::Writer for Adaptor<'a, T> {
-            fn write_str(&mut self, s: &str) -> fmt::Result {
-                match self.inner.write(s.as_bytes()) {
-                    Ok(()) => Ok(()),
-                    Err(e) => {
-                        self.error = Err(e);
-                        Err(fmt::Error)
-                    }
-                }
-            }
-        }
-
-        #[cfg(stage0)]
-        impl<'a, T: Writer> fmt::Writer for Adaptor<'a, T> {
             fn write_str(&mut self, s: &str) -> fmt::Result {
                 match self.inner.write(s.as_bytes()) {
                     Ok(()) => Ok(()),
@@ -1257,24 +1224,6 @@ pub trait Writer {
 }
 
 /// A writer which can be converted to a RefWriter.
-#[deprecated = "use ByRefWriter instead"]
-pub trait AsRefWriter {
-    /// Creates a wrapper around a mutable reference to the writer.
-    ///
-    /// This is useful to allow applying wrappers while still
-    /// retaining ownership of the original value.
-    #[inline]
-    fn by_ref<'a>(&'a mut self) -> RefWriter<'a, Self>;
-}
-
-#[allow(deprecated)]
-impl<T: Writer> AsRefWriter for T {
-    fn by_ref<'a>(&'a mut self) -> RefWriter<'a, T> {
-        RefWriter { inner: self }
-    }
-}
-
-/// A writer which can be converted to a RefWriter.
 pub trait ByRefWriter {
     /// Creates a wrapper around a mutable reference to the writer.
     ///
@@ -1371,7 +1320,9 @@ pub struct Lines<'r, T:'r> {
     buffer: &'r mut T,
 }
 
-impl<'r, T: Buffer> Iterator<IoResult<String>> for Lines<'r, T> {
+impl<'r, T: Buffer> Iterator for Lines<'r, T> {
+    type Item = IoResult<String>;
+
     fn next(&mut self) -> Option<IoResult<String>> {
         match self.buffer.read_line() {
             Ok(x) => Some(Ok(x)),
@@ -1398,7 +1349,9 @@ pub struct Chars<'r, T:'r> {
     buffer: &'r mut T
 }
 
-impl<'r, T: Buffer> Iterator<IoResult<char>> for Chars<'r, T> {
+impl<'r, T: Buffer> Iterator for Chars<'r, T> {
+    type Item = IoResult<char>;
+
     fn next(&mut self) -> Option<IoResult<char>> {
         match self.buffer.read_char() {
             Ok(x) => Some(Ok(x)),
@@ -1575,7 +1528,7 @@ impl<T: Buffer> BufferPrelude for T {
 
 /// When seeking, the resulting cursor is offset from a base by the offset given
 /// to the `seek` function. The base used is specified by this enumeration.
-#[deriving(Copy)]
+#[derive(Copy)]
 pub enum SeekStyle {
     /// Seek from the beginning of the stream
     SeekSet,
@@ -1648,15 +1601,9 @@ pub struct IncomingConnections<'a, Sized? A:'a> {
     inc: &'a mut A,
 }
 
-#[cfg(stage0)]
-impl<'a, T, A: Acceptor<T>> Iterator<IoResult<T>> for IncomingConnections<'a, A> {
-    fn next(&mut self) -> Option<IoResult<T>> {
-        Some(self.inc.accept())
-    }
-}
+impl<'a, T, Sized? A: Acceptor<T>> Iterator for IncomingConnections<'a, A> {
+    type Item = IoResult<T>;
 
-#[cfg(not(stage0))]
-impl<'a, T, Sized? A: Acceptor<T>> Iterator<IoResult<T>> for IncomingConnections<'a, A> {
     fn next(&mut self) -> Option<IoResult<T>> {
         Some(self.inc.accept())
     }
@@ -1706,7 +1653,7 @@ pub fn standard_error(kind: IoErrorKind) -> IoError {
 /// A mode specifies how a file should be opened or created. These modes are
 /// passed to `File::open_mode` and are used to control where the file is
 /// positioned when it is initially opened.
-#[deriving(Copy, Clone, PartialEq, Eq)]
+#[derive(Copy, Clone, PartialEq, Eq)]
 pub enum FileMode {
     /// Opens a file positioned at the beginning.
     Open,
@@ -1718,7 +1665,7 @@ pub enum FileMode {
 
 /// Access permissions with which the file should be opened. `File`s
 /// opened with `Read` will return an error if written to.
-#[deriving(Copy, Clone, PartialEq, Eq)]
+#[derive(Copy, Clone, PartialEq, Eq)]
 pub enum FileAccess {
     /// Read-only access, requests to write will result in an error
     Read,
@@ -1729,7 +1676,7 @@ pub enum FileAccess {
 }
 
 /// Different kinds of files which can be identified by a call to stat
-#[deriving(Copy, PartialEq, Show, Hash, Clone)]
+#[derive(Copy, PartialEq, Show, Hash, Clone)]
 pub enum FileType {
     /// This is a normal file, corresponding to `S_IFREG`
     RegularFile,
@@ -1767,7 +1714,7 @@ pub enum FileType {
 /// println!("byte size: {}", info.size);
 /// # }
 /// ```
-#[deriving(Copy, Hash)]
+#[derive(Copy, Hash)]
 pub struct FileStat {
     /// The size of the file, in bytes
     pub size: u64,
@@ -1806,7 +1753,7 @@ pub struct FileStat {
 /// structure. This information is not necessarily platform independent, and may
 /// have different meanings or no meaning at all on some platforms.
 #[unstable]
-#[deriving(Copy, Hash)]
+#[derive(Copy, Hash)]
 pub struct UnstableFileStat {
     /// The ID of the device containing the file.
     pub device: u64,
@@ -1863,64 +1810,6 @@ bitflags! {
 
         #[doc = "All possible permissions enabled."]
         const ALL_PERMISSIONS = USER_RWX.bits | GROUP_RWX.bits | OTHER_RWX.bits,
-
-        // Deprecated names
-        #[allow(non_upper_case_globals)]
-        #[deprecated = "use USER_READ instead"]
-        const UserRead     = USER_READ.bits,
-        #[allow(non_upper_case_globals)]
-        #[deprecated = "use USER_WRITE instead"]
-        const UserWrite    = USER_WRITE.bits,
-        #[allow(non_upper_case_globals)]
-        #[deprecated = "use USER_EXECUTE instead"]
-        const UserExecute  = USER_EXECUTE.bits,
-        #[allow(non_upper_case_globals)]
-        #[deprecated = "use GROUP_READ instead"]
-        const GroupRead    = GROUP_READ.bits,
-        #[allow(non_upper_case_globals)]
-        #[deprecated = "use GROUP_WRITE instead"]
-        const GroupWrite   = GROUP_WRITE.bits,
-        #[allow(non_upper_case_globals)]
-        #[deprecated = "use GROUP_EXECUTE instead"]
-        const GroupExecute = GROUP_EXECUTE.bits,
-        #[allow(non_upper_case_globals)]
-        #[deprecated = "use OTHER_READ instead"]
-        const OtherRead    = OTHER_READ.bits,
-        #[allow(non_upper_case_globals)]
-        #[deprecated = "use OTHER_WRITE instead"]
-        const OtherWrite   = OTHER_WRITE.bits,
-        #[allow(non_upper_case_globals)]
-        #[deprecated = "use OTHER_EXECUTE instead"]
-        const OtherExecute = OTHER_EXECUTE.bits,
-
-        #[allow(non_upper_case_globals)]
-        #[deprecated = "use USER_RWX instead"]
-        const UserRWX  = USER_RWX.bits,
-        #[allow(non_upper_case_globals)]
-        #[deprecated = "use GROUP_RWX instead"]
-        const GroupRWX = GROUP_RWX.bits,
-        #[allow(non_upper_case_globals)]
-        #[deprecated = "use OTHER_RWX instead"]
-        const OtherRWX = OTHER_RWX.bits,
-
-        #[doc = "Deprecated: use `USER_FILE` instead."]
-        #[allow(non_upper_case_globals)]
-        #[deprecated = "use USER_FILE instead"]
-        const UserFile = USER_FILE.bits,
-
-        #[doc = "Deprecated: use `USER_DIR` instead."]
-        #[allow(non_upper_case_globals)]
-        #[deprecated = "use USER_DIR instead"]
-        const UserDir  = USER_DIR.bits,
-        #[doc = "Deprecated: use `USER_EXEC` instead."]
-        #[allow(non_upper_case_globals)]
-        #[deprecated = "use USER_EXEC instead"]
-        const UserExec = USER_EXEC.bits,
-
-        #[doc = "Deprecated: use `ALL_PERMISSIONS` instead"]
-        #[allow(non_upper_case_globals)]
-        #[deprecated = "use ALL_PERMISSIONS instead"]
-        const AllPermissions = ALL_PERMISSIONS.bits,
     }
 }
 
@@ -1945,7 +1834,7 @@ mod tests {
     use prelude::v1::{Ok, Vec, Buffer, SliceExt};
     use uint;
 
-    #[deriving(Clone, PartialEq, Show)]
+    #[derive(Clone, PartialEq, Show)]
     enum BadReaderBehavior {
         GoodBehavior(uint),
         BadBehavior(uint)

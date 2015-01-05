@@ -40,8 +40,11 @@
 
 // no-pretty-expanded FIXME #15189
 
-use std::sync::mpsc::channel;
+#![feature(associated_types)]
+
+use std::iter::repeat;
 use std::sync::Arc;
+use std::sync::mpsc::channel;
 use std::thread::Thread;
 
 //
@@ -57,7 +60,9 @@ struct Iterate<'a, T> {
     f: |&T|: 'a -> T,
     next: T
 }
-impl<'a, T> Iterator<T> for Iterate<'a, T> {
+impl<'a, T> Iterator for Iterate<'a, T> {
+    type Item = T;
+
     fn next(&mut self) -> Option<T> {
         let mut res = (self.f)(&self.next);
         std::mem::swap(&mut res, &mut self.next);
@@ -78,7 +83,9 @@ impl<'a, T> List<'a, T> {
         ListIterator{cur: self}
     }
 }
-impl<'a, T> Iterator<&'a T> for ListIterator<'a, T> {
+impl<'a, T> Iterator for ListIterator<'a, T> {
+    type Item = &'a T;
+
     fn next(&mut self) -> Option<&'a T> {
         match *self.cur {
             List::Nil => None,
@@ -214,7 +221,7 @@ fn get_id(m: u64) -> u8 {
 
 // Converts a list of mask to a Vec<u8>.
 fn to_vec(raw_sol: &List<u64>) -> Vec<u8> {
-    let mut sol = Vec::from_elem(50, '.' as u8);
+    let mut sol = repeat('.' as u8).take(50).collect::<Vec<_>>();
     for &m in raw_sol.iter() {
         let id = '0' as u8 + get_id(m);
         for i in range(0u, 50) {

@@ -802,7 +802,7 @@ fn expand_arm(arm: ast::Arm, fld: &mut MacroExpander) -> ast::Arm {
 /// A visitor that extracts the PatIdent (binding) paths
 /// from a given thingy and puts them in a mutable
 /// array
-#[deriving(Clone)]
+#[derive(Clone)]
 struct PatIdentFinder {
     ident_accumulator: Vec<ast::Ident>
 }
@@ -1111,7 +1111,7 @@ impl<'a, 'b> Folder for MacroExpander<'a, 'b> {
 
     fn fold_item(&mut self, item: P<ast::Item>) -> SmallVector<P<ast::Item>> {
         let prev_type = self.current_impl_type.clone();
-        if let ast::Item_::ItemImpl(_, _, _, ref ty, _) = item.node {
+        if let ast::Item_::ItemImpl(_, _, _, _, ref ty, _) = item.node {
             self.current_impl_type = Some(ty.clone());
         }
 
@@ -1320,7 +1320,7 @@ mod test {
     // a visitor that extracts the paths
     // from a given thingy and puts them in a mutable
     // array (passed in to the traversal)
-    #[deriving(Clone)]
+    #[derive(Clone)]
     struct PathExprFinderContext {
         path_accumulator: Vec<ast::Path> ,
     }

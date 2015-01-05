@@ -17,7 +17,7 @@ use core::prelude::*;
 use core::cmp::Ordering;
 use core::default::Default;
 use core::fmt;
-use core::iter::{mod, FromIterator, RandomAccessIterator};
+use core::iter::{self, FromIterator, RandomAccessIterator};
 use core::kinds::marker;
 use core::mem;
 use core::num::{Int, UnsignedInt};
@@ -681,12 +681,6 @@ impl<T> RingBuf<T> {
         unsafe { self.buffer_write(tail, t); }
     }
 
-    /// Deprecated: Renamed to `push_back`.
-    #[deprecated = "Renamed to `push_back`"]
-    pub fn push(&mut self, t: T) {
-        self.push_back(t)
-    }
-
     /// Appends an element to the back of a buffer
     ///
     /// # Examples
@@ -709,12 +703,6 @@ impl<T> RingBuf<T> {
         let head = self.head;
         self.head = self.wrap_index(self.head + 1);
         unsafe { self.buffer_write(head, t) }
-    }
-
-    /// Deprecated: Renamed to `pop_back`.
-    #[deprecated = "Renamed to `pop_back`"]
-    pub fn pop(&mut self) -> Option<T> {
-        self.pop_back()
     }
 
     /// Removes the last element from a buffer and returns it, or `None` if
@@ -1139,7 +1127,7 @@ pub struct Iter<'a, T:'a> {
     head: uint
 }
 
-// FIXME(#19839) Remove in favor of `#[deriving(Clone)]`
+// FIXME(#19839) Remove in favor of `#[derive(Clone)]`
 impl<'a, T> Clone for Iter<'a, T> {
     fn clone(&self) -> Iter<'a, T> {
         Iter {
@@ -1151,7 +1139,9 @@ impl<'a, T> Clone for Iter<'a, T> {
 }
 
 #[stable]
-impl<'a, T> Iterator<&'a T> for Iter<'a, T> {
+impl<'a, T> Iterator for Iter<'a, T> {
+    type Item = &'a T;
+
     #[inline]
     fn next(&mut self) -> Option<&'a T> {
         if self.tail == self.head {
@@ -1170,7 +1160,7 @@ impl<'a, T> Iterator<&'a T> for Iter<'a, T> {
 }
 
 #[stable]
-impl<'a, T> DoubleEndedIterator<&'a T> for Iter<'a, T> {
+impl<'a, T> DoubleEndedIterator for Iter<'a, T> {
     #[inline]
     fn next_back(&mut self) -> Option<&'a T> {
         if self.tail == self.head {
@@ -1182,10 +1172,10 @@ impl<'a, T> DoubleEndedIterator<&'a T> for Iter<'a, T> {
 }
 
 #[stable]
-impl<'a, T> ExactSizeIterator<&'a T> for Iter<'a, T> {}
+impl<'a, T> ExactSizeIterator for Iter<'a, T> {}
 
 #[stable]
-impl<'a, T> RandomAccessIterator<&'a T> for Iter<'a, T> {
+impl<'a, T> RandomAccessIterator for Iter<'a, T> {
     #[inline]
     fn indexable(&self) -> uint {
         let (len, _) = self.size_hint();
@@ -1217,7 +1207,9 @@ pub struct IterMut<'a, T:'a> {
 }
 
 #[stable]
-impl<'a, T> Iterator<&'a mut T> for IterMut<'a, T> {
+impl<'a, T> Iterator for IterMut<'a, T> {
+    type Item = &'a mut T;
+
     #[inline]
     fn next(&mut self) -> Option<&'a mut T> {
         if self.tail == self.head {
@@ -1239,7 +1231,7 @@ impl<'a, T> Iterator<&'a mut T> for IterMut<'a, T> {
 }
 
 #[stable]
-impl<'a, T> DoubleEndedIterator<&'a mut T> for IterMut<'a, T> {
+impl<'a, T> DoubleEndedIterator for IterMut<'a, T> {
     #[inline]
     fn next_back(&mut self) -> Option<&'a mut T> {
         if self.tail == self.head {
@@ -1254,7 +1246,7 @@ impl<'a, T> DoubleEndedIterator<&'a mut T> for IterMut<'a, T> {
 }
 
 #[stable]
-impl<'a, T> ExactSizeIterator<&'a mut T> for IterMut<'a, T> {}
+impl<'a, T> ExactSizeIterator for IterMut<'a, T> {}
 
 /// A by-value RingBuf iterator
 #[stable]
@@ -1263,7 +1255,9 @@ pub struct IntoIter<T> {
 }
 
 #[stable]
-impl<T> Iterator<T> for IntoIter<T> {
+impl<T> Iterator for IntoIter<T> {
+    type Item = T;
+
     #[inline]
     fn next(&mut self) -> Option<T> {
         self.inner.pop_front()
@@ -1277,7 +1271,7 @@ impl<T> Iterator<T> for IntoIter<T> {
 }
 
 #[stable]
-impl<T> DoubleEndedIterator<T> for IntoIter<T> {
+impl<T> DoubleEndedIterator for IntoIter<T> {
     #[inline]
     fn next_back(&mut self) -> Option<T> {
         self.inner.pop_back()
@@ -1285,7 +1279,7 @@ impl<T> DoubleEndedIterator<T> for IntoIter<T> {
 }
 
 #[stable]
-impl<T> ExactSizeIterator<T> for IntoIter<T> {}
+impl<T> ExactSizeIterator for IntoIter<T> {}
 
 /// A draining RingBuf iterator
 #[unstable = "matches collection reform specification, waiting for dust to settle"]
@@ -1304,7 +1298,9 @@ impl<'a, T: 'a> Drop for Drain<'a, T> {
 }
 
 #[stable]
-impl<'a, T: 'a> Iterator<T> for Drain<'a, T> {
+impl<'a, T: 'a> Iterator for Drain<'a, T> {
+    type Item = T;
+
     #[inline]
     fn next(&mut self) -> Option<T> {
         self.inner.pop_front()
@@ -1318,7 +1314,7 @@ impl<'a, T: 'a> Iterator<T> for Drain<'a, T> {
 }
 
 #[stable]
-impl<'a, T: 'a> DoubleEndedIterator<T> for Drain<'a, T> {
+impl<'a, T: 'a> DoubleEndedIterator for Drain<'a, T> {
     #[inline]
     fn next_back(&mut self) -> Option<T> {
         self.inner.pop_back()
@@ -1326,7 +1322,7 @@ impl<'a, T: 'a> DoubleEndedIterator<T> for Drain<'a, T> {
 }
 
 #[stable]
-impl<'a, T: 'a> ExactSizeIterator<T> for Drain<'a, T> {}
+impl<'a, T: 'a> ExactSizeIterator for Drain<'a, T> {}
 
 #[stable]
 impl<A: PartialEq> PartialEq for RingBuf<A> {
@@ -1364,6 +1360,8 @@ impl<S: Writer, A: Hash<S>> Hash<S> for RingBuf<A> {
     }
 }
 
+// NOTE(stage0): remove impl after a snapshot
+#[cfg(stage0)]
 #[stable]
 impl<A> Index<uint, A> for RingBuf<A> {
     #[inline]
@@ -1372,6 +1370,19 @@ impl<A> Index<uint, A> for RingBuf<A> {
     }
 }
 
+#[cfg(not(stage0))]  // NOTE(stage0): remove cfg after a snapshot
+#[stable]
+impl<A> Index<uint> for RingBuf<A> {
+    type Output = A;
+
+    #[inline]
+    fn index<'a>(&'a self, i: &uint) -> &'a A {
+        self.get(*i).expect("Out of bounds access")
+    }
+}
+
+// NOTE(stage0): remove impl after a snapshot
+#[cfg(stage0)]
 #[stable]
 impl<A> IndexMut<uint, A> for RingBuf<A> {
     #[inline]
@@ -1380,9 +1391,20 @@ impl<A> IndexMut<uint, A> for RingBuf<A> {
     }
 }
 
+#[cfg(not(stage0))]  // NOTE(stage0): remove cfg after a snapshot
+#[stable]
+impl<A> IndexMut<uint> for RingBuf<A> {
+    type Output = A;
+
+    #[inline]
+    fn index_mut<'a>(&'a mut self, i: &uint) -> &'a mut A {
+        self.get_mut(*i).expect("Out of bounds access")
+    }
+}
+
 #[stable]
 impl<A> FromIterator<A> for RingBuf<A> {
-    fn from_iter<T: Iterator<A>>(iterator: T) -> RingBuf<A> {
+    fn from_iter<T: Iterator<Item=A>>(iterator: T) -> RingBuf<A> {
         let (lower, _) = iterator.size_hint();
         let mut deq = RingBuf::with_capacity(lower);
         deq.extend(iterator);
@@ -1392,7 +1414,7 @@ impl<A> FromIterator<A> for RingBuf<A> {
 
 #[stable]
 impl<A> Extend<A> for RingBuf<A> {
-    fn extend<T: Iterator<A>>(&mut self, mut iterator: T) {
+    fn extend<T: Iterator<Item=A>>(&mut self, mut iterator: T) {
         for elt in iterator {
             self.push_back(elt);
         }
@@ -1418,7 +1440,6 @@ mod tests {
     use self::Taggy::*;
     use self::Taggypar::*;
     use prelude::*;
-    use core::cmp;
     use core::iter;
     use std::fmt::Show;
     use std::hash;
@@ -1640,21 +1661,21 @@ mod tests {
         })
     }
 
-    #[deriving(Clone, PartialEq, Show)]
+    #[derive(Clone, PartialEq, Show)]
     enum Taggy {
         One(int),
         Two(int, int),
         Three(int, int, int),
     }
 
-    #[deriving(Clone, PartialEq, Show)]
+    #[derive(Clone, PartialEq, Show)]
     enum Taggypar<T> {
         Onepar(int),
         Twopar(int, int),
         Threepar(int, int, int),
     }
 
-    #[deriving(Clone, PartialEq, Show)]
+    #[derive(Clone, PartialEq, Show)]
     struct RecCy {
         x: int,
         y: int,

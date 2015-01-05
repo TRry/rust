@@ -74,7 +74,7 @@ use std::collections::HashSet;
 use middle::def;
 use middle::infer;
 use middle::subst;
-use middle::ty::{mod, Ty};
+use middle::ty::{self, Ty};
 use middle::ty::{Region, ReFree};
 use std::cell::{Cell, RefCell};
 use std::char::from_u32;
@@ -1712,7 +1712,7 @@ fn lifetimes_in_scope(tcx: &ty::ctxt,
         match tcx.map.find(parent) {
             Some(node) => match node {
                 ast_map::NodeItem(item) => match item.node {
-                    ast::ItemImpl(_, ref gen, _, _, _) => {
+                    ast::ItemImpl(_, _, ref gen, _, _, _) => {
                         taken.push_all(gen.lifetimes.as_slice());
                     }
                     _ => ()

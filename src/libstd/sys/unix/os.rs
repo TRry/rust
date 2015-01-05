@@ -16,11 +16,10 @@ use c_str::ToCStr;
 use error::{FromError, Error};
 use fmt;
 use io::{IoError, IoResult};
-use libc::{mod, c_int, c_char, c_void};
+use libc::{self, c_int, c_char, c_void};
 use os;
 use path::{BytesContainer};
 use ptr;
-use sync::atomic::{AtomicInt, SeqCst};
 use sys::fs::FileDesc;
 
 use os::TMPBUF_SZ;

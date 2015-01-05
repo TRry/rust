@@ -23,25 +23,25 @@ use rustc::middle::ty;
 use rustc::middle::cfg;
 use rustc::middle::cfg::graphviz::LabelledCFG;
 use rustc::session::Session;
-use rustc::session::config::{mod, Input};
+use rustc::session::config::{self, Input};
 use rustc::util::ppaux;
 use rustc_borrowck as borrowck;
 use rustc_borrowck::graphviz as borrowck_dot;
 
 use syntax::ast;
-use syntax::ast_map::{mod, blocks, NodePrinter};
+use syntax::ast_map::{self, blocks, NodePrinter};
 use syntax::codemap;
-use syntax::fold::{mod, Folder};
+use syntax::fold::{self, Folder};
 use syntax::print::{pp, pprust};
 use syntax::ptr::P;
 
 use graphviz as dot;
 
-use std::io::{mod, MemReader};
+use std::io::{self, MemReader};
 use std::option;
 use std::str::FromStr;
 
-#[deriving(Copy, PartialEq, Show)]
+#[derive(Copy, PartialEq, Show)]
 pub enum PpSourceMode {
     PpmNormal,
     PpmEveryBodyLoops,
@@ -52,7 +52,7 @@ pub enum PpSourceMode {
     PpmExpandedHygiene,
 }
 
-#[deriving(Copy, PartialEq, Show)]
+#[derive(Copy, PartialEq, Show)]
 pub enum PpMode {
     PpmSource(PpSourceMode),
     PpmFlowGraph,
@@ -323,7 +323,7 @@ fn gather_flowgraph_variants(sess: &Session) -> Vec<borrowck_dot::Variant> {
     variants
 }
 
-#[deriving(Clone, Show)]
+#[derive(Clone, Show)]
 pub enum UserIdentifiedItem {
     ItemViaNode(ast::NodeId),
     ItemViaPath(Vec<String>),
@@ -345,7 +345,9 @@ enum NodesMatchingUII<'a, 'ast: 'a> {
     NodesMatchingSuffix(ast_map::NodesMatchingSuffix<'a, 'ast>),
 }
 
-impl<'a, 'ast> Iterator<ast::NodeId> for NodesMatchingUII<'a, 'ast> {
+impl<'a, 'ast> Iterator for NodesMatchingUII<'a, 'ast> {
+    type Item = ast::NodeId;
+
     fn next(&mut self) -> Option<ast::NodeId> {
         match self {
             &NodesMatchingDirect(ref mut iter) => iter.next(),

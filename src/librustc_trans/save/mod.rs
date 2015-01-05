@@ -30,20 +30,20 @@
 use session::Session;
 
 use middle::def;
-use middle::ty::{mod, Ty};
+use middle::ty::{self, Ty};
 
 use std::cell::Cell;
-use std::io::{mod, File, fs};
+use std::io::{self, File, fs};
 use std::os;
 
-use syntax::ast_util::{mod, PostExpansionMethod};
-use syntax::ast::{mod, NodeId, DefId};
+use syntax::ast_util::{self, PostExpansionMethod};
+use syntax::ast::{self, NodeId, DefId};
 use syntax::ast_map::NodeItem;
 use syntax::attr;
 use syntax::codemap::*;
-use syntax::parse::token::{mod, get_ident, keywords};
+use syntax::parse::token::{self, get_ident, keywords};
 use syntax::owned_slice::OwnedSlice;
-use syntax::visit::{mod, Visitor};
+use syntax::visit::{self, Visitor};
 use syntax::print::pprust::{path_to_string,ty_to_string};
 use syntax::ptr::P;
 
@@ -283,7 +283,7 @@ impl <'l, 'tcx> DxrVisitor<'l, 'tcx> {
                 NodeItem(item) => {
                     scope_id = item.id;
                     match item.node {
-                        ast::ItemImpl(_, _, _, ref ty, _) => {
+                        ast::ItemImpl(_, _, _, _, ref ty, _) => {
                             let mut result = String::from_str("<");
                             result.push_str(ty_to_string(&**ty)[]);
 
@@ -1040,7 +1040,7 @@ impl<'l, 'tcx, 'v> Visitor<'v> for DxrVisitor<'l, 'tcx> {
                 self.process_const(item, &**typ, &**expr),
             ast::ItemStruct(ref def, ref ty_params) => self.process_struct(item, &**def, ty_params),
             ast::ItemEnum(ref def, ref ty_params) => self.process_enum(item, def, ty_params),
-            ast::ItemImpl(_,
+            ast::ItemImpl(_, _,
                           ref ty_params,
                           ref trait_ref,
                           ref typ,

@@ -81,19 +81,20 @@ pub use self::Expectation::*;
 use self::IsBinopAssignment::*;
 use self::TupleArgumentsFlag::*;
 
-use astconv::{mod, ast_region_to_region, ast_ty_to_ty, AstConv};
+use astconv::{self, ast_region_to_region, ast_ty_to_ty, AstConv};
 use check::_match::pat_ctxt;
 use middle::{const_eval, def};
 use middle::infer;
 use middle::lang_items::IteratorItem;
 use middle::mem_categorization as mc;
-use middle::pat_util::{mod, pat_id_map};
+use middle::mem_categorization::McResult;
+use middle::pat_util::{self, pat_id_map};
 use middle::region::CodeExtent;
-use middle::subst::{mod, Subst, Substs, VecPerParamSpace, ParamSpace};
+use middle::subst::{self, Subst, Substs, VecPerParamSpace, ParamSpace};
 use middle::traits;
 use middle::ty::{FnSig, VariantInfo, TypeScheme};
 use middle::ty::{Disr, ParamTy, ParameterEnvironment};
-use middle::ty::{mod, HasProjectionTypes, RegionEscape, Ty};
+use middle::ty::{self, HasProjectionTypes, RegionEscape, Ty};
 use middle::ty::liberate_late_bound_regions;
 use middle::ty::{MethodCall, MethodCallee, MethodMap, ObjectCastMap};
 use middle::ty_fold::{TypeFolder, TypeFoldable};
@@ -104,22 +105,22 @@ use TypeAndSubsts;
 use middle::lang_items::TypeIdLangItem;
 use lint;
 use util::common::{block_query, indenter, loop_query};
-use util::ppaux::{mod, UserString, Repr};
+use util::ppaux::{self, UserString, Repr};
 use util::nodemap::{DefIdMap, FnvHashMap, NodeMap};
 
 use std::cell::{Cell, Ref, RefCell};
 use std::mem::replace;
 use std::rc::Rc;
 use std::iter::repeat;
-use syntax::{mod, abi, attr};
-use syntax::ast::{mod, ProvidedMethod, RequiredMethod, TypeTraitItem, DefId};
-use syntax::ast_util::{mod, local_def, PostExpansionMethod};
-use syntax::codemap::{mod, Span};
+use syntax::{self, abi, attr};
+use syntax::ast::{self, ProvidedMethod, RequiredMethod, TypeTraitItem, DefId};
+use syntax::ast_util::{self, local_def, PostExpansionMethod};
+use syntax::codemap::{self, Span};
 use syntax::owned_slice::OwnedSlice;
 use syntax::parse::token;
 use syntax::print::pprust;
 use syntax::ptr::P;
-use syntax::visit::{mod, Visitor};
+use syntax::visit::{self, Visitor};
 
 mod assoc;
 pub mod _match;
@@ -129,6 +130,7 @@ pub mod regionmanip;
 pub mod regionck;
 pub mod demand;
 pub mod method;
+mod upvar;
 pub mod wf;
 mod closure;
 mod callee;
@@ -146,7 +148,7 @@ mod callee;
 pub struct Inherited<'a, 'tcx: 'a> {
     infcx: infer::InferCtxt<'a, 'tcx>,
     locals: RefCell<NodeMap<Ty<'tcx>>>,
-    param_env: ty::ParameterEnvironment<'tcx>,
+    param_env: ty::ParameterEnvironment<'a, 'tcx>,
 
     // Temporary tables:
     node_types: RefCell<NodeMap<Ty<'tcx>>>,
@@ -168,7 +170,7 @@ pub struct Inherited<'a, 'tcx: 'a> {
 
 /// When type-checking an expression, we propagate downward
 /// whatever type hint we are able in the form of an `Expectation`.
-#[deriving(Copy)]
+#[derive(Copy)]
 enum Expectation<'tcx> {
     /// We know nothing about what type this expression should have.
     NoExpectation,
@@ -219,7 +221,7 @@ impl<'tcx> Expectation<'tcx> {
     }
 }
 
-#[deriving(Copy, Clone)]
+#[derive(Copy, Clone)]
 pub struct UnsafetyState {
     pub def: ast::NodeId,
     pub unsafety: ast::Unsafety,
@@ -255,13 +257,13 @@ impl UnsafetyState {
 /// Whether `check_binop` is part of an assignment or not.
 /// Used to know whether we allow user overloads and to print
 /// better messages on error.
-#[deriving(PartialEq)]
+#[derive(PartialEq)]
 enum IsBinopAssignment{
     SimpleBinop,
     BinopAssignment,
 }
 
-#[deriving(Clone)]
+#[derive(Clone)]
 pub struct FnCtxt<'a, 'tcx: 'a> {
     body_id: ast::NodeId,
 
@@ -288,13 +290,17 @@ impl<'a, 'tcx> mc::Typer<'tcx> for FnCtxt<'a, 'tcx> {
     fn tcx(&self) -> &ty::ctxt<'tcx> {
         self.ccx.tcx
     }
-    fn node_ty(&self, id: ast::NodeId) -> Ty<'tcx> {
+    fn node_ty(&self, id: ast::NodeId) -> McResult<Ty<'tcx>> {
         let ty = self.node_ty(id);
-        self.infcx().resolve_type_vars_if_possible(&ty)
+        self.resolve_type_vars_or_error(&ty)
     }
-    fn expr_ty_adjusted(&self, expr: &ast::Expr) -> Ty<'tcx> {
-        let ty = self.expr_ty_adjusted(expr);
-        self.infcx().resolve_type_vars_if_possible(&ty)
+    fn expr_ty_adjusted(&self, expr: &ast::Expr) -> McResult<Ty<'tcx>> {
+        let ty = self.adjust_expr_ty(expr, self.inh.adjustments.borrow().get(&expr.id));
+        self.resolve_type_vars_or_error(&ty)
+    }
+    fn type_moves_by_default(&self, span: Span, ty: Ty<'tcx>) -> bool {
+        let ty = self.infcx().resolve_type_vars_if_possible(&ty);
+        traits::type_known_to_meet_builtin_bound(self.infcx(), self, ty, ty::BoundCopy, span)
     }
     fn node_method_ty(&self, method_call: ty::MethodCall)
                       -> Option<Ty<'tcx>> {
@@ -317,7 +323,7 @@ impl<'a, 'tcx> mc::Typer<'tcx> for FnCtxt<'a, 'tcx> {
         self.inh.method_map.borrow().contains_key(&ty::MethodCall::expr(id))
     }
     fn temporary_scope(&self, rvalue_id: ast::NodeId) -> Option<CodeExtent> {
-        self.tcx().temporary_scope(rvalue_id)
+        self.param_env().temporary_scope(rvalue_id)
     }
     fn upvar_borrow(&self, upvar_id: ty::UpvarId) -> Option<ty::UpvarBorrow> {
         self.inh.upvar_borrow_map.borrow().get(&upvar_id).cloned()
@@ -329,6 +335,10 @@ impl<'a, 'tcx> mc::Typer<'tcx> for FnCtxt<'a, 'tcx> {
 }
 
 impl<'a, 'tcx> ty::UnboxedClosureTyper<'tcx> for FnCtxt<'a, 'tcx> {
+    fn param_env<'b>(&'b self) -> &'b ty::ParameterEnvironment<'b,'tcx> {
+        &self.inh.param_env
+    }
+
     fn unboxed_closure_kind(&self,
                             def_id: ast::DefId)
                             -> ty::UnboxedClosureKind
@@ -355,7 +365,7 @@ impl<'a, 'tcx> ty::UnboxedClosureTyper<'tcx> for FnCtxt<'a, 'tcx> {
 
 impl<'a, 'tcx> Inherited<'a, 'tcx> {
     fn new(tcx: &'a ty::ctxt<'tcx>,
-           param_env: ty::ParameterEnvironment<'tcx>)
+           param_env: ty::ParameterEnvironment<'a, 'tcx>)
            -> Inherited<'a, 'tcx> {
         Inherited {
             infcx: infer::new_infer_ctxt(tcx),
@@ -383,7 +393,6 @@ impl<'a, 'tcx> Inherited<'a, 'tcx> {
     {
         let mut fulfillment_cx = self.fulfillment_cx.borrow_mut();
         assoc::normalize_associated_types_in(&self.infcx,
-                                             &self.param_env,
                                              typer,
                                              &mut *fulfillment_cx, span,
                                              body_id,
@@ -413,7 +422,7 @@ fn static_inherited_fields<'a, 'tcx>(ccx: &'a CrateCtxt<'a, 'tcx>)
                                     -> Inherited<'a, 'tcx> {
     // It's kind of a kludge to manufacture a fake function context
     // and statement context, but we might as well do write the code only once
-    let param_env = ty::empty_parameter_environment();
+    let param_env = ty::empty_parameter_environment(ccx.tcx);
     Inherited::new(ccx.tcx, param_env)
 }
 
@@ -457,7 +466,7 @@ fn check_bare_fn<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>,
                            body: &ast::Block,
                            id: ast::NodeId,
                            raw_fty: Ty<'tcx>,
-                           param_env: ty::ParameterEnvironment<'tcx>) {
+                           param_env: ty::ParameterEnvironment<'a, 'tcx>) {
     match raw_fty.sty {
         ty::ty_bare_fn(_, ref fn_ty) => {
             let inh = Inherited::new(ccx.tcx, param_env);
@@ -468,12 +477,13 @@ fn check_bare_fn<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>,
             let fn_sig =
                 liberate_late_bound_regions(ccx.tcx, CodeExtent::from_node_id(body.id), &fn_sig);
             let fn_sig =
-                inh.normalize_associated_types_in(ccx.tcx, body.span, body.id, &fn_sig);
+                inh.normalize_associated_types_in(&inh.param_env, body.span, body.id, &fn_sig);
 
             let fcx = check_fn(ccx, fn_ty.unsafety, id, &fn_sig,
                                decl, id, body, &inh);
 
             vtable::select_all_fcx_obligations_or_error(&fcx);
+            upvar::closure_analyze_fn(&fcx, id, decl, body);
             regionck::regionck_fn(&fcx, id, decl, body);
             writeback::resolve_type_vars_in_fn(&fcx, decl, body);
         }
@@ -689,7 +699,7 @@ pub fn check_item(ccx: &CrateCtxt, it: &ast::Item) {
         let param_env = ParameterEnvironment::for_item(ccx.tcx, it.id);
         check_bare_fn(ccx, &**decl, &**body, it.id, fn_pty.ty, param_env);
       }
-      ast::ItemImpl(_, _, _, _, ref impl_items) => {
+      ast::ItemImpl(_, _, _, _, _, ref impl_items) => {
         debug!("ItemImpl {} with id {}", token::get_ident(it.ident), it.id);
 
         let impl_pty = ty::lookup_item_type(ccx.tcx, ast_util::local_def(it.id));
@@ -1220,7 +1230,6 @@ fn compare_impl_method<'tcx>(tcx: &ty::ctxt<'tcx>,
         let impl_sig =
             assoc::normalize_associated_types_in(&infcx,
                                                  &impl_param_env,
-                                                 infcx.tcx,
                                                  &mut fulfillment_cx,
                                                  impl_m_span,
                                                  impl_m_body_id,
@@ -1241,7 +1250,6 @@ fn compare_impl_method<'tcx>(tcx: &ty::ctxt<'tcx>,
         let trait_sig =
             assoc::normalize_associated_types_in(&infcx,
                                                  &impl_param_env,
-                                                 infcx.tcx,
                                                  &mut fulfillment_cx,
                                                  impl_m_span,
                                                  impl_m_body_id,
@@ -1277,7 +1285,7 @@ fn compare_impl_method<'tcx>(tcx: &ty::ctxt<'tcx>,
 
     // Run the fulfillment context to completion to accommodate any
     // associated type normalizations that may have occurred.
-    match fulfillment_cx.select_all_or_error(&infcx, &impl_param_env, tcx) {
+    match fulfillment_cx.select_all_or_error(&infcx, &impl_param_env) {
         Ok(()) => { }
         Err(errors) => {
             traits::report_fulfillment_errors(&infcx, &errors);
@@ -1457,7 +1465,7 @@ fn check_cast(fcx: &FnCtxt,
         return
     }
 
-    if !fcx.type_is_known_to_be_sized(t_1) {
+    if !fcx.type_is_known_to_be_sized(t_1, cast_expr.span) {
         let tstr = fcx.infcx().ty_to_string(t_1);
         fcx.type_error_message(span, |actual| {
             format!("cast to unsized type: `{}` as `{}`", actual, tstr)
@@ -1655,11 +1663,11 @@ impl<'a, 'tcx> AstConv<'tcx> for FnCtxt<'a, 'tcx> {
 impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
     fn tcx(&self) -> &ty::ctxt<'tcx> { self.ccx.tcx }
 
-    pub fn infcx(&self) -> &infer::InferCtxt<'a, 'tcx> {
+    pub fn infcx(&self) -> &infer::InferCtxt<'a,'tcx> {
         &self.inh.infcx
     }
 
-    pub fn param_env(&self) -> &ty::ParameterEnvironment<'tcx> {
+    pub fn param_env(&self) -> &ty::ParameterEnvironment<'a,'tcx> {
         &self.inh.param_env
     }
 
@@ -1669,6 +1677,16 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
 
     pub fn err_count_since_creation(&self) -> uint {
         self.ccx.tcx.sess.err_count() - self.err_count_on_creation
+    }
+
+    /// Resolves all type variables in `t` and then, if any were left
+    /// unresolved, substitutes an error type. This is used after the
+    /// main checking when doing a second pass before writeback. The
+    /// justification is that writeback will produce an error for
+    /// these unconstrained type variables.
+    fn resolve_type_vars_or_error(&self, t: &Ty<'tcx>) -> mc::McResult<Ty<'tcx>> {
+        let t = self.infcx().resolve_type_vars_if_possible(t);
+        if ty::type_has_ty_infer(t) || ty::type_is_error(t) { Err(()) } else { Ok(t) }
     }
 
     pub fn tag(&self) -> String {
@@ -1820,7 +1838,6 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         self.inh.fulfillment_cx
             .borrow_mut()
             .normalize_projection_type(self.infcx(),
-                                       &self.inh.param_env,
                                        self,
                                        ty::ProjectionTy {
                                            trait_ref: trait_ref,
@@ -1966,13 +1983,15 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
     }
 
     pub fn type_is_known_to_be_sized(&self,
-                                     ty: Ty<'tcx>)
+                                     ty: Ty<'tcx>,
+                                     span: Span)
                                      -> bool
     {
         traits::type_known_to_meet_builtin_bound(self.infcx(),
                                                  self.param_env(),
                                                  ty,
-                                                 ty::BoundSized)
+                                                 ty::BoundSized,
+                                                 span)
     }
 
     pub fn register_builtin_bound(&self,
@@ -2199,7 +2218,7 @@ impl<'a, 'tcx> RegionScope for FnCtxt<'a, 'tcx> {
     }
 }
 
-#[deriving(Copy, Show, PartialEq, Eq)]
+#[derive(Copy, Show, PartialEq, Eq)]
 pub enum LvaluePreference {
     PreferMutLvalue,
     NoPreference
@@ -2210,7 +2229,8 @@ pub enum LvaluePreference {
 ///
 /// Note: this method does not modify the adjustments table. The caller is responsible for
 /// inserting an AutoAdjustment record into the `fcx` using one of the suitable methods.
-pub fn autoderef<'a, 'tcx, T, F>(fcx: &FnCtxt<'a, 'tcx>, sp: Span,
+pub fn autoderef<'a, 'tcx, T, F>(fcx: &FnCtxt<'a, 'tcx>,
+                                 sp: Span,
                                  base_ty: Ty<'tcx>,
                                  expr_id: Option<ast::NodeId>,
                                  mut lvalue_pref: LvaluePreference,
@@ -2255,58 +2275,6 @@ pub fn autoderef<'a, 'tcx, T, F>(fcx: &FnCtxt<'a, 'tcx>, sp: Span,
         "reached the recursion limit while auto-dereferencing {}",
         base_ty.repr(fcx.tcx()));
     (fcx.tcx().types.err, 0, None)
-}
-
-/// Attempts to resolve a call expression as an overloaded call.
-fn try_overloaded_call<'a, 'tcx>(fcx: &FnCtxt<'a, 'tcx>,
-                                 call_expression: &ast::Expr,
-                                 callee: &ast::Expr,
-                                 callee_type: Ty<'tcx>,
-                                 args: &[&P<ast::Expr>])
-                                 -> bool {
-    // Bail out if the callee is a bare function or a closure. We check those
-    // manually.
-    match structurally_resolved_type(fcx, callee.span, callee_type).sty {
-        ty::ty_bare_fn(..) | ty::ty_closure(_) => return false,
-        _ => {}
-    }
-
-    // Try the options that are least restrictive on the caller first.
-    for &(maybe_function_trait, method_name) in [
-        (fcx.tcx().lang_items.fn_trait(), token::intern("call")),
-        (fcx.tcx().lang_items.fn_mut_trait(), token::intern("call_mut")),
-        (fcx.tcx().lang_items.fn_once_trait(), token::intern("call_once")),
-    ].iter() {
-        let function_trait = match maybe_function_trait {
-            None => continue,
-            Some(function_trait) => function_trait,
-        };
-        let method_callee =
-            match method::lookup_in_trait(fcx,
-                                          call_expression.span,
-                                          Some(&*callee),
-                                          method_name,
-                                          function_trait,
-                                          callee_type,
-                                          None) {
-                None => continue,
-                Some(method_callee) => method_callee,
-            };
-        let method_call = MethodCall::expr(call_expression.id);
-        let output_type = check_method_argument_types(fcx,
-                                                      call_expression.span,
-                                                      method_callee.ty,
-                                                      call_expression,
-                                                      args,
-                                                      AutorefArgs::No,
-                                                      TupleArguments);
-        fcx.inh.method_map.borrow_mut().insert(method_call, method_callee);
-        write_call(fcx, call_expression, output_type);
-
-        return true
-    }
-
-    false
 }
 
 fn try_overloaded_deref<'a, 'tcx>(fcx: &FnCtxt<'a, 'tcx>,
@@ -2524,7 +2492,6 @@ fn try_index_step<'a, 'tcx>(fcx: &FnCtxt<'a, 'tcx>,
     }
 
     let input_ty = fcx.infcx().next_ty_var();
-    let return_ty = fcx.infcx().next_ty_var();
 
     // Try `IndexMut` first, if preferred.
     let method = match (lvalue_pref, fcx.tcx().lang_items.index_mut_trait()) {
@@ -2536,7 +2503,7 @@ fn try_index_step<'a, 'tcx>(fcx: &FnCtxt<'a, 'tcx>,
                                              trait_did,
                                              adjustment.clone(),
                                              adjusted_ty,
-                                             Some(vec![input_ty, return_ty]))
+                                             Some(vec![input_ty]))
         }
         _ => None,
     };
@@ -2551,7 +2518,7 @@ fn try_index_step<'a, 'tcx>(fcx: &FnCtxt<'a, 'tcx>,
                                              trait_did,
                                              adjustment,
                                              adjusted_ty,
-                                             Some(vec![input_ty, return_ty]))
+                                             Some(vec![input_ty]))
         }
         (method, _) => method,
     };
@@ -2559,9 +2526,9 @@ fn try_index_step<'a, 'tcx>(fcx: &FnCtxt<'a, 'tcx>,
     // If some lookup succeeds, write callee into table and extract index/element
     // type from the method signature.
     // If some lookup succeeded, install method in table
-    method.map(|method| {
-        make_overloaded_lvalue_return_type(fcx, Some(method_call), Some(method));
-        (input_ty, return_ty)
+    method.and_then(|method| {
+        make_overloaded_lvalue_return_type(fcx, Some(method_call), Some(method)).
+            map(|ret| (input_ty, ret.ty))
     })
 }
 
@@ -2671,7 +2638,6 @@ fn check_method_argument_types<'a, 'tcx>(fcx: &FnCtxt<'a, 'tcx>,
         check_argument_types(fcx,
                              sp,
                              err_inputs[],
-                             callee_expr,
                              args_no_rcvr,
                              autoref_args,
                              false,
@@ -2684,7 +2650,6 @@ fn check_method_argument_types<'a, 'tcx>(fcx: &FnCtxt<'a, 'tcx>,
                 check_argument_types(fcx,
                                      sp,
                                      fty.sig.0.inputs.slice_from(1),
-                                     callee_expr,
                                      args_no_rcvr,
                                      autoref_args,
                                      fty.sig.0.variadic,
@@ -2704,7 +2669,6 @@ fn check_method_argument_types<'a, 'tcx>(fcx: &FnCtxt<'a, 'tcx>,
 fn check_argument_types<'a, 'tcx>(fcx: &FnCtxt<'a, 'tcx>,
                                   sp: Span,
                                   fn_inputs: &[Ty<'tcx>],
-                                  _callee_expr: &ast::Expr,
                                   args: &[&P<ast::Expr>],
                                   autoref_args: AutorefArgs,
                                   variadic: bool,
@@ -3040,7 +3004,7 @@ pub fn lookup_tup_field_ty<'tcx>(tcx: &ty::ctxt<'tcx>,
 
 // Controls whether the arguments are automatically referenced. This is useful
 // for overloaded binary and unary operators.
-#[deriving(Copy, PartialEq)]
+#[derive(Copy, PartialEq)]
 pub enum AutorefArgs {
     Yes,
     No,
@@ -3062,7 +3026,7 @@ pub enum AutorefArgs {
 /// Instead of:
 ///
 ///     f((1, 2));
-#[deriving(Clone, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 enum TupleArgumentsFlag {
     DontTupleArguments,
     TupleArguments,
@@ -3087,63 +3051,6 @@ fn check_expr_with_unifier<'a, 'tcx, F>(fcx: &FnCtxt<'a, 'tcx>,
 {
     debug!(">> typechecking: expr={} expected={}",
            expr.repr(fcx.tcx()), expected.repr(fcx.tcx()));
-
-    // A generic function for doing all of the checking for call expressions
-    fn check_call(fcx: &FnCtxt,
-                  call_expr: &ast::Expr,
-                  f: &ast::Expr,
-                  args: &[&P<ast::Expr>]) {
-        // Store the type of `f` as the type of the callee
-        let fn_ty = fcx.expr_ty(f);
-
-        // Extract the function signature from `in_fty`.
-        let fn_ty = structurally_resolved_type(fcx, f.span, fn_ty);
-
-        // This is the "default" function signature, used in case of error.
-        // In that case, we check each argument against "error" in order to
-        // set up all the node type bindings.
-        let error_fn_sig = ty::Binder(FnSig {
-            inputs: err_args(fcx.tcx(), args.len()),
-            output: ty::FnConverging(fcx.tcx().types.err),
-            variadic: false
-        });
-
-        let fn_sig = match fn_ty.sty {
-            ty::ty_bare_fn(_, &ty::BareFnTy {ref sig, ..}) |
-            ty::ty_closure(box ty::ClosureTy {ref sig, ..}) => sig,
-            _ => {
-                fcx.type_error_message(call_expr.span, |actual| {
-                    format!("expected function, found `{}`", actual)
-                }, fn_ty, None);
-                &error_fn_sig
-            }
-        };
-
-        // Replace any late-bound regions that appear in the function
-        // signature with region variables. We also have to
-        // renormalize the associated types at this point, since they
-        // previously appeared within a `Binder<>` and hence would not
-        // have been normalized before.
-        let fn_sig =
-            fcx.infcx().replace_late_bound_regions_with_fresh_var(call_expr.span,
-                                                                  infer::FnCall,
-                                                                  fn_sig).0;
-        let fn_sig =
-            fcx.normalize_associated_types_in(call_expr.span,
-                                              &fn_sig);
-
-        // Call the generic checker.
-        check_argument_types(fcx,
-                             call_expr.span,
-                             fn_sig.inputs[],
-                             f,
-                             args,
-                             AutorefArgs::No,
-                             fn_sig.variadic,
-                             DontTupleArguments);
-
-        write_call(fcx, call_expr, fn_sig.output);
-    }
 
     // Checks a method call.
     fn check_method_call(fcx: &FnCtxt,
@@ -4146,24 +4053,8 @@ fn check_expr_with_unifier<'a, 'tcx, F>(fcx: &FnCtxt<'a, 'tcx>,
         check_block_with_expected(fcx, &**b, expected);
         fcx.write_ty(id, fcx.node_ty(b.id));
       }
-      ast::ExprCall(ref f, ref args) => {
-          // Index expressions need to be handled separately, to inform them
-          // that they appear in call position.
-          check_expr(fcx, &**f);
-          let f_ty = fcx.expr_ty(&**f);
-
-          let args: Vec<_> = args.iter().map(|x| x).collect();
-          if !try_overloaded_call(fcx, expr, &**f, f_ty, args[]) {
-              check_call(fcx, expr, &**f, args[]);
-              let args_err = args.iter().fold(false,
-                 |rest_err, a| {
-                     // is this not working?
-                     let a_ty = fcx.expr_ty(&***a);
-                     rest_err || ty::type_is_error(a_ty)});
-              if ty::type_is_error(f_ty) || args_err {
-                  fcx.write_error(id);
-              }
-          }
+      ast::ExprCall(ref callee, ref args) => {
+          callee::check_call(fcx, expr, &**callee, args.as_slice());
       }
       ast::ExprMethodCall(ident, ref tps, ref args) => {
         check_method_call(fcx, expr, ident, args[], tps[], lvalue_pref);

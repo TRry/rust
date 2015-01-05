@@ -23,7 +23,7 @@ use trans::base::{trans_fn, decl_internal_rust_fn};
 use trans::base;
 use trans::common::*;
 use trans::foreign;
-use middle::ty::{mod, HasProjectionTypes, Ty};
+use middle::ty::{self, HasProjectionTypes, Ty};
 use util::ppaux::Repr;
 
 use syntax::abi;
@@ -38,7 +38,7 @@ pub fn monomorphic_fn<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>,
                                 fn_id: ast::DefId,
                                 psubsts: &subst::Substs<'tcx>,
                                 ref_id: Option<ast::NodeId>)
-    -> (ValueRef, bool) {
+    -> (ValueRef, Ty<'tcx>, bool) {
     debug!("monomorphic_fn(\
             fn_id={}, \
             real_substs={}, \
@@ -58,11 +58,14 @@ pub fn monomorphic_fn<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>,
         params: psubsts.types.clone()
     };
 
+    let item_ty = ty::lookup_item_type(ccx.tcx(), fn_id).ty;
+    let mono_ty = item_ty.subst(ccx.tcx(), psubsts);
+
     match ccx.monomorphized().borrow().get(&hash_id) {
         Some(&val) => {
             debug!("leaving monomorphic fn {}",
             ty::item_path_str(ccx.tcx(), fn_id));
-            return (val, false);
+            return (val, mono_ty, false);
         }
         None => ()
     }
@@ -75,8 +78,6 @@ pub fn monomorphic_fn<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>,
            psubsts.repr(ccx.tcx()),
            hash_id);
 
-    let tpt = ty::lookup_item_type(ccx.tcx(), fn_id);
-    let llitem_ty = tpt.ty;
 
     let map_node = session::expect(
         ccx.sess(),
@@ -91,13 +92,12 @@ pub fn monomorphic_fn<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>,
     if let ast_map::NodeForeignItem(_) = map_node {
         if ccx.tcx().map.get_foreign_abi(fn_id.node) != abi::RustIntrinsic {
             // Foreign externs don't have to be monomorphized.
-            return (get_item_val(ccx, fn_id.node), true);
+            return (get_item_val(ccx, fn_id.node), mono_ty, true);
         }
     }
 
-    debug!("monomorphic_fn about to subst into {}", llitem_ty.repr(ccx.tcx()));
+    debug!("monomorphic_fn about to subst into {}", item_ty.repr(ccx.tcx()));
 
-    let mono_ty = llitem_ty.subst(ccx.tcx(), psubsts);
     debug!("mono_ty = {} (post-substitution)", mono_ty.repr(ccx.tcx()));
 
     let mono_ty = normalize_associated_type(ccx.tcx(), &mono_ty);
@@ -283,10 +283,10 @@ pub fn monomorphic_fn<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>,
     ccx.monomorphizing().borrow_mut().insert(fn_id, depth);
 
     debug!("leaving monomorphic fn {}", ty::item_path_str(ccx.tcx(), fn_id));
-    (lldecl, true)
+    (lldecl, mono_ty, true)
 }
 
-#[deriving(PartialEq, Eq, Hash, Show)]
+#[derive(PartialEq, Eq, Hash, Show)]
 pub struct MonoId<'tcx> {
     pub def: ast::DefId,
     pub params: subst::VecPerParamSpace<Ty<'tcx>>
@@ -322,9 +322,8 @@ pub fn normalize_associated_type<'tcx,T>(tcx: &ty::ctxt<'tcx>, value: &T) -> T
     // FIXME(#20304) -- cache
 
     let infcx = infer::new_infer_ctxt(tcx);
-    let param_env = ty::empty_parameter_environment();
-    let typer = NormalizingUnboxedClosureTyper::new(infcx.tcx);
-    let mut selcx = traits::SelectionContext::new(&infcx, &param_env, &typer);
+    let typer = NormalizingUnboxedClosureTyper::new(tcx);
+    let mut selcx = traits::SelectionContext::new(&infcx, &typer);
     let cause = traits::ObligationCause::dummy();
     let traits::Normalized { value: result, obligations } =
         traits::normalize(&mut selcx, cause, value);
@@ -337,7 +336,7 @@ pub fn normalize_associated_type<'tcx,T>(tcx: &ty::ctxt<'tcx>, value: &T) -> T
     for obligation in obligations.into_iter() {
         fulfill_cx.register_predicate_obligation(&infcx, obligation);
     }
-    let result = drain_fulfillment_cx(DUMMY_SP, &infcx, &param_env, &mut fulfill_cx, &result);
+    let result = drain_fulfillment_cx(DUMMY_SP, &infcx, &mut fulfill_cx, &result);
 
     result
 }

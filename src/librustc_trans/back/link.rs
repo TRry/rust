@@ -22,7 +22,7 @@ use metadata::common::LinkMeta;
 use metadata::{encoder, cstore, filesearch, csearch, creader};
 use metadata::filesearch::FileDoesntMatch;
 use trans::{CrateContext, CrateTranslation, gensym_name};
-use middle::ty::{mod, Ty};
+use middle::ty::{self, Ty};
 use util::common::time;
 use util::ppaux;
 use util::sha2::{Digest, Sha256};
@@ -266,7 +266,7 @@ pub fn sanitize(s: &str) -> String {
     return result;
 }
 
-pub fn mangle<PI: Iterator<PathElem>>(mut path: PI,
+pub fn mangle<PI: Iterator<Item=PathElem>>(mut path: PI,
                                       hash: Option<&str>) -> String {
     // Follow C++ namespace-mangling style, see
     // http://en.wikipedia.org/wiki/Name_mangling for more info.

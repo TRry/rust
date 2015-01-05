@@ -15,13 +15,13 @@
 
 use {DefModifiers, PUBLIC, IMPORTABLE};
 use ImportDirective;
-use ImportDirectiveSubclass::{mod, SingleImport, GlobImport};
+use ImportDirectiveSubclass::{self, SingleImport, GlobImport};
 use ImportResolution;
 use Module;
 use ModuleKind::*;
 use Namespace::{TypeNS, ValueNS};
 use NameBindings;
-use ParentLink::{mod, ModuleParentLink, BlockParentLink};
+use ParentLink::{self, ModuleParentLink, BlockParentLink};
 use Resolver;
 use RibKind::*;
 use Shadowable;
@@ -55,11 +55,11 @@ use syntax::ast::{ViewItemUse, ViewPathGlob, ViewPathList, ViewPathSimple};
 use syntax::ast::{Visibility};
 use syntax::ast::TyPath;
 use syntax::ast;
-use syntax::ast_util::{mod, PostExpansionMethod, local_def};
+use syntax::ast_util::{self, PostExpansionMethod, local_def};
 use syntax::attr::AttrMetaMethods;
-use syntax::parse::token::{mod, special_idents};
+use syntax::parse::token::{self, special_idents};
 use syntax::codemap::{Span, DUMMY_SP};
-use syntax::visit::{mod, Visitor};
+use syntax::visit::{self, Visitor};
 
 use std::mem::replace;
 use std::ops::{Deref, DerefMut};
@@ -67,7 +67,7 @@ use std::rc::Rc;
 
 // Specifies how duplicates should be handled when adding a child item if
 // another item exists with the same name in some namespace.
-#[deriving(Copy, PartialEq)]
+#[derive(Copy, PartialEq)]
 enum DuplicateCheckingMode {
     ForbidDuplicateModules,
     ForbidDuplicateTypesAndModules,
@@ -76,7 +76,7 @@ enum DuplicateCheckingMode {
     OverwriteDuplicates
 }
 
-#[deriving(Copy, PartialEq)]
+#[derive(Copy, PartialEq)]
 enum NamespaceError {
     NoError,
     ModuleError,
@@ -386,7 +386,7 @@ impl<'a, 'b:'a, 'tcx:'b> GraphBuilder<'a, 'b, 'tcx> {
                 parent.clone()
             }
 
-            ItemImpl(_, _, None, ref ty, ref impl_items) => {
+            ItemImpl(_, _, _, None, ref ty, ref impl_items) => {
                 // If this implements an anonymous trait, then add all the
                 // methods within to a new module, if the type was defined
                 // within this module.
@@ -527,7 +527,7 @@ impl<'a, 'b:'a, 'tcx:'b> GraphBuilder<'a, 'b, 'tcx> {
                 parent.clone()
             }
 
-            ItemImpl(_, _, Some(_), _, _) => parent.clone(),
+            ItemImpl(_, _, _, Some(_), _, _) => parent.clone(),
 
             ItemTrait(_, _, _, ref items) => {
                 let name_bindings =

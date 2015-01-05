@@ -10,7 +10,7 @@
 
 use middle::infer::{InferCtxt};
 use middle::mem_categorization::Typer;
-use middle::ty::{mod, RegionEscape, Ty};
+use middle::ty::{self, RegionEscape, Ty};
 use std::collections::HashSet;
 use std::collections::hash_map::Entry::{Occupied, Vacant};
 use std::default::Default;
@@ -109,7 +109,6 @@ impl<'tcx> FulfillmentContext<'tcx> {
     /// `projection_ty` again.
     pub fn normalize_projection_type<'a>(&mut self,
                                          infcx: &InferCtxt<'a,'tcx>,
-                                         param_env: &ty::ParameterEnvironment<'tcx>,
                                          typer: &ty::UnboxedClosureTyper<'tcx>,
                                          projection_ty: ty::ProjectionTy<'tcx>,
                                          cause: ObligationCause<'tcx>)
@@ -122,7 +121,7 @@ impl<'tcx> FulfillmentContext<'tcx> {
 
         // FIXME(#20304) -- cache
 
-        let mut selcx = SelectionContext::new(infcx, param_env, typer);
+        let mut selcx = SelectionContext::new(infcx, typer);
         let normalized = project::normalize_projection_type(&mut selcx, projection_ty, cause, 0);
 
         for obligation in normalized.obligations.into_iter() {
@@ -186,11 +185,10 @@ impl<'tcx> FulfillmentContext<'tcx> {
 
     pub fn select_all_or_error<'a>(&mut self,
                                    infcx: &InferCtxt<'a,'tcx>,
-                                   param_env: &ty::ParameterEnvironment<'tcx>,
                                    typer: &ty::UnboxedClosureTyper<'tcx>)
                                    -> Result<(),Vec<FulfillmentError<'tcx>>>
     {
-        try!(self.select_where_possible(infcx, param_env, typer));
+        try!(self.select_where_possible(infcx, typer));
 
         // Anything left is ambiguous.
         let errors: Vec<FulfillmentError> =
@@ -212,21 +210,19 @@ impl<'tcx> FulfillmentContext<'tcx> {
     /// results in `O(n^2)` performance (#18208).
     pub fn select_new_obligations<'a>(&mut self,
                                       infcx: &InferCtxt<'a,'tcx>,
-                                      param_env: &ty::ParameterEnvironment<'tcx>,
                                       typer: &ty::UnboxedClosureTyper<'tcx>)
                                       -> Result<(),Vec<FulfillmentError<'tcx>>>
     {
-        let mut selcx = SelectionContext::new(infcx, param_env, typer);
+        let mut selcx = SelectionContext::new(infcx, typer);
         self.select(&mut selcx, true)
     }
 
     pub fn select_where_possible<'a>(&mut self,
                                      infcx: &InferCtxt<'a,'tcx>,
-                                     param_env: &ty::ParameterEnvironment<'tcx>,
                                      typer: &ty::UnboxedClosureTyper<'tcx>)
                                      -> Result<(),Vec<FulfillmentError<'tcx>>>
     {
-        let mut selcx = SelectionContext::new(infcx, param_env, typer);
+        let mut selcx = SelectionContext::new(infcx, typer);
         self.select(&mut selcx, false)
     }
 
@@ -441,8 +437,9 @@ fn register_region_obligation<'tcx>(tcx: &ty::ctxt<'tcx>,
     debug!("register_region_obligation({})",
            region_obligation.repr(tcx));
 
-    match region_obligations.entry(region_obligation.cause.body_id) {
-        Vacant(entry) => { entry.set(vec![region_obligation]); },
+    let body_id = region_obligation.cause.body_id;
+    match region_obligations.entry(&body_id) {
+        Vacant(entry) => { entry.insert(vec![region_obligation]); },
         Occupied(mut entry) => { entry.get_mut().push(region_obligation); },
     }
 

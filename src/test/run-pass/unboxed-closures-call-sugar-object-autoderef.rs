@@ -1,4 +1,4 @@
-// Copyright 2014 The Rust Project Developers. See the COPYRIGHT
+// Copyright 2012 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
 //
@@ -8,9 +8,20 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use std::kinds::marker;
-use std::sync::atomic::AtomicOption;
+// Test that the call operator autoderefs when calling to an object type.
 
-fn main() {
-    AtomicOption::new(box marker::NoSend);  //~ ERROR `core::kinds::Send` is not implemented
+#![feature(unboxed_closures)]
+
+use std::ops::FnMut;
+
+fn make_adder(x: int) -> Box<FnMut(int)->int + 'static> {
+    box move |y| { x + y }
 }
+
+pub fn main() {
+    let mut adder = make_adder(3);
+    let z = adder(2);
+    println!("{}", z);
+    assert_eq!(z, 5);
+}
+

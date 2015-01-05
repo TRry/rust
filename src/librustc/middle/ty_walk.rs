@@ -10,7 +10,7 @@
 
 //! An iterator over the type substructure.
 
-use middle::ty::{mod, Ty};
+use middle::ty::{self, Ty};
 use std::iter::Iterator;
 
 pub struct TypeWalker<'tcx> {
@@ -94,7 +94,9 @@ impl<'tcx> TypeWalker<'tcx> {
     }
 }
 
-impl<'tcx> Iterator<Ty<'tcx>> for TypeWalker<'tcx> {
+impl<'tcx> Iterator for TypeWalker<'tcx> {
+    type Item = Ty<'tcx>;
+
     fn next(&mut self) -> Option<Ty<'tcx>> {
         debug!("next(): stack={}", self.stack);
         match self.stack.pop() {

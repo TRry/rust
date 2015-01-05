@@ -1,4 +1,4 @@
-// Copyright 2014 The Rust Project Developers. See the COPYRIGHT
+// Copyright 2014-2015 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
 //
@@ -60,6 +60,7 @@ mod arm_apple_ios;
 mod arm_linux_androideabi;
 mod arm_unknown_linux_gnueabi;
 mod arm_unknown_linux_gnueabihf;
+mod aarch64_unknown_linux_gnu;
 mod i686_apple_darwin;
 mod i386_apple_ios;
 mod i686_pc_windows_gnu;
@@ -76,7 +77,7 @@ mod x86_64_unknown_linux_gnu;
 /// Everything `rustc` knows about how to compile for a specific target.
 ///
 /// Every field here must be specified, and has no default value.
-#[deriving(Clone, Show)]
+#[derive(Clone, Show)]
 pub struct Target {
     /// [Data layout](http://llvm.org/docs/LangRef.html#data-layout) to pass to LLVM.
     pub data_layout: String,
@@ -88,8 +89,8 @@ pub struct Target {
     pub target_word_size: String,
     /// OS name to use for conditional compilation.
     pub target_os: String,
-    /// Architecture to use for ABI considerations. Valid options: "x86", "x86_64", "arm", and
-    /// "mips". "mips" includes "mipsel".
+    /// Architecture to use for ABI considerations. Valid options: "x86", "x86_64", "arm",
+    /// "aarch64", and "mips". "mips" includes "mipsel".
     pub arch: String,
     /// Optional settings with defaults.
     pub options: TargetOptions,
@@ -99,7 +100,7 @@ pub struct Target {
 ///
 /// This has an implementation of `Default`, see each field for what the default is. In general,
 /// these try to take "minimal defaults" that don't assume anything about the runtime they run in.
-#[deriving(Clone, Show)]
+#[derive(Clone, Show)]
 pub struct TargetOptions {
     /// Linker to invoke. Defaults to "cc".
     pub linker: String,
@@ -335,6 +336,7 @@ impl Target {
             arm_linux_androideabi,
             arm_unknown_linux_gnueabi,
             arm_unknown_linux_gnueabihf,
+            aarch64_unknown_linux_gnu,
 
             x86_64_unknown_freebsd,
 

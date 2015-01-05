@@ -77,7 +77,7 @@ use fmt;
 use hash;
 use mem;
 use ptr;
-use slice::{mod, IntSliceExt};
+use slice::{self, IntSliceExt};
 use str;
 use string::String;
 use core::kinds::marker;
@@ -265,10 +265,6 @@ impl CString {
         self.owns_buffer_ = false;
         self.buf
     }
-
-    /// Deprecated, use into_inner() instead
-    #[deprecated = "renamed to into_inner()"]
-    pub unsafe fn unwrap(self) -> *const libc::c_char { self.into_inner() }
 
     /// Return the number of bytes in the CString (not including the NUL
     /// terminator).
@@ -498,13 +494,15 @@ fn check_for_null(v: &[u8], buf: *mut libc::c_char) {
 ///
 /// Use with the `std::iter` module.
 #[allow(raw_pointer_deriving)]
-#[deriving(Clone)]
+#[derive(Clone)]
 pub struct CChars<'a> {
     ptr: *const libc::c_char,
     marker: marker::ContravariantLifetime<'a>,
 }
 
-impl<'a> Iterator<libc::c_char> for CChars<'a> {
+impl<'a> Iterator for CChars<'a> {
+    type Item = libc::c_char;
+
     fn next(&mut self) -> Option<libc::c_char> {
         let ch = unsafe { *self.ptr };
         if ch == 0 {

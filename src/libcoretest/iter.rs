@@ -103,7 +103,7 @@ fn test_iterator_chain() {
 
 #[test]
 fn test_filter_map() {
-    let mut it = count(0u, 1u).take(10)
+    let it = count(0u, 1u).take(10)
         .filter_map(|x| if x % 2 == 0 { Some(x*x) } else { None });
     assert!(it.collect::<Vec<uint>>() == vec![0*0, 2*2, 4*4, 6*6, 8*8]);
 }
@@ -561,7 +561,9 @@ fn test_rposition_panic() {
 
 
 #[cfg(test)]
-fn check_randacc_iter<A: PartialEq, T: Clone + RandomAccessIterator<A>>(a: T, len: uint)
+fn check_randacc_iter<A, T>(a: T, len: uint) where
+    A: PartialEq,
+    T: Clone + RandomAccessIterator + Iterator<Item=A>,
 {
     let mut b = a.clone();
     assert_eq!(len, b.indexable());

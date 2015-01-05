@@ -196,7 +196,7 @@ use attr;
 use attr::AttrMetaMethods;
 use ext::base::ExtCtxt;
 use ext::build::AstBuilder;
-use codemap::{mod, DUMMY_SP};
+use codemap::{self, DUMMY_SP};
 use codemap::Span;
 use fold::MoveMap;
 use owned_slice::OwnedSlice;
@@ -488,6 +488,7 @@ impl<'a> TraitDef<'a> {
             ident,
             a,
             ast::ItemImpl(ast::Unsafety::Normal,
+                          ast::ImplPolarity::Positive,
                           trait_generics,
                           opt_trait_ref,
                           self_type,
@@ -1174,7 +1175,7 @@ impl<'a> MethodDef<'a> {
     }
 }
 
-#[deriving(PartialEq)] // dogfooding!
+#[derive(PartialEq)] // dogfooding!
 enum StructType {
     Unknown, Record, Tuple
 }

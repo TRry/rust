@@ -29,7 +29,7 @@ bounds for each parameter.  Type parameters themselves are represented
 as `ty_param()` instances.
 
 */
-use astconv::{mod, AstConv, ty_of_arg, ast_ty_to_ty, ast_region_to_region};
+use astconv::{self, AstConv, ty_of_arg, ast_ty_to_ty, ast_region_to_region};
 use metadata::csearch;
 use middle::lang_items::SizedTraitLangItem;
 use middle::region;
@@ -37,8 +37,8 @@ use middle::resolve_lifetime;
 use middle::subst;
 use middle::subst::{Substs};
 use middle::ty::{AsPredicate, ImplContainer, ImplOrTraitItemContainer, TraitContainer};
-use middle::ty::{mod, RegionEscape, Ty, TypeScheme};
-use middle::ty_fold::{mod, TypeFolder, TypeFoldable};
+use middle::ty::{self, RegionEscape, Ty, TypeScheme};
+use middle::ty_fold::{self, TypeFolder, TypeFoldable};
 use middle::infer;
 use rscope::*;
 use {CrateCtxt, no_params, write_ty_to_tcx};
@@ -428,7 +428,7 @@ fn convert_methods<'a,'tcx,'i,I>(ccx: &CrateCtxt<'a, 'tcx>,
                                  untransformed_rcvr_ty: Ty<'tcx>,
                                  rcvr_ty_generics: &ty::Generics<'tcx>,
                                  rcvr_visibility: ast::Visibility)
-                                 where I: Iterator<&'i ast::Method> {
+                                 where I: Iterator<Item=&'i ast::Method> {
     debug!("convert_methods(untransformed_rcvr_ty={}, rcvr_ty_generics={})",
            untransformed_rcvr_ty.repr(ccx.tcx),
            rcvr_ty_generics.repr(ccx.tcx));
@@ -549,7 +549,7 @@ pub fn convert(ccx: &CrateCtxt, it: &ast::Item) {
                                    enum_definition.variants.as_slice(),
                                    generics);
         },
-        ast::ItemImpl(_,
+        ast::ItemImpl(_, _,
                       ref generics,
                       ref opt_trait_ref,
                       ref selfty,

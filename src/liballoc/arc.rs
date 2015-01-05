@@ -71,7 +71,7 @@ use core::atomic;
 use core::atomic::Ordering::{Relaxed, Release, Acquire, SeqCst};
 use core::borrow::BorrowFrom;
 use core::clone::Clone;
-use core::fmt::{mod, Show};
+use core::fmt::{self, Show};
 use core::cmp::{Eq, Ord, PartialEq, PartialOrd, Ordering};
 use core::default::Default;
 use core::kinds::{Sync, Send};
@@ -81,7 +81,7 @@ use core::nonzero::NonZero;
 use core::ops::{Drop, Deref};
 use core::option::Option;
 use core::option::Option::{Some, None};
-use core::ptr::{mod, PtrExt};
+use core::ptr::{self, PtrExt};
 use heap::deallocate;
 
 /// An atomically reference counted wrapper for shared state.
@@ -600,11 +600,9 @@ mod tests {
     use std::ops::Drop;
     use std::option::Option;
     use std::option::Option::{Some, None};
-    use std::str::Str;
     use std::sync::atomic;
     use std::sync::atomic::Ordering::{Acquire, SeqCst};
-    use std::task;
-    use std::kinds::Send;
+    use std::thread::Thread;
     use std::vec::Vec;
     use super::{Arc, Weak, weak_count, strong_count};
     use std::sync::Mutex;
@@ -631,7 +629,7 @@ mod tests {
 
         let (tx, rx) = channel();
 
-        task::spawn(move || {
+        let _t = Thread::spawn(move || {
             let arc_v: Arc<Vec<int>> = rx.recv().unwrap();
             assert_eq!((*arc_v)[3], 4);
         });
@@ -800,6 +798,6 @@ mod tests {
     }
 
     // Make sure deriving works with Arc<T>
-    #[deriving(Eq, Ord, PartialEq, PartialOrd, Clone, Show, Default)]
+    #[derive(Eq, Ord, PartialEq, PartialOrd, Clone, Show, Default)]
     struct Foo { inner: Arc<int> }
 }

@@ -38,14 +38,13 @@
 // ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED
 // OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#![feature(slicing_syntax)]
+#![feature(associated_types, slicing_syntax)]
 
 use std::cmp::min;
 use std::io::{BufferedWriter, File};
 use std::io;
 use std::num::Float;
 use std::os;
-use std::str::from_str;
 
 const LINE_LENGTH: uint = 60;
 const IM: u32 = 139968;
@@ -75,7 +74,9 @@ impl<'a> AAGen<'a> {
         AAGen { rng: rng, data: data }
     }
 }
-impl<'a> Iterator<u8> for AAGen<'a> {
+impl<'a> Iterator for AAGen<'a> {
+    type Item = u8;
+
     fn next(&mut self) -> Option<u8> {
         let r = self.rng.gen();
         self.data.iter()
@@ -85,7 +86,7 @@ impl<'a> Iterator<u8> for AAGen<'a> {
     }
 }
 
-fn make_fasta<W: Writer, I: Iterator<u8>>(
+fn make_fasta<W: Writer, I: Iterator<Item=u8>>(
     wr: &mut W, header: &str, mut it: I, mut n: uint)
     -> std::io::IoResult<()>
 {
@@ -111,7 +112,7 @@ fn run<W: Writer>(writer: &mut W) -> std::io::IoResult<()> {
     } else if args.len() <= 1u {
         1000
     } else {
-        from_str(args[1].as_slice()).unwrap()
+        args[1].parse().unwrap()
     };
 
     let rng = &mut MyRandom::new();

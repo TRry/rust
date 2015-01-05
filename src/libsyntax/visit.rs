@@ -32,7 +32,7 @@ use codemap::Span;
 use ptr::P;
 use owned_slice::OwnedSlice;
 
-#[deriving(Copy)]
+#[derive(Copy)]
 pub enum FnKind<'a> {
     /// fn foo() or extern "Abi" fn foo()
     FkItemFn(Ident, &'a Generics, Unsafety, Abi),
@@ -297,7 +297,7 @@ pub fn walk_item<'v, V: Visitor<'v>>(visitor: &mut V, item: &'v Item) {
             visitor.visit_generics(type_parameters);
             walk_enum_def(visitor, enum_definition, type_parameters)
         }
-        ItemImpl(_,
+        ItemImpl(_, _,
                  ref type_parameters,
                  ref trait_reference,
                  ref typ,

@@ -125,18 +125,17 @@
 //! * It can be implemented highly efficiently on many platforms.
 
 use any::Any;
-use borrow::IntoCow;
 use boxed::Box;
 use cell::UnsafeCell;
 use clone::Clone;
 use kinds::{Send, Sync};
 use ops::{Drop, FnOnce};
-use option::Option::{mod, Some, None};
+use option::Option::{self, Some, None};
 use result::Result::{Err, Ok};
 use sync::{Mutex, Condvar, Arc};
 use str::Str;
 use string::String;
-use rt::{mod, unwind};
+use rt::{self, unwind};
 use io::{Writer, stdio};
 use thunk::Thunk;
 
@@ -173,12 +172,6 @@ impl Builder {
     pub fn name(mut self, name: String) -> Builder {
         self.name = Some(name);
         self
-    }
-
-    /// Deprecated: use `name` instead
-    #[deprecated = "use name instead"]
-    pub fn named<T: IntoCow<'static, String, str>>(self, name: T) -> Builder {
-        self.name(name.into_cow().into_owned())
     }
 
     /// Set the size of the stack for the new thread.
@@ -291,7 +284,7 @@ struct Inner {
 
 unsafe impl Sync for Inner {}
 
-#[deriving(Clone)]
+#[derive(Clone)]
 /// A handle to a thread.
 pub struct Thread {
     inner: Arc<Inner>,
@@ -442,7 +435,7 @@ impl<T: Send> Drop for JoinGuard<T> {
 mod test {
     use prelude::v1::*;
 
-    use any::{Any, AnyRefExt};
+    use any::Any;
     use sync::mpsc::{channel, Sender};
     use boxed::BoxAny;
     use result;

@@ -220,7 +220,7 @@ pub struct MacItems {
 }
 
 impl MacItems {
-    pub fn new<I: Iterator<P<ast::Item>>>(it: I) -> Box<MacResult+'static> {
+    pub fn new<I: Iterator<Item=P<ast::Item>>>(it: I) -> Box<MacResult+'static> {
         box MacItems { items: it.collect() } as Box<MacResult+'static>
     }
 }
@@ -233,7 +233,7 @@ impl MacResult for MacItems {
 
 /// Fill-in macro expansion result, to allow compilation to continue
 /// after hitting errors.
-#[deriving(Copy)]
+#[derive(Copy)]
 pub struct DummyResult {
     expr_only: bool,
     span: Span
@@ -311,7 +311,7 @@ pub enum SyntaxExtension {
     /// A syntax extension that is attached to an item and creates new items
     /// based upon it.
     ///
-    /// `#[deriving(...)]` is an `ItemDecorator`.
+    /// `#[derive(...)]` is an `ItemDecorator`.
     Decorator(Box<ItemDecorator + 'static>),
 
     /// A syntax extension that is attached to an item and modifies it

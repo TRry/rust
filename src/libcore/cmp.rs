@@ -44,7 +44,7 @@
 use self::Ordering::*;
 
 use kinds::Sized;
-use option::Option::{mod, Some, None};
+use option::Option::{self, Some, None};
 
 /// Trait for equality comparisons which are [partial equivalence relations](
 /// http://en.wikipedia.org/wiki/Partial_equivalence_relation).
@@ -104,7 +104,7 @@ pub trait Eq for Sized?: PartialEq<Self> {
 }
 
 /// An ordering is, e.g, a result of a comparison between two values.
-#[deriving(Clone, Copy, PartialEq, Show)]
+#[derive(Clone, Copy, PartialEq, Show)]
 #[stable]
 pub enum Ordering {
     /// An ordering where a compared value is less [than another].
@@ -269,16 +269,6 @@ pub trait PartialOrd<Sized? Rhs = Self> for Sized?: PartialEq<Rhs> {
             _ => false,
         }
     }
-}
-
-/// The equivalence relation. Two values may be equivalent even if they are
-/// of different types. The most common use case for this relation is
-/// container types; e.g. it is often desirable to be able to use `&str`
-/// values to look up entries in a container with `String` keys.
-#[deprecated = "Use overloaded core::cmp::PartialEq"]
-pub trait Equiv<Sized? T> for Sized? {
-    /// Implement this function to decide equivalent values.
-    fn equiv(&self, other: &T) -> bool;
 }
 
 /// Compare and return the minimum of two values.

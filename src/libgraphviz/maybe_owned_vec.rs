@@ -12,7 +12,7 @@
 
 pub use self::MaybeOwnedVector::*;
 
-use std::cmp::{Equiv, Ordering};
+use std::cmp::Ordering;
 use std::default::Default;
 use std::fmt;
 use std::iter::FromIterator;
@@ -97,13 +97,6 @@ impl<'a, T: Ord> Ord for MaybeOwnedVector<'a, T> {
     }
 }
 
-#[allow(deprecated)]
-impl<'a, T: PartialEq> Equiv<[T]> for MaybeOwnedVector<'a, T> {
-    fn equiv(&self, other: &[T]) -> bool {
-        self.as_slice() == other
-    }
-}
-
 // The `Vector` trait is provided in the prelude and is implemented on
 // both `&'a [T]` and `Vec<T>`, so it makes sense to try to support it
 // seamlessly.  The other vector related traits from the prelude do
@@ -124,7 +117,7 @@ impl<'b,T> AsSlice<T> for MaybeOwnedVector<'b,T> {
 
 impl<'a,T> FromIterator<T> for MaybeOwnedVector<'a,T> {
     #[allow(deprecated)]
-    fn from_iter<I:Iterator<T>>(iterator: I) -> MaybeOwnedVector<'a,T> {
+    fn from_iter<I:Iterator<Item=T>>(iterator: I) -> MaybeOwnedVector<'a,T> {
         // If we are building from scratch, might as well build the
         // most flexible variant.
         Growable(iterator.collect())

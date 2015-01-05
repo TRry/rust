@@ -12,14 +12,12 @@
 
 //! Readers and Writers for in-memory buffers
 
-#![allow(deprecated)]
-
 use cmp::min;
 use option::Option::None;
 use result::Result::{Err, Ok};
 use io;
 use io::{Reader, Writer, Seek, Buffer, IoError, SeekStyle, IoResult};
-use slice::{mod, AsSlice, SliceExt};
+use slice::{self, AsSlice, SliceExt};
 use vec::Vec;
 
 const BUF_CAPACITY: uint = 128;
@@ -65,11 +63,12 @@ impl Writer for Vec<u8> {
 /// assert_eq!(w.into_inner(), vec!(0, 1, 2));
 /// ```
 #[deprecated = "use the Vec<u8> Writer implementation directly"]
-#[deriving(Clone)]
+#[derive(Clone)]
 pub struct MemWriter {
     buf: Vec<u8>,
 }
 
+#[allow(deprecated)]
 impl MemWriter {
     /// Create a new `MemWriter`.
     #[inline]
@@ -96,10 +95,6 @@ impl MemWriter {
     /// Unwraps this `MemWriter`, returning the underlying buffer
     #[inline]
     pub fn into_inner(self) -> Vec<u8> { self.buf }
-
-    /// Deprecated, use into_inner() instead
-    #[deprecated = "renamed to into_inner()"]
-    pub fn unwrap(self) -> Vec<u8> { self.into_inner() }
 }
 
 impl Writer for MemWriter {
@@ -155,10 +150,6 @@ impl MemReader {
     /// Unwraps this `MemReader`, returning the underlying buffer
     #[inline]
     pub fn into_inner(self) -> Vec<u8> { self.buf }
-
-    /// Deprecated, use into_inner() instead
-    #[deprecated = "renamed to into_inner()"]
-    pub fn unwrap(self) -> Vec<u8> { self.into_inner() }
 }
 
 impl Reader for MemReader {
@@ -401,10 +392,11 @@ mod test {
     extern crate "test" as test_crate;
     use prelude::v1::*;
 
-    use super::*;
     use io::{SeekSet, SeekCur, SeekEnd};
     use io;
+    use iter::repeat;
     use self::test_crate::Bencher;
+    use super::*;
 
     #[test]
     fn test_vec_writer() {
@@ -664,7 +656,7 @@ mod test {
     }
 
     fn do_bench_mem_writer(b: &mut Bencher, times: uint, len: uint) {
-        let src: Vec<u8> = Vec::from_elem(len, 5);
+        let src: Vec<u8> = repeat(5).take(len).collect();
 
         b.bytes = (times * len) as u64;
         b.iter(|| {
@@ -673,7 +665,7 @@ mod test {
                 wr.write(src.as_slice()).unwrap();
             }
 
-            let v = wr.unwrap();
+            let v = wr.into_inner();
             assert_eq!(v.len(), times * len);
             assert!(v.iter().all(|x| *x == 5));
         });

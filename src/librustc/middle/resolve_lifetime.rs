@@ -19,7 +19,7 @@ pub use self::DefRegion::*;
 use self::ScopeChain::*;
 
 use session::Session;
-use middle::def::{mod, DefMap};
+use middle::def::{self, DefMap};
 use middle::region;
 use middle::subst;
 use middle::ty;
@@ -33,7 +33,7 @@ use syntax::visit;
 use syntax::visit::Visitor;
 use util::nodemap::NodeMap;
 
-#[deriving(Clone, Copy, PartialEq, Eq, Hash, RustcEncodable, RustcDecodable, Show)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, RustcEncodable, RustcDecodable, Show)]
 pub enum DefRegion {
     DefStaticRegion,
     DefEarlyBoundRegion(/* space */ subst::ParamSpace,
@@ -106,7 +106,7 @@ impl<'a, 'v> Visitor<'v> for LifetimeContext<'a> {
                 ast::ItemEnum(_, ref generics) |
                 ast::ItemStruct(_, ref generics) |
                 ast::ItemTrait(_, ref generics, _, _) |
-                ast::ItemImpl(_, ref generics, _, _, _) => {
+                ast::ItemImpl(_, _, ref generics, _, _, _) => {
                     // These kinds of items have only early bound lifetime parameters.
                     let lifetimes = &generics.lifetimes;
                     let early_scope = EarlyScope(subst::TypeSpace, lifetimes, &ROOT_SCOPE);
