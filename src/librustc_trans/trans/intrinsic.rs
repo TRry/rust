@@ -109,8 +109,10 @@ pub fn check_intrinsics(ccx: &CrateContext) {
                                                  transmute_restriction.substituted_from);
         let lltotype = type_of::sizing_type_of(ccx,
                                                transmute_restriction.substituted_to);
-        let from_type_size = machine::llbitsize_of_real(ccx, llfromtype);
-        let to_type_size = machine::llbitsize_of_real(ccx, lltotype);
+        // It should be safe to transmute types which are actually
+        // presented by the same actual size (especially for thumb)
+        let from_type_size = machine::llsize_of_alloc(ccx, llfromtype) * 8;
+        let to_type_size = machine::llsize_of_alloc(ccx, lltotype) * 8;
         if from_type_size != to_type_size {
             last_failing_id = Some(transmute_restriction.id);
 

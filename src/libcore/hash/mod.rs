@@ -99,8 +99,18 @@ macro_rules! impl_hash {
     ($ty:ident, $uty:ident) => {
         impl<S: Writer> Hash<S> for $ty {
             #[inline]
+            #[cfg(stage0)]
             fn hash(&self, state: &mut S) {
                 let a: [u8; ::$ty::BYTES] = unsafe {
+                    mem::transmute((*self as $uty).to_le() as $ty)
+                };
+                state.write(a.as_slice())
+            }
+
+            #[inline]
+            #[cfg(not(stage0))]
+            fn hash(&self, state: &mut S) {
+                let a: [u8; ::$ty::MIN_ELEMS] = unsafe {
                     mem::transmute((*self as $uty).to_le() as $ty)
                 };
                 state.write(a.as_slice())

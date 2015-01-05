@@ -603,7 +603,7 @@ pub fn default_configuration(sess: &Session) -> ast::CrateConfig {
     };
 
     let mk = attr::mk_name_value_item_str;
-    return vec!(// Target bindings.
+    let mut res = vec!(// Target bindings.
          attr::mk_word_item(fam.clone()),
          mk(InternedString::new("target_os"), intern(os)),
          mk(InternedString::new("target_family"), fam),
@@ -612,6 +612,12 @@ pub fn default_configuration(sess: &Session) -> ast::CrateConfig {
          mk(InternedString::new("target_word_size"),
             intern(wordsz))
     );
+
+    if sess.target.target.llvm_target.starts_with("thumb") {
+        res.push(attr::mk_word_item(InternedString::new("target_is_thumb")));
+    }
+
+    res
 }
 
 pub fn append_configuration(cfg: &mut ast::CrateConfig,

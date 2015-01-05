@@ -17,6 +17,14 @@ pub const BITS : uint = $bits;
 #[unstable]
 pub const BYTES : uint = ($bits / 8);
 
+#[cfg(not(target_is_thumb))]
+#[unstable]
+pub const MIN_ELEMS: uint = BYTES;
+
+#[cfg(target_is_thumb)]
+#[unstable]
+pub const MIN_ELEMS: uint = (($bits + 31) / 32);
+
 #[stable]
 pub const MIN: $T = 0 as $T;
 #[stable]

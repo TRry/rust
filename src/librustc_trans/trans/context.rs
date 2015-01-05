@@ -369,6 +369,10 @@ impl<'tcx> LocalCrateContext<'tcx> {
         unsafe {
             let (llcx, llmod) = create_context_and_module(&shared.tcx.sess, name);
 
+            shared.tcx.sess.note(format!("\tLocal context: {} target {} layout {}",
+                                         name,
+                                         shared.tcx.sess.target.target.llvm_target,
+                                         shared.tcx.sess.target.target.data_layout).as_slice());
             let td = mk_target_data(shared.tcx
                                           .sess
                                           .target

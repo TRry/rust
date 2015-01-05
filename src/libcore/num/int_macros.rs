@@ -21,10 +21,18 @@ pub const BITS : uint = $bits;
 #[unstable]
 pub const BYTES : uint = ($bits / 8);
 
+#[cfg(not(target_is_thumb))]
+#[unstable]
+pub const MIN_ELEMS: uint = BYTES;
+
+#[cfg(target_is_thumb)]
+#[unstable]
+pub const MIN_ELEMS: uint = (($bits + 31) / 32);
+
 // FIXME(#11621): Should be deprecated once CTFE is implemented in favour of
 // calling the `Bounded::min_value` function.
 #[stable]
-pub const MIN: $T = (-1 as $T) << (BITS - 1);
+pub const MIN: $T = (-1 as $T) << (BITS - 1); //
 // FIXME(#9837): Compute MIN like this so the high bits that shouldn't exist are 0.
 // FIXME(#11621): Should be deprecated once CTFE is implemented in favour of
 // calling the `Bounded::max_value` function.
