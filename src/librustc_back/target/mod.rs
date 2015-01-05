@@ -53,6 +53,7 @@ use std::io::fs::PathExtensions;
 mod windows_base;
 mod linux_base;
 mod apple_base;
+mod apple_ios_base;
 mod freebsd_base;
 mod dragonfly_base;
 

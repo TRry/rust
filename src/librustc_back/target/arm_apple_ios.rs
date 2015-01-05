@@ -24,14 +24,7 @@ pub fn target() -> Target {
         target_os: "ios".to_string(),
         options: TargetOptions {
             features: "+v7,+thumb2,+vfp3,+neon".to_string(),
-            executables: false,
-            dynamic_linking: false,
-            // Although there is an experimental implementation of LLVM which
-            // supports SS on armv7 it wasn't approved by Apple, see:
-            // http://lists.cs.uiuc.edu/pipermail/llvm-commits/Week-of-Mon-20140505/216350.html
-            // It looks like it might be never accepted to upstream LLVM.
-            morestack: false,
-            .. super::apple_base::opts()
+            .. super::apple_ios_base::opts("armv7", "iphoneos")
         }
     }
 }

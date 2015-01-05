@@ -22,7 +22,6 @@ pub fn target() -> Target {
         target_word_size: "32".to_string(),
         arch: "x86".to_string(),
         target_os: "ios".to_string(),
-
-        options: super::apple_base::opts()
+        options: super::apple_ios_base::opts("i386", "iphonesimulator")
     }
 }
