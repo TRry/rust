@@ -8,30 +8,20 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#![feature(unboxed_closures)]
-
-fn id<T>(x: T) -> T {
-    x
+fn pairwise_sub(mut t: Box<DoubleEndedIterator<Item=int>>) -> int {
+    let mut result = 0;
+    loop {
+        let front = t.next();
+        let back = t.next_back();
+        match (front, back) {
+            (Some(f), Some(b)) => { result += b - f; }
+            _ => { return result; }
+        }
+    }
 }
 
-#[derive(PartialEq, Show)]
-struct Foo<T>(T);
-
-#[derive(PartialEq, Show)]
-enum Bar<T> {
-    Baz(T)
-}
-
-pub fn main() {
-    let f: |int| -> int = id;
-    assert_eq!(f(5), 5);
-
-    let f: |int| -> Foo<int> = Foo;
-    assert_eq!(f(5), Foo(5));
-
-    let f: |int| -> Bar<int> = Bar::Baz;
-    assert_eq!(f(5), Bar::Baz(5));
-
-    let f: |int| -> Option<int> = Some;
-    assert_eq!(f(5), Some(5));
+fn main() {
+    let v = vec!(1, 2, 3, 4, 5, 6);
+    let r = pairwise_sub(box v.into_iter());
+    assert_eq!(r, 9);
 }

@@ -8,21 +8,20 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// Test that coercions from fn item types are ok, but not fn pointer
-// types to closures/procs are not allowed.
-
-fn foo() {}
-
-fn fn_item_type() {
-    let f = foo;
-
-    let f_closure: || = f;
+fn pairwise_sub<T:DoubleEndedIterator<Item=int>>(mut t: T) -> int {
+    let mut result = 0;
+    loop {
+        let front = t.next();
+        let back = t.next_back();
+        match (front, back) {
+            (Some(f), Some(b)) => { result += b - f; }
+            _ => { return result; }
+        }
+    }
 }
 
-fn fn_pointer_type() {
-    let f = foo as fn();
-    let f_closure: || = f;
-    //~^ ERROR: mismatched types
+fn main() {
+    let v = vec!(1, 2, 3, 4, 5, 6);
+    let r =pairwise_sub(v.into_iter());
+    assert_eq!(r, 9);
 }
-
-fn main() { }

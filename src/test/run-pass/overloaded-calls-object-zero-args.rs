@@ -1,4 +1,4 @@
-// Copyright 2013 The Rust Project Developers. See the COPYRIGHT
+// Copyright 2014 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
 //
@@ -8,10 +8,14 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-fn foopy() {}
+// Tests calls to closure arguments where the closure takes 0 arguments.
+// This is a bit tricky due to rust-call ABI.
 
-static f: ||: 'static = foopy;
+fn foo(f: &mut FnMut() -> int) -> int {
+    f()
+}
 
-fn main () {
-    f(); //~ ERROR closure invocation in a static location
+fn main() {
+    let z = foo(&mut || 22);
+    assert_eq!(z, 22);
 }

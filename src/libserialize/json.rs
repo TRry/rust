@@ -300,7 +300,7 @@ pub fn error_str(error: ErrorCode) -> &'static str {
 }
 
 /// Shortcut function to decode a JSON `&str` into an object
-pub fn decode<T: ::Decodable<Decoder, DecoderError>>(s: &str) -> DecodeResult<T> {
+pub fn decode<T: ::Decodable>(s: &str) -> DecodeResult<T> {
     let json = match from_str(s) {
         Ok(x) => x,
         Err(e) => return Err(ParseError(e))
@@ -311,9 +311,7 @@ pub fn decode<T: ::Decodable<Decoder, DecoderError>>(s: &str) -> DecodeResult<T>
 }
 
 /// Shortcut function to encode a `T` into a JSON `String`
-pub fn encode<T>(object: &T) -> string::String
-                 where T: for<'a> Encodable<Encoder<'a>, fmt::Error>
-{
+pub fn encode<T: ::Encodable>(object: &T) -> string::String {
     let mut s = String::new();
     {
         let mut encoder = Encoder::new(&mut s);
@@ -444,7 +442,9 @@ impl<'a> Encoder<'a> {
     }
 }
 
-impl<'a> ::Encoder<fmt::Error> for Encoder<'a> {
+impl<'a> ::Encoder for Encoder<'a> {
+    type Error = fmt::Error;
+
     fn emit_nil(&mut self) -> EncodeResult { write!(self.writer, "null") }
 
     fn emit_uint(&mut self, v: uint) -> EncodeResult { write!(self.writer, "{}", v) }
@@ -664,7 +664,9 @@ impl<'a> PrettyEncoder<'a> {
     }
 }
 
-impl<'a> ::Encoder<fmt::Error> for PrettyEncoder<'a> {
+impl<'a> ::Encoder for PrettyEncoder<'a> {
+    type Error = fmt::Error;
+
     fn emit_nil(&mut self) -> EncodeResult { write!(self.writer, "null") }
 
     fn emit_uint(&mut self, v: uint) -> EncodeResult { write!(self.writer, "{}", v) }
@@ -909,8 +911,8 @@ impl<'a> ::Encoder<fmt::Error> for PrettyEncoder<'a> {
     }
 }
 
-impl<E: ::Encoder<S>, S> Encodable<E, S> for Json {
-    fn encode(&self, e: &mut E) -> Result<(), S> {
+impl Encodable for Json {
+    fn encode<E: ::Encoder>(&self, e: &mut E) -> Result<(), E::Error> {
         match *self {
             Json::I64(v) => v.encode(e),
             Json::U64(v) => v.encode(e),
@@ -1123,15 +1125,6 @@ impl Json {
     }
 }
 
-// NOTE(stage0): remove impl after a snapshot
-#[cfg(stage0)]
-impl<'a> ops::Index<&'a str, Json>  for Json {
-    fn index(&self, idx: & &str) -> &Json {
-        self.find(*idx).unwrap()
-    }
-}
-
-#[cfg(not(stage0))]  // NOTE(stage0): remove cfg after a snapshot
 impl<'a> ops::Index<&'a str>  for Json {
     type Output = Json;
 
@@ -1140,18 +1133,6 @@ impl<'a> ops::Index<&'a str>  for Json {
     }
 }
 
-// NOTE(stage0): remove impl after a snapshot
-#[cfg(stage0)]
-impl ops::Index<uint, Json> for Json {
-    fn index<'a>(&'a self, idx: &uint) -> &'a Json {
-        match self {
-            &Json::Array(ref v) => v.index(idx),
-            _ => panic!("can only index Json with uint if it is an array")
-        }
-    }
-}
-
-#[cfg(not(stage0))]  // NOTE(stage0): remove cfg after a snapshot
 impl ops::Index<uint> for Json {
     type Output = Json;
 
@@ -2062,7 +2043,9 @@ macro_rules! read_primitive {
     }
 }
 
-impl ::Decoder<DecoderError> for Decoder {
+impl ::Decoder for Decoder {
+    type Error = DecoderError;
+
     fn read_nil(&mut self) -> DecodeResult<()> {
         expect!(self.pop(), Null)
     }
@@ -2474,9 +2457,7 @@ impl<'a> fmt::Show for PrettyJson<'a> {
     }
 }
 
-impl<'a, T> fmt::Show for AsJson<'a, T>
-    where T: for<'b> Encodable<Encoder<'b>, fmt::Error>
-{
+impl<'a, T: Encodable> fmt::Show for AsJson<'a, T> {
     /// Encodes a json value into a string
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut shim = FormatShim { inner: f };
@@ -2493,9 +2474,7 @@ impl<'a, T> AsPrettyJson<'a, T> {
     }
 }
 
-impl<'a, T> fmt::Show for AsPrettyJson<'a, T>
-    where T: for<'b> Encodable<PrettyEncoder<'b>, fmt::Error>
-{
+impl<'a, T: Encodable> fmt::Show for AsPrettyJson<'a, T> {
     /// Encodes a json value into a string
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut shim = FormatShim { inner: f };
@@ -3155,8 +3134,7 @@ mod tests {
         A(f64),
         B(string::String)
     }
-    fn check_err<T: Decodable<Decoder, DecoderError>>(to_parse: &'static str,
-                                                      expected: DecoderError) {
+    fn check_err<T: Decodable>(to_parse: &'static str, expected: DecoderError) {
         let res: DecodeResult<T> = match from_str(to_parse) {
             Err(e) => Err(ParseError(e)),
             Ok(json) => Decodable::decode(&mut Decoder::new(json))
