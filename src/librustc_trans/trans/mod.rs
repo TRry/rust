@@ -44,6 +44,7 @@ mod cabi_x86_64;
 mod cabi_x86_win64;
 mod cabi_arm;
 mod cabi_aarch64;
+mod cabi_arm_ios;
 mod cabi_mips;
 mod foreign;
 mod intrinsic;

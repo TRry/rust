@@ -12,19 +12,15 @@ use target::{Target, TargetOptions};
 
 pub fn target() -> Target {
     Target {
-        data_layout: "e-p:32:32:32\
-                      -i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:64:64\
-                      -f32:32:32-f64:64:64\
-                      -v64:64:64-v128:64:128\
-                      -a:0:64-n32".to_string(),
-        llvm_target: "arm-apple-ios".to_string(),
+        data_layout: "e-p:32:32-f64:32:64-v64:32:64-v128:32:128-a:0:32-n32-S32".to_string(),
+        llvm_target: "armv7s-apple-ios".to_string(),
         target_endian: "little".to_string(),
         target_word_size: "32".to_string(),
         arch: "arm".to_string(),
         target_os: "ios".to_string(),
         options: TargetOptions {
-            features: "+v7,+thumb2,+vfp3,+neon".to_string(),
-            .. super::apple_ios_base::opts("armv7", "iphoneos")
+            features: "+v7,+vfp4,+neon".to_string(),
+            .. super::apple_ios_base::opts("armv7s", "iphoneos")
         }
     }
 }
