@@ -8,4 +8,14 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-pub fn foo() {}
+// error-pattern: unknown macro variable `nonexistent`
+
+macro_rules! e {
+    ($inp:ident) => (
+        $nonexistent
+    );
+}
+
+fn main() {
+    e!(foo);
+}

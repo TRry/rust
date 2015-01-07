@@ -8,7 +8,16 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-extern crate foo1;
-extern crate foo2;
+#![feature(macro_rules)]
 
-fn main() {}
+// error-pattern: unknown macro variable `nonexistent`
+
+macro_rules! g {
+    ($inp:ident) => (
+        { $inp $nonexistent }
+    );
+}
+
+fn main() {
+    g!(foo);
+}

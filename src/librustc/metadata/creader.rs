@@ -20,16 +20,13 @@ use metadata::cstore::{CStore, CrateSource, MetadataBlob};
 use metadata::decoder;
 use metadata::loader;
 use metadata::loader::CratePaths;
-use util::nodemap::FnvHashMap;
 
 use std::rc::Rc;
-use std::collections::hash_map::Entry::{Occupied, Vacant};
 use syntax::ast;
 use syntax::abi;
 use syntax::attr;
 use syntax::attr::AttrMetaMethods;
 use syntax::codemap::{Span, mk_sp};
-use syntax::diagnostic::SpanHandler;
 use syntax::parse;
 use syntax::parse::token::InternedString;
 use syntax::parse::token;
@@ -67,29 +64,9 @@ fn dump_crates(cstore: &CStore) {
     })
 }
 
-fn warn_if_multiple_versions(diag: &SpanHandler, cstore: &CStore) {
-    let mut map = FnvHashMap::new();
-    cstore.iter_crate_data(|cnum, data| {
-        match map.entry(&data.name()) {
-            Vacant(entry) => { entry.insert(vec![cnum]); },
-            Occupied(mut entry) => { entry.get_mut().push(cnum); },
-        }
-    });
-
-    for (name, dupes) in map.into_iter() {
-        if dupes.len() == 1 { continue }
-        diag.handler().warn(
-            format!("using multiple versions of crate `{}`", name)[]);
-        for dupe in dupes.into_iter() {
-            let data = cstore.get_crate_data(dupe);
-            diag.span_note(data.span, "used here");
-            loader::note_crate_name(diag, data.name()[]);
-        }
-    }
-}
-
 fn should_link(i: &ast::ViewItem) -> bool {
-    !attr::contains_name(i.attrs[], "no_link")
+    !attr::contains_name(i.attrs.index(&FullRange), "no_link")
+
 }
 
 struct CrateInfo {
@@ -113,13 +90,14 @@ pub fn validate_crate_name(sess: Option<&Session>, s: &str, sp: Option<Span>) {
     for c in s.chars() {
         if c.is_alphanumeric() { continue }
         if c == '_' || c == '-' { continue }
-        err(format!("invalid character `{}` in crate name: `{}`", c, s)[]);
+        err(format!("invalid character `{}` in crate name: `{}`", c, s).index(&FullRange));
     }
     match sess {
         Some(sess) => sess.abort_if_errors(),
         None => {}
     }
 }
+
 
 fn register_native_lib(sess: &Session,
                        span: Option<Span>,
@@ -188,7 +166,6 @@ impl<'a> CrateReader<'a> {
         if log_enabled!(log::DEBUG) {
             dump_crates(&self.sess.cstore);
         }
-        warn_if_multiple_versions(self.sess.diagnostic(), &self.sess.cstore);
 
         for &(ref name, kind) in self.sess.opts.libs.iter() {
             register_native_lib(self.sess, None, name.clone(), kind);
@@ -212,8 +189,8 @@ impl<'a> CrateReader<'a> {
         match self.extract_crate_info(i) {
             Some(info) => {
                 let (cnum, _, _) = self.resolve_crate(&None,
-                                                      info.ident[],
-                                                      info.name[],
+                                                      info.ident.index(&FullRange),
+                                                      info.name.index(&FullRange),
                                                       None,
                                                       i.span,
                                                       PathKind::Crate);
@@ -227,12 +204,12 @@ impl<'a> CrateReader<'a> {
         match i.node {
             ast::ViewItemExternCrate(ident, ref path_opt, id) => {
                 let ident = token::get_ident(ident);
-                debug!("resolving extern crate stmt. ident: {} path_opt: {}",
+                debug!("resolving extern crate stmt. ident: {} path_opt: {:?}",
                        ident, path_opt);
                 let name = match *path_opt {
                     Some((ref path_str, _)) => {
                         let name = path_str.get().to_string();
-                        validate_crate_name(Some(self.sess), name[],
+                        validate_crate_name(Some(self.sess), name.index(&FullRange),
                                             Some(i.span));
                         name
                     }
@@ -299,7 +276,7 @@ impl<'a> CrateReader<'a> {
                                     } else {
                                         self.sess.span_err(m.span,
                                             format!("unknown kind: `{}`",
-                                                    k)[]);
+                                                    k).index(&FullRange));
                                         cstore::NativeUnknown
                                     }
                                 }
@@ -353,7 +330,7 @@ impl<'a> CrateReader<'a> {
             match self.sess.opts.externs.get(name) {
                 Some(locs) => {
                     let found = locs.iter().any(|l| {
-                        let l = fs::realpath(&Path::new(l[])).ok();
+                        let l = fs::realpath(&Path::new(l.index(&FullRange))).ok();
                         l == source.dylib || l == source.rlib
                     });
                     if found {
@@ -432,7 +409,7 @@ impl<'a> CrateReader<'a> {
                     crate_name: name,
                     hash: hash.map(|a| &*a),
                     filesearch: self.sess.target_filesearch(kind),
-                    triple: self.sess.opts.target_triple[],
+                    triple: self.sess.opts.target_triple.index(&FullRange),
                     root: root,
                     rejected_via_hash: vec!(),
                     rejected_via_triple: vec!(),
@@ -458,8 +435,8 @@ impl<'a> CrateReader<'a> {
         decoder::get_crate_deps(cdata).iter().map(|dep| {
             debug!("resolving dep crate {} hash: `{}`", dep.name, dep.hash);
             let (local_cnum, _, _) = self.resolve_crate(root,
-                                                   dep.name[],
-                                                   dep.name[],
+                                                   dep.name.index(&FullRange),
+                                                   dep.name.index(&FullRange),
                                                    Some(&dep.hash),
                                                    span,
                                                    PathKind::Dependency);
@@ -470,7 +447,7 @@ impl<'a> CrateReader<'a> {
     pub fn read_plugin_metadata<'b>(&'b mut self,
                                     vi: &'b ast::ViewItem) -> PluginMetadata<'b> {
         let info = self.extract_crate_info(vi).unwrap();
-        let target_triple = self.sess.opts.target_triple[];
+        let target_triple = self.sess.opts.target_triple.index(&FullRange);
         let is_cross = target_triple != config::host_triple();
         let mut should_link = info.should_link && !is_cross;
         let mut target_only = false;
@@ -479,8 +456,8 @@ impl<'a> CrateReader<'a> {
         let mut load_ctxt = loader::Context {
             sess: self.sess,
             span: vi.span,
-            ident: ident[],
-            crate_name: name[],
+            ident: ident.index(&FullRange),
+            crate_name: name.index(&FullRange),
             hash: None,
             filesearch: self.sess.host_filesearch(PathKind::Crate),
             triple: config::host_triple(),
@@ -505,11 +482,11 @@ impl<'a> CrateReader<'a> {
         };
 
         let dylib = library.dylib.clone();
-        let register = should_link && self.existing_match(info.name[], None).is_none();
+        let register = should_link && self.existing_match(info.name.as_slice(), None).is_none();
         let metadata = if register {
             // Register crate now to avoid double-reading metadata
-            let (_, cmd, _) = self.register_crate(&None, info.ident[],
-                                info.name[], vi.span, library);
+            let (_, cmd, _) = self.register_crate(&None, info.ident.index(&FullRange),
+                                info.name.index(&FullRange), vi.span, library);
             PMDSource::Registered(cmd)
         } else {
             // Not registering the crate; just hold on to the metadata
@@ -530,8 +507,8 @@ impl<'a> CrateReader<'a> {
 impl<'a> PluginMetadata<'a> {
     /// Read exported macros
     pub fn exported_macros(&self) -> Vec<ast::MacroDef> {
-        let imported_from = Some(token::intern(self.info.ident[]).ident());
-        let source_name = format!("<{} macros>", self.info.ident[]);
+        let imported_from = Some(token::intern(self.info.ident.index(&FullRange)).ident());
+        let source_name = format!("<{} macros>", self.info.ident.index(&FullRange));
         let mut macros = vec![];
         decoder::each_exported_macro(self.metadata.as_slice(),
                                      &*self.sess.cstore.intr,
@@ -573,7 +550,7 @@ impl<'a> PluginMetadata<'a> {
                                   self.info.ident,
                                   config::host_triple(),
                                   self.sess.opts.target_triple);
-            self.sess.span_err(self.vi_span, message[]);
+            self.sess.span_err(self.vi_span, message.index(&FullRange));
             self.sess.abort_if_errors();
         }
 
@@ -586,7 +563,7 @@ impl<'a> PluginMetadata<'a> {
                 let message = format!("plugin crate `{}` only found in rlib format, \
                                        but must be available in dylib format",
                                        self.info.ident);
-                self.sess.span_err(self.vi_span, message[]);
+                self.sess.span_err(self.vi_span, message.index(&FullRange));
                 // No need to abort because the loading code will just ignore this
                 // empty dylib.
                 None

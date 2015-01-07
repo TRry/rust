@@ -37,7 +37,7 @@ use error::{FromError, Error};
 use fmt;
 use io::{IoResult, IoError};
 use iter::{Iterator, IteratorExt};
-use kinds::Copy;
+use marker::Copy;
 use libc::{c_void, c_int, c_char};
 use libc;
 use boxed::Box;
@@ -93,7 +93,7 @@ pub const TMPBUF_SZ : uint = 1000u;
 ///
 /// // We assume that we are in a valid directory.
 /// let current_working_directory = os::getcwd().unwrap();
-/// println!("The current directory is {}", current_working_directory.display());
+/// println!("The current directory is {:?}", current_working_directory.display());
 /// ```
 pub fn getcwd() -> IoResult<Path> {
     sys::os::getcwd()
@@ -646,6 +646,7 @@ fn real_args_as_bytes() -> Vec<Vec<u8>> {
 // res
 #[cfg(target_os = "ios")]
 fn real_args_as_bytes() -> Vec<Vec<u8>> {
+    use ffi::c_str_to_bytes;
     use iter::range;
     use mem;
 
@@ -680,8 +681,7 @@ fn real_args_as_bytes() -> Vec<Vec<u8>> {
             let tmp = objc_msgSend(args, objectAtSel, i);
             let utf_c_str: *const libc::c_char =
                 mem::transmute(objc_msgSend(tmp, utf8Sel));
-            let s = CString::new(utf_c_str, false);
-            res.push(s.as_bytes_no_nul().to_vec())
+            res.push(c_str_to_bytes(&utf_c_str).to_vec());
         }
     }
 
@@ -934,7 +934,7 @@ impl fmt::Show for MapError {
 
 impl Error for MapError {
     fn description(&self) -> &str { "memory map error" }
-    fn detail(&self) -> Option<String> { Some(self.to_string()) }
+    fn detail(&self) -> Option<String> { Some(format!("{:?}", self)) }
 }
 
 impl FromError<MapError> for Box<Error> {
@@ -1622,7 +1622,7 @@ mod tests {
             os::MapOption::MapWritable
         ]) {
             Ok(chunk) => chunk,
-            Err(msg) => panic!("{}", msg)
+            Err(msg) => panic!("{:?}", msg)
         };
         assert!(chunk.len >= 16);
 
