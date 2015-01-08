@@ -392,7 +392,7 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
         // `$1`), on the condition that `$1 : Eq`. We will then wind
         // up with many candidates (since that are other `Eq` impls
         // that apply) and try to winnow things down. This results in
-        // a recurssive evaluation that `$1 : Eq` -- as you can
+        // a recursive evaluation that `$1 : Eq` -- as you can
         // imagine, this is just where we started. To avoid that, we
         // check for unbound variables and return an ambiguous (hence possible)
         // match if we've seen this trait before.
@@ -604,7 +604,7 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
         }
 
         // If there are *STILL* multiple candidates, give up and
-        // report ambiguiuty.
+        // report ambiguity.
         if candidates.len() > 1 {
             debug!("multiple matches, ambig");
             return Ok(None);
@@ -835,7 +835,7 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
                bounds.repr(self.tcx()));
 
         let matching_bound =
-            util::elaborate_predicates(self.tcx(), bounds.predicates.to_vec())
+            util::elaborate_predicates(self.tcx(), bounds.predicates.into_vec())
             .filter_to_traits()
             .find(
                 |bound| self.infcx.probe(
@@ -903,7 +903,7 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
 
         let all_bounds =
             util::transitive_bounds(
-                self.tcx(), caller_trait_refs.index(&FullRange));
+                self.tcx(), &caller_trait_refs[]);
 
         let matching_bounds =
             all_bounds.filter(
@@ -1119,7 +1119,7 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
     ///
     /// This is generally true if either:
     /// - candidate i and candidate j are equivalent; or,
-    /// - candidate i is a conrete impl and candidate j is a where clause bound,
+    /// - candidate i is a concrete impl and candidate j is a where clause bound,
     ///   and the concrete impl is applicable to the types in the where clause bound.
     ///
     /// The last case refers to cases where there are blanket impls (often conditional
@@ -1457,17 +1457,32 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
                 Ok(AmbiguousBuiltin)
             }
 
+            ty::ty_open(ty) => {
+                // these only crop up in trans, and represent an
+                // "opened" unsized/existential type (one that has
+                // been dereferenced)
+                match bound {
+                    ty::BoundCopy |
+                    ty::BoundSync |
+                    ty::BoundSend => {
+                        Ok(If(vec!(ty)))
+                    }
+
+                    ty::BoundSized => {
+                        Err(Unimplemented)
+                    }
+                }
+            }
             ty::ty_err => {
                 Ok(If(Vec::new()))
             }
 
-            ty::ty_open(_) |
             ty::ty_infer(ty::FreshTy(_)) |
             ty::ty_infer(ty::FreshIntTy(_)) => {
                 self.tcx().sess.bug(
-                    format!(
+                    &format!(
                         "asked to assemble builtin bounds of unexpected type: {}",
-                        self_ty.repr(self.tcx())).index(&FullRange));
+                        self_ty.repr(self.tcx()))[]);
             }
         };
 
@@ -1636,8 +1651,8 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
             AmbiguousBuiltin | ParameterBuiltin => {
                 self.tcx().sess.span_bug(
                     obligation.cause.span,
-                    format!("builtin bound for {} was ambig",
-                            obligation.repr(self.tcx())).index(&FullRange));
+                    &format!("builtin bound for {} was ambig",
+                            obligation.repr(self.tcx()))[]);
             }
         }
     }
@@ -1815,8 +1830,8 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
             _ => {
                 self.tcx().sess.span_bug(
                     obligation.cause.span,
-                    format!("Fn pointer candidate for inappropriate self type: {}",
-                            self_ty.repr(self.tcx())).index(&FullRange));
+                    &format!("Fn pointer candidate for inappropriate self type: {}",
+                            self_ty.repr(self.tcx()))[]);
             }
         };
 
@@ -1944,9 +1959,9 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
             }
             Err(()) => {
                 self.tcx().sess.bug(
-                    format!("Impl {} was matchable against {} but now is not",
+                    &format!("Impl {} was matchable against {} but now is not",
                             impl_def_id.repr(self.tcx()),
-                            obligation.repr(self.tcx())).index(&FullRange));
+                            obligation.repr(self.tcx()))[]);
             }
         }
     }

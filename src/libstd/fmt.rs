@@ -106,7 +106,7 @@
 //! ```
 //!
 //! This is invalid because the first argument is both referred to as a
-//! hexidecimal as well as an
+//! hexadecimal as well as an
 //! octal.
 //!
 //! There are various parameters which do require a particular type, however.
@@ -175,7 +175,7 @@
 //! use std::f64;
 //! use std::num::Float;
 //!
-//! #[deriving(Show)]
+//! #[derive(Show)]
 //! struct Vector2D {
 //!     x: int,
 //!     y: int,
