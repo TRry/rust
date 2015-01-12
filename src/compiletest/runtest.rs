@@ -104,7 +104,7 @@ fn run_cfail_test(config: &Config, props: &TestProps, testfile: &Path) {
         if !props.error_patterns.is_empty() {
             fatal("both error pattern and expected errors specified");
         }
-        check_expected_errors(props, expected_errors, testfile, &proc_res);
+        check_expected_errors(expected_errors, testfile, &proc_res);
     } else {
         check_error_patterns(props, testfile, output_to_check.as_slice(), &proc_res);
     }
@@ -941,8 +941,7 @@ fn check_forbid_output(props: &TestProps,
     }
 }
 
-fn check_expected_errors(props: &TestProps,
-                         expected_errors: Vec<errors::ExpectedError> ,
+fn check_expected_errors(expected_errors: Vec<errors::ExpectedError> ,
                          testfile: &Path,
                          proc_res: &ProcRes) {
 
@@ -967,6 +966,16 @@ fn check_expected_errors(props: &TestProps,
         line.starts_with( prefix )
     }
 
+    // A multi-line error will have followup lines which will always
+    // start with one of these strings.
+    fn continuation( line: &str) -> bool {
+        line.starts_with(" expected") ||
+        line.starts_with("    found") ||
+        //                1234
+        // Should have 4 spaces: see issue 18946
+        line.starts_with("(")
+    }
+
     // Scan and extract our error/warning messages,
     // which look like:
     //    filename:line1:col1: line2:col2: *error:* msg
@@ -982,7 +991,7 @@ fn check_expected_errors(props: &TestProps,
                        ee.kind,
                        ee.msg,
                        line);
-                if prefix_matches(line, prefixes[i].as_slice()) &&
+                if (prefix_matches(line, prefixes[i].as_slice()) || continuation(line)) &&
                     line.contains(ee.kind.as_slice()) &&
                     line.contains(ee.msg.as_slice()) {
                     found_flags[i] = true;
@@ -994,11 +1003,6 @@ fn check_expected_errors(props: &TestProps,
 
         // ignore this msg which gets printed at the end
         if line.contains("aborting due to") {
-            was_expected = true;
-        }
-
-        if line.starts_with("<command line option>") &&
-           props.ignore_command_line {
             was_expected = true;
         }
 

@@ -101,6 +101,8 @@ pub trait Iterator {
 
 /// Conversion from an `Iterator`
 #[stable]
+#[rustc_on_unimplemented="a collection of type `{Self}` cannot be \
+                          built from an iterator over elements of type `{A}`"]
 pub trait FromIterator<A> {
     /// Build a container with elements from an external iterator.
     fn from_iter<T: Iterator<Item=A>>(iterator: T) -> Self;
@@ -110,6 +112,7 @@ pub trait FromIterator<A> {
 #[stable]
 pub trait Extend<A> {
     /// Extend a container with the elements yielded by an arbitrary iterator
+    #[stable]
     fn extend<T: Iterator<Item=A>>(&mut self, iterator: T);
 }
 
@@ -965,6 +968,7 @@ impl<I> IteratorExt for I where I: Iterator {}
 #[stable]
 pub trait DoubleEndedIterator: Iterator {
     /// Yield an element from the end of the range, returning `None` if the range is empty.
+    #[stable]
     fn next_back(&mut self) -> Option<Self::Item>;
 }
 
