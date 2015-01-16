@@ -129,17 +129,17 @@ prepare-target-$(2)-host-$(3)-$(1)-$(4): prepare-maybe-clean-$(4) \
 # *not* install the rlibs for host crates because there's no need to statically
 # link against most of them. They just produce a large amount of extra size
 # bloat.
-	$$(if $$(findstring $(1), $$(PREPARE_STAGE)),\
-      $$(if $$(findstring $(2), $$(PREPARE_TARGETS)),\
-        $$(if $$(findstring $(3), $$(PREPARE_HOST)),\
-          $$(call PREPARE_DIR,$$(PREPARE_WORKING_DEST_LIB_DIR))\
-          $$(foreach crate,$$(TARGET_CRATES),\
-	    $$(if $$(or $$(findstring 1, $$(ONLY_RLIB_$$(crate))),$$(findstring 1,$$(CFG_LIB_SKIP_INSTALL_$(2)))),,\
-              $$(call PREPARE_LIB,$$(call CFG_LIB_GLOB_$(2),$$(crate))))\
-            $$(call PREPARE_LIB,$$(call CFG_RLIB_GLOB,$$(crate))))\
-          $$(if $$(findstring $(2),$$(CFG_HOST)),\
-            $$(foreach crate,$$(HOST_CRATES),\
-              $$(call PREPARE_LIB,$$(call CFG_LIB_GLOB_$(2),$$(crate)))),)\
+	$$(if $$(findstring $(1), $$(PREPARE_STAGE)), \
+      $$(if $$(findstring $(2), $$(PREPARE_TARGETS)), \
+        $$(if $$(findstring $(3), $$(PREPARE_HOST)), \
+          $$(call PREPARE_DIR,$$(PREPARE_WORKING_DEST_LIB_DIR)) \
+          $$(foreach crate,$$(TARGET_CRATES), \
+	    $$(if $$(or $$(findstring 1, $$(ONLY_RLIB_$$(crate))),$$(findstring 1,$$(CFG_INSTALL_ONLY_RLIB_$(2)))),, \
+              $$(call PREPARE_LIB,$$(call CFG_LIB_GLOB_$(2),$$(crate)))) \
+            $$(call PREPARE_LIB,$$(call CFG_RLIB_GLOB,$$(crate)))) \
+          $$(if $$(findstring $(2),$$(CFG_HOST)), \
+            $$(foreach crate,$$(HOST_CRATES), \
+              $$(call PREPARE_LIB,$$(call CFG_LIB_GLOB_$(2),$$(crate)))),) \
           $$(call PREPARE_LIB,libmorestack.a) \
           $$(call PREPARE_LIB,libcompiler-rt.a),),),)
 endef

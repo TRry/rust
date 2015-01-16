@@ -1,4 +1,4 @@
-// Copyright 2013 The Rust Project Developers. See the COPYRIGHT
+// Copyright 2014 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
 //
@@ -8,8 +8,10 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+use std::borrow::IntoCow;
+
 fn main() {
-    struct S(isize);
-    let s = S(0);
-    let x = *s; //~ ERROR single-field tuple-structs can no longer be dereferenced
+    <String as IntoCow>::into_cow("foo".to_string());
+    //~^ ERROR wrong number of type arguments: expected 2, found 0
 }
+
