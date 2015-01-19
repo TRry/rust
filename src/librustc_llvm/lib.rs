@@ -26,8 +26,10 @@
 #![feature(link_args)]
 #![feature(box_syntax)]
 #![allow(unknown_features)] #![feature(int_uint)]
+#![allow(unstable)]
 
 extern crate libc;
+#[macro_use] #[no_link] extern crate rustc_bitflags;
 
 pub use self::OtherAttribute::*;
 pub use self::SpecialAttribute::*;
@@ -304,7 +306,7 @@ pub enum RealPredicate {
 
 // The LLVM TypeKind type - must stay in sync with the def of
 // LLVMTypeKind in llvm/include/llvm-c/Core.h
-#[derive(Copy, PartialEq)]
+#[derive(Copy, PartialEq, Show)]
 #[repr(C)]
 pub enum TypeKind {
     Void      = 0,

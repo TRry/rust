@@ -947,13 +947,6 @@ impl<'tcx> PartialEq for TyS<'tcx> {
 }
 impl<'tcx> Eq for TyS<'tcx> {}
 
-#[cfg(stage0)]
-impl<'tcx, S: Writer> Hash<S> for TyS<'tcx> {
-    fn hash(&self, s: &mut S) {
-        (self as *const _).hash(s)
-    }
-}
-#[cfg(not(stage0))]
 impl<'tcx, S: Writer + Hasher> Hash<S> for TyS<'tcx> {
     fn hash(&self, s: &mut S) {
         (self as *const _).hash(s)
@@ -1891,7 +1884,7 @@ pub type PolyTypeOutlivesPredicate<'tcx> = PolyOutlivesPredicate<Ty<'tcx>, ty::R
 /// normal trait predicate (`T : TraitRef<...>`) and one of these
 /// predicates. Form #2 is a broader form in that it also permits
 /// equality between arbitrary types. Processing an instance of Form
-/// \#2 eventually yields one of these `ProjectionPredicate`
+/// #2 eventually yields one of these `ProjectionPredicate`
 /// instances to normalize the LHS.
 #[derive(Clone, PartialEq, Eq, Hash, Show)]
 pub struct ProjectionPredicate<'tcx> {
@@ -5035,6 +5028,23 @@ pub fn trait_items<'tcx>(cx: &ctxt<'tcx>, trait_did: ast::DefId)
     }
 }
 
+pub fn trait_impl_polarity<'tcx>(cx: &ctxt<'tcx>, id: ast::DefId)
+                            -> Option<ast::ImplPolarity> {
+     if id.krate == ast::LOCAL_CRATE {
+         match cx.map.find(id.node) {
+             Some(ast_map::NodeItem(item)) => {
+                 match item.node {
+                     ast::ItemImpl(_, polarity, _, _, _, _) => Some(polarity),
+                     _ => None
+                 }
+             }
+             _ => None
+         }
+     } else {
+         csearch::get_impl_polarity(cx, id)
+     }
+}
+
 pub fn impl_or_trait_item<'tcx>(cx: &ctxt<'tcx>, id: ast::DefId)
                                 -> ImplOrTraitItem<'tcx> {
     lookup_locally_or_in_crate_store("impl_or_trait_items",
@@ -5984,6 +5994,7 @@ pub fn item_variances(tcx: &ctxt, item_id: ast::DefId) -> Rc<ItemVariances> {
 pub fn record_trait_implementation(tcx: &ctxt,
                                    trait_def_id: DefId,
                                    impl_def_id: DefId) {
+
     match tcx.trait_impls.borrow().get(&trait_def_id) {
         Some(impls_for_trait) => {
             impls_for_trait.borrow_mut().push(impl_def_id);
@@ -5991,6 +6002,7 @@ pub fn record_trait_implementation(tcx: &ctxt,
         }
         None => {}
     }
+
     tcx.trait_impls.borrow_mut().insert(trait_def_id, Rc::new(RefCell::new(vec!(impl_def_id))));
 }
 
