@@ -1,4 +1,4 @@
-// Copyright 2014 The Rust Project Developers. See the COPYRIGHT
+// Copyright 2015 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
 //
@@ -8,8 +8,18 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#![feature(main)]
+// Makes sure that zero-initializing large types is reasonably fast,
+// Doing it incorrectly causes massive slowdown in LLVM during
+// optimisation.
 
-#[main]
-fn foo() {
+#![feature(intrinsics)]
+
+extern "rust-intrinsic" {
+    pub fn init<T>() -> T;
+}
+
+const SIZE: usize = 1024 * 1024;
+
+fn main() {
+    let _memory: [u8; SIZE] = unsafe { init() };
 }

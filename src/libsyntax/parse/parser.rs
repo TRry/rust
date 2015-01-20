@@ -19,7 +19,8 @@ use ast::{Mod, BiAdd, Arg, Arm, Attribute, BindByRef, BindByValue};
 use ast::{BiBitAnd, BiBitOr, BiBitXor, BiRem, BiLt, BiGt, Block};
 use ast::{BlockCheckMode, CaptureByRef, CaptureByValue, CaptureClause};
 use ast::{Crate, CrateConfig, Decl, DeclItem};
-use ast::{DeclLocal, DefaultBlock, UnDeref, BiDiv, EMPTY_CTXT, EnumDef, ExplicitSelf};
+use ast::{DeclLocal, DefaultBlock, DefaultReturn};
+use ast::{UnDeref, BiDiv, EMPTY_CTXT, EnumDef, ExplicitSelf};
 use ast::{Expr, Expr_, ExprAddrOf, ExprMatch, ExprAgain};
 use ast::{ExprAssign, ExprAssignOp, ExprBinary, ExprBlock, ExprBox};
 use ast::{ExprBreak, ExprCall, ExprCast};
@@ -1426,11 +1427,7 @@ impl<'a> Parser<'a> {
             }
         } else {
             let pos = self.span.lo;
-            Return(P(Ty {
-                id: ast::DUMMY_NODE_ID,
-                node: TyTup(vec![]),
-                span: mk_sp(pos, pos),
-            }))
+            DefaultReturn(mk_sp(pos, pos))
         }
     }
 
@@ -3258,39 +3255,48 @@ impl<'a> Parser<'a> {
                 break;
             }
 
-            let bind_type = if self.eat_keyword(keywords::Mut) {
-                BindByValue(MutMutable)
-            } else if self.eat_keyword(keywords::Ref) {
-                BindByRef(self.parse_mutability())
-            } else {
-                BindByValue(MutImmutable)
-            };
-
-            let fieldname = self.parse_ident();
-
-            let (subpat, is_shorthand) = if self.check(&token::Colon) {
-                match bind_type {
-                    BindByRef(..) | BindByValue(MutMutable) => {
-                        let token_str = self.this_token_to_string();
-                        self.fatal(&format!("unexpected `{}`",
-                                           token_str)[])
-                    }
-                    _ => {}
-                }
-
+            // Check if a colon exists one ahead. This means we're parsing a fieldname.
+            let (subpat, fieldname, is_shorthand) = if self.look_ahead(1, |t| t == &token::Colon) {
+                // Parsing a pattern of the form "fieldname: pat"
+                let fieldname = self.parse_ident();
                 self.bump();
                 let pat = self.parse_pat();
                 hi = pat.span.hi;
-                (pat, false)
+                (pat, fieldname, false)
             } else {
+                // Parsing a pattern of the form "(box) (ref) (mut) fieldname"
+                let is_box = self.eat_keyword(keywords::Box);
+                let boxed_span_lo = self.span.lo;
+                let is_ref = self.eat_keyword(keywords::Ref);
+                let is_mut = self.eat_keyword(keywords::Mut);
+                let fieldname = self.parse_ident();
                 hi = self.last_span.hi;
-                let fieldpath = codemap::Spanned{span:self.last_span, node: fieldname};
-                (P(ast::Pat {
+
+                let bind_type = match (is_ref, is_mut) {
+                    (true, true) => BindByRef(MutMutable),
+                    (true, false) => BindByRef(MutImmutable),
+                    (false, true) => BindByValue(MutMutable),
+                    (false, false) => BindByValue(MutImmutable),
+                };
+                let fieldpath = codemap::Spanned{span:self.last_span, node:fieldname};
+                let fieldpat = P(ast::Pat{
                     id: ast::DUMMY_NODE_ID,
                     node: PatIdent(bind_type, fieldpath, None),
-                    span: self.last_span
-                }), true)
+                    span: mk_sp(boxed_span_lo, hi),
+                });
+
+                let subpat = if is_box {
+                    P(ast::Pat{
+                        id: ast::DUMMY_NODE_ID,
+                        node: PatBox(fieldpat),
+                        span: mk_sp(lo, hi),
+                    })
+                } else {
+                    fieldpat
+                };
+                (subpat, fieldname, true)
             };
+
             fields.push(codemap::Spanned { span: mk_sp(lo, hi),
                                            node: ast::FieldPat { ident: fieldname,
                                                                  pat: subpat,
@@ -4550,15 +4556,7 @@ impl<'a> Parser<'a> {
                 (optional_unboxed_closure_kind, args)
             }
         };
-        let output = if self.check(&token::RArrow) {
-            self.parse_ret_ty()
-        } else {
-            Return(P(Ty {
-                id: ast::DUMMY_NODE_ID,
-                node: TyInfer,
-                span: self.span,
-            }))
-        };
+        let output = self.parse_ret_ty();
 
         (P(FnDecl {
             inputs: inputs_captures,
@@ -4575,15 +4573,7 @@ impl<'a> Parser<'a> {
                                      seq_sep_trailing_allowed(token::Comma),
                                      |p| p.parse_fn_block_arg());
 
-        let output = if self.check(&token::RArrow) {
-            self.parse_ret_ty()
-        } else {
-            Return(P(Ty {
-                id: ast::DUMMY_NODE_ID,
-                node: TyInfer,
-                span: self.span,
-            }))
-        };
+        let output = self.parse_ret_ty();
 
         P(FnDecl {
             inputs: inputs,
