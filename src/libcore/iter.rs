@@ -33,7 +33,7 @@
 //! translated to the `loop` below.
 //!
 //! ```
-//! let values = vec![1i, 2, 3];
+//! let values = vec![1, 2, 3];
 //!
 //! // "Syntactical sugar" taking advantage of an iterator
 //! for &x in values.iter() {
@@ -82,6 +82,8 @@ use usize;
 /// else.
 #[lang="iterator"]
 #[stable]
+#[rustc_on_unimplemented = "`{Self}` is not an iterator; maybe try calling `.iter()` or a similar \
+                            method"]
 pub trait Iterator {
     #[stable]
     type Item;
@@ -615,7 +617,7 @@ pub trait IteratorExt: Iterator + Sized {
     /// # Examples
     ///
     /// ```
-    /// let a = [1i, 2, 3, 4, 5];
+    /// let a = [1, 2, 3, 4, 5];
     /// assert!(a.iter().all(|x| *x > 0));
     /// assert!(!a.iter().all(|x| *x > 2));
     /// ```
@@ -1128,6 +1130,9 @@ impl<'a, I> DoubleEndedIterator for ByRef<'a, I> where I: 'a + DoubleEndedIterat
     fn next_back(&mut self) -> Option<<I as Iterator>::Item> { self.iter.next_back() }
 }
 
+#[stable]
+impl<'a, I> ExactSizeIterator for ByRef<'a, I> where I: 'a + ExactSizeIterator {}
+
 /// A trait for iterators over elements which can be added together
 #[unstable = "needs to be re-evaluated as part of numerics reform"]
 pub trait AdditiveIterator<A> {
@@ -1138,7 +1143,7 @@ pub trait AdditiveIterator<A> {
     /// ```
     /// use std::iter::AdditiveIterator;
     ///
-    /// let a = [1i, 2, 3, 4, 5];
+    /// let a = [1i32, 2, 3, 4, 5];
     /// let mut it = a.iter().map(|&x| x);
     /// assert!(it.sum() == 15);
     /// ```
@@ -1180,7 +1185,7 @@ pub trait MultiplicativeIterator<A> {
     /// use std::iter::{count, MultiplicativeIterator};
     ///
     /// fn factorial(n: usize) -> usize {
-    ///     count(1u, 1).take_while(|&i| i <= n).product()
+    ///     count(1, 1).take_while(|&i| i <= n).product()
     /// }
     /// assert!(factorial(0) == 1);
     /// assert!(factorial(1) == 1);
@@ -1832,6 +1837,9 @@ impl<T, I> Iterator for Peekable<T, I> where I: Iterator<Item=T> {
 }
 
 #[stable]
+impl<T, I> ExactSizeIterator for Peekable<T, I> where I: ExactSizeIterator<Item = T> {}
+
+#[stable]
 impl<T, I> Peekable<T, I> where I: Iterator<Item=T> {
     /// Return a reference to the next element of the iterator with out advancing it,
     /// or None if the iterator is exhausted.
@@ -2023,6 +2031,9 @@ impl<I> RandomAccessIterator for Skip<I> where I: RandomAccessIterator{
     }
 }
 
+#[stable]
+impl<I> ExactSizeIterator for Skip<I> where I: ExactSizeIterator {}
+
 /// An iterator that only iterates over the first `n` iterations of `iter`.
 #[derive(Clone)]
 #[must_use = "iterator adaptors are lazy and do nothing unless consumed"]
@@ -2077,6 +2088,9 @@ impl<I> RandomAccessIterator for Take<I> where I: RandomAccessIterator{
         }
     }
 }
+
+#[stable]
+impl<I> ExactSizeIterator for Take<I> where I: ExactSizeIterator {}
 
 
 /// An iterator to maintain state while iterating another iterator
@@ -2286,6 +2300,9 @@ impl<I> RandomAccessIterator for Fuse<I> where I: RandomAccessIterator {
         self.iter.idx(index)
     }
 }
+
+#[stable]
+impl<I> ExactSizeIterator for Fuse<I> where I: ExactSizeIterator {}
 
 impl<I> Fuse<I> {
     /// Resets the fuse such that the next call to .next() or .next_back() will
@@ -2511,7 +2528,7 @@ pub struct Range<A> {
 /// ```
 /// let array = [0, 1, 2, 3, 4];
 ///
-/// for i in range(0, 5u) {
+/// for i in range(0, 5) {
 ///     println!("{}", i);
 ///     assert_eq!(i,  array[i]);
 /// }

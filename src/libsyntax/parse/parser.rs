@@ -28,8 +28,8 @@ use ast::{ExprLit, ExprLoop, ExprMac, ExprRange};
 use ast::{ExprMethodCall, ExprParen, ExprPath, ExprQPath};
 use ast::{ExprRepeat, ExprRet, ExprStruct, ExprTup, ExprUnary};
 use ast::{ExprVec, ExprWhile, ExprWhileLet, ExprForLoop, Field, FnDecl};
-use ast::{FnUnboxedClosureKind, FnMutUnboxedClosureKind};
-use ast::{FnOnceUnboxedClosureKind};
+use ast::{FnClosureKind, FnMutClosureKind};
+use ast::{FnOnceClosureKind};
 use ast::{ForeignItem, ForeignItemStatic, ForeignItemFn, ForeignMod, FunctionRetTy};
 use ast::{Ident, Inherited, ImplItem, Item, Item_, ItemStatic};
 use ast::{ItemEnum, ItemFn, ItemForeignMod, ItemImpl, ItemConst};
@@ -57,7 +57,7 @@ use ast::{TyFixedLengthVec, TyBareFn};
 use ast::{TyTypeof, TyInfer, TypeMethod};
 use ast::{TyParam, TyParamBound, TyParen, TyPath, TyPolyTraitRef, TyPtr, TyQPath};
 use ast::{TyRptr, TyTup, TyU32, TyVec, UnUniq};
-use ast::{TypeImplItem, TypeTraitItem, Typedef, UnboxedClosureKind};
+use ast::{TypeImplItem, TypeTraitItem, Typedef, ClosureKind};
 use ast::{UnnamedField, UnsafeBlock};
 use ast::{ViewPath, ViewPathGlob, ViewPathList, ViewPathSimple};
 use ast::{Visibility, WhereClause};
@@ -1133,27 +1133,26 @@ impl<'a> Parser<'a> {
         TyInfer
     }
 
-    /// Parses an optional unboxed closure kind (`&:`, `&mut:`, or `:`).
-    pub fn parse_optional_unboxed_closure_kind(&mut self)
-                                               -> Option<UnboxedClosureKind> {
+    /// Parses an optional closure kind (`&:`, `&mut:`, or `:`).
+    pub fn parse_optional_closure_kind(&mut self) -> Option<ClosureKind> {
         if self.check(&token::BinOp(token::And)) &&
                 self.look_ahead(1, |t| t.is_keyword(keywords::Mut)) &&
                 self.look_ahead(2, |t| *t == token::Colon) {
             self.bump();
             self.bump();
             self.bump();
-            return Some(FnMutUnboxedClosureKind)
+            return Some(FnMutClosureKind)
         }
 
         if self.token == token::BinOp(token::And) &&
                     self.look_ahead(1, |t| *t == token::Colon) {
             self.bump();
             self.bump();
-            return Some(FnUnboxedClosureKind)
+            return Some(FnClosureKind)
         }
 
         if self.eat(&token::Colon) {
-            return Some(FnOnceUnboxedClosureKind)
+            return Some(FnOnceClosureKind)
         }
 
         return None
@@ -2840,6 +2839,7 @@ impl<'a> Parser<'a> {
 
         self.expected_tokens.push(TokenType::Operator);
 
+        let cur_op_span = self.span;
         let cur_opt = self.token.to_binop();
         match cur_opt {
             Some(cur_op) => {
@@ -2853,7 +2853,7 @@ impl<'a> Parser<'a> {
                     let rhs = self.parse_more_binops(expr, cur_prec + 1);
                     let lhs_span = lhs.span;
                     let rhs_span = rhs.span;
-                    let binary = self.mk_binary(cur_op, lhs, rhs);
+                    let binary = self.mk_binary(codemap::respan(cur_op_span, cur_op), lhs, rhs);
                     let bin = self.mk_expr(lhs_span.lo, rhs_span.hi, binary);
                     self.parse_more_binops(bin, min_prec)
                 } else {
@@ -2877,16 +2877,17 @@ impl<'a> Parser<'a> {
     /// Produce an error if comparison operators are chained (RFC #558).
     /// We only need to check lhs, not rhs, because all comparison ops
     /// have same precedence and are left-associative
-    fn check_no_chained_comparison(&mut self, lhs: &Expr, outer_op: ast::BinOp) {
+    fn check_no_chained_comparison(&mut self, lhs: &Expr, outer_op: ast::BinOp_) {
         debug_assert!(ast_util::is_comparison_binop(outer_op));
         match lhs.node {
-            ExprBinary(op, _, _) if ast_util::is_comparison_binop(op) => {
-                let op_span = self.span;
+            ExprBinary(op, _, _) if ast_util::is_comparison_binop(op.node) => {
+                // respan to include both operators
+                let op_span = mk_sp(op.span.lo, self.span.hi);
                 self.span_err(op_span,
-                    "Chained comparison operators require parentheses");
-                if op == BiLt && outer_op == BiGt {
+                    "chained comparison operators require parentheses");
+                if op.node == BiLt && outer_op == BiGt {
                     self.span_help(op_span,
-                        "use ::< instead of < if you meant to specify type arguments");
+                        "use `::<...>` instead of `<...>` if you meant to specify type arguments");
                 }
             }
             _ => {}
@@ -2919,6 +2920,7 @@ impl<'a> Parser<'a> {
 
     pub fn parse_assign_expr_with(&mut self, lhs: P<Expr>) -> P<Expr> {
         let restrictions = self.restrictions & RESTRICTION_NO_STRUCT_LITERAL;
+        let op_span = self.span;
         match self.token {
           token::Eq => {
               self.bump();
@@ -2942,7 +2944,7 @@ impl<'a> Parser<'a> {
               };
               let rhs_span = rhs.span;
               let span = lhs.span;
-              let assign_op = self.mk_assign_op(aop, lhs, rhs);
+              let assign_op = self.mk_assign_op(codemap::respan(op_span, aop), lhs, rhs);
               self.mk_expr(span.lo, rhs_span.hi, assign_op)
           }
           // A range expression, either `expr..expr` or `expr..`.
@@ -3020,8 +3022,7 @@ impl<'a> Parser<'a> {
                              -> P<Expr>
     {
         let lo = self.span.lo;
-        let (decl, optional_unboxed_closure_kind) =
-            self.parse_fn_block_decl();
+        let (decl, optional_closure_kind) = self.parse_fn_block_decl();
         let body = self.parse_expr();
         let fakeblock = P(ast::Block {
             id: ast::DUMMY_NODE_ID,
@@ -3034,7 +3035,7 @@ impl<'a> Parser<'a> {
         self.mk_expr(
             lo,
             fakeblock.span.hi,
-            ExprClosure(capture_clause, optional_unboxed_closure_kind, decl, fakeblock))
+            ExprClosure(capture_clause, optional_closure_kind, decl, fakeblock))
     }
 
     pub fn parse_else_expr(&mut self) -> P<Expr> {
@@ -4503,22 +4504,21 @@ impl<'a> Parser<'a> {
     }
 
     // parse the |arg, arg| header on a lambda
-    fn parse_fn_block_decl(&mut self)
-                           -> (P<FnDecl>, Option<UnboxedClosureKind>) {
-        let (optional_unboxed_closure_kind, inputs_captures) = {
+    fn parse_fn_block_decl(&mut self) -> (P<FnDecl>, Option<ClosureKind>) {
+        let (optional_closure_kind, inputs_captures) = {
             if self.eat(&token::OrOr) {
                 (None, Vec::new())
             } else {
                 self.expect(&token::BinOp(token::Or));
-                let optional_unboxed_closure_kind =
-                    self.parse_optional_unboxed_closure_kind();
+                let optional_closure_kind =
+                    self.parse_optional_closure_kind();
                 let args = self.parse_seq_to_before_end(
                     &token::BinOp(token::Or),
                     seq_sep_trailing_allowed(token::Comma),
                     |p| p.parse_fn_block_arg()
                 );
                 self.bump();
-                (optional_unboxed_closure_kind, args)
+                (optional_closure_kind, args)
             }
         };
         let output = self.parse_ret_ty();
@@ -4527,7 +4527,7 @@ impl<'a> Parser<'a> {
             inputs: inputs_captures,
             output: output,
             variadic: false
-        }), optional_unboxed_closure_kind)
+        }), optional_closure_kind)
     }
 
     /// Parses the `(arg, arg) -> return_type` header on a procedure.

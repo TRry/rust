@@ -8,19 +8,14 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use regex::Regex;
-static RE: Regex = regex!(r"\d+");
+#![no_implicit_prelude]
 
-#[test]
-fn static_splitn() {
-    let text = "cauchy123plato456tyler789binx";
-    let subs: Vec<&str> = RE.splitn(text, 2).collect();
-    assert_eq!(subs, vec!("cauchy", "plato456tyler789binx"));
+trait Iterator {
+    type Item;
 }
 
-#[test]
-fn static_split() {
-    let text = "cauchy123plato456tyler789binx";
-    let subs: Vec<&str> = RE.split(text).collect();
-    assert_eq!(subs, vec!("cauchy", "plato", "tyler", "binx"));
+impl<'a, T> Iterator for &'a mut (Iterator<Item=T> + 'a) {
+    type Item = T;
 }
+
+fn main() {}

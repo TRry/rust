@@ -160,7 +160,7 @@ pub struct Inherited<'a, 'tcx: 'a> {
     adjustments: RefCell<NodeMap<ty::AutoAdjustment<'tcx>>>,
     method_map: MethodMap<'tcx>,
     upvar_borrow_map: RefCell<ty::UpvarBorrowMap>,
-    unboxed_closures: RefCell<DefIdMap<ty::UnboxedClosure<'tcx>>>,
+    closures: RefCell<DefIdMap<ty::Closure<'tcx>>>,
     object_cast_map: ObjectCastMap<'tcx>,
 
     // A mapping from each fn's id to its signature, with all bound
@@ -338,32 +338,29 @@ impl<'a, 'tcx> mc::Typer<'tcx> for FnCtxt<'a, 'tcx> {
     }
 }
 
-impl<'a, 'tcx> ty::UnboxedClosureTyper<'tcx> for FnCtxt<'a, 'tcx> {
+impl<'a, 'tcx> ty::ClosureTyper<'tcx> for FnCtxt<'a, 'tcx> {
     fn param_env<'b>(&'b self) -> &'b ty::ParameterEnvironment<'b,'tcx> {
         &self.inh.param_env
     }
 
-    fn unboxed_closure_kind(&self,
-                            def_id: ast::DefId)
-                            -> ty::UnboxedClosureKind
-    {
-        self.inh.unboxed_closures.borrow()[def_id].kind
+    fn closure_kind(&self, def_id: ast::DefId) -> ty::ClosureKind {
+        self.inh.closures.borrow()[def_id].kind
     }
 
-    fn unboxed_closure_type(&self,
-                            def_id: ast::DefId,
-                            substs: &subst::Substs<'tcx>)
-                            -> ty::ClosureTy<'tcx>
+    fn closure_type(&self,
+                    def_id: ast::DefId,
+                    substs: &subst::Substs<'tcx>)
+                    -> ty::ClosureTy<'tcx>
     {
-        self.inh.unboxed_closures.borrow()[def_id].closure_type.subst(self.tcx(), substs)
+        self.inh.closures.borrow()[def_id].closure_type.subst(self.tcx(), substs)
     }
 
-    fn unboxed_closure_upvars(&self,
-                              def_id: ast::DefId,
-                              substs: &Substs<'tcx>)
-                              -> Option<Vec<ty::UnboxedClosureUpvar<'tcx>>>
+    fn closure_upvars(&self,
+                      def_id: ast::DefId,
+                      substs: &Substs<'tcx>)
+                      -> Option<Vec<ty::ClosureUpvar<'tcx>>>
     {
-        ty::unboxed_closure_upvars(self, def_id, substs)
+        ty::closure_upvars(self, def_id, substs)
     }
 }
 
@@ -381,14 +378,14 @@ impl<'a, 'tcx> Inherited<'a, 'tcx> {
             method_map: RefCell::new(FnvHashMap()),
             object_cast_map: RefCell::new(NodeMap()),
             upvar_borrow_map: RefCell::new(FnvHashMap()),
-            unboxed_closures: RefCell::new(DefIdMap()),
+            closures: RefCell::new(DefIdMap()),
             fn_sig_map: RefCell::new(NodeMap()),
             fulfillment_cx: RefCell::new(traits::FulfillmentContext::new()),
         }
     }
 
     fn normalize_associated_types_in<T>(&self,
-                                        typer: &ty::UnboxedClosureTyper<'tcx>,
+                                        typer: &ty::ClosureTyper<'tcx>,
                                         span: Span,
                                         body_id: ast::NodeId,
                                         value: &T)
@@ -1635,6 +1632,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
     {
         let raw_ty = self.expr_ty(expr);
         let raw_ty = self.infcx().shallow_resolve(raw_ty);
+        let resolve_ty = |&: ty: Ty<'tcx>| self.infcx().resolve_type_vars_if_possible(&ty);
         ty::adjust_ty(self.tcx(),
                       expr.span,
                       expr.id,
@@ -1642,7 +1640,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                       adjustment,
                       |method_call| self.inh.method_map.borrow()
                                                        .get(&method_call)
-                                                       .map(|method| method.ty))
+                                                       .map(|method| resolve_ty(method.ty)))
     }
 
     pub fn node_ty(&self, id: ast::NodeId) -> Ty<'tcx> {
@@ -2859,7 +2857,7 @@ fn check_expr_with_unifier<'a, 'tcx, F>(fcx: &FnCtxt<'a, 'tcx>,
         let lhs_t = structurally_resolved_type(fcx, lhs.span,
                                                fcx.expr_ty(&*lhs));
 
-        if ty::type_is_integral(lhs_t) && ast_util::is_shift_binop(op) {
+        if ty::type_is_integral(lhs_t) && ast_util::is_shift_binop(op.node) {
             // Shift is a special case: rhs must be uint, no matter what lhs is
             check_expr(fcx, &**rhs);
             let rhs_ty = fcx.expr_ty(&**rhs);
@@ -2887,7 +2885,7 @@ fn check_expr_with_unifier<'a, 'tcx, F>(fcx: &FnCtxt<'a, 'tcx>,
             demand::suptype(fcx, expr.span, tvar, lhs_t);
             check_expr_has_type(fcx, &**rhs, tvar);
 
-            let result_t = match op {
+            let result_t = match op.node {
                 ast::BiEq | ast::BiNe | ast::BiLt | ast::BiLe | ast::BiGe |
                 ast::BiGt => {
                     if ty::type_is_simd(tcx, lhs_t) {
@@ -2898,7 +2896,7 @@ fn check_expr_with_unifier<'a, 'tcx, F>(fcx: &FnCtxt<'a, 'tcx>,
                                              operation `{}` not \
                                              supported for floating \
                                              point SIMD vector `{}`",
-                                            ast_util::binop_to_string(op),
+                                            ast_util::binop_to_string(op.node),
                                             actual)
                                 },
                                 lhs_t,
@@ -2919,7 +2917,7 @@ fn check_expr_with_unifier<'a, 'tcx, F>(fcx: &FnCtxt<'a, 'tcx>,
             return;
         }
 
-        if op == ast::BiOr || op == ast::BiAnd {
+        if op.node == ast::BiOr || op.node == ast::BiAnd {
             // This is an error; one of the operands must have the wrong
             // type
             fcx.write_error(expr.id);
@@ -2928,7 +2926,7 @@ fn check_expr_with_unifier<'a, 'tcx, F>(fcx: &FnCtxt<'a, 'tcx>,
                                    |actual| {
                     format!("binary operation `{}` cannot be applied \
                              to type `{}`",
-                            ast_util::binop_to_string(op),
+                            ast_util::binop_to_string(op.node),
                             actual)
                 },
                 lhs_t,
@@ -2945,7 +2943,7 @@ fn check_expr_with_unifier<'a, 'tcx, F>(fcx: &FnCtxt<'a, 'tcx>,
                                                  operation `{}=` \
                                                  cannot be applied to \
                                                  type `{}`",
-                                                ast_util::binop_to_string(op),
+                                                ast_util::binop_to_string(op.node),
                                                 actual)
                                    },
                                    lhs_t,
@@ -2968,7 +2966,7 @@ fn check_expr_with_unifier<'a, 'tcx, F>(fcx: &FnCtxt<'a, 'tcx>,
                                   rhs: &P<ast::Expr>) -> Ty<'tcx> {
         let tcx = fcx.ccx.tcx;
         let lang = &tcx.lang_items;
-        let (name, trait_did) = match op {
+        let (name, trait_did) = match op.node {
             ast::BiAdd => ("add", lang.add_trait()),
             ast::BiSub => ("sub", lang.sub_trait()),
             ast::BiMul => ("mul", lang.mul_trait()),
@@ -2994,10 +2992,10 @@ fn check_expr_with_unifier<'a, 'tcx, F>(fcx: &FnCtxt<'a, 'tcx>,
                          trait_did, lhs_expr, Some(rhs), || {
             fcx.type_error_message(ex.span, |actual| {
                 format!("binary operation `{}` cannot be applied to type `{}`",
-                        ast_util::binop_to_string(op),
+                        ast_util::binop_to_string(op.node),
                         actual)
             }, lhs_resolved_t, None)
-        }, if ast_util::is_by_value_binop(op) { AutorefArgs::No } else { AutorefArgs::Yes })
+        }, if ast_util::is_by_value_binop(op.node) { AutorefArgs::No } else { AutorefArgs::Yes })
     }
 
     fn check_user_unop<'a, 'tcx>(fcx: &FnCtxt<'a, 'tcx>,
@@ -4624,7 +4622,7 @@ pub fn type_scheme_for_def<'a, 'tcx>(fcx: &FnCtxt<'a, 'tcx>,
                                      defn: def::Def)
                                      -> TypeScheme<'tcx> {
     match defn {
-      def::DefLocal(nid) | def::DefUpvar(nid, _, _) => {
+      def::DefLocal(nid) | def::DefUpvar(nid, _) => {
           let typ = fcx.local_ty(sp, nid);
           return no_params(typ);
       }

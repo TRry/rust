@@ -1,4 +1,4 @@
-// Copyright 2014 The Rust Project Developers. See the COPYRIGHT
+// Copyright 2015 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
 //
@@ -8,17 +8,8 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-macro_rules! regex {
-    ($re:expr) => (
-        match ::regex::Regex::new($re) {
-            Ok(re) => re,
-            Err(err) => panic!("{:?}", err),
-        }
-    );
-}
 
-#[path = "bench.rs"]
-mod dynamic_bench;
-#[path = "tests.rs"]
-mod dynamic_tests;
+#[deriving(Clone)] //~ ERROR `deriving` has been renamed to `derive`
+struct Foo;
 
+fn main() {}
