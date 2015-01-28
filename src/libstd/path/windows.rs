@@ -20,7 +20,7 @@ use clone::Clone;
 use cmp::{Ordering, Eq, Ord, PartialEq, PartialOrd};
 use fmt;
 use hash;
-use io::Writer;
+use old_io::Writer;
 use iter::{AdditiveIterator, Extend};
 use iter::{Iterator, IteratorExt, Map, repeat};
 use mem;
@@ -85,7 +85,7 @@ pub struct Path {
     sepidx: Option<uint> // index of the final separator in the non-prefix portion of repr
 }
 
-#[stable]
+#[stable(feature = "rust1", since = "1.0.0")]
 impl fmt::Debug for Path {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         fmt::Debug::fmt(&self.display(), f)

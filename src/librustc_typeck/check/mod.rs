@@ -990,86 +990,65 @@ fn check_impl_items_against_trait<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>,
     }
 }
 
-fn check_cast(fcx: &FnCtxt,
-              cast_expr: &ast::Expr,
-              e: &ast::Expr,
-              t: &ast::Ty) {
-    let id = cast_expr.id;
-    let span = cast_expr.span;
-
-    // Find the type of `e`. Supply hints based on the type we are casting to,
-    // if appropriate.
-    let t_1 = fcx.to_ty(t);
-    let t_1 = structurally_resolved_type(fcx, span, t_1);
-
-    check_expr_with_expectation(fcx, e, ExpectCastableToType(t_1));
-
-    let t_e = fcx.expr_ty(e);
-
-    debug!("t_1={}", fcx.infcx().ty_to_string(t_1));
-    debug!("t_e={}", fcx.infcx().ty_to_string(t_e));
-
-    if ty::type_is_error(t_e) {
-        fcx.write_error(id);
-        return
-    }
-
-    if !fcx.type_is_known_to_be_sized(t_1, cast_expr.span) {
-        let tstr = fcx.infcx().ty_to_string(t_1);
-        fcx.type_error_message(span, |actual| {
-            format!("cast to unsized type: `{}` as `{}`", actual, tstr)
-        }, t_e, None);
-        match t_e.sty {
-            ty::ty_rptr(_, ty::mt { mutbl: mt, .. }) => {
-                let mtstr = match mt {
-                    ast::MutMutable => "mut ",
-                    ast::MutImmutable => ""
-                };
-                if ty::type_is_trait(t_1) {
-                    span_help!(fcx.tcx().sess, t.span, "did you mean `&{}{}`?", mtstr, tstr);
-                } else {
-                    span_help!(fcx.tcx().sess, span,
-                               "consider using an implicit coercion to `&{}{}` instead",
-                               mtstr, tstr);
-                }
-            }
-            ty::ty_uniq(..) => {
-                span_help!(fcx.tcx().sess, t.span, "did you mean `Box<{}>`?", tstr);
-            }
-            _ => {
-                span_help!(fcx.tcx().sess, e.span,
-                           "consider using a box or reference as appropriate");
+fn report_cast_to_unsized_type<'a, 'tcx>(fcx: &FnCtxt<'a, 'tcx>,
+                                         span: Span,
+                                         t_span: Span,
+                                         e_span: Span,
+                                         t_1: Ty<'tcx>,
+                                         t_e: Ty<'tcx>,
+                                         id: ast::NodeId) {
+    let tstr = fcx.infcx().ty_to_string(t_1);
+    fcx.type_error_message(span, |actual| {
+        format!("cast to unsized type: `{}` as `{}`", actual, tstr)
+    }, t_e, None);
+    match t_e.sty {
+        ty::ty_rptr(_, ty::mt { mutbl: mt, .. }) => {
+            let mtstr = match mt {
+                ast::MutMutable => "mut ",
+                ast::MutImmutable => ""
+            };
+            if ty::type_is_trait(t_1) {
+                span_help!(fcx.tcx().sess, t_span, "did you mean `&{}{}`?", mtstr, tstr);
+            } else {
+                span_help!(fcx.tcx().sess, span,
+                           "consider using an implicit coercion to `&{}{}` instead",
+                           mtstr, tstr);
             }
         }
-        fcx.write_error(id);
-        return
+        ty::ty_uniq(..) => {
+            span_help!(fcx.tcx().sess, t_span, "did you mean `Box<{}>`?", tstr);
+        }
+        _ => {
+            span_help!(fcx.tcx().sess, e_span,
+                       "consider using a box or reference as appropriate");
+        }
     }
+    fcx.write_error(id);
+}
 
-    if ty::type_is_trait(t_1) {
-        // This will be looked up later on.
-        vtable::check_object_cast(fcx, cast_expr, e, t_1);
-        fcx.write_ty(id, t_1);
-        return
-    }
 
-    let t_1 = structurally_resolved_type(fcx, span, t_1);
-    let t_e = structurally_resolved_type(fcx, span, t_e);
-
-    if ty::type_is_nil(t_e) {
+fn check_cast_inner<'a, 'tcx>(fcx: &FnCtxt<'a, 'tcx>,
+                              span: Span,
+                              t_1: Ty<'tcx>,
+                              t_e: Ty<'tcx>,
+                              e: &ast::Expr) {
+    fn cast_through_integer_err<'a, 'tcx>(fcx: &FnCtxt<'a, 'tcx>,
+                                          span: Span,
+                                          t_1: Ty<'tcx>,
+                                          t_e: Ty<'tcx>) {
         fcx.type_error_message(span, |actual| {
-            format!("cast from nil: `{}` as `{}`",
-                    actual,
-                    fcx.infcx().ty_to_string(t_1))
-        }, t_e, None);
-    } else if ty::type_is_nil(t_1) {
-        fcx.type_error_message(span, |actual| {
-            format!("cast to nil: `{}` as `{}`",
+            format!("illegal cast; cast through an \
+                    integer first: `{}` as `{}`",
                     actual,
                     fcx.infcx().ty_to_string(t_1))
         }, t_e, None);
     }
 
     let t_e_is_bare_fn_item = ty::type_is_bare_fn_item(t_e);
+    let t_e_is_scalar = ty::type_is_scalar(t_e);
+    let t_e_is_integral = ty::type_is_integral(t_e);
+    let t_e_is_float = ty::type_is_floating_point(t_e);
+    let t_e_is_c_enum = ty::type_is_c_like_enum(fcx.tcx(), t_e);
 
     let t_1_is_scalar = ty::type_is_scalar(t_1);
     let t_1_is_char = ty::type_is_char(t_1);
@@ -1078,18 +1057,9 @@ fn check_cast(fcx: &FnCtxt,
 
     // casts to scalars other than `char` and `bare fn` are trivial
     let t_1_is_trivial = t_1_is_scalar && !t_1_is_char && !t_1_is_bare_fn;
+
     if t_e_is_bare_fn_item && t_1_is_bare_fn {
         demand::coerce(fcx, e.span, t_1, &*e);
-    } else if ty::type_is_c_like_enum(fcx.tcx(), t_e) && t_1_is_trivial {
-        if t_1_is_float || ty::type_is_unsafe_ptr(t_1) {
-            fcx.type_error_message(span, |actual| {
-                format!("illegal cast; cast through an \
-                         integer first: `{}` as `{}`",
-                        actual,
-                        fcx.infcx().ty_to_string(t_1))
-            }, t_e, None);
-        }
-        // casts from C-like enums are allowed
     } else if t_1_is_char {
         let t_e = fcx.infcx().shallow_resolve(t_e);
         if t_e.sty != ty::ty_uint(ast::TyU8) {
@@ -1101,6 +1071,16 @@ fn check_cast(fcx: &FnCtxt,
     } else if t_1.sty == ty::ty_bool {
         span_err!(fcx.tcx().sess, span, E0054,
             "cannot cast as `bool`, compare with zero instead");
+    } else if t_1_is_float && (t_e_is_scalar || t_e_is_c_enum) && !(
+        t_e_is_integral || t_e_is_float || t_e.sty == ty::ty_bool) {
+        // Casts to float must go through an integer or boolean
+        cast_through_integer_err(fcx, span, t_1, t_e)
+    } else if t_e_is_c_enum && t_1_is_trivial {
+        if ty::type_is_unsafe_ptr(t_1) {
+            // ... and likewise with C enum -> *T
+            cast_through_integer_err(fcx, span, t_1, t_e)
+        }
+        // casts from C-like enums are allowed
     } else if ty::type_is_region_ptr(t_e) && ty::type_is_unsafe_ptr(t_1) {
         fn types_compatible<'a, 'tcx>(fcx: &FnCtxt<'a, 'tcx>, sp: Span,
                                       t1: Ty<'tcx>, t2: Ty<'tcx>) -> bool {
@@ -1142,7 +1122,7 @@ fn check_cast(fcx: &FnCtxt,
                 demand::coerce(fcx, e.span, t_1, &*e);
             }
         }
-    } else if !(ty::type_is_scalar(t_e) && t_1_is_trivial) {
+    } else if !(t_e_is_scalar && t_1_is_trivial) {
         /*
         If more type combinations should be supported than are
         supported here, then file an enhancement issue and
@@ -1153,15 +1133,49 @@ fn check_cast(fcx: &FnCtxt,
                     actual,
                     fcx.infcx().ty_to_string(t_1))
         }, t_e, None);
-    } else if ty::type_is_unsafe_ptr(t_e) && t_1_is_float {
-        fcx.type_error_message(span, |actual| {
-            format!("cannot cast from pointer to float directly: `{}` as `{}`; cast through an \
-                     integer first",
-                    actual,
-                    fcx.infcx().ty_to_string(t_1))
-        }, t_e, None);
+    }
+}
+
+fn check_cast(fcx: &FnCtxt,
+              cast_expr: &ast::Expr,
+              e: &ast::Expr,
+              t: &ast::Ty) {
+    let id = cast_expr.id;
+    let span = cast_expr.span;
+
+    // Find the type of `e`. Supply hints based on the type we are casting to,
+    // if appropriate.
+    let t_1 = fcx.to_ty(t);
+    let t_1 = structurally_resolved_type(fcx, span, t_1);
+
+    check_expr_with_expectation(fcx, e, ExpectCastableToType(t_1));
+
+    let t_e = fcx.expr_ty(e);
+
+    debug!("t_1={}", fcx.infcx().ty_to_string(t_1));
+    debug!("t_e={}", fcx.infcx().ty_to_string(t_e));
+
+    if ty::type_is_error(t_e) {
+        fcx.write_error(id);
+        return
     }
 
+    if !fcx.type_is_known_to_be_sized(t_1, cast_expr.span) {
+        report_cast_to_unsized_type(fcx, span, t.span, e.span, t_1, t_e, id);
+        return
+    }
+
+    if ty::type_is_trait(t_1) {
+        // This will be looked up later on.
+        vtable::check_object_cast(fcx, cast_expr, e, t_1);
+        fcx.write_ty(id, t_1);
+        return
+    }
+
+    let t_1 = structurally_resolved_type(fcx, span, t_1);
+    let t_e = structurally_resolved_type(fcx, span, t_e);
+
+    check_cast_inner(fcx, span, t_1, t_e, e);
     fcx.write_ty(id, t_1);
 }
 
@@ -1226,6 +1240,36 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
 
     pub fn err_count_since_creation(&self) -> uint {
         self.ccx.tcx.sess.err_count() - self.err_count_on_creation
+    }
+
+    /// Resolves type variables in `ty` if possible. Unlike the infcx
+    /// version, this version will also select obligations if it seems
+    /// useful, in an effort to get more type information.
+    fn resolve_type_vars_if_possible(&self, mut ty: Ty<'tcx>) -> Ty<'tcx> {
+        // No ty::infer()? Nothing needs doing.
+        if !ty::type_has_ty_infer(ty) {
+            return ty;
+        }
+
+        // If `ty` is a type variable, see whether we already know what it is.
+        ty = self.infcx().resolve_type_vars_if_possible(&ty);
+        if !ty::type_has_ty_infer(ty) {
+            return ty;
+        }
+
+        // If not, try resolving any new fcx obligations that have cropped up.
+        vtable::select_new_fcx_obligations(self);
+        ty = self.infcx().resolve_type_vars_if_possible(&ty);
+        if !ty::type_has_ty_infer(ty) {
+            return ty;
+        }
+
+        // If not, try resolving *all* pending obligations as much as
+        // possible. This can help substantially when there are
+        // indirect dependencies that don't seem worth tracking
+        // precisely.
+        vtable::select_fcx_obligations_where_possible(self);
+        self.infcx().resolve_type_vars_if_possible(&ty)
     }
 
     /// Resolves all type variables in `t` and then, if any were left
@@ -2319,9 +2363,9 @@ fn check_argument_types<'a, 'tcx>(fcx: &FnCtxt<'a, 'tcx>,
         let check_blocks = *check_blocks;
         debug!("check_blocks={}", check_blocks);
 
-        // More awful hacks: before we check the blocks, try to do
-        // an "opportunistic" vtable resolution of any trait
-        // bounds on the call.
+        // More awful hacks: before we check argument types, try to do
+        // an "opportunistic" vtable resolution of any trait bounds on
+        // the call. This helps coercions.
         if check_blocks {
             vtable::select_new_fcx_obligations(fcx);
         }
@@ -2861,7 +2905,7 @@ fn check_expr_with_unifier<'a, 'tcx, F>(fcx: &FnCtxt<'a, 'tcx>,
             // Shift is a special case: rhs must be uint, no matter what lhs is
             check_expr(fcx, &**rhs);
             let rhs_ty = fcx.expr_ty(&**rhs);
-            let rhs_ty = fcx.infcx().resolve_type_vars_if_possible(&rhs_ty);
+            let rhs_ty = structurally_resolved_type(fcx, rhs.span, rhs_ty);
             if ty::type_is_integral(rhs_ty) {
                 fcx.write_ty(expr.id, lhs_t);
             } else {
@@ -3087,8 +3131,8 @@ fn check_expr_with_unifier<'a, 'tcx, F>(fcx: &FnCtxt<'a, 'tcx>,
         let name = ident.get();
         // only find fits with at least one matching letter
         let mut best_dist = name.len();
-        let mut best = None;
         let fields = ty::lookup_struct_fields(tcx, id);
+        let mut best = None;
         for elem in fields.iter() {
             let n = elem.name.as_str();
             // ignore already set fields
@@ -5113,21 +5157,12 @@ pub fn instantiate_path<'a, 'tcx>(fcx: &FnCtxt<'a, 'tcx>,
 
 // Resolves `typ` by a single level if `typ` is a type variable.  If no
 // resolution is possible, then an error is reported.
-pub fn structurally_resolved_type<'a, 'tcx>(fcx: &FnCtxt<'a, 'tcx>, sp: Span,
-                                            mut ty: Ty<'tcx>) -> Ty<'tcx> {
-    // If `ty` is a type variable, see whether we already know what it is.
-    ty = fcx.infcx().shallow_resolve(ty);
-
-    // If not, try resolve pending fcx obligations. Those can shed light.
-    //
-    // FIXME(#18391) -- This current strategy can lead to bad performance in
-    // extreme cases.  We probably ought to smarter in general about
-    // only resolving when we need help and only resolving obligations
-    // will actually help.
-    if ty::type_is_ty_var(ty) {
-        vtable::select_fcx_obligations_where_possible(fcx);
-        ty = fcx.infcx().shallow_resolve(ty);
-    }
+pub fn structurally_resolved_type<'a, 'tcx>(fcx: &FnCtxt<'a, 'tcx>,
+                                            sp: Span,
+                                            ty: Ty<'tcx>)
+                                            -> Ty<'tcx>
+{
+    let mut ty = fcx.resolve_type_vars_if_possible(ty);
 
     // If not, error.
     if ty::type_is_ty_var(ty) {

@@ -23,8 +23,8 @@ use syntax::diagnostic;
 use syntax::diagnostic::{Emitter, Handler, Level, mk_handler};
 
 use std::ffi::{self, CString};
-use std::io::Command;
-use std::io::fs;
+use std::old_io::Command;
+use std::old_io::fs;
 use std::iter::Unfold;
 use std::ptr;
 use std::str;
@@ -728,9 +728,9 @@ pub fn run_passes(sess: &Session,
             println!("{:?}", &cmd);
         }
 
-        cmd.stdin(::std::io::process::Ignored)
-           .stdout(::std::io::process::InheritFd(1))
-           .stderr(::std::io::process::InheritFd(2));
+        cmd.stdin(::std::old_io::process::Ignored)
+           .stdout(::std::old_io::process::InheritFd(1))
+           .stderr(::std::old_io::process::InheritFd(2));
         match cmd.status() {
             Ok(status) => {
                 if !status.success() {
@@ -911,7 +911,7 @@ fn run_work_multithreaded(sess: &Session,
         futures.push(rx);
 
         thread::Builder::new().name(format!("codegen-{}", i)).spawn(move |:| {
-            let diag_handler = mk_handler(box diag_emitter);
+            let diag_handler = mk_handler(true, box diag_emitter);
 
             // Must construct cgcx inside the proc because it has non-Send
             // fields.

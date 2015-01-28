@@ -48,7 +48,7 @@
 use serialize::json::Json;
 use syntax::{diagnostic, abi};
 use std::default::Default;
-use std::io::fs::PathExtensions;
+use std::old_io::fs::PathExtensions;
 
 mod windows_base;
 mod linux_base;
@@ -223,7 +223,7 @@ impl Target {
         // this is 1. ugly, 2. error prone.
 
 
-        let handler = diagnostic::default_handler(diagnostic::Auto, None);
+        let handler = diagnostic::default_handler(diagnostic::Auto, None, true);
 
         let get_req_field = |&: name: &str| {
             match obj.find(name)
@@ -302,7 +302,7 @@ impl Target {
     /// JSON decoding.
     pub fn search(target: &str) -> Result<Target, String> {
         use std::os;
-        use std::io::File;
+        use std::old_io::File;
         use std::path::Path;
         use serialize::json;
 

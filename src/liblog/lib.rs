@@ -156,7 +156,9 @@
 //! if logging is disabled, none of the components of the log will be executed.
 
 #![crate_name = "log"]
-#![unstable = "use the crates.io `log` library instead"]
+#![unstable(feature = "rustc_private",
+            reason = "use the crates.io `log` library instead")]
+#![feature(staged_api)]
 #![staged_api]
 #![crate_type = "rlib"]
 #![crate_type = "dylib"]
@@ -169,13 +171,18 @@
 #![feature(slicing_syntax)]
 #![feature(box_syntax)]
 #![allow(unknown_features)] #![feature(int_uint)]
-#![allow(unstable)]
 #![deny(missing_docs)]
+#![feature(collections)]
+#![feature(core)]
+#![feature(io)]
+#![feature(os)]
+#![feature(rustc_private)]
+#![feature(std_misc)]
 
 use std::cell::RefCell;
 use std::fmt;
-use std::io::LineBufferedWriter;
-use std::io;
+use std::old_io::LineBufferedWriter;
+use std::old_io;
 use std::mem;
 use std::os;
 use std::ptr;
@@ -232,7 +239,7 @@ pub trait Logger {
 }
 
 struct DefaultLogger {
-    handle: LineBufferedWriter<io::stdio::StdWriter>,
+    handle: LineBufferedWriter<old_io::stdio::StdWriter>,
 }
 
 /// Wraps the log level with fmt implementations.
@@ -294,7 +301,7 @@ pub fn log(level: u32, loc: &'static LogLocation, args: fmt::Arguments) {
     let mut logger = LOCAL_LOGGER.with(|s| {
         s.borrow_mut().take()
     }).unwrap_or_else(|| {
-        box DefaultLogger { handle: io::stderr() } as Box<Logger + Send>
+        box DefaultLogger { handle: old_io::stderr() } as Box<Logger + Send>
     });
     logger.log(&LogRecord {
         level: LogLevel(level),

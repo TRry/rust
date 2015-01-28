@@ -9,7 +9,8 @@
 // except according to those terms.
 
 #![crate_name = "rustdoc"]
-#![unstable]
+#![unstable(feature = "rustdoc")]
+#![feature(staged_api)]
 #![staged_api]
 #![crate_type = "dylib"]
 #![crate_type = "rlib"]
@@ -20,7 +21,17 @@
 #![feature(slicing_syntax)]
 #![feature(box_syntax)]
 #![allow(unknown_features)] #![feature(int_uint)]
-#![allow(unstable)]
+#![feature(collections)]
+#![feature(core)]
+#![feature(io)]
+#![feature(libc)]
+#![feature(os)]
+#![feature(path)]
+#![feature(rustc_private)]
+#![feature(std_misc)]
+#![feature(test)]
+#![feature(unicode)]
+#![feature(hash)]
 
 extern crate arena;
 extern crate getopts;
@@ -38,8 +49,8 @@ extern crate "serialize" as rustc_serialize; // used by deriving
 
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::io::File;
-use std::io;
+use std::old_io::File;
+use std::old_io;
 use std::rc::Rc;
 use externalfiles::ExternalHtml;
 use serialize::Decodable;
@@ -476,7 +487,7 @@ fn json_input(input: &str) -> Result<Output, String> {
 /// Outputs the crate/plugin json as a giant json blob at the specified
 /// destination.
 fn json_output(krate: clean::Crate, res: Vec<plugins::PluginJson> ,
-               dst: Path) -> io::IoResult<()> {
+               dst: Path) -> old_io::IoResult<()> {
     // {
     //   "schema": version,
     //   "crate": { parsed crate ... },

@@ -16,8 +16,8 @@
 //! datagram protocol.
 
 use clone::Clone;
-use io::net::ip::{SocketAddr, IpAddr, ToSocketAddr};
-use io::IoResult;
+use old_io::net::ip::{SocketAddr, IpAddr, ToSocketAddr};
+use old_io::IoResult;
 use option::Option;
 use sys::udp::UdpSocket as UdpSocketImp;
 use sys_common;
@@ -34,8 +34,8 @@ use sys_common;
 /// # #![allow(unused_must_use)]
 /// #![feature(slicing_syntax)]
 ///
-/// use std::io::net::udp::UdpSocket;
-/// use std::io::net::ip::{Ipv4Addr, SocketAddr};
+/// use std::old_io::net::udp::UdpSocket;
+/// use std::old_io::net::ip::{Ipv4Addr, SocketAddr};
 /// fn main() {
 ///     let addr = SocketAddr { ip: Ipv4Addr(127, 0, 0, 1), port: 34254 };
 ///     let mut socket = match UdpSocket::bind(addr) {
@@ -92,13 +92,13 @@ impl UdpSocket {
     }
 
     /// Joins a multicast IP address (becomes a member of it)
-    #[unstable]
+    #[unstable(feature = "io")]
     pub fn join_multicast(&mut self, multi: IpAddr) -> IoResult<()> {
         self.inner.join_multicast(multi)
     }
 
     /// Leaves a multicast IP address (drops membership from it)
-    #[unstable]
+    #[unstable(feature = "io")]
     pub fn leave_multicast(&mut self, multi: IpAddr) -> IoResult<()> {
         self.inner.leave_multicast(multi)
     }
@@ -106,25 +106,25 @@ impl UdpSocket {
     /// Set the multicast loop flag to the specified value
     ///
     /// This lets multicast packets loop back to local sockets (if enabled)
-    #[unstable]
+    #[unstable(feature = "io")]
     pub fn set_multicast_loop(&mut self, on: bool) -> IoResult<()> {
         self.inner.set_multicast_loop(on)
     }
 
     /// Sets the multicast TTL
-    #[unstable]
+    #[unstable(feature = "io")]
     pub fn set_multicast_ttl(&mut self, ttl: int) -> IoResult<()> {
         self.inner.multicast_time_to_live(ttl)
     }
 
     /// Sets this socket's TTL
-    #[unstable]
+    #[unstable(feature = "io")]
     pub fn set_ttl(&mut self, ttl: int) -> IoResult<()> {
         self.inner.time_to_live(ttl)
     }
 
     /// Sets the broadcast flag on or off
-    #[unstable]
+    #[unstable(feature = "io")]
     pub fn set_broadcast(&mut self, broadcast: bool) -> IoResult<()> {
         self.inner.set_broadcast(broadcast)
     }
@@ -132,7 +132,8 @@ impl UdpSocket {
     /// Sets the read/write timeout for this socket.
     ///
     /// For more information, see `TcpStream::set_timeout`
-    #[unstable = "the timeout argument may change in type and value"]
+    #[unstable(feature = "io",
+               reason = "the timeout argument may change in type and value")]
     pub fn set_timeout(&mut self, timeout_ms: Option<u64>) {
         self.inner.set_timeout(timeout_ms)
     }
@@ -140,7 +141,8 @@ impl UdpSocket {
     /// Sets the read timeout for this socket.
     ///
     /// For more information, see `TcpStream::set_timeout`
-    #[unstable = "the timeout argument may change in type and value"]
+    #[unstable(feature = "io",
+               reason = "the timeout argument may change in type and value")]
     pub fn set_read_timeout(&mut self, timeout_ms: Option<u64>) {
         self.inner.set_read_timeout(timeout_ms)
     }
@@ -148,7 +150,8 @@ impl UdpSocket {
     /// Sets the write timeout for this socket.
     ///
     /// For more information, see `TcpStream::set_timeout`
-    #[unstable = "the timeout argument may change in type and value"]
+    #[unstable(feature = "io",
+               reason = "the timeout argument may change in type and value")]
     pub fn set_write_timeout(&mut self, timeout_ms: Option<u64>) {
         self.inner.set_write_timeout(timeout_ms)
     }
@@ -176,14 +179,13 @@ impl sys_common::AsInner<UdpSocketImp> for UdpSocket {
 }
 
 #[cfg(test)]
-#[allow(unstable)]
 mod test {
     use prelude::v1::*;
 
     use sync::mpsc::channel;
-    use io::net::ip::*;
-    use io::test::*;
-    use io::{IoError, TimedOut, PermissionDenied, ShortWrite};
+    use old_io::net::ip::*;
+    use old_io::test::*;
+    use old_io::{IoError, TimedOut, PermissionDenied, ShortWrite};
     use super::*;
     use thread::Thread;
 
