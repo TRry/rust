@@ -83,7 +83,7 @@ use self::TokenTreeOrTokenTreeVec::*;
 use ast;
 use ast::{TokenTree, Ident};
 use ast::{TtDelimited, TtSequence, TtToken};
-use codemap::{BytePos, mk_sp};
+use codemap::{BytePos, mk_sp, Span};
 use codemap;
 use parse::lexer::*; //resolve bug?
 use parse::ParseSess;
@@ -166,7 +166,7 @@ pub fn count_names(ms: &[TokenTree]) -> usize {
 pub fn initial_matcher_pos(ms: Rc<Vec<TokenTree>>, sep: Option<Token>, lo: BytePos)
                            -> Box<MatcherPos> {
     let match_idx_hi = count_names(&ms[]);
-    let matches: Vec<_> = range(0, match_idx_hi).map(|_| Vec::new()).collect();
+    let matches: Vec<_> = (0..match_idx_hi).map(|_| Vec::new()).collect();
     box MatcherPos {
         stack: vec![],
         top_elts: TtSeq(ms),
@@ -339,7 +339,7 @@ pub fn parse(sess: &ParseSess,
                         // most of the time.
 
                         // Only touch the binders we have actually bound
-                        for idx in range(ei.match_lo, ei.match_hi) {
+                        for idx in ei.match_lo..ei.match_hi {
                             let sub = (ei.matches[idx]).clone();
                             (&mut new_pos.matches[idx])
                                    .push(Rc::new(MatchedSeq(sub, mk_sp(ei.sp_lo,
@@ -385,14 +385,14 @@ pub fn parse(sess: &ParseSess,
                             new_ei.match_cur += seq.num_captures;
                             new_ei.idx += 1us;
                             //we specifically matched zero repeats.
-                            for idx in range(ei.match_cur, ei.match_cur + seq.num_captures) {
+                            for idx in ei.match_cur..ei.match_cur + seq.num_captures {
                                 (&mut new_ei.matches[idx]).push(Rc::new(MatchedSeq(vec![], sp)));
                             }
 
                             cur_eis.push(new_ei);
                         }
 
-                        let matches: Vec<_> = range(0, ei.matches.len())
+                        let matches: Vec<_> = (0..ei.matches.len())
                             .map(|_| Vec::new()).collect();
                         let ei_t = ei;
                         cur_eis.push(box MatcherPos {
@@ -483,11 +483,11 @@ pub fn parse(sess: &ParseSess,
 
                 let mut ei = bb_eis.pop().unwrap();
                 match ei.top_elts.get_tt(ei.idx) {
-                  TtToken(_, MatchNt(_, name, _, _)) => {
+                  TtToken(span, MatchNt(_, name, _, _)) => {
                     let name_string = token::get_ident(name);
                     let match_cur = ei.match_cur;
                     (&mut ei.matches[match_cur]).push(Rc::new(MatchedNonterminal(
-                        parse_nt(&mut rust_parser, name_string.get()))));
+                        parse_nt(&mut rust_parser, span, name_string.get()))));
                     ei.idx += 1us;
                     ei.match_cur += 1;
                   }
@@ -495,7 +495,7 @@ pub fn parse(sess: &ParseSess,
                 }
                 cur_eis.push(ei);
 
-                for _ in range(0, rust_parser.tokens_consumed) {
+                for _ in 0..rust_parser.tokens_consumed {
                     let _ = rdr.next_token();
                 }
             }
@@ -505,7 +505,7 @@ pub fn parse(sess: &ParseSess,
     }
 }
 
-pub fn parse_nt(p: &mut Parser, name: &str) -> Nonterminal {
+pub fn parse_nt(p: &mut Parser, sp: Span, name: &str) -> Nonterminal {
     match name {
         "tt" => {
             p.quote_depth += 1us; //but in theory, non-quoted tts might be useful
@@ -541,7 +541,11 @@ pub fn parse_nt(p: &mut Parser, name: &str) -> Nonterminal {
       }
       "meta" => token::NtMeta(p.parse_meta_item()),
       _ => {
-          p.fatal(&format!("unsupported builtin nonterminal parser: {}", name)[])
+          p.span_fatal_help(sp,
+                            &format!("invalid fragment specifier `{}`", name)[],
+                            "valid fragment specifiers are `ident`, `block`, \
+                             `stmt`, `expr`, `pat`, `ty`, `path`, `meta`, `tt` \
+                             and `item`")
       }
     }
 }

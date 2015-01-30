@@ -10,10 +10,8 @@
 
 
 
-#[derive(Show)]
+#[derive(Copy, Debug)]
 enum foo { large, small, }
-
-impl Copy for foo {}
 
 impl PartialEq for foo {
     fn eq(&self, other: &foo) -> bool {

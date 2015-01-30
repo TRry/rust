@@ -1577,7 +1577,7 @@ fn encode_info_for_items(ecx: &EncodeContext,
                         &krate.module,
                         &[],
                         ast::CRATE_NODE_ID,
-                        ast_map::Values([].iter()).chain(None),
+                        [].iter().cloned().chain(None),
                         syntax::parse::token::special_idents::invalid,
                         ast::Public);
 
@@ -1598,7 +1598,7 @@ fn encode_index<T, F>(rbml_w: &mut Encoder, index: Vec<entry<T>>, mut write_fn: 
     F: FnMut(&mut SeekableMemWriter, &T),
     T: Hash<SipHasher>,
 {
-    let mut buckets: Vec<Vec<entry<T>>> = range(0, 256u16).map(|_| Vec::new()).collect();
+    let mut buckets: Vec<Vec<entry<T>>> = (0..256u16).map(|_| Vec::new()).collect();
     for elt in index.into_iter() {
         let mut s = SipHasher::new();
         elt.val.hash(&mut s);
@@ -1949,7 +1949,7 @@ fn encode_misc_info(ecx: &EncodeContext,
     }
 
     // Encode reexports for the root module.
-    encode_reexports(ecx, rbml_w, 0, ast_map::Values([].iter()).chain(None));
+    encode_reexports(ecx, rbml_w, 0, [].iter().cloned().chain(None));
 
     rbml_w.end_tag();
     rbml_w.end_tag();

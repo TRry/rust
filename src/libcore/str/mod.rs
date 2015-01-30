@@ -23,7 +23,6 @@ use default::Default;
 use error::Error;
 use fmt;
 use iter::ExactSizeIterator;
-use iter::range;
 use iter::{Map, Iterator, IteratorExt, DoubleEndedIterator};
 use marker::Sized;
 use mem;
@@ -145,7 +144,7 @@ Section: Creating a string
 */
 
 /// Errors which can occur when attempting to interpret a byte slice as a `str`.
-#[derive(Copy, Eq, PartialEq, Clone, Show)]
+#[derive(Copy, Eq, PartialEq, Clone, Debug)]
 #[unstable(feature = "core",
            reason = "error enumeration recently added and definitions may be refined")]
 pub enum Utf8Error {
@@ -461,7 +460,18 @@ delegate_iter!{exact u8 : Bytes<'a>}
 #[derive(Copy, Clone)]
 struct BytesDeref;
 
+#[cfg(stage0)]
 impl<'a> Fn(&'a u8) -> u8 for BytesDeref {
+    #[inline]
+    extern "rust-call" fn call(&self, (ptr,): (&'a u8,)) -> u8 {
+        *ptr
+    }
+}
+
+#[cfg(not(stage0))]
+impl<'a> Fn<(&'a u8,)> for BytesDeref {
+    type Output = u8;
+
     #[inline]
     extern "rust-call" fn call(&self, (ptr,): (&'a u8,)) -> u8 {
         *ptr
@@ -789,7 +799,7 @@ impl TwoWaySearcher {
             // See if the right part of the needle matches
             let start = if long_period { self.crit_pos }
                         else { cmp::max(self.crit_pos, self.memory) };
-            for i in range(start, needle.len()) {
+            for i in start..needle.len() {
                 if needle[i] != haystack[self.position + i] {
                     self.position += i - self.crit_pos + 1;
                     if !long_period {
@@ -801,7 +811,7 @@ impl TwoWaySearcher {
 
             // See if the left part of the needle matches
             let start = if long_period { 0 } else { self.memory };
-            for i in range(start, self.crit_pos).rev() {
+            for i in (start..self.crit_pos).rev() {
                 if needle[i] != haystack[self.position + i] {
                     self.position += self.period;
                     if !long_period {
@@ -1239,11 +1249,21 @@ mod traits {
         }
     }
 
+    #[cfg(stage0)]
     #[stable(feature = "rust1", since = "1.0.0")]
     impl ops::Index<ops::FullRange> for str {
         type Output = str;
         #[inline]
         fn index(&self, _index: &ops::FullRange) -> &str {
+            self
+        }
+    }
+    #[cfg(not(stage0))]
+    #[stable(feature = "rust1", since = "1.0.0")]
+    impl ops::Index<ops::RangeFull> for str {
+        type Output = str;
+        #[inline]
+        fn index(&self, _index: &ops::RangeFull) -> &str {
             self
         }
     }

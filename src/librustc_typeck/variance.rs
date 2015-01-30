@@ -230,7 +230,7 @@ pub fn infer_variance(tcx: &ty::ctxt) {
 
 type VarianceTermPtr<'a> = &'a VarianceTerm<'a>;
 
-#[derive(Copy, Show)]
+#[derive(Copy, Debug)]
 struct InferredIndex(uint);
 
 #[derive(Copy)]
@@ -266,7 +266,7 @@ struct TermsContext<'a, 'tcx: 'a> {
     inferred_infos: Vec<InferredInfo<'a>> ,
 }
 
-#[derive(Copy, Show, PartialEq)]
+#[derive(Copy, Debug, PartialEq)]
 enum ParamKind {
     TypeParam,
     RegionParam
@@ -818,6 +818,12 @@ impl<'a, 'tcx> ConstraintContext<'a, 'tcx> {
                     trait_def.generics.regions.get_slice(subst::TypeSpace),
                     trait_ref.substs(),
                     variance);
+
+                let projections = data.projection_bounds_with_self_ty(self.tcx(),
+                                                                      self.tcx().types.err);
+                for projection in projections.iter() {
+                    self.add_constraints_from_ty(generics, projection.0.ty, self.invariant);
+                }
             }
 
             ty::ty_param(ref data) => {

@@ -186,7 +186,7 @@ impl<T> Vec<T> {
     /// assert_eq!(vec.len(), 0);
     ///
     /// // These are all done without reallocating...
-    /// for i in range(0i, 10) {
+    /// for i in 0i..10 {
     ///     vec.push(i);
     /// }
     ///
@@ -233,7 +233,7 @@ impl<T> Vec<T> {
     ///         mem::forget(v);
     ///
     ///         // Overwrite memory with 4, 5, 6
-    ///         for i in range(0, len as int) {
+    ///         for i in 0..len as int {
     ///             ptr::write(p.offset(i), 4 + i);
     ///         }
     ///
@@ -605,7 +605,7 @@ impl<T> Vec<T> {
         {
             let v = self.as_mut_slice();
 
-            for i in range(0u, len) {
+            for i in 0u..len {
                 if !f(&v[i]) {
                     del += 1;
                 } else if del > 0 {
@@ -811,7 +811,7 @@ impl<T> Vec<T> {
     /// let w = v.map_in_place(|i| i + 3);
     /// assert_eq!(w.as_slice(), [3, 4, 5].as_slice());
     ///
-    /// #[derive(PartialEq, Show)]
+    /// #[derive(PartialEq, Debug)]
     /// struct Newtype(u8);
     /// let bytes = vec![0x11, 0x22];
     /// let newtyped_bytes = bytes.map_in_place(|x| Newtype(x));
@@ -993,6 +993,43 @@ impl<T> Vec<T> {
             result
         }
     }
+
+    /// Splits the collection into two at the given index.
+    ///
+    /// Returns a newly allocated `Self`. `self` contains elements `[0, at)`,
+    /// and the returned `Self` contains elements `[at, len)`.
+    ///
+    /// Note that the capacity of `self` does not change.
+    ///
+    /// # Examples
+    /// ```rust
+    /// let mut vec = vec![1,2,3];
+    /// let vec2 = vec.split_off(1);
+    /// assert_eq!(vec, vec![1]);
+    /// assert_eq!(vec2, vec![2, 3]);
+    /// ```
+    #[inline]
+    #[unstable(feature = "collections",
+               reason = "new API, waiting for dust to settle")]
+    pub fn split_off(&mut self, at: usize) -> Self {
+        assert!(at < self.len(), "`at` out of bounds");
+
+        let other_len = self.len - at;
+        let mut other = Vec::with_capacity(other_len);
+
+        // Unsafely `set_len` and copy items to `other`.
+        unsafe {
+            self.set_len(at);
+            other.set_len(other_len);
+
+            ptr::copy_nonoverlapping_memory(
+                other.as_mut_ptr(),
+                self.as_ptr().offset(at as isize),
+                other.len());
+        }
+        other
+    }
+
 }
 
 impl<T: Clone> Vec<T> {
@@ -1042,7 +1079,7 @@ impl<T: Clone> Vec<T> {
     pub fn push_all(&mut self, other: &[T]) {
         self.reserve(other.len());
 
-        for i in range(0, other.len()) {
+        for i in 0..other.len() {
             let len = self.len();
 
             // Unsafe code so this can be optimised to a memcpy (or something similarly
@@ -1280,11 +1317,21 @@ impl<T> ops::Index<ops::RangeFrom<uint>> for Vec<T> {
         self.as_slice().index(index)
     }
 }
+#[cfg(stage0)]
 #[stable(feature = "rust1", since = "1.0.0")]
 impl<T> ops::Index<ops::FullRange> for Vec<T> {
     type Output = [T];
     #[inline]
     fn index(&self, _index: &ops::FullRange) -> &[T] {
+        self.as_slice()
+    }
+}
+#[cfg(not(stage0))]
+#[stable(feature = "rust1", since = "1.0.0")]
+impl<T> ops::Index<ops::RangeFull> for Vec<T> {
+    type Output = [T];
+    #[inline]
+    fn index(&self, _index: &ops::RangeFull) -> &[T] {
         self.as_slice()
     }
 }
@@ -1313,11 +1360,21 @@ impl<T> ops::IndexMut<ops::RangeFrom<uint>> for Vec<T> {
         self.as_mut_slice().index_mut(index)
     }
 }
+#[cfg(stage0)]
 #[stable(feature = "rust1", since = "1.0.0")]
 impl<T> ops::IndexMut<ops::FullRange> for Vec<T> {
     type Output = [T];
     #[inline]
     fn index_mut(&mut self, _index: &ops::FullRange) -> &mut [T] {
+        self.as_mut_slice()
+    }
+}
+#[cfg(not(stage0))]
+#[stable(feature = "rust1", since = "1.0.0")]
+impl<T> ops::IndexMut<ops::RangeFull> for Vec<T> {
+    type Output = [T];
+    #[inline]
+    fn index_mut(&mut self, _index: &ops::RangeFull) -> &mut [T] {
         self.as_mut_slice()
     }
 }
@@ -1859,6 +1916,7 @@ mod tests {
     use prelude::*;
     use core::mem::size_of;
     use core::iter::repeat;
+    #[cfg(stage0)]
     use core::ops::FullRange;
     use test::Bencher;
     use super::as_vec;
@@ -1932,7 +1990,7 @@ mod tests {
         v.reserve(2);
         assert!(v.capacity() >= 2);
 
-        for i in range(0i, 16) {
+        for i in 0i..16 {
             v.push(i);
         }
 
@@ -1951,13 +2009,13 @@ mod tests {
         let mut v = Vec::new();
         let mut w = Vec::new();
 
-        v.extend(range(0i, 3));
-        for i in range(0i, 3) { w.push(i) }
+        v.extend(0i..3);
+        for i in 0i..3 { w.push(i) }
 
         assert_eq!(v, w);
 
-        v.extend(range(3i, 10));
-        for i in range(3i, 10) { w.push(i) }
+        v.extend(3i..10);
+        for i in 3i..10 { w.push(i) }
 
         assert_eq!(v, w);
     }
@@ -1966,7 +2024,7 @@ mod tests {
     fn test_slice_from_mut() {
         let mut values = vec![1u8,2,3,4,5];
         {
-            let slice = values.slice_from_mut(2);
+            let slice = &mut values[2 ..];
             assert!(slice == [3, 4, 5]);
             for p in slice.iter_mut() {
                 *p += 2;
@@ -1980,7 +2038,7 @@ mod tests {
     fn test_slice_to_mut() {
         let mut values = vec![1u8,2,3,4,5];
         {
-            let slice = values.slice_to_mut(2);
+            let slice = &mut values[.. 2];
             assert!(slice == [1, 2]);
             for p in slice.iter_mut() {
                 *p += 1;
@@ -2242,7 +2300,7 @@ mod tests {
     #[test]
     fn test_map_in_place_zero_sized() {
         let v = vec![(), ()];
-        #[derive(PartialEq, Show)]
+        #[derive(PartialEq, Debug)]
         struct ZeroSized;
         assert_eq!(v.map_in_place(|_| ZeroSized), [ZeroSized, ZeroSized]);
     }
@@ -2251,11 +2309,11 @@ mod tests {
     fn test_map_in_place_zero_drop_count() {
         use std::sync::atomic::{AtomicUsize, Ordering, ATOMIC_USIZE_INIT};
 
-        #[derive(Clone, PartialEq, Show)]
+        #[derive(Clone, PartialEq, Debug)]
         struct Nothing;
         impl Drop for Nothing { fn drop(&mut self) { } }
 
-        #[derive(Clone, PartialEq, Show)]
+        #[derive(Clone, PartialEq, Debug)]
         struct ZeroSized;
         impl Drop for ZeroSized {
             fn drop(&mut self) {
@@ -2354,6 +2412,14 @@ mod tests {
         assert_eq!(vec2, vec![]);
     }
 
+    #[test]
+    fn test_split_off() {
+        let mut vec = vec![1, 2, 3, 4, 5, 6];
+        let vec2 = vec.split_off(4);
+        assert_eq!(vec, vec![1, 2, 3, 4]);
+        assert_eq!(vec2, vec![5, 6]);
+    }
+
     #[bench]
     fn bench_new(b: &mut Bencher) {
         b.iter(|| {
@@ -2397,7 +2463,7 @@ mod tests {
         b.bytes = src_len as u64;
 
         b.iter(|| {
-            let dst = range(0, src_len).collect::<Vec<_>>();
+            let dst = (0..src_len).collect::<Vec<_>>();
             assert_eq!(dst.len(), src_len);
             assert!(dst.iter().enumerate().all(|(i, x)| i == *x));
         })
@@ -2454,7 +2520,7 @@ mod tests {
     }
 
     fn do_bench_from_slice(b: &mut Bencher, src_len: uint) {
-        let src: Vec<uint> = FromIterator::from_iter(range(0, src_len));
+        let src: Vec<uint> = FromIterator::from_iter(0..src_len);
 
         b.bytes = src_len as u64;
 
@@ -2486,7 +2552,7 @@ mod tests {
     }
 
     fn do_bench_from_iter(b: &mut Bencher, src_len: uint) {
-        let src: Vec<uint> = FromIterator::from_iter(range(0, src_len));
+        let src: Vec<uint> = FromIterator::from_iter(0..src_len);
 
         b.bytes = src_len as u64;
 
@@ -2518,8 +2584,8 @@ mod tests {
     }
 
     fn do_bench_extend(b: &mut Bencher, dst_len: uint, src_len: uint) {
-        let dst: Vec<uint> = FromIterator::from_iter(range(0, dst_len));
-        let src: Vec<uint> = FromIterator::from_iter(range(dst_len, dst_len + src_len));
+        let dst: Vec<uint> = FromIterator::from_iter(0..dst_len);
+        let src: Vec<uint> = FromIterator::from_iter(dst_len..dst_len + src_len);
 
         b.bytes = src_len as u64;
 
@@ -2567,8 +2633,8 @@ mod tests {
     }
 
     fn do_bench_push_all(b: &mut Bencher, dst_len: uint, src_len: uint) {
-        let dst: Vec<uint> = FromIterator::from_iter(range(0, dst_len));
-        let src: Vec<uint> = FromIterator::from_iter(range(dst_len, dst_len + src_len));
+        let dst: Vec<uint> = FromIterator::from_iter(0..dst_len);
+        let src: Vec<uint> = FromIterator::from_iter(dst_len..dst_len + src_len);
 
         b.bytes = src_len as u64;
 
@@ -2616,8 +2682,8 @@ mod tests {
     }
 
     fn do_bench_push_all_move(b: &mut Bencher, dst_len: uint, src_len: uint) {
-        let dst: Vec<uint> = FromIterator::from_iter(range(0u, dst_len));
-        let src: Vec<uint> = FromIterator::from_iter(range(dst_len, dst_len + src_len));
+        let dst: Vec<uint> = FromIterator::from_iter(0u..dst_len);
+        let src: Vec<uint> = FromIterator::from_iter(dst_len..dst_len + src_len);
 
         b.bytes = src_len as u64;
 
@@ -2665,7 +2731,7 @@ mod tests {
     }
 
     fn do_bench_clone(b: &mut Bencher, src_len: uint) {
-        let src: Vec<uint> = FromIterator::from_iter(range(0, src_len));
+        let src: Vec<uint> = FromIterator::from_iter(0..src_len);
 
         b.bytes = src_len as u64;
 
@@ -2697,15 +2763,15 @@ mod tests {
     }
 
     fn do_bench_clone_from(b: &mut Bencher, times: uint, dst_len: uint, src_len: uint) {
-        let dst: Vec<uint> = FromIterator::from_iter(range(0, src_len));
-        let src: Vec<uint> = FromIterator::from_iter(range(dst_len, dst_len + src_len));
+        let dst: Vec<uint> = FromIterator::from_iter(0..src_len);
+        let src: Vec<uint> = FromIterator::from_iter(dst_len..dst_len + src_len);
 
         b.bytes = (times * src_len) as u64;
 
         b.iter(|| {
             let mut dst = dst.clone();
 
-            for _ in range(0, times) {
+            for _ in 0..times {
                 dst.clone_from(&src);
 
                 assert_eq!(dst.len(), src_len);

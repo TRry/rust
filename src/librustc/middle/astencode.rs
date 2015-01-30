@@ -130,7 +130,7 @@ pub fn decode_inlined_item<'tcx>(cdata: &cstore::crate_metadata,
         debug!("> Decoding inlined fn: {:?}::?",
         {
             // Do an Option dance to use the path after it is moved below.
-            let s = ast_map::path_to_string(ast_map::Values(path.iter()));
+            let s = ast_map::path_to_string(path.iter().cloned());
             path_as_str = Some(s);
             path_as_str.as_ref().map(|x| &x[])
         });
@@ -904,8 +904,8 @@ impl<'a, 'tcx> rbml_writer_helpers<'tcx> for Encoder<'a> {
                             try!(this.emit_struct_field("method_num", 0, |this| {
                                 this.emit_uint(o.method_num)
                             }));
-                            try!(this.emit_struct_field("real_index", 0, |this| {
-                                this.emit_uint(o.real_index)
+                            try!(this.emit_struct_field("vtable_index", 0, |this| {
+                                this.emit_uint(o.vtable_index)
                             }));
                             Ok(())
                         })
@@ -1293,7 +1293,7 @@ fn encode_side_tables_for_id(ecx: &e::EncodeContext,
             }
             ty::AdjustDerefRef(ref adj) => {
                 assert!(!ty::adjust_is_object(adjustment));
-                for autoderef in range(0, adj.autoderefs) {
+                for autoderef in 0..adj.autoderefs {
                     let method_call = MethodCall::autoderef(id, autoderef);
                     for &method in tcx.method_map.borrow().get(&method_call).iter() {
                         rbml_w.tag(c::tag_table_method_map, |rbml_w| {
@@ -1492,8 +1492,8 @@ impl<'a, 'tcx> rbml_decoder_decoder_helpers<'tcx> for reader::Decoder<'a> {
                                             this.read_uint()
                                         }).unwrap()
                                     },
-                                    real_index: {
-                                        this.read_struct_field("real_index", 3, |this| {
+                                    vtable_index: {
+                                        this.read_struct_field("vtable_index", 3, |this| {
                                             this.read_uint()
                                         }).unwrap()
                                     },
@@ -1529,7 +1529,7 @@ impl<'a, 'tcx> rbml_decoder_decoder_helpers<'tcx> for reader::Decoder<'a> {
 
         fn type_string(doc: rbml::Doc) -> String {
             let mut str = String::new();
-            for i in range(doc.start, doc.end) {
+            for i in doc.start..doc.end {
                 str.push(doc.data[i] as char);
             }
             str

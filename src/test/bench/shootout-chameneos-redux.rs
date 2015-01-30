@@ -54,15 +54,14 @@ fn print_complements() {
     }
 }
 
+#[derive(Copy)]
 enum Color {
     Red,
     Yellow,
     Blue,
 }
 
-impl Copy for Color {}
-
-impl fmt::Show for Color {
+impl fmt::Debug for Color {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let str = match *self {
             Red => "red",
@@ -73,12 +72,11 @@ impl fmt::Show for Color {
     }
 }
 
+#[derive(Copy)]
 struct CreatureInfo {
     name: uint,
     color: Color
 }
-
-impl Copy for CreatureInfo {}
 
 fn show_color_list(set: Vec<Color>) -> String {
     let mut out = String::new();
@@ -106,7 +104,7 @@ fn show_digit(nn: uint) -> &'static str {
 }
 
 struct Number(uint);
-impl fmt::Show for Number {
+impl fmt::Debug for Number {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut out = vec![];
         let Number(mut num) = *self;
@@ -202,7 +200,7 @@ fn rendezvous(nn: uint, set: Vec<Color>) {
     let mut creatures_met = 0;
 
     // set up meetings...
-    for _ in range(0, nn) {
+    for _ in 0..nn {
         let fst_creature = from_creatures.recv().unwrap();
         let snd_creature = from_creatures.recv().unwrap();
 

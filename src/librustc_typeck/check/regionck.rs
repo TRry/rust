@@ -948,7 +948,7 @@ fn constrain_autoderefs<'a, 'tcx>(rcx: &mut Rcx<'a, 'tcx>,
            derefd_ty.repr(rcx.tcx()));
 
     let r_deref_expr = ty::ReScope(CodeExtent::from_node_id(deref_expr.id));
-    for i in range(0u, derefs) {
+    for i in 0u..derefs {
         let method_call = MethodCall::autoderef(deref_expr.id, i);
         debug!("constrain_autoderefs: method_call={:?} (of {:?} total)", method_call, derefs);
 
@@ -1482,7 +1482,7 @@ fn generic_must_outlive<'a, 'tcx>(rcx: &Rcx<'a, 'tcx>,
     let mut param_bounds =
         ty::required_region_bounds(rcx.tcx(),
                                    generic.to_ty(rcx.tcx()),
-                                   param_env.caller_bounds.predicates.as_slice().to_vec());
+                                   param_env.caller_bounds.clone());
 
     // In the case of a projection T::Foo, we may be able to extract bounds from the trait def:
     match *generic {

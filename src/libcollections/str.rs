@@ -59,8 +59,14 @@ use core::borrow::{BorrowFrom, ToOwned};
 use core::char::CharExt;
 use core::clone::Clone;
 use core::iter::AdditiveIterator;
-use core::iter::{range, Iterator, IteratorExt};
-use core::ops::{FullRange, Index};
+use core::iter::{Iterator, IteratorExt};
+use core::ops::Index;
+#[cfg(stage0)]
+use core::ops::FullRange as RangeFull;
+#[cfg(stage0)]
+use core::ops::FullRange;
+#[cfg(not(stage0))]
+use core::ops::RangeFull;
 use core::option::Option::{self, Some, None};
 use core::slice::AsSlice;
 use core::str as core_str;
@@ -142,9 +148,9 @@ Section: Iterators
 // Helper functions used for Unicode normalization
 fn canonical_sort(comb: &mut [(char, u8)]) {
     let len = comb.len();
-    for i in range(0, len) {
+    for i in 0..len {
         let mut swapped = false;
-        for j in range(1, len-i) {
+        for j in 1..len-i {
             let class_a = comb[j-1].1;
             let class_b = comb[j].1;
             if class_a != 0 && class_b != 0 && class_a > class_b {
@@ -408,7 +414,7 @@ Section: Trait implementations
 
 /// Any string that can be represented as a slice.
 #[stable(feature = "rust1", since = "1.0.0")]
-pub trait StrExt: Index<FullRange, Output = str> {
+pub trait StrExt: Index<RangeFull, Output = str> {
     /// Escapes each char in `s` with `char::escape_default`.
     #[unstable(feature = "collections",
                reason = "return type may change to be an iterator")]
@@ -1430,28 +1436,28 @@ mod tests {
         assert!("banana".find_str("apple pie").is_none());
 
         let data = "abcabc";
-        assert_eq!(data.slice(0u, 6u).find_str("ab"), Some(0u));
-        assert_eq!(data.slice(2u, 6u).find_str("ab"), Some(3u - 2u));
-        assert!(data.slice(2u, 4u).find_str("ab").is_none());
+        assert_eq!(data[0u..6u].find_str("ab"), Some(0u));
+        assert_eq!(data[2u..6u].find_str("ab"), Some(3u - 2u));
+        assert!(data[2u..4u].find_str("ab").is_none());
 
         let string = "ประเทศไทย中华Việt Nam";
         let mut data = String::from_str(string);
         data.push_str(string);
         assert!(data.find_str("ไท华").is_none());
-        assert_eq!(data.slice(0u, 43u).find_str(""), Some(0u));
-        assert_eq!(data.slice(6u, 43u).find_str(""), Some(6u - 6u));
+        assert_eq!(data[0u..43u].find_str(""), Some(0u));
+        assert_eq!(data[6u..43u].find_str(""), Some(6u - 6u));
 
-        assert_eq!(data.slice(0u, 43u).find_str("ประ"), Some( 0u));
-        assert_eq!(data.slice(0u, 43u).find_str("ทศไ"), Some(12u));
-        assert_eq!(data.slice(0u, 43u).find_str("ย中"), Some(24u));
-        assert_eq!(data.slice(0u, 43u).find_str("iệt"), Some(34u));
-        assert_eq!(data.slice(0u, 43u).find_str("Nam"), Some(40u));
+        assert_eq!(data[0u..43u].find_str("ประ"), Some( 0u));
+        assert_eq!(data[0u..43u].find_str("ทศไ"), Some(12u));
+        assert_eq!(data[0u..43u].find_str("ย中"), Some(24u));
+        assert_eq!(data[0u..43u].find_str("iệt"), Some(34u));
+        assert_eq!(data[0u..43u].find_str("Nam"), Some(40u));
 
-        assert_eq!(data.slice(43u, 86u).find_str("ประ"), Some(43u - 43u));
-        assert_eq!(data.slice(43u, 86u).find_str("ทศไ"), Some(55u - 43u));
-        assert_eq!(data.slice(43u, 86u).find_str("ย中"), Some(67u - 43u));
-        assert_eq!(data.slice(43u, 86u).find_str("iệt"), Some(77u - 43u));
-        assert_eq!(data.slice(43u, 86u).find_str("Nam"), Some(83u - 43u));
+        assert_eq!(data[43u..86u].find_str("ประ"), Some(43u - 43u));
+        assert_eq!(data[43u..86u].find_str("ทศไ"), Some(55u - 43u));
+        assert_eq!(data[43u..86u].find_str("ย中"), Some(67u - 43u));
+        assert_eq!(data[43u..86u].find_str("iệt"), Some(77u - 43u));
+        assert_eq!(data[43u..86u].find_str("Nam"), Some(83u - 43u));
     }
 
     #[test]
@@ -1937,8 +1943,8 @@ mod tests {
     #[test]
     fn test_subslice_offset() {
         let a = "kernelsprite";
-        let b = a.slice(7, a.len());
-        let c = a.slice(0, a.len() - 6);
+        let b = &a[7..a.len()];
+        let c = &a[0..a.len() - 6];
         assert_eq!(a.subslice_offset(b), 7);
         assert_eq!(a.subslice_offset(c), 0);
 
@@ -2122,7 +2128,7 @@ mod tests {
     #[test]
     fn test_chars_decoding() {
         let mut bytes = [0u8; 4];
-        for c in range(0u32, 0x110000).filter_map(|c| ::core::char::from_u32(c)) {
+        for c in (0u32..0x110000).filter_map(|c| ::core::char::from_u32(c)) {
             let len = c.encode_utf8(&mut bytes).unwrap_or(0);
             let s = ::core::str::from_utf8(&bytes[..len]).unwrap();
             if Some(c) != s.chars().next() {
@@ -2134,7 +2140,7 @@ mod tests {
     #[test]
     fn test_chars_rev_decoding() {
         let mut bytes = [0u8; 4];
-        for c in range(0u32, 0x110000).filter_map(|c| ::core::char::from_u32(c)) {
+        for c in (0u32..0x110000).filter_map(|c| ::core::char::from_u32(c)) {
             let len = c.encode_utf8(&mut bytes).unwrap_or(0);
             let s = ::core::str::from_utf8(&bytes[..len]).unwrap();
             if Some(c) != s.chars().rev().next() {

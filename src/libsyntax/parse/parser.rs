@@ -1796,6 +1796,8 @@ impl<'a> Parser<'a> {
                     bindings: OwnedSlice::from_vec(bindings),
                 })
             } else if self.eat(&token::OpenDelim(token::Paren)) {
+                let lo = self.last_span.lo;
+
                 let inputs = self.parse_seq_to_end(
                     &token::CloseDelim(token::Paren),
                     seq_sep_trailing_allowed(token::Comma),
@@ -1807,9 +1809,12 @@ impl<'a> Parser<'a> {
                     None
                 };
 
+                let hi = self.last_span.hi;
+
                 ast::ParenthesizedParameters(ast::ParenthesizedParameterData {
+                    span: mk_sp(lo, hi),
                     inputs: inputs,
-                    output: output_ty
+                    output: output_ty,
                 })
             } else {
                 ast::PathParameters::none()
@@ -2522,14 +2527,27 @@ impl<'a> Parser<'a> {
                 }
 
                 if found_dotdot || self.eat(&token::CloseDelim(token::Bracket)) {
-                    // No expression, expand to a FullRange
+                    // No expression, expand to a RangeFull
                     // FIXME(#20516) It would be better to use a lang item or
-                    // something for FullRange.
+                    // something for RangeFull.
                     hi = self.last_span.hi;
-                    let range = ExprStruct(ident_to_path(mk_sp(lo, hi),
-                                                         token::special_idents::FullRange),
-                                           vec![],
-                                           None);
+
+                    let idents = vec![token::str_to_ident("std"),
+                                      token::str_to_ident("ops"),
+                                      token::str_to_ident("RangeFull")];
+                    let segments = idents.into_iter().map(|ident| {
+                        ast::PathSegment {
+                            identifier: ident,
+                            parameters: ast::PathParameters::none(),
+                        }
+                    }).collect();
+                    let path = ast::Path {
+                        span: mk_sp(lo, hi),
+                        global: true,
+                        segments: segments,
+                    };
+
+                    let range = ExprStruct(path, vec![], None);
                     let ix = self.mk_expr(bracket_pos, hi, range);
                     let index = self.mk_index(e, ix);
                     e = self.mk_expr(lo, hi, index)

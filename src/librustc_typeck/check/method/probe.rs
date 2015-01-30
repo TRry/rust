@@ -14,7 +14,7 @@ use super::{CandidateSource,ImplSource,TraitSource};
 use super::suggest;
 
 use check;
-use check::{FnCtxt, NoPreference};
+use check::{FnCtxt, NoPreference, UnresolvedTypeAction};
 use middle::fast_reject;
 use middle::subst;
 use middle::subst::Subst;
@@ -59,7 +59,7 @@ struct Candidate<'tcx> {
 
 enum CandidateKind<'tcx> {
     InherentImplCandidate(/* Impl */ ast::DefId, subst::Substs<'tcx>),
-    ObjectCandidate(/* Trait */ ast::DefId, /* method_num */ uint, /* real_index */ uint),
+    ObjectCandidate(/* Trait */ ast::DefId, /* method_num */ uint, /* vtable index */ uint),
     ExtensionImplCandidate(/* Impl */ ast::DefId, Rc<ty::TraitRef<'tcx>>,
                            subst::Substs<'tcx>, MethodIndex),
     ClosureCandidate(/* Trait */ ast::DefId, MethodIndex),
@@ -73,7 +73,7 @@ pub struct Pick<'tcx> {
     pub kind: PickKind<'tcx>,
 }
 
-#[derive(Clone,Show)]
+#[derive(Clone,Debug)]
 pub enum PickKind<'tcx> {
     InherentImplPick(/* Impl */ ast::DefId),
     ObjectPick(/* Trait */ ast::DefId, /* method_num */ uint, /* real_index */ uint),
@@ -88,7 +88,7 @@ pub type PickResult<'tcx> = Result<Pick<'tcx>, MethodError>;
 // difference is that it doesn't embed any regions or other
 // specifics. The "confirmation" step recreates those details as
 // needed.
-#[derive(Clone,Show)]
+#[derive(Clone,Debug)]
 pub enum PickAdjustment {
     // Indicates that the source expression should be autoderef'd N times
     //
@@ -169,16 +169,19 @@ fn create_steps<'a, 'tcx>(fcx: &FnCtxt<'a, 'tcx>,
                           -> Option<Vec<CandidateStep<'tcx>>> {
     let mut steps = Vec::new();
 
-    let (fully_dereferenced_ty, dereferences, _) =
-        check::autoderef(
-            fcx, span, self_ty, None, NoPreference,
-            |t, d| {
-                let adjustment = AutoDeref(d);
-                steps.push(CandidateStep { self_ty: t, adjustment: adjustment });
-                None::<()> // keep iterating until we can't anymore
-            });
+    let (final_ty, dereferences, _) = check::autoderef(fcx,
+                                                       span,
+                                                       self_ty,
+                                                       None,
+                                                       UnresolvedTypeAction::Error,
+                                                       NoPreference,
+                                                       |t, d| {
+        let adjustment = AutoDeref(d);
+        steps.push(CandidateStep { self_ty: t, adjustment: adjustment });
+        None::<()> // keep iterating until we can't anymore
+    });
 
-    match fully_dereferenced_ty.sty {
+    match final_ty.sty {
         ty::ty_vec(elem_ty, Some(len)) => {
             steps.push(CandidateStep {
                 self_ty: ty::mk_vec(fcx.tcx(), elem_ty, None),
@@ -318,7 +321,7 @@ impl<'a,'tcx> ProbeContext<'a,'tcx> {
         // itself. Hence, a `&self` method will wind up with an
         // argument type like `&Trait`.
         let trait_ref = data.principal_trait_ref_with_self_ty(self.tcx(), self_ty);
-        self.elaborate_bounds(&[trait_ref.clone()], false, |this, new_trait_ref, m, method_num| {
+        self.elaborate_bounds(&[trait_ref.clone()], |this, new_trait_ref, m, method_num| {
             let new_trait_ref = this.erase_late_bound_regions(&new_trait_ref);
 
             let vtable_index =
@@ -343,7 +346,7 @@ impl<'a,'tcx> ProbeContext<'a,'tcx> {
         // FIXME -- Do we want to commit to this behavior for param bounds?
 
         let bounds: Vec<_> =
-            self.fcx.inh.param_env.caller_bounds.predicates
+            self.fcx.inh.param_env.caller_bounds
             .iter()
             .filter_map(|predicate| {
                 match *predicate {
@@ -365,7 +368,7 @@ impl<'a,'tcx> ProbeContext<'a,'tcx> {
             })
             .collect();
 
-        self.elaborate_bounds(bounds.as_slice(), true, |this, poly_trait_ref, m, method_num| {
+        self.elaborate_bounds(bounds.as_slice(), |this, poly_trait_ref, m, method_num| {
             let trait_ref =
                 this.erase_late_bound_regions(&poly_trait_ref);
 
@@ -405,7 +408,6 @@ impl<'a,'tcx> ProbeContext<'a,'tcx> {
     fn elaborate_bounds<F>(
         &mut self,
         bounds: &[ty::PolyTraitRef<'tcx>],
-        num_includes_types: bool,
         mut mk_cand: F,
     ) where
         F: for<'b> FnMut(
@@ -427,8 +429,7 @@ impl<'a,'tcx> ProbeContext<'a,'tcx> {
 
             let (pos, method) = match trait_method(tcx,
                                                    bound_trait_ref.def_id(),
-                                                   self.method_name,
-                                                   num_includes_types) {
+                                                   self.method_name) {
                 Some(v) => v,
                 None => { continue; }
             };
@@ -697,8 +698,7 @@ impl<'a,'tcx> ProbeContext<'a,'tcx> {
         debug!("assemble_where_clause_candidates(trait_def_id={})",
                trait_def_id.repr(self.tcx()));
 
-        let caller_predicates =
-            self.fcx.inh.param_env.caller_bounds.predicates.as_slice().to_vec();
+        let caller_predicates = self.fcx.inh.param_env.caller_bounds.clone();
         for poly_bound in traits::elaborate_predicates(self.tcx(), caller_predicates)
                           .filter_map(|p| p.to_opt_poly_trait_ref())
                           .filter(|b| b.def_id() == trait_def_id)
@@ -1140,19 +1140,13 @@ fn impl_method<'tcx>(tcx: &ty::ctxt<'tcx>,
 /// index (or `None`, if no such method).
 fn trait_method<'tcx>(tcx: &ty::ctxt<'tcx>,
                       trait_def_id: ast::DefId,
-                      method_name: ast::Name,
-                      num_includes_types: bool)
+                      method_name: ast::Name)
                       -> Option<(uint, Rc<ty::Method<'tcx>>)>
 {
     let trait_items = ty::trait_items(tcx, trait_def_id);
     debug!("trait_method; items: {:?}", trait_items);
     trait_items
         .iter()
-        .filter(|item|
-            num_includes_types || match *item {
-                &ty::MethodTraitItem(_) => true,
-                &ty::TypeTraitItem(_) => false
-            })
         .enumerate()
         .find(|&(_, ref item)| item.name() == method_name)
         .and_then(|(idx, item)| item.as_opt_method().map(|m| (idx, m)))
