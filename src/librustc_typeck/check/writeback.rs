@@ -182,16 +182,20 @@ impl<'cx, 'tcx> WritebackCx<'cx, 'tcx> {
             return;
         }
 
-        for (upvar_id, upvar_borrow) in self.fcx.inh.upvar_borrow_map.borrow().iter() {
-            let r = upvar_borrow.region;
-            let r = self.resolve(&r, ResolvingUpvar(*upvar_id));
-            let new_upvar_borrow = ty::UpvarBorrow { kind: upvar_borrow.kind,
-                                                     region: r };
-            debug!("Upvar borrow for {} resolved to {}",
+        for (upvar_id, upvar_capture) in self.fcx.inh.upvar_capture_map.borrow().iter() {
+            let new_upvar_capture = match *upvar_capture {
+                ty::UpvarCapture::ByValue => ty::UpvarCapture::ByValue,
+                ty::UpvarCapture::ByRef(ref upvar_borrow) => {
+                    let r = upvar_borrow.region;
+                    let r = self.resolve(&r, ResolvingUpvar(*upvar_id));
+                    ty::UpvarCapture::ByRef(
+                        ty::UpvarBorrow { kind: upvar_borrow.kind, region: r })
+                }
+            };
+            debug!("Upvar capture for {} resolved to {}",
                    upvar_id.repr(self.tcx()),
-                   new_upvar_borrow.repr(self.tcx()));
-            self.fcx.tcx().upvar_borrow_map.borrow_mut().insert(
-                *upvar_id, new_upvar_borrow);
+                   new_upvar_capture.repr(self.tcx()));
+            self.fcx.tcx().upvar_capture_map.borrow_mut().insert(*upvar_id, new_upvar_capture);
         }
     }
 
@@ -200,14 +204,13 @@ impl<'cx, 'tcx> WritebackCx<'cx, 'tcx> {
             return
         }
 
-        for (def_id, closure) in self.fcx.inh.closures.borrow().iter() {
-            let closure_ty = self.resolve(&closure.closure_type,
-                                          ResolvingClosure(*def_id));
-            let closure = ty::Closure {
-                closure_type: closure_ty,
-                kind: closure.kind,
-            };
-            self.fcx.tcx().closures.borrow_mut().insert(*def_id, closure);
+        for (def_id, closure_ty) in self.fcx.inh.closure_tys.borrow().iter() {
+            let closure_ty = self.resolve(closure_ty, ResolvingClosure(*def_id));
+            self.fcx.tcx().closure_tys.borrow_mut().insert(*def_id, closure_ty);
+        }
+
+        for (def_id, &closure_kind) in self.fcx.inh.closure_kinds.borrow().iter() {
+            self.fcx.tcx().closure_kinds.borrow_mut().insert(*def_id, closure_kind);
         }
     }
 

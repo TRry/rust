@@ -100,6 +100,7 @@ pub fn explain_region_and_span(cx: &ctxt, region: ty::Region)
               ast::ExprMethodCall(..) => "method call",
               ast::ExprMatch(_, _, ast::MatchSource::IfLetDesugar { .. }) => "if let",
               ast::ExprMatch(_, _, ast::MatchSource::WhileLetDesugar) =>  "while let",
+              ast::ExprMatch(_, _, ast::MatchSource::ForLoopDesugar) =>  "for",
               ast::ExprMatch(..) => "match",
               _ => "expression",
           },
@@ -404,9 +405,9 @@ pub fn ty_to_string<'tcx>(cx: &ctxt<'tcx>, typ: &ty::TyS<'tcx>) -> String {
         }
         ty_str => "str".to_string(),
         ty_closure(ref did, _, substs) => {
-            let closures = cx.closures.borrow();
-            closures.get(did).map(|cl| {
-                closure_to_string(cx, &cl.closure_type.subst(cx, substs))
+            let closure_tys = cx.closure_tys.borrow();
+            closure_tys.get(did).map(|closure_type| {
+                closure_to_string(cx, &closure_type.subst(cx, substs))
             }).unwrap_or_else(|| {
                 if did.krate == ast::LOCAL_CRATE {
                     let span = cx.map.span(did.node);
@@ -1289,6 +1290,15 @@ impl<'tcx> Repr<'tcx> for ty::UpvarBorrow {
         format!("UpvarBorrow({}, {})",
                 self.kind.repr(tcx),
                 self.region.repr(tcx))
+    }
+}
+
+impl<'tcx> Repr<'tcx> for ty::UpvarCapture {
+    fn repr(&self, tcx: &ctxt) -> String {
+        match *self {
+            ty::UpvarCapture::ByValue => format!("ByValue"),
+            ty::UpvarCapture::ByRef(ref data) => format!("ByRef({})", data.repr(tcx)),
+        }
     }
 }
 
