@@ -31,7 +31,7 @@ use std::old_io::process::ProcessExit;
 use std::old_io::process;
 use std::old_io::timer;
 use std::old_io;
-use std::os;
+use std::env;
 use std::iter::repeat;
 use std::str;
 use std::string::String;
@@ -230,9 +230,9 @@ fn run_pretty_test(config: &Config, props: &TestProps, testfile: &Path) {
             let s = File::open(&filepath).read_to_end().unwrap();
             String::from_utf8(s).unwrap()
         }
-        None => { srcs[srcs.len() - 2u].clone() }
+        None => { srcs[srcs.len() - 2].clone() }
     };
-    let mut actual = srcs[srcs.len() - 1u].clone();
+    let mut actual = srcs[srcs.len() - 1].clone();
 
     if props.pp_exact.is_some() {
         // Now we have to care about line endings
@@ -547,7 +547,7 @@ fn run_debuginfo_gdb_test(config: &Config, props: &TestProps, testfile: &Path) {
                                          exe_file.as_str().unwrap().replace("\\", "\\\\"))[]);
 
             // Add line breakpoints
-            for line in breakpoint_lines.iter() {
+            for line in &breakpoint_lines {
                 script_str.push_str(&format!("break '{}':{}\n",
                                              testfile.filename_display(),
                                              *line)[]);
@@ -683,13 +683,13 @@ fn run_debuginfo_lldb_test(config: &Config, props: &TestProps, testfile: &Path) 
     script_str.push_str("type category enable Rust\n");
 
     // Set breakpoints on every line that contains the string "#break"
-    for line in breakpoint_lines.iter() {
+    for line in &breakpoint_lines {
         script_str.push_str(format!("breakpoint set --line {}\n",
                                     line).as_slice());
     }
 
     // Append the other commands
-    for line in commands.iter() {
+    for line in &commands {
         script_str.push_str(line.as_slice());
         script_str.push_str("\n");
     }
@@ -842,12 +842,12 @@ fn check_debugger_output(debugger_run_result: &ProcRes, check_lines: &[String]) 
             }).collect();
         // check if each line in props.check_lines appears in the
         // output (in order)
-        let mut i = 0u;
+        let mut i = 0;
         for line in debugger_run_result.stdout.lines() {
             let mut rest = line.trim();
             let mut first = true;
             let mut failed = false;
-            for frag in check_fragments[i].iter() {
+            for frag in &check_fragments[i] {
                 let found = if first {
                     if rest.starts_with(frag.as_slice()) {
                         Some(0)
@@ -869,7 +869,7 @@ fn check_debugger_output(debugger_run_result: &ProcRes, check_lines: &[String]) 
                 first = false;
             }
             if !failed && rest.len() == 0 {
-                i += 1u;
+                i += 1;
             }
             if i == num_check_lines {
                 // all lines checked
@@ -892,13 +892,13 @@ fn check_error_patterns(props: &TestProps,
         fatal(format!("no error pattern specified in {:?}",
                       testfile.display()).as_slice());
     }
-    let mut next_err_idx = 0u;
+    let mut next_err_idx = 0;
     let mut next_err_pat = &props.error_patterns[next_err_idx];
     let mut done = false;
     for line in output_to_check.lines() {
         if line.contains(next_err_pat.as_slice()) {
             debug!("found error pattern {}", next_err_pat);
-            next_err_idx += 1u;
+            next_err_idx += 1;
             if next_err_idx == props.error_patterns.len() {
                 debug!("found all error patterns");
                 done = true;
@@ -910,12 +910,12 @@ fn check_error_patterns(props: &TestProps,
     if done { return; }
 
     let missing_patterns = &props.error_patterns[next_err_idx..];
-    if missing_patterns.len() == 1u {
+    if missing_patterns.len() == 1 {
         fatal_proc_rec(format!("error pattern '{}' not found!",
                               missing_patterns[0]).as_slice(),
                       proc_res);
     } else {
-        for pattern in missing_patterns.iter() {
+        for pattern in missing_patterns {
             error(format!("error pattern '{}' not found!",
                           *pattern).as_slice());
         }
@@ -935,7 +935,7 @@ fn check_no_compiler_crash(proc_res: &ProcRes) {
 fn check_forbid_output(props: &TestProps,
                        output_to_check: &str,
                        proc_res: &ProcRes) {
-    for pat in props.forbid_output.iter() {
+    for pat in &props.forbid_output {
         if output_to_check.contains(pat.as_slice()) {
             fatal_proc_rec("forbidden pattern found in compiler output", proc_res);
         }
@@ -1025,7 +1025,7 @@ fn check_expected_errors(expected_errors: Vec<errors::ExpectedError> ,
 }
 
 fn is_compiler_error_or_warning(line: &str) -> bool {
-    let mut i = 0u;
+    let mut i = 0;
     return
         scan_until_char(line, ':', &mut i) &&
         scan_char(line, ':', &mut i) &&
@@ -1084,7 +1084,7 @@ fn scan_integer(haystack: &str, idx: &mut uint) -> bool {
 
 fn scan_string(haystack: &str, needle: &str, idx: &mut uint) -> bool {
     let mut haystack_i = *idx;
-    let mut needle_i = 0u;
+    let mut needle_i = 0;
     while needle_i < needle.len() {
         if haystack_i >= haystack.len() {
             return false;
@@ -1173,7 +1173,7 @@ fn compose_and_run_compiler(
     // FIXME (#9639): This needs to handle non-utf8 paths
     let extra_link_args = vec!("-L".to_string(), aux_dir.as_str().unwrap().to_string());
 
-    for rel_ab in props.aux_builds.iter() {
+    for rel_ab in &props.aux_builds {
         let abs_ab = config.aux_base.join(rel_ab.as_slice());
         let aux_props = header::load_props(&abs_ab);
         let mut crate_type = if aux_props.no_prefer_dynamic {
@@ -1298,9 +1298,9 @@ fn make_lib_name(config: &Config, auxfile: &Path, testfile: &Path) -> Path {
 
 fn make_exe_name(config: &Config, testfile: &Path) -> Path {
     let mut f = output_base_name(config, testfile);
-    if !os::consts::EXE_SUFFIX.is_empty() {
+    if !env::consts::EXE_SUFFIX.is_empty() {
         let mut fname = f.filename().unwrap().to_vec();
-        fname.extend(os::consts::EXE_SUFFIX.bytes());
+        fname.extend(env::consts::EXE_SUFFIX.bytes());
         f.set_filename(fname);
     }
     f
@@ -1503,14 +1503,14 @@ fn _arm_exec_compiled_test(config: &Config,
 
     // run test via adb_run_wrapper
     runargs.push("shell".to_string());
-    for (key, val) in env.into_iter() {
+    for (key, val) in env {
         runargs.push(format!("{}={}", key, val));
     }
     runargs.push(format!("{}/adb_run_wrapper.sh", config.adb_test_dir));
     runargs.push(format!("{}", config.adb_test_dir));
     runargs.push(format!("{}", prog_short));
 
-    for tv in args.args.iter() {
+    for tv in &args.args {
         runargs.push(tv.to_string());
     }
     procsrv::run("",
@@ -1591,7 +1591,7 @@ fn _arm_push_aux_shared_library(config: &Config, testfile: &Path) {
     let tdir = aux_output_dir_name(config, testfile);
 
     let dirs = fs::readdir(&tdir).unwrap();
-    for file in dirs.iter() {
+    for file in &dirs {
         if file.extension_str() == Some("so") {
             // FIXME (#9639): This needs to handle non-utf8 paths
             let copy_result = procsrv::run("",

@@ -32,7 +32,7 @@
 //!     match foo {
 //!         A => ...,
 //!         B(x) => ...,
-//!         C(1u, 2) => ...,
+//!         C(1, 2) => ...,
 //!         C(_) => ...
 //!     }
 //!
@@ -41,7 +41,7 @@
 //! various options and then compile the code for the case where `foo` is an
 //! `A`, a `B`, and a `C`.  When we generate the code for `C`, we would (1)
 //! drop the two matches that do not match a `C` and (2) expand the other two
-//! into two patterns each.  In the first case, the two patterns would be `1u`
+//! into two patterns each.  In the first case, the two patterns would be `1`
 //! and `2`, and the in the second case the _ pattern would be expanded into
 //! `_` and `_`.  The two values are of course the arguments to `C`.
 //!
@@ -366,7 +366,7 @@ impl<'a, 'p, 'blk, 'tcx> Repr<'tcx> for Match<'a, 'p, 'blk, 'tcx> {
 }
 
 fn has_nested_bindings(m: &[Match], col: uint) -> bool {
-    for br in m.iter() {
+    for br in m {
         match br.pats[col].node {
             ast::PatIdent(_, _, Some(_)) => return true,
             _ => ()
@@ -561,7 +561,7 @@ fn get_branches<'a, 'p, 'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
     let tcx = bcx.tcx();
 
     let mut found: Vec<Opt> = vec![];
-    for br in m.iter() {
+    for br in m {
         let cur = br.pats[col];
         let opt = match cur.node {
             ast::PatLit(ref l) => ConstantValue(ConstantExpr(&**l)),
@@ -638,8 +638,8 @@ fn bind_subslice_pat(bcx: Block,
                                 ty::mt {ty: vt.unit_ty, mutbl: ast::MutImmutable});
     let scratch = rvalue_scratch_datum(bcx, slice_ty, "");
     Store(bcx, slice_begin,
-          GEPi(bcx, scratch.val, &[0u, abi::FAT_PTR_ADDR]));
-    Store(bcx, slice_len, GEPi(bcx, scratch.val, &[0u, abi::FAT_PTR_EXTRA]));
+          GEPi(bcx, scratch.val, &[0, abi::FAT_PTR_ADDR]));
+    Store(bcx, slice_len, GEPi(bcx, scratch.val, &[0, abi::FAT_PTR_EXTRA]));
     scratch.val
 }
 
@@ -742,8 +742,8 @@ fn pick_column_to_specialize(def_map: &DefMap, m: &[Match]) -> Option<uint> {
     fn pat_score(def_map: &DefMap, pat: &ast::Pat) -> uint {
         match pat.node {
             ast::PatIdent(_, _, Some(ref inner)) => pat_score(def_map, &**inner),
-            _ if pat_is_refutable(def_map, pat) => 1u,
-            _ => 0u
+            _ if pat_is_refutable(def_map, pat) => 1,
+            _ => 0
         }
     }
 
@@ -827,7 +827,7 @@ fn insert_lllocals<'blk, 'tcx>(mut bcx: Block<'blk, 'tcx>,
                                bindings_map: &BindingsMap<'tcx>,
                                cs: Option<cleanup::ScopeId>)
                                -> Block<'blk, 'tcx> {
-    for (&ident, &binding_info) in bindings_map.iter() {
+    for (&ident, &binding_info) in bindings_map {
         let llval = match binding_info.trmode {
             // By value mut binding for a copy type: load from the ptr
             // into the matched value and copy to our alloca
@@ -883,7 +883,7 @@ fn compile_guard<'a, 'p, 'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
     let val = unpack_datum!(bcx, expr::trans(bcx, guard_expr));
     let val = val.to_llbool(bcx);
 
-    for (_, &binding_info) in data.bindings_map.iter() {
+    for (_, &binding_info) in &data.bindings_map {
         if let TrByCopy(llbinding) = binding_info.trmode {
             call_lifetime_end(bcx, llbinding);
         }
@@ -891,7 +891,7 @@ fn compile_guard<'a, 'p, 'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
 
     with_cond(bcx, Not(bcx, val, guard_expr.debug_loc()), |bcx| {
         // Guard does not match: remove all bindings from the lllocals table
-        for (_, &binding_info) in data.bindings_map.iter() {
+        for (_, &binding_info) in &data.bindings_map {
             call_lifetime_end(bcx, binding_info.llmatch);
             bcx.fcx.lllocals.borrow_mut().remove(&binding_info.id);
         }
@@ -922,7 +922,7 @@ fn compile_submatch<'a, 'p, 'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
     let _indenter = indenter();
     let _icx = push_ctxt("match::compile_submatch");
     let mut bcx = bcx;
-    if m.len() == 0u {
+    if m.len() == 0 {
         if chk.is_fallible() {
             chk.handle_fail(bcx);
         }
@@ -949,7 +949,7 @@ fn compile_submatch<'a, 'p, 'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
         }
         None => {
             let data = &m[0].data;
-            for &(ref ident, ref value_ptr) in m[0].bound_ptrs.iter() {
+            for &(ref ident, ref value_ptr) in &m[0].bound_ptrs {
                 let llmatch = data.bindings_map[*ident].llmatch;
                 call_lifetime_start(bcx, llmatch);
                 Store(bcx, *value_ptr, llmatch);
@@ -982,8 +982,8 @@ fn compile_submatch_continue<'a, 'p, 'blk, 'tcx>(mut bcx: Block<'blk, 'tcx>,
     let tcx = bcx.tcx();
     let dm = &tcx.def_map;
 
-    let mut vals_left = vals[0u..col].to_vec();
-    vals_left.push_all(&vals[col + 1u..]);
+    let mut vals_left = vals[0..col].to_vec();
+    vals_left.push_all(&vals[col + 1..]);
     let ccx = bcx.fcx.ccx;
 
     // Find a real id (we're adding placeholder wildcard patterns, but
@@ -1042,7 +1042,7 @@ fn compile_submatch_continue<'a, 'p, 'blk, 'tcx>(mut bcx: Block<'blk, 'tcx>,
     let mut kind = NoBranch;
     let mut test_val = val;
     debug!("test_val={}", bcx.val_to_string(test_val));
-    if opts.len() > 0u {
+    if opts.len() > 0 {
         match opts[0] {
             ConstantValue(_) | ConstantRange(_, _) => {
                 test_val = load_if_immediate(bcx, val, left_ty);
@@ -1055,7 +1055,7 @@ fn compile_submatch_continue<'a, 'p, 'blk, 'tcx>(mut bcx: Block<'blk, 'tcx>,
             Variant(_, ref repr, _) => {
                 let (the_kind, val_opt) = adt::trans_switch(bcx, &**repr, val);
                 kind = the_kind;
-                for &tval in val_opt.iter() { test_val = tval; }
+                if let Some(tval) = val_opt { test_val = tval; }
             }
             SliceLengthEqual(_) | SliceLengthGreaterOrEqual(_, _) => {
                 let (_, len) = tvec::get_base_and_len(bcx, val, left_ty);
@@ -1064,7 +1064,7 @@ fn compile_submatch_continue<'a, 'p, 'blk, 'tcx>(mut bcx: Block<'blk, 'tcx>,
             }
         }
     }
-    for o in opts.iter() {
+    for o in &opts {
         match *o {
             ConstantRange(_, _) => { kind = Compare; break },
             SliceLengthGreaterOrEqual(_, _) => { kind = CompareSliceLength; break },
@@ -1082,7 +1082,7 @@ fn compile_submatch_continue<'a, 'p, 'blk, 'tcx>(mut bcx: Block<'blk, 'tcx>,
     };
 
     let defaults = enter_default(else_cx, dm, m, col, val);
-    let exhaustive = chk.is_infallible() && defaults.len() == 0u;
+    let exhaustive = chk.is_infallible() && defaults.len() == 0;
     let len = opts.len();
 
     // Compile subtrees for each option
@@ -1157,7 +1157,7 @@ fn compile_submatch_continue<'a, 'p, 'blk, 'tcx>(mut bcx: Block<'blk, 'tcx>,
             Br(bcx, else_cx.llbb, DebugLoc::None);
         }
 
-        let mut size = 0u;
+        let mut size = 0;
         let mut unpacked = Vec::new();
         match *opt {
             Variant(disr_val, ref repr, _) => {
@@ -1410,7 +1410,7 @@ fn trans_match_inner<'blk, 'tcx>(scope_cx: Block<'blk, 'tcx>,
     compile_submatch(bcx, &matches[], &[discr_datum.val], &chk, has_default);
 
     let mut arm_cxs = Vec::new();
-    for arm_data in arm_datas.iter() {
+    for arm_data in &arm_datas {
         let mut bcx = arm_data.bodycx;
 
         // insert bindings into the lllocals map and add cleanups
@@ -1623,7 +1623,7 @@ fn bind_irrefutable_pat<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
                     });
             }
 
-            for inner_pat in inner.iter() {
+            if let Some(ref inner_pat) = *inner {
                 bcx = bind_irrefutable_pat(bcx, &**inner_pat, val, cleanup_scope);
             }
         }
@@ -1639,7 +1639,7 @@ fn bind_irrefutable_pat<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
                                                     &*repr,
                                                     vinfo.disr_val,
                                                     val);
-                    for sub_pat in sub_pats.iter() {
+                    if let Some(ref sub_pat) = *sub_pats {
                         for (i, &argval) in args.vals.iter().enumerate() {
                             bcx = bind_irrefutable_pat(bcx, &*sub_pat[i],
                                                        argval, cleanup_scope);
@@ -1673,7 +1673,7 @@ fn bind_irrefutable_pat<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
             let pat_ty = node_id_type(bcx, pat.id);
             let pat_repr = adt::represent_type(bcx.ccx(), pat_ty);
             expr::with_field_tys(tcx, pat_ty, Some(pat.id), |discr, field_tys| {
-                for f in fields.iter() {
+                for f in fields {
                     let ix = ty::field_idx_strict(tcx, f.node.ident.name, field_tys);
                     let fldptr = adt::trans_field_ptr(bcx, &*pat_repr, val,
                                                       discr, ix);

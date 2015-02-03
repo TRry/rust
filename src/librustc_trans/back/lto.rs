@@ -34,7 +34,7 @@ pub fn run(sess: &session::Session, llmod: ModuleRef,
     }
 
     // Make sure we actually can run LTO
-    for crate_type in sess.crate_types.borrow().iter() {
+    for crate_type in &*sess.crate_types.borrow() {
         match *crate_type {
             config::CrateTypeExecutable | config::CrateTypeStaticlib => {}
             _ => {
@@ -48,7 +48,7 @@ pub fn run(sess: &session::Session, llmod: ModuleRef,
     // load the bitcode from the archive. Then merge it into the current LLVM
     // module that we've got.
     let crates = sess.cstore.get_used_crates(cstore::RequireStatic);
-    for (cnum, path) in crates.into_iter() {
+    for (cnum, path) in crates {
         let name = sess.cstore.get_crate_data(cnum).name.clone();
         let path = match path {
             Some(p) => p,
@@ -62,7 +62,7 @@ pub fn run(sess: &session::Session, llmod: ModuleRef,
         let file = path.filename_str().unwrap();
         let file = &file[3..file.len() - 5]; // chop off lib/.rlib
         debug!("reading {}", file);
-        for i in iter::count(0u, 1) {
+        for i in iter::count(0us, 1) {
             let bc_encoded = time(sess.time_passes(),
                                   format!("check for {}.{}.bytecode.deflate", name, i).as_slice(),
                                   (),

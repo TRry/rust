@@ -68,16 +68,16 @@ impl<'a> fmt::Debug for Matrix<'a> {
                .collect::<Vec<String>>()
         }).collect();
 
-        let column_count = m.iter().map(|row| row.len()).max().unwrap_or(0u);
+        let column_count = m.iter().map(|row| row.len()).max().unwrap_or(0);
         assert!(m.iter().all(|row| row.len() == column_count));
         let column_widths: Vec<uint> = (0..column_count).map(|col| {
-            pretty_printed_matrix.iter().map(|row| row[col].len()).max().unwrap_or(0u)
+            pretty_printed_matrix.iter().map(|row| row[col].len()).max().unwrap_or(0)
         }).collect();
 
         let total_width = column_widths.iter().map(|n| *n).sum() + column_count * 3 + 1;
         let br = repeat('+').take(total_width).collect::<String>();
         try!(write!(f, "{}\n", br));
-        for row in pretty_printed_matrix.into_iter() {
+        for row in pretty_printed_matrix {
             try!(write!(f, "+"));
             for (column, pat_str) in row.into_iter().enumerate() {
                 try!(write!(f, " "));
@@ -157,7 +157,7 @@ fn check_expr(cx: &mut MatchCheckCtxt, ex: &ast::Expr) {
     visit::walk_expr(cx, ex);
     match ex.node {
         ast::ExprMatch(ref scrut, ref arms, source) => {
-            for arm in arms.iter() {
+            for arm in arms {
                 // First, check legality of move bindings.
                 check_legality_of_move_bindings(cx,
                                                 arm.guard.is_some(),
@@ -285,8 +285,8 @@ fn check_arms(cx: &MatchCheckCtxt,
               source: ast::MatchSource) {
     let mut seen = Matrix(vec![]);
     let mut printed_if_let_err = false;
-    for &(ref pats, guard) in arms.iter() {
-        for pat in pats.iter() {
+    for &(ref pats, guard) in arms {
+        for pat in pats {
             let v = vec![&**pat];
 
             match is_useful(cx, &seen, &v[], LeaveOutWitness) {
@@ -588,13 +588,13 @@ fn is_useful(cx: &MatchCheckCtxt,
              -> Usefulness {
     let &Matrix(ref rows) = matrix;
     debug!("{:?}", matrix);
-    if rows.len() == 0u {
+    if rows.len() == 0 {
         return match witness {
             ConstructWitness => UsefulWithWitness(vec!()),
             LeaveOutWitness => Useful
         };
     }
-    if rows[0].len() == 0u {
+    if rows[0].len() == 0 {
         return NotUseful;
     }
     let real_pat = match rows.iter().find(|r| (*r)[0].id != DUMMY_NODE_ID) {
@@ -669,9 +669,9 @@ fn is_useful_specialized(cx: &MatchCheckCtxt, &Matrix(ref m): &Matrix,
                          witness: WitnessPreference) -> Usefulness {
     let arity = constructor_arity(cx, &ctor, lty);
     let matrix = Matrix(m.iter().filter_map(|r| {
-        specialize(cx, &r[], &ctor, 0u, arity)
+        specialize(cx, &r[], &ctor, 0, arity)
     }).collect());
-    match specialize(cx, v, &ctor, 0u, arity) {
+    match specialize(cx, v, &ctor, 0, arity) {
         Some(v) => is_useful(cx, &matrix, &v[], witness),
         None => NotUseful
     }
@@ -742,20 +742,20 @@ fn pat_constructors(cx: &MatchCheckCtxt, p: &Pat,
 /// This computes the arity of a constructor. The arity of a constructor
 /// is how many subpattern patterns of that constructor should be expanded to.
 ///
-/// For instance, a tuple pattern (_, 42u, Some([])) has the arity of 3.
+/// For instance, a tuple pattern (_, 42, Some([])) has the arity of 3.
 /// A struct pattern's arity is the number of fields it contains, etc.
 pub fn constructor_arity(cx: &MatchCheckCtxt, ctor: &Constructor, ty: Ty) -> uint {
     match ty.sty {
         ty::ty_tup(ref fs) => fs.len(),
-        ty::ty_uniq(_) => 1u,
+        ty::ty_uniq(_) => 1,
         ty::ty_rptr(_, ty::mt { ty, .. }) => match ty.sty {
             ty::ty_vec(_, None) => match *ctor {
                 Slice(length) => length,
-                ConstantValue(_) => 0u,
+                ConstantValue(_) => 0,
                 _ => unreachable!()
             },
-            ty::ty_str => 0u,
-            _ => 1u
+            ty::ty_str => 0,
+            _ => 1
         },
         ty::ty_enum(eid, _) => {
             match *ctor {
@@ -765,7 +765,7 @@ pub fn constructor_arity(cx: &MatchCheckCtxt, ctor: &Constructor, ty: Ty) -> uin
         }
         ty::ty_struct(cid, _) => ty::lookup_struct_fields(cx.tcx, cid).len(),
         ty::ty_vec(_, Some(n)) => n,
-        _ => 0u
+        _ => 0
     }
 }
 
@@ -979,7 +979,7 @@ fn check_fn(cx: &mut MatchCheckCtxt,
 
     visit::walk_fn(cx, kind, decl, body, sp);
 
-    for input in decl.inputs.iter() {
+    for input in &decl.inputs {
         is_refutable(cx, &*input.pat, |pat| {
             span_err!(cx.tcx.sess, input.pat.span, E0006,
                 "refutable pattern in function argument: `{}` not covered",
@@ -1012,7 +1012,7 @@ fn check_legality_of_move_bindings(cx: &MatchCheckCtxt,
     let tcx = cx.tcx;
     let def_map = &tcx.def_map;
     let mut by_ref_span = None;
-    for pat in pats.iter() {
+    for pat in pats {
         pat_bindings(def_map, &**pat, |bm, _, span, _path| {
             match bm {
                 ast::BindByRef(_) => {
@@ -1039,7 +1039,7 @@ fn check_legality_of_move_bindings(cx: &MatchCheckCtxt,
         }
     };
 
-    for pat in pats.iter() {
+    for pat in pats {
         walk_pat(&**pat, |p| {
             if pat_is_binding(def_map, &*p) {
                 match p.node {

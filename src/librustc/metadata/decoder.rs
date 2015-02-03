@@ -88,7 +88,7 @@ pub fn maybe_find_item<'a>(item_id: ast::NodeId,
                            items: rbml::Doc<'a>) -> Option<rbml::Doc<'a>> {
     fn eq_item(bytes: &[u8], item_id: ast::NodeId) -> bool {
         return u64_from_be_bytes(
-            &bytes[0u..4u], 0u, 4u) as ast::NodeId
+            &bytes[0..4], 0, 4) as ast::NodeId
             == item_id;
     }
     lookup_hash(items,
@@ -1022,7 +1022,7 @@ pub fn get_methods_if_impl(intr: Rc<IdentInterner>,
     });
 
     let mut impl_methods = Vec::new();
-    for impl_method_id in impl_method_ids.iter() {
+    for impl_method_id in &impl_method_ids {
         let impl_method_doc = lookup_item(impl_method_id.node, cdata.data());
         let family = item_family(impl_method_doc);
         match family {
@@ -1164,7 +1164,7 @@ fn get_attributes(md: rbml::Doc) -> Vec<ast::Attribute> {
             let meta_items = get_meta_items(attr_doc);
             // Currently it's only possible to have a single meta item on
             // an attribute
-            assert_eq!(meta_items.len(), 1u);
+            assert_eq!(meta_items.len(), 1);
             let meta_item = meta_items.into_iter().nth(0).unwrap();
             attrs.push(
                 codemap::Spanned {
@@ -1189,7 +1189,7 @@ fn list_crate_attributes(md: rbml::Doc, hash: &Svh,
     try!(write!(out, "=Crate Attributes ({})=\n", *hash));
 
     let r = get_attributes(md);
-    for attr in r.iter() {
+    for attr in &r {
         try!(write!(out, "{}\n", pprust::attribute_to_string(attr)));
     }
 
@@ -1232,7 +1232,7 @@ pub fn get_crate_deps(data: &[u8]) -> Vec<CrateDep> {
 
 fn list_crate_deps(data: &[u8], out: &mut old_io::Writer) -> old_io::IoResult<()> {
     try!(write!(out, "=External Dependencies=\n"));
-    for dep in get_crate_deps(data).iter() {
+    for dep in &get_crate_deps(data) {
         try!(write!(out, "{} {}-{}\n", dep.cnum, dep.name, dep.hash));
     }
     try!(write!(out, "\n"));

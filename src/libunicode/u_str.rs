@@ -32,7 +32,7 @@ use tables::grapheme::GraphemeCat;
 /// An iterator over the words of a string, separated by a sequence of whitespace
 #[stable(feature = "rust1", since = "1.0.0")]
 pub struct Words<'a> {
-    inner: Filter<&'a str, Split<'a, fn(char) -> bool>, fn(&&str) -> bool>,
+    inner: Filter<Split<'a, fn(char) -> bool>, fn(&&str) -> bool>,
 }
 
 /// Methods for Unicode string slices
@@ -153,7 +153,7 @@ impl<'a> Iterator for Graphemes<'a> {
     #[inline]
     fn size_hint(&self) -> (uint, Option<uint>) {
         let slen = self.string.len();
-        (cmp::min(slen, 1u), Some(slen))
+        (cmp::min(slen, 1), Some(slen))
     }
 
     #[inline]

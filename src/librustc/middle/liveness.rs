@@ -378,7 +378,7 @@ fn visit_fn(ir: &mut IrMaps,
 
     debug!("creating fn_maps: {:?}", &fn_maps as *const IrMaps);
 
-    for arg in decl.inputs.iter() {
+    for arg in &decl.inputs {
         pat_util::pat_bindings(&ir.tcx.def_map,
                                &*arg.pat,
                                |_bm, arg_id, _x, path1| {
@@ -427,7 +427,7 @@ fn visit_local(ir: &mut IrMaps, local: &ast::Local) {
 }
 
 fn visit_arm(ir: &mut IrMaps, arm: &ast::Arm) {
-    for pat in arm.pats.iter() {
+    for pat in &arm.pats {
         pat_util::pat_bindings(&ir.tcx.def_map, &**pat, |bm, p_id, sp, path1| {
             debug!("adding local variable {} from match with bm {:?}",
                    p_id, bm);
@@ -464,7 +464,7 @@ fn visit_expr(ir: &mut IrMaps, expr: &Expr) {
         // construction site.
         let mut call_caps = Vec::new();
         ty::with_freevars(ir.tcx, expr.id, |freevars| {
-            for fv in freevars.iter() {
+            for fv in freevars {
                 if let DefLocal(rv) = fv.def {
                     let fv_ln = ir.add_live_node(FreeVarNode(fv.span));
                     call_caps.push(CaptureInfo {ln: fv_ln,
@@ -540,9 +540,9 @@ struct Specials {
     clean_exit_var: Variable
 }
 
-static ACC_READ: uint = 1u;
-static ACC_WRITE: uint = 2u;
-static ACC_USE: uint = 4u;
+static ACC_READ: uint = 1;
+static ACC_WRITE: uint = 2;
+static ACC_USE: uint = 4;
 
 struct Liveness<'a, 'tcx: 'a> {
     ir: &'a mut IrMaps<'a, 'tcx>,
@@ -672,9 +672,9 @@ impl<'a, 'tcx> Liveness<'a, 'tcx> {
     fn indices2<F>(&mut self, ln: LiveNode, succ_ln: LiveNode, mut op: F) where
         F: FnMut(&mut Liveness<'a, 'tcx>, uint, uint),
     {
-        let node_base_idx = self.idx(ln, Variable(0u));
-        let succ_base_idx = self.idx(succ_ln, Variable(0u));
-        for var_idx in 0u..self.ir.num_vars {
+        let node_base_idx = self.idx(ln, Variable(0));
+        let succ_base_idx = self.idx(succ_ln, Variable(0));
+        for var_idx in 0..self.ir.num_vars {
             op(self, node_base_idx + var_idx, succ_base_idx + var_idx);
         }
     }
@@ -687,7 +687,7 @@ impl<'a, 'tcx> Liveness<'a, 'tcx> {
         F: FnMut(uint) -> LiveNode,
     {
         let node_base_idx = self.idx(ln, Variable(0));
-        for var_idx in 0u..self.ir.num_vars {
+        for var_idx in 0..self.ir.num_vars {
             let idx = node_base_idx + var_idx;
             if test(idx).is_valid() {
                 try!(write!(wr, " {:?}", Variable(var_idx)));
@@ -847,7 +847,7 @@ impl<'a, 'tcx> Liveness<'a, 'tcx> {
         // hack to skip the loop unless debug! is enabled:
         debug!("^^ liveness computation results for body {} (entry={:?})",
                {
-                   for ln_idx in 0u..self.ir.num_live_nodes {
+                   for ln_idx in 0..self.ir.num_live_nodes {
                        debug!("{:?}", self.ln_str(LiveNode(ln_idx)));
                    }
                    body.id
@@ -1049,7 +1049,7 @@ impl<'a, 'tcx> Liveness<'a, 'tcx> {
             let ln = self.live_node(expr.id, expr.span);
             self.init_empty(ln, succ);
             let mut first_merge = true;
-            for arm in arms.iter() {
+            for arm in arms {
                 let body_succ =
                     self.propagate_through_expr(&*arm.body, succ);
                 let guard_succ =
@@ -1303,7 +1303,7 @@ impl<'a, 'tcx> Liveness<'a, 'tcx> {
         match self.ir.tcx.def_map.borrow()[expr.id].clone() {
           DefLocal(nid) => {
             let ln = self.live_node(expr.id, expr.span);
-            if acc != 0u {
+            if acc != 0 {
                 self.init_from_succ(ln, succ);
                 let var = self.variable(nid, expr.span);
                 self.acc(ln, var, acc);
@@ -1445,12 +1445,12 @@ fn check_expr(this: &mut Liveness, expr: &Expr) {
       }
 
       ast::ExprInlineAsm(ref ia) => {
-        for &(_, ref input) in ia.inputs.iter() {
+        for &(_, ref input) in &ia.inputs {
           this.visit_expr(&**input);
         }
 
         // Output operands must be lvalues
-        for &(_, ref out, _) in ia.outputs.iter() {
+        for &(_, ref out, _) in &ia.outputs {
           this.check_lvalue(&**out);
           this.visit_expr(&**out);
         }
@@ -1590,7 +1590,7 @@ impl<'a, 'tcx> Liveness<'a, 'tcx> {
     }
 
     fn warn_about_unused_args(&self, decl: &ast::FnDecl, entry_ln: LiveNode) {
-        for arg in decl.inputs.iter() {
+        for arg in &decl.inputs {
             pat_util::pat_bindings(&self.ir.tcx.def_map,
                                    &*arg.pat,
                                    |_bm, p_id, sp, path1| {
@@ -1620,7 +1620,7 @@ impl<'a, 'tcx> Liveness<'a, 'tcx> {
                          -> bool {
         if !self.used_on_entry(ln, var) {
             let r = self.should_warn(var);
-            for name in r.iter() {
+            if let Some(name) = r {
 
                 // annoying: for parameters in funcs like `fn(x: int)
                 // {ret}`, there is only one node, so asking about
@@ -1634,10 +1634,10 @@ impl<'a, 'tcx> Liveness<'a, 'tcx> {
                 if is_assigned {
                     self.ir.tcx.sess.add_lint(lint::builtin::UNUSED_VARIABLES, id, sp,
                         format!("variable `{}` is assigned to, but never used",
-                                *name));
+                                name));
                 } else {
                     self.ir.tcx.sess.add_lint(lint::builtin::UNUSED_VARIABLES, id, sp,
-                        format!("unused variable: `{}`", *name));
+                        format!("unused variable: `{}`", name));
                 }
             }
             true
@@ -1653,9 +1653,9 @@ impl<'a, 'tcx> Liveness<'a, 'tcx> {
                               var: Variable) {
         if self.live_on_exit(ln, var).is_none() {
             let r = self.should_warn(var);
-            for name in r.iter() {
+            if let Some(name) = r {
                 self.ir.tcx.sess.add_lint(lint::builtin::UNUSED_ASSIGNMENTS, id, sp,
-                    format!("value assigned to `{}` is never read", *name));
+                    format!("value assigned to `{}` is never read", name));
             }
         }
     }
