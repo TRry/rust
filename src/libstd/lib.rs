@@ -128,9 +128,8 @@
 
 #![deny(missing_docs)]
 
-#[cfg(test)]
-#[macro_use]
-extern crate log;
+#[cfg(test)] extern crate test;
+#[cfg(test)] #[macro_use] extern crate log;
 
 #[macro_use]
 #[macro_reexport(assert, assert_eq, debug_assert, debug_assert_eq,
@@ -141,7 +140,7 @@ extern crate core;
 #[macro_reexport(vec)]
 extern crate "collections" as core_collections;
 
-extern crate "rand" as core_rand;
+#[allow(deprecated)] extern crate "rand" as core_rand;
 extern crate alloc;
 extern crate unicode;
 extern crate libc;
@@ -248,9 +247,11 @@ pub mod dynamic_lib;
 pub mod ffi;
 pub mod fmt;
 pub mod old_io;
+pub mod io;
 pub mod os;
 pub mod env;
 pub mod path;
+pub mod old_path;
 pub mod rand;
 pub mod time;
 

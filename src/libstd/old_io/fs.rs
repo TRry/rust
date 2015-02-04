@@ -61,8 +61,8 @@ use old_io;
 use iter::{Iterator, Extend};
 use option::Option;
 use option::Option::{Some, None};
-use path::{Path, GenericPath};
-use path;
+use old_path::{Path, GenericPath};
+use old_path;
 use result::Result::{Err, Ok};
 use slice::SliceExt;
 use string::String;
@@ -782,7 +782,7 @@ pub trait PathExtensions {
     fn is_dir(&self) -> bool;
 }
 
-impl PathExtensions for path::Path {
+impl PathExtensions for old_path::Path {
     fn stat(&self) -> IoResult<FileStat> { stat(self) }
     fn lstat(&self) -> IoResult<FileStat> { lstat(self) }
     fn exists(&self) -> bool {
@@ -822,6 +822,7 @@ fn access_string(access: FileAccess) -> &'static str {
 #[allow(unused_imports)]
 #[allow(unused_variables)]
 #[allow(unused_mut)]
+#[allow(deprecated)] // rand
 mod test {
     use prelude::v1::*;
     use old_io::{SeekSet, SeekCur, SeekEnd, Read, Open, ReadWrite, FileType};

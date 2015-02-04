@@ -9,6 +9,7 @@
 // except according to those terms.
 
 //! Temporary files and directories
+#![allow(deprecated)] // rand
 
 use env;
 use iter::{IteratorExt};
@@ -17,7 +18,7 @@ use old_io;
 use ops::Drop;
 use option::Option::{None, Some};
 use option::Option;
-use path::{Path, GenericPath};
+use old_path::{Path, GenericPath};
 use rand::{Rng, thread_rng};
 use result::Result::{Ok, Err};
 use str::StrExt;
