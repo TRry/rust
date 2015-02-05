@@ -227,9 +227,8 @@ pub fn sanitize(s: &str) -> String {
         match c {
             // Escape these with $ sequences
             '@' => result.push_str("$SP$"),
-            '~' => result.push_str("$UP$"),
-            '*' => result.push_str("$RP$"),
-            '&' => result.push_str("$BP$"),
+            '*' => result.push_str("$BP$"),
+            '&' => result.push_str("$RF$"),
             '<' => result.push_str("$LT$"),
             '>' => result.push_str("$GT$"),
             '(' => result.push_str("$LP$"),
@@ -247,10 +246,14 @@ pub fn sanitize(s: &str) -> String {
             | '_' | '.' | '$' => result.push(c),
 
             _ => {
-                let mut tstr = String::new();
-                for c in c.escape_unicode() { tstr.push(c) }
                 result.push('$');
-                result.push_str(&tstr[1..]);
+                for c in c.escape_unicode().skip(1) {
+                    match c {
+                        '{' => {},
+                        '}' => result.push('$'),
+                        c => result.push(c),
+                    }
+                }
             }
         }
     }
@@ -1041,8 +1044,11 @@ fn link_args(cmd: &mut Command,
 // in the current crate. Upstream crates with native library dependencies
 // may have their native library pulled in above.
 fn add_local_native_libraries(cmd: &mut Command, sess: &Session) {
-    sess.target_filesearch(PathKind::All).for_each_lib_search_path(|path, _| {
-        cmd.arg("-L").arg(path);
+    sess.target_filesearch(PathKind::All).for_each_lib_search_path(|path, k| {
+        match k {
+            PathKind::Framework => { cmd.arg("-F").arg(path); }
+            _ => { cmd.arg("-L").arg(path); }
+        }
         FileDoesntMatch
     });
 
