@@ -126,7 +126,7 @@ pub const RLIB_BYTECODE_OBJECT_V1_DATA_OFFSET: uint =
 pub fn find_crate_name(sess: Option<&Session>,
                        attrs: &[ast::Attribute],
                        input: &Input) -> String {
-    let validate = |&: s: String, span: Option<Span>| {
+    let validate = |s: String, span: Option<Span>| {
         creader::validate_crate_name(sess, &s[], span);
         s
     };
@@ -141,7 +141,7 @@ pub fn find_crate_name(sess: Option<&Session>,
     if let Some(sess) = sess {
         if let Some(ref s) = sess.opts.crate_name {
             if let Some((attr, ref name)) = attr_crate_name {
-                if *s != name.get() {
+                if *s != &name[] {
                     let msg = format!("--crate-name and #[crate_name] are \
                                        required to match, but `{}` != `{}`",
                                       s, name);
@@ -153,7 +153,7 @@ pub fn find_crate_name(sess: Option<&Session>,
     }
 
     if let Some((attr, s)) = attr_crate_name {
-        return validate(s.get().to_string(), Some(attr.span));
+        return validate(s.to_string(), Some(attr.span));
     }
     if let Input::File(ref path) = *input {
         if let Some(s) = path.filestem_str() {
@@ -293,7 +293,7 @@ pub fn mangle<PI: Iterator<Item=PathElem>>(path: PI,
 
     // First, connect each component with <len, name> pairs.
     for e in path {
-        push(&mut n, &token::get_name(e.name()).get()[])
+        push(&mut n, &token::get_name(e.name()))
     }
 
     match hash {
@@ -609,7 +609,7 @@ fn link_rlib<'a>(sess: &'a Session,
                 // extension to it. This is to work around a bug in LLDB that
                 // would cause it to crash if the name of a file in an archive
                 // was exactly 16 bytes.
-                let bc_filename = obj_filename.with_extension(format!("{}.bc", i).as_slice());
+                let bc_filename = obj_filename.with_extension(&format!("{}.bc", i));
                 let bc_deflated_filename = obj_filename.with_extension(
                     &format!("{}.bytecode.deflate", i)[]);
 
@@ -1006,7 +1006,7 @@ fn link_args(cmd: &mut Command,
     if sess.opts.cg.rpath {
         let sysroot = sess.sysroot();
         let target_triple = &sess.opts.target_triple[];
-        let get_install_prefix_lib_path = |:| {
+        let get_install_prefix_lib_path = || {
             let install_prefix = option_env!("CFG_PREFIX").expect("CFG_PREFIX");
             let tlib = filesearch::relative_target_lib_path(sysroot, target_triple);
             let mut path = Path::new(install_prefix);
@@ -1087,8 +1087,8 @@ fn add_local_native_libraries(cmd: &mut Command, sess: &Session) {
             // -force_load is the OSX equivalent of --whole-archive, but it
             // involves passing the full path to the library to link.
             let lib = archive::find_library(&l[],
-                                            sess.target.target.options.staticlib_prefix.as_slice(),
-                                            sess.target.target.options.staticlib_suffix.as_slice(),
+                                            &sess.target.target.options.staticlib_prefix,
+                                            &sess.target.target.options.staticlib_suffix,
                                             &search_path[],
                                             &sess.diagnostic().handler);
             let mut v = b"-Wl,-force_load,".to_vec();

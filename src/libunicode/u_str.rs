@@ -89,12 +89,12 @@ impl UnicodeStr for str {
 
     #[inline]
     fn trim_left(&self) -> &str {
-        self.trim_left_matches(|&: c: char| c.is_whitespace())
+        self.trim_left_matches(|c: char| c.is_whitespace())
     }
 
     #[inline]
     fn trim_right(&self) -> &str {
-        self.trim_right_matches(|&: c: char| c.is_whitespace())
+        self.trim_right_matches(|c: char| c.is_whitespace())
     }
 }
 
@@ -527,7 +527,7 @@ impl<I> Iterator for Utf16Encoder<I> where I: Iterator<Item=char> {
 
         let mut buf = [0u16; 2];
         self.chars.next().map(|ch| {
-            let n = CharExt::encode_utf16(ch, buf.as_mut_slice()).unwrap_or(0);
+            let n = CharExt::encode_utf16(ch, &mut buf).unwrap_or(0);
             if n == 2 { self.extra = buf[1]; }
             buf[0]
         })

@@ -747,7 +747,7 @@ fn pick_column_to_specialize(def_map: &DefMap, m: &[Match]) -> Option<uint> {
         }
     }
 
-    let column_score = |&: m: &[Match], col: uint| -> uint {
+    let column_score = |m: &[Match], col: uint| -> uint {
         let total_score = m.iter()
             .map(|row| row.pats[col])
             .map(|pat| pat_score(def_map, pat))
@@ -761,7 +761,7 @@ fn pick_column_to_specialize(def_map: &DefMap, m: &[Match]) -> Option<uint> {
         }
     };
 
-    let column_contains_any_nonwild_patterns = |&: &col: &uint| -> bool {
+    let column_contains_any_nonwild_patterns = |&col: &uint| -> bool {
         m.iter().any(|row| match row.pats[col].node {
             ast::PatWild(_) => false,
             _ => true
@@ -889,11 +889,13 @@ fn compile_guard<'a, 'p, 'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
         }
     }
 
+    for (_, &binding_info) in &data.bindings_map {
+        bcx.fcx.lllocals.borrow_mut().remove(&binding_info.id);
+    }
+
     with_cond(bcx, Not(bcx, val, guard_expr.debug_loc()), |bcx| {
-        // Guard does not match: remove all bindings from the lllocals table
         for (_, &binding_info) in &data.bindings_map {
             call_lifetime_end(bcx, binding_info.llmatch);
-            bcx.fcx.lllocals.borrow_mut().remove(&binding_info.id);
         }
         match chk {
             // If the default arm is the only one left, move on to the next
@@ -1029,8 +1031,8 @@ fn compile_submatch_continue<'a, 'p, 'blk, 'tcx>(mut bcx: Block<'blk, 'tcx>,
                                         field_vals.len())
             );
             let mut vals = field_vals;
-            vals.push_all(vals_left.as_slice());
-            compile_submatch(bcx, pats.as_slice(), vals.as_slice(), chk, has_genuine_default);
+            vals.push_all(&vals_left);
+            compile_submatch(bcx, &pats, &vals, chk, has_genuine_default);
             return;
         }
         _ => ()

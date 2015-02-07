@@ -422,7 +422,7 @@ pub fn opt_loan_path<'tcx>(cmt: &mc::cmt<'tcx>) -> Option<Rc<LoanPath<'tcx>>> {
     //! which allows it to share common loan path pieces as it
     //! traverses the CMT.
 
-    let new_lp = |&: v: LoanPathKind<'tcx>| Rc::new(LoanPath::new(v, cmt.ty));
+    let new_lp = |v: LoanPathKind<'tcx>| Rc::new(LoanPath::new(v, cmt.ty));
 
     match cmt.cat {
         mc::cat_rvalue(..) |
@@ -464,7 +464,6 @@ pub fn opt_loan_path<'tcx>(cmt: &mc::cmt<'tcx>) -> Option<Rc<LoanPath<'tcx>>> {
 
 // Errors that can occur
 #[derive(PartialEq)]
-#[allow(missing_copy_implementations)]
 pub enum bckerr_code {
     err_mutbl,
     err_out_of_scope(ty::Region, ty::Region), // superscope, subscope
@@ -798,8 +797,8 @@ impl<'a, 'tcx> BorrowckCtxt<'a, 'tcx> {
             }
             mc::AliasableClosure(id) => {
                 self.tcx.sess.span_err(span,
-                                       format!("{} in a captured outer \
-                                               variable in an `Fn` closure", prefix).as_slice());
+                                       &format!("{} in a captured outer \
+                                                variable in an `Fn` closure", prefix));
                 if let BorrowViolation(euv::ClosureCapture(_)) = kind {
                     // The aliasability violation with closure captures can
                     // happen for nested closures, so we know the enclosing
@@ -907,7 +906,7 @@ impl<'a, 'tcx> BorrowckCtxt<'a, 'tcx> {
         match loan_path.kind {
             LpUpvar(ty::UpvarId{ var_id: id, closure_expr_id: _ }) |
             LpVar(id) => {
-                out.push_str(ty::local_var_name_str(self.tcx, id).get());
+                out.push_str(&ty::local_var_name_str(self.tcx, id));
             }
 
             LpDowncast(ref lp_base, variant_def_id) => {
@@ -924,7 +923,7 @@ impl<'a, 'tcx> BorrowckCtxt<'a, 'tcx> {
                 match fname {
                     mc::NamedField(fname) => {
                         out.push('.');
-                        out.push_str(token::get_name(fname).get());
+                        out.push_str(&token::get_name(fname));
                     }
                     mc::PositionalField(idx) => {
                         out.push('.');

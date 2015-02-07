@@ -149,7 +149,6 @@ impl FromStr for bool {
 
 /// An error returned when parsing a `bool` from a string fails.
 #[derive(Debug, Clone, PartialEq)]
-#[allow(missing_copy_implementations)]
 #[stable(feature = "rust1", since = "1.0.0")]
 pub struct ParseBoolError { _priv: () }
 
@@ -1518,11 +1517,11 @@ impl StrExt for str {
 
     #[inline]
     fn trim_matches<P: CharEq>(&self, mut pat: P) -> &str {
-        let cur = match self.find(|&mut: c: char| !pat.matches(c)) {
+        let cur = match self.find(|c: char| !pat.matches(c)) {
             None => "",
             Some(i) => unsafe { self.slice_unchecked(i, self.len()) }
         };
-        match cur.rfind(|&mut: c: char| !pat.matches(c)) {
+        match cur.rfind(|c: char| !pat.matches(c)) {
             None => "",
             Some(i) => {
                 let right = cur.char_range_at(i).next;
@@ -1533,7 +1532,7 @@ impl StrExt for str {
 
     #[inline]
     fn trim_left_matches<P: CharEq>(&self, mut pat: P) -> &str {
-        match self.find(|&mut: c: char| !pat.matches(c)) {
+        match self.find(|c: char| !pat.matches(c)) {
             None => "",
             Some(first) => unsafe { self.slice_unchecked(first, self.len()) }
         }
@@ -1541,7 +1540,7 @@ impl StrExt for str {
 
     #[inline]
     fn trim_right_matches<P: CharEq>(&self, mut pat: P) -> &str {
-        match self.rfind(|&mut: c: char| !pat.matches(c)) {
+        match self.rfind(|c: char| !pat.matches(c)) {
             None => "",
             Some(last) => {
                 let next = self.char_range_at(last).next;

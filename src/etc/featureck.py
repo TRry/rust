@@ -20,6 +20,10 @@
 
 import sys, os, re
 
+if len(sys.argv) < 2:
+    print "usage: featurkck.py <src-dir>"
+    sys.exit(1)
+
 src_dir = sys.argv[1]
 
 # Features that are allowed to exist in both the language and the library
@@ -190,9 +194,9 @@ for name in lib_feature_stats:
         if not name in joint_features:
             print "error: feature '" + name + "' is both a lang and lib feature but not whitelisted"
             errors = True
-        lang_status = lang_feature_stats[name][3]
+        lang_status = language_feature_stats[name][3]
         lib_status = lib_feature_stats[name][3]
-        lang_stable_since = lang_feature_stats[name][4]
+        lang_stable_since = language_feature_stats[name][4]
         lib_stable_since = lib_feature_stats[name][4]
 
         if lang_status != lib_status and lib_status != "deprecated":
@@ -235,9 +239,7 @@ for s in stats:
 lines.sort()
 
 print
-print "Rust feature summary:"
-print
 for line in lines:
-    print line
+    print "* " + line
 print
 

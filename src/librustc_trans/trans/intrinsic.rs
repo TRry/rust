@@ -36,7 +36,7 @@ use syntax::parse::token;
 use util::ppaux::{Repr, ty_to_string};
 
 pub fn get_simple_intrinsic(ccx: &CrateContext, item: &ast::ForeignItem) -> Option<ValueRef> {
-    let name = match token::get_ident(item.ident).get() {
+    let name = match &token::get_ident(item.ident)[] {
         "sqrtf32" => "llvm.sqrt.f32",
         "sqrtf64" => "llvm.sqrt.f64",
         "powif32" => "llvm.powi.f32",
@@ -118,25 +118,25 @@ pub fn check_intrinsics(ccx: &CrateContext) {
             if transmute_restriction.original_from != transmute_restriction.substituted_from {
                 ccx.sess().span_err(
                     transmute_restriction.span,
-                    format!("transmute called on types with potentially different sizes: \
-                             {} (could be {} bit{}) to {} (could be {} bit{})",
-                            ty_to_string(ccx.tcx(), transmute_restriction.original_from),
-                            from_type_size as uint,
-                            if from_type_size == 1 {""} else {"s"},
-                            ty_to_string(ccx.tcx(), transmute_restriction.original_to),
-                            to_type_size as uint,
-                            if to_type_size == 1 {""} else {"s"}).as_slice());
+                    &format!("transmute called on types with potentially different sizes: \
+                              {} (could be {} bit{}) to {} (could be {} bit{})",
+                             ty_to_string(ccx.tcx(), transmute_restriction.original_from),
+                             from_type_size as uint,
+                             if from_type_size == 1 {""} else {"s"},
+                             ty_to_string(ccx.tcx(), transmute_restriction.original_to),
+                             to_type_size as uint,
+                             if to_type_size == 1 {""} else {"s"}));
             } else {
                 ccx.sess().span_err(
                     transmute_restriction.span,
-                    format!("transmute called on types with different sizes: \
-                             {} ({} bit{}) to {} ({} bit{})",
-                            ty_to_string(ccx.tcx(), transmute_restriction.original_from),
-                            from_type_size as uint,
-                            if from_type_size == 1 {""} else {"s"},
-                            ty_to_string(ccx.tcx(), transmute_restriction.original_to),
-                            to_type_size as uint,
-                            if to_type_size == 1 {""} else {"s"}).as_slice());
+                    &format!("transmute called on types with different sizes: \
+                              {} ({} bit{}) to {} ({} bit{})",
+                             ty_to_string(ccx.tcx(), transmute_restriction.original_from),
+                             from_type_size as uint,
+                             if from_type_size == 1 {""} else {"s"},
+                             ty_to_string(ccx.tcx(), transmute_restriction.original_to),
+                             to_type_size as uint,
+                             if to_type_size == 1 {""} else {"s"}));
             }
         }
     }
@@ -166,7 +166,7 @@ pub fn trans_intrinsic_call<'a, 'blk, 'tcx>(mut bcx: Block<'blk, 'tcx>,
     let name = token::get_ident(foreign_item.ident);
 
     // For `transmute` we can just trans the input expr directly into dest
-    if name.get() == "transmute" {
+    if &name[] == "transmute" {
         let llret_ty = type_of::type_of(ccx, ret_ty.unwrap());
         match args {
             callee::ArgExprs(arg_exprs) => {
@@ -183,7 +183,7 @@ pub fn trans_intrinsic_call<'a, 'blk, 'tcx>(mut bcx: Block<'blk, 'tcx>,
                 // This should be caught by the intrinsicck pass
                 assert_eq!(in_type_size, out_type_size);
 
-                let nonpointer_nonaggregate = |&: llkind: TypeKind| -> bool {
+                let nonpointer_nonaggregate = |llkind: TypeKind| -> bool {
                     use llvm::TypeKind::*;
                     match llkind {
                         Half | Float | Double | X86_FP80 | FP128 |
@@ -274,13 +274,13 @@ pub fn trans_intrinsic_call<'a, 'blk, 'tcx>(mut bcx: Block<'blk, 'tcx>,
     let call_debug_location = DebugLoc::At(call_info.id, call_info.span);
 
     // These are the only intrinsic functions that diverge.
-    if name.get() == "abort" {
+    if &name[] == "abort" {
         let llfn = ccx.get_intrinsic(&("llvm.trap"));
         Call(bcx, llfn, &[], None, call_debug_location);
         fcx.pop_and_trans_custom_cleanup_scope(bcx, cleanup_scope);
         Unreachable(bcx);
         return Result::new(bcx, C_undef(Type::nil(ccx).ptr_to()));
-    } else if name.get() == "unreachable" {
+    } else if &name[] == "unreachable" {
         fcx.pop_and_trans_custom_cleanup_scope(bcx, cleanup_scope);
         Unreachable(bcx);
         return Result::new(bcx, C_nil(ccx));
@@ -307,9 +307,9 @@ pub fn trans_intrinsic_call<'a, 'blk, 'tcx>(mut bcx: Block<'blk, 'tcx>,
     };
 
     let simple = get_simple_intrinsic(ccx, &*foreign_item);
-    let llval = match (simple, name.get()) {
+    let llval = match (simple, &name[]) {
         (Some(llfn), _) => {
-            Call(bcx, llfn, llargs.as_slice(), None, call_debug_location)
+            Call(bcx, llfn, &llargs, None, call_debug_location)
         }
         (_, "breakpoint") => {
             let llfn = ccx.get_intrinsic(&("llvm.debugtrap"));
@@ -365,7 +365,7 @@ pub fn trans_intrinsic_call<'a, 'blk, 'tcx>(mut bcx: Block<'blk, 'tcx>,
         (_, "init") => {
             let tp_ty = *substs.types.get(FnSpace, 0);
             if !return_type_is_void(ccx, tp_ty) {
-                // Just zero out the stack slot. (See comment on base::memzero for explaination)
+                // Just zero out the stack slot. (See comment on base::memzero for explanation)
                 zero_mem(bcx, llresult, tp_ty);
             }
             C_nil(ccx)

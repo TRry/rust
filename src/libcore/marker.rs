@@ -311,16 +311,17 @@ impl<T: ?Sized> Clone for ContravariantType<T> {
 ///
 /// # Example
 ///
-/// The Cell type is an example which uses unsafe code to achieve
-/// "interior" mutability:
+/// The Cell type is an example of an `InvariantType` which uses unsafe
+/// code to achieve "interior" mutability:
 ///
 /// ```
 /// struct Cell<T> { value: T }
 /// ```
 ///
-/// The type system would infer that `value` is only read here and
-/// never written, but in fact `Cell` uses unsafe code to achieve
-/// interior mutability.
+/// The type system would infer that `value` is only read here
+/// and never written, but in fact `Cell` uses unsafe code to achieve
+/// interior mutability. In order to get correct behavior, the
+/// `InvariantType` marker must be applied.
 #[unstable(feature = "core",
            reason = "likely to change with new variance strategy")]
 #[lang="invariant_type"]
@@ -396,7 +397,6 @@ pub struct InvariantLifetime<'a>;
            reason = "likely to change with new variance strategy")]
 #[lang="no_copy_bound"]
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
-#[allow(missing_copy_implementations)]
 pub struct NoCopy;
 
 /// A type which is considered managed by the GC. This is typically
@@ -405,5 +405,4 @@ pub struct NoCopy;
            reason = "likely to change with new variance strategy")]
 #[lang="managed_bound"]
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
-#[allow(missing_copy_implementations)]
 pub struct Managed;

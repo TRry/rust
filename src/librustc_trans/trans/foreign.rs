@@ -118,7 +118,7 @@ pub fn register_static(ccx: &CrateContext,
         // static and call it a day. Some linkages (like weak) will make it such
         // that the static actually has a null value.
         Some(name) => {
-            let linkage = match llvm_linkage_by_name(name.get()) {
+            let linkage = match llvm_linkage_by_name(&name) {
                 Some(linkage) => linkage,
                 None => {
                     ccx.sess().span_fatal(foreign_item.span,
@@ -134,7 +134,7 @@ pub fn register_static(ccx: &CrateContext,
             };
             unsafe {
                 // Declare a symbol `foo` with the desired linkage.
-                let buf = CString::from_slice(ident.get().as_bytes());
+                let buf = CString::from_slice(ident.as_bytes());
                 let g1 = llvm::LLVMAddGlobal(ccx.llmod(), llty2.to_ref(),
                                              buf.as_ptr());
                 llvm::SetLinkage(g1, linkage);
@@ -146,7 +146,7 @@ pub fn register_static(ccx: &CrateContext,
                 // `extern_with_linkage_foo` will instead be initialized to
                 // zero.
                 let mut real_name = "_rust_extern_with_linkage_".to_string();
-                real_name.push_str(ident.get());
+                real_name.push_str(&ident);
                 let real_name = CString::from_vec(real_name.into_bytes());
                 let g2 = llvm::LLVMAddGlobal(ccx.llmod(), llty.to_ref(),
                                              real_name.as_ptr());
@@ -157,7 +157,7 @@ pub fn register_static(ccx: &CrateContext,
         }
         None => unsafe {
             // Generate an external declaration.
-            let buf = CString::from_slice(ident.get().as_bytes());
+            let buf = CString::from_slice(ident.as_bytes());
             llvm::LLVMAddGlobal(ccx.llmod(), llty.to_ref(), buf.as_ptr())
         }
     }
@@ -431,7 +431,7 @@ pub fn trans_native_call<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
 // ABIs are handled at all correctly.
 fn gate_simd_ffi(tcx: &ty::ctxt, decl: &ast::FnDecl, ty: &ty::BareFnTy) {
     if !tcx.sess.features.borrow().simd_ffi {
-        let check = |&: ast_ty: &ast::Ty, ty: ty::Ty| {
+        let check = |ast_ty: &ast::Ty, ty: ty::Ty| {
             if ty::type_is_simd(tcx, ty) {
                 tcx.sess.span_err(ast_ty.span,
                               &format!("use of SIMD type `{}` in FFI is highly experimental and \
@@ -468,7 +468,7 @@ pub fn trans_foreign_mod(ccx: &CrateContext, foreign_mod: &ast::ForeignMod) {
                     }
 
                     register_foreign_item_fn(ccx, abi, ty,
-                                             &lname.get()[]);
+                                             &lname);
                     // Unlike for other items, we shouldn't call
                     // `base::update_linkage` here.  Foreign items have
                     // special linkage requirements, which are handled
@@ -478,7 +478,7 @@ pub fn trans_foreign_mod(ccx: &CrateContext, foreign_mod: &ast::ForeignMod) {
         }
 
         ccx.item_symbols().borrow_mut().insert(foreign_item.id,
-                                             lname.get().to_string());
+                                             lname.to_string());
     }
 }
 
@@ -649,7 +649,7 @@ pub fn trans_rust_fn_with_foreign_abi<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>,
         // Array for the arguments we will pass to the rust function.
         let mut llrust_args = Vec::new();
         let mut next_foreign_arg_counter: c_uint = 0;
-        let mut next_foreign_arg = |&mut : pad: bool| -> c_uint {
+        let mut next_foreign_arg = |pad: bool| -> c_uint {
             next_foreign_arg_counter += if pad {
                 2
             } else {
@@ -788,7 +788,7 @@ pub fn trans_rust_fn_with_foreign_abi<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>,
         debug!("calling llrustfn = {}, t = {}",
                ccx.tn().val_to_string(llrustfn), t.repr(ccx.tcx()));
         let attributes = base::get_fn_llvm_attributes(ccx, t);
-        let llrust_ret_val = builder.call(llrustfn, llrust_args.as_slice(), Some(attributes));
+        let llrust_ret_val = builder.call(llrustfn, &llrust_args, Some(attributes));
 
         // Get the return value where the foreign fn expects it.
         let llforeign_ret_ty = match tys.fn_ty.ret_ty.cast {
@@ -898,7 +898,7 @@ fn foreign_types_for_fn_ty<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>,
         _ => ccx.sess().bug("foreign_types_for_fn_ty called on non-function type")
     };
     let fn_sig = ty::erase_late_bound_regions(ccx.tcx(), fn_sig);
-    let llsig = foreign_signature(ccx, &fn_sig, fn_sig.inputs.as_slice());
+    let llsig = foreign_signature(ccx, &fn_sig, &fn_sig.inputs);
     let fn_ty = cabi::compute_abi_info(ccx,
                                        &llsig.llarg_tys[],
                                        llsig.llret_ty,
@@ -911,7 +911,7 @@ fn foreign_types_for_fn_ty<'a, 'tcx>(ccx: &CrateContext<'a, 'tcx>,
            ty.repr(ccx.tcx()),
            ccx.tn().types_to_str(&llsig.llarg_tys[]),
            ccx.tn().type_to_string(llsig.llret_ty),
-           ccx.tn().types_to_str(fn_ty.arg_tys.iter().map(|t| t.ty).collect::<Vec<_>>().as_slice()),
+           ccx.tn().types_to_str(&fn_ty.arg_tys.iter().map(|t| t.ty).collect::<Vec<_>>()),
            ccx.tn().type_to_string(fn_ty.ret_ty.ty),
            llsig.ret_def);
 
@@ -959,7 +959,7 @@ fn lltype_for_fn_from_foreign_types(ccx: &CrateContext, tys: &ForeignTypes) -> T
     }
 
     if tys.fn_sig.variadic {
-        Type::variadic_func(llargument_tys.as_slice(), &llreturn_ty)
+        Type::variadic_func(&llargument_tys, &llreturn_ty)
     } else {
         Type::func(&llargument_tys[], &llreturn_ty)
     }

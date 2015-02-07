@@ -699,7 +699,7 @@ impl LintPass for UnusedAttributes {
 
         if !attr::is_used(attr) {
             cx.span_lint(UNUSED_ATTRIBUTES, attr.span, "unused attribute");
-            if CRATE_ATTRS.contains(&attr.name().get()) {
+            if CRATE_ATTRS.contains(&&attr.name()[]) {
                 let msg = match attr.node.style {
                     ast::AttrOuter => "crate-level attribute should be an inner \
                                        attribute: add an exclamation mark: #![foo]",
@@ -801,10 +801,10 @@ impl LintPass for UnusedResults {
                         None => {}
                         Some(s) => {
                             msg.push_str(": ");
-                            msg.push_str(s.get());
+                            msg.push_str(&s);
                         }
                     }
-                    cx.span_lint(UNUSED_MUST_USE, sp, &msg[]);
+                    cx.span_lint(UNUSED_MUST_USE, sp, &msg);
                     return true;
                 }
             }
@@ -826,8 +826,8 @@ impl NonCamelCaseTypes {
     fn check_case(&self, cx: &Context, sort: &str, ident: ast::Ident, span: Span) {
         fn is_camel_case(ident: ast::Ident) -> bool {
             let ident = token::get_ident(ident);
-            if ident.get().is_empty() { return true; }
-            let ident = ident.get().trim_matches('_');
+            if ident.is_empty() { return true; }
+            let ident = ident.trim_matches('_');
 
             // start with a non-lowercase letter rather than non-uppercase
             // ones (some scripts don't have a concept of upper/lowercase)
@@ -844,7 +844,7 @@ impl NonCamelCaseTypes {
         let s = token::get_ident(ident);
 
         if !is_camel_case(ident) {
-            let c = to_camel_case(s.get());
+            let c = to_camel_case(&s);
             let m = if c.is_empty() {
                 format!("{} `{}` should have a camel case name such as `CamelCase`", sort, s)
             } else {
@@ -949,7 +949,7 @@ impl NonSnakeCase {
     fn to_snake_case(mut str: &str) -> String {
         let mut words = vec![];
         // Preserve leading underscores
-        str = str.trim_left_matches(|&mut: c: char| {
+        str = str.trim_left_matches(|c: char| {
             if c == '_' {
                 words.push(String::new());
                 true
@@ -977,8 +977,8 @@ impl NonSnakeCase {
     fn check_snake_case(&self, cx: &Context, sort: &str, ident: ast::Ident, span: Span) {
         fn is_snake_case(ident: ast::Ident) -> bool {
             let ident = token::get_ident(ident);
-            if ident.get().is_empty() { return true; }
-            let ident = ident.get().trim_left_matches('\'');
+            if ident.is_empty() { return true; }
+            let ident = ident.trim_left_matches('\'');
             let ident = ident.trim_matches('_');
 
             let mut allow_underscore = true;
@@ -996,8 +996,8 @@ impl NonSnakeCase {
         let s = token::get_ident(ident);
 
         if !is_snake_case(ident) {
-            let sc = NonSnakeCase::to_snake_case(s.get());
-            if sc != s.get() {
+            let sc = NonSnakeCase::to_snake_case(&s);
+            if sc != &s[] {
                 cx.span_lint(NON_SNAKE_CASE, span,
                     &*format!("{} `{}` should have a snake case name such as `{}`",
                             sort, s, sc));
@@ -1077,17 +1077,17 @@ impl NonUpperCaseGlobals {
     fn check_upper_case(cx: &Context, sort: &str, ident: ast::Ident, span: Span) {
         let s = token::get_ident(ident);
 
-        if s.get().chars().any(|c| c.is_lowercase()) {
-            let uc: String = NonSnakeCase::to_snake_case(s.get()).chars()
+        if s.chars().any(|c| c.is_lowercase()) {
+            let uc: String = NonSnakeCase::to_snake_case(&s).chars()
                                            .map(|c| c.to_uppercase()).collect();
-            if uc != s.get() {
+            if uc != &s[] {
                 cx.span_lint(NON_UPPER_CASE_GLOBALS, span,
-                    format!("{} `{}` should have an upper case name such as `{}`",
-                            sort, s, uc).as_slice());
+                    &format!("{} `{}` should have an upper case name such as `{}`",
+                             sort, s, uc));
             } else {
                 cx.span_lint(NON_UPPER_CASE_GLOBALS, span,
-                    format!("{} `{}` should have an upper case name",
-                            sort, s).as_slice());
+                    &format!("{} `{}` should have an upper case name",
+                             sort, s));
             }
         }
     }
@@ -1241,7 +1241,7 @@ impl LintPass for UnusedImportBraces {
                             match items[0].node {
                                 ast::PathListIdent {ref name, ..} => {
                                     let m = format!("braces around {} is unnecessary",
-                                                    token::get_ident(*name).get());
+                                                    &token::get_ident(*name));
                                     cx.span_lint(UNUSED_IMPORT_BRACES, item.span,
                                                  &m[]);
                                 },
@@ -1358,7 +1358,7 @@ impl UnusedMut {
             pat_util::pat_bindings(&cx.tcx.def_map, &**p, |mode, id, _, path1| {
                 let ident = path1.node;
                 if let ast::BindByValue(ast::MutMutable) = mode {
-                    if !token::get_ident(ident).get().starts_with("_") {
+                    if !token::get_ident(ident).starts_with("_") {
                         match mutables.entry(ident.name.usize()) {
                             Vacant(entry) => { entry.insert(vec![id]); },
                             Occupied(mut entry) => { entry.get_mut().push(id); },
@@ -2019,6 +2019,12 @@ declare_lint! {
 }
 
 declare_lint! {
+    pub STABLE_FEATURES,
+    Warn,
+    "stable features found in #[feature] directive"
+}
+
+declare_lint! {
     pub UNKNOWN_CRATE_TYPES,
     Deny,
     "unknown crate type found in #[crate_type] directive"
@@ -2038,7 +2044,7 @@ declare_lint! {
 
 declare_lint! {
     pub MISSING_COPY_IMPLEMENTATIONS,
-    Warn,
+    Allow,
     "detects potentially-forgotten implementations of `Copy`"
 }
 
@@ -2060,6 +2066,7 @@ impl LintPass for HardwiredLints {
             UNREACHABLE_CODE,
             WARNINGS,
             UNUSED_FEATURES,
+            STABLE_FEATURES,
             UNKNOWN_CRATE_TYPES,
             VARIANT_SIZE_DIFFERENCES,
             FAT_PTR_TRANSMUTES
@@ -2084,11 +2091,11 @@ impl LintPass for PrivateNoMangleFns {
     fn check_item(&mut self, cx: &Context, it: &ast::Item) {
         match it.node {
             ast::ItemFn(..) => {
-                if attr::contains_name(it.attrs.as_slice(), "no_mangle") &&
+                if attr::contains_name(&it.attrs, "no_mangle") &&
                        !cx.exported_items.contains(&it.id) {
                     let msg = format!("function {} is marked #[no_mangle], but not exported",
                                       it.ident);
-                    cx.span_lint(PRIVATE_NO_MANGLE_FNS, it.span, msg.as_slice());
+                    cx.span_lint(PRIVATE_NO_MANGLE_FNS, it.span, &msg);
                 }
             },
             _ => {},

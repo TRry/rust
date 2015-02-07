@@ -350,7 +350,7 @@ fn apply_adjustments<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
         debug!("dest_ty={}", unsized_ty.repr(bcx.tcx()));
         // Closures for extracting and manipulating the data and payload parts of
         // the fat pointer.
-        let info = |: bcx, _val| unsized_info(bcx,
+        let info = |bcx, _val| unsized_info(bcx,
                                               k,
                                               expr.id,
                                               datum_ty,
@@ -382,8 +382,8 @@ fn apply_adjustments<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
                                -> DatumBlock<'blk, 'tcx, Expr> {
         let tcx = bcx.tcx();
         let dest_ty = ty::close_type(tcx, datum.ty);
-        let base = |: bcx, val| Load(bcx, get_dataptr(bcx, val));
-        let len = |: bcx, val| Load(bcx, get_len(bcx, val));
+        let base = |bcx, val| Load(bcx, get_dataptr(bcx, val));
+        let len = |bcx, val| Load(bcx, get_len(bcx, val));
         into_fat_ptr(bcx, expr, datum, dest_ty, base, len)
     }
 
@@ -1056,7 +1056,7 @@ fn trans_rvalue_dps_unadjusted<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
             if let Some(did) = did {
                 let substs = Substs::new_type(ty_params, vec![]);
                 trans_struct(bcx,
-                             fields.as_slice(),
+                             &fields,
                              None,
                              expr.span,
                              expr.id,
@@ -1398,7 +1398,7 @@ fn trans_struct<'blk, 'tcx>(bcx: Block<'blk, 'tcx>,
         trans_adt(bcx,
                   ty,
                   discr,
-                  numbered_fields.as_slice(),
+                  &numbered_fields,
                   optbase,
                   dest,
                   DebugLoc::At(expr_id, expr_span))

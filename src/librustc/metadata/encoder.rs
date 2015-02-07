@@ -86,11 +86,11 @@ pub struct EncodeContext<'a, 'tcx: 'a> {
 }
 
 fn encode_name(rbml_w: &mut Encoder, name: ast::Name) {
-    rbml_w.wr_tagged_str(tag_paths_data_name, token::get_name(name).get());
+    rbml_w.wr_tagged_str(tag_paths_data_name, &token::get_name(name));
 }
 
 fn encode_impl_type_basename(rbml_w: &mut Encoder, name: ast::Ident) {
-    rbml_w.wr_tagged_str(tag_item_impl_type_basename, token::get_ident(name).get());
+    rbml_w.wr_tagged_str(tag_item_impl_type_basename, &token::get_ident(name));
 }
 
 pub fn encode_def_id(rbml_w: &mut Encoder, id: DefId) {
@@ -372,7 +372,7 @@ fn encode_path<PI: Iterator<Item=PathElem>>(rbml_w: &mut Encoder, path: PI) {
             ast_map::PathMod(_) => tag_path_elem_mod,
             ast_map::PathName(_) => tag_path_elem_name
         };
-        rbml_w.wr_tagged_str(tag, token::get_name(pe.name()).get());
+        rbml_w.wr_tagged_str(tag, &token::get_name(pe.name()));
     }
     rbml_w.end_tag();
 }
@@ -915,7 +915,7 @@ fn encode_method_argument_names(rbml_w: &mut Encoder,
         rbml_w.start_tag(tag_method_argument_name);
         if let ast::PatIdent(_, ref path1, _) = arg.pat.node {
             let name = token::get_ident(path1.node);
-            rbml_w.writer.write_all(name.get().as_bytes());
+            rbml_w.writer.write_all(name.as_bytes());
         }
         rbml_w.end_tag();
     }
@@ -1044,7 +1044,7 @@ fn encode_info_for_item(ecx: &EncodeContext,
         encode_bounds_and_type(rbml_w, ecx, &lookup_item_type(tcx, def_id));
         encode_name(rbml_w, item.ident.name);
         encode_path(rbml_w, path);
-        encode_attributes(rbml_w, item.attrs.as_slice());
+        encode_attributes(rbml_w, &item.attrs);
         encode_inlined_item(ecx, rbml_w, IIItemRef(item));
         encode_visibility(rbml_w, vis);
         encode_stability(rbml_w, stab);
@@ -1307,7 +1307,7 @@ fn encode_info_for_item(ecx: &EncodeContext,
         let trait_def = ty::lookup_trait_def(tcx, def_id);
         encode_unsafety(rbml_w, trait_def.unsafety);
         encode_paren_sugar(rbml_w, trait_def.paren_sugar);
-        encode_associated_type_names(rbml_w, trait_def.associated_type_names.as_slice());
+        encode_associated_type_names(rbml_w, &trait_def.associated_type_names);
         encode_generics(rbml_w, ecx, &trait_def.generics, tag_item_generics);
         encode_trait_ref(rbml_w, ecx, &*trait_def.trait_ref, tag_item_trait_ref);
         encode_name(rbml_w, item.ident.name);
@@ -1409,7 +1409,7 @@ fn encode_info_for_item(ecx: &EncodeContext,
             encode_parent_sort(rbml_w, 't');
 
             let trait_item = &ms[i];
-            let encode_trait_item = |&: rbml_w: &mut Encoder| {
+            let encode_trait_item = |rbml_w: &mut Encoder| {
                 // If this is a static method, we've already
                 // encoded this.
                 if is_nonstatic_method {
@@ -1636,7 +1636,7 @@ fn encode_meta_item(rbml_w: &mut Encoder, mi: &ast::MetaItem) {
       ast::MetaWord(ref name) => {
         rbml_w.start_tag(tag_meta_item_word);
         rbml_w.start_tag(tag_meta_item_name);
-        rbml_w.writer.write_all(name.get().as_bytes());
+        rbml_w.writer.write_all(name.as_bytes());
         rbml_w.end_tag();
         rbml_w.end_tag();
       }
@@ -1645,10 +1645,10 @@ fn encode_meta_item(rbml_w: &mut Encoder, mi: &ast::MetaItem) {
           ast::LitStr(ref value, _) => {
             rbml_w.start_tag(tag_meta_item_name_value);
             rbml_w.start_tag(tag_meta_item_name);
-            rbml_w.writer.write_all(name.get().as_bytes());
+            rbml_w.writer.write_all(name.as_bytes());
             rbml_w.end_tag();
             rbml_w.start_tag(tag_meta_item_value);
-            rbml_w.writer.write_all(value.get().as_bytes());
+            rbml_w.writer.write_all(value.as_bytes());
             rbml_w.end_tag();
             rbml_w.end_tag();
           }
@@ -1658,7 +1658,7 @@ fn encode_meta_item(rbml_w: &mut Encoder, mi: &ast::MetaItem) {
       ast::MetaList(ref name, ref items) => {
         rbml_w.start_tag(tag_meta_item_list);
         rbml_w.start_tag(tag_meta_item_name);
-        rbml_w.writer.write_all(name.get().as_bytes());
+        rbml_w.writer.write_all(name.as_bytes());
         rbml_w.end_tag();
         for inner_item in items {
             encode_meta_item(rbml_w, &**inner_item);
@@ -1695,7 +1695,7 @@ fn encode_paren_sugar(rbml_w: &mut Encoder, paren_sugar: bool) {
 fn encode_associated_type_names(rbml_w: &mut Encoder, names: &[ast::Name]) {
     rbml_w.start_tag(tag_associated_type_names);
     for &name in names {
-        rbml_w.wr_tagged_str(tag_associated_type_name, token::get_name(name).get());
+        rbml_w.wr_tagged_str(tag_associated_type_name, &token::get_name(name));
     }
     rbml_w.end_tag();
 }

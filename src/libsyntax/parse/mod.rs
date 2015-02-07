@@ -244,7 +244,7 @@ pub fn new_parser_from_tts<'a>(sess: &'a ParseSess,
 /// add the path to the session's codemap and return the new filemap.
 pub fn file_to_filemap(sess: &ParseSess, path: &Path, spanopt: Option<Span>)
     -> Rc<FileMap> {
-    let err = |&: msg: &str| {
+    let err = |msg: &str| {
         match spanopt {
             Some(sp) => sess.span_diagnostic.span_fatal(sp, msg),
             None => sess.span_diagnostic.handler().fatal(msg),
@@ -406,7 +406,7 @@ pub fn char_lit(lit: &str) -> (char, isize) {
         .map(|x| (x, len as isize))
     }
 
-    let unicode_escape = |&: | -> Option<(char, isize)>
+    let unicode_escape = || -> Option<(char, isize)>
         if lit.as_bytes()[2] == b'{' {
             let idx = lit.find('}').expect(msg2);
             let subslice = &lit[3..idx];
@@ -433,7 +433,7 @@ pub fn str_lit(lit: &str) -> String {
     let mut res = String::with_capacity(lit.len());
 
     // FIXME #8372: This could be a for-loop if it didn't borrow the iterator
-    let error = |&: i| format!("lexer should have rejected {} at {}", lit, i);
+    let error = |i| format!("lexer should have rejected {} at {}", lit, i);
 
     /// Eat everything up to a non-whitespace
     fn eat<'a>(it: &mut iter::Peekable<str::CharIndices<'a>>) {
@@ -454,7 +454,7 @@ pub fn str_lit(lit: &str) -> String {
                 match c {
                     '\\' => {
                         let ch = chars.peek().unwrap_or_else(|| {
-                            panic!("{}", error(i).as_slice())
+                            panic!("{}", error(i))
                         }).1;
 
                         if ch == '\n' {
@@ -462,7 +462,7 @@ pub fn str_lit(lit: &str) -> String {
                         } else if ch == '\r' {
                             chars.next();
                             let ch = chars.peek().unwrap_or_else(|| {
-                                panic!("{}", error(i).as_slice())
+                                panic!("{}", error(i))
                             }).1;
 
                             if ch != '\n' {
@@ -480,7 +480,7 @@ pub fn str_lit(lit: &str) -> String {
                     },
                     '\r' => {
                         let ch = chars.peek().unwrap_or_else(|| {
-                            panic!("{}", error(i).as_slice())
+                            panic!("{}", error(i))
                         }).1;
 
                         if ch != '\n' {
@@ -560,7 +560,7 @@ fn filtered_float_lit(data: token::InternedString, suffix: Option<&str>,
 }
 pub fn float_lit(s: &str, suffix: Option<&str>, sd: &SpanHandler, sp: Span) -> ast::Lit_ {
     debug!("float_lit: {:?}, {:?}", s, suffix);
-    // FIXME #2252: bounds checking float literals is defered until trans
+    // FIXME #2252: bounds checking float literals is deferred until trans
     let s = s.chars().filter(|&c| c != '_').collect::<String>();
     let data = token::intern_and_get_ident(&*s);
     filtered_float_lit(data, suffix, sd, sp)
@@ -568,7 +568,7 @@ pub fn float_lit(s: &str, suffix: Option<&str>, sd: &SpanHandler, sp: Span) -> a
 
 /// Parse a string representing a byte literal into its final form. Similar to `char_lit`
 pub fn byte_lit(lit: &str) -> (u8, usize) {
-    let err = |&: i| format!("lexer accepted invalid byte literal {} step {}", lit, i);
+    let err = |i| format!("lexer accepted invalid byte literal {} step {}", lit, i);
 
     if lit.len() == 1 {
         (lit.as_bytes()[0], 1)
@@ -602,7 +602,7 @@ pub fn binary_lit(lit: &str) -> Rc<Vec<u8>> {
     let mut res = Vec::with_capacity(lit.len());
 
     // FIXME #8372: This could be a for-loop if it didn't borrow the iterator
-    let error = |&: i| format!("lexer should have rejected {} at {}", lit, i);
+    let error = |i| format!("lexer should have rejected {} at {}", lit, i);
 
     /// Eat everything up to a non-whitespace
     fn eat<'a, I: Iterator<Item=(usize, u8)>>(it: &mut iter::Peekable<I>) {
@@ -622,11 +622,11 @@ pub fn binary_lit(lit: &str) -> Rc<Vec<u8>> {
         match chars.next() {
             Some((i, b'\\')) => {
                 let em = error(i);
-                match chars.peek().expect(em.as_slice()).1 {
+                match chars.peek().expect(&em).1 {
                     b'\n' => eat(&mut chars),
                     b'\r' => {
                         chars.next();
-                        if chars.peek().expect(em.as_slice()).1 != b'\n' {
+                        if chars.peek().expect(&em).1 != b'\n' {
                             panic!("lexer accepted bare CR");
                         }
                         eat(&mut chars);
@@ -644,7 +644,7 @@ pub fn binary_lit(lit: &str) -> Rc<Vec<u8>> {
             },
             Some((i, b'\r')) => {
                 let em = error(i);
-                if chars.peek().expect(em.as_slice()).1 != b'\n' {
+                if chars.peek().expect(&em).1 != b'\n' {
                     panic!("lexer accepted bare CR");
                 }
                 chars.next();
@@ -1200,20 +1200,20 @@ mod test {
         let name = "<source>".to_string();
         let source = "/// doc comment\r\nfn foo() {}".to_string();
         let item = parse_item_from_source_str(name.clone(), source, Vec::new(), &sess).unwrap();
-        let doc = first_attr_value_str_by_name(item.attrs.as_slice(), "doc").unwrap();
-        assert_eq!(doc.get(), "/// doc comment");
+        let doc = first_attr_value_str_by_name(&item.attrs, "doc").unwrap();
+        assert_eq!(&doc[], "/// doc comment");
 
         let source = "/// doc comment\r\n/// line 2\r\nfn foo() {}".to_string();
         let item = parse_item_from_source_str(name.clone(), source, Vec::new(), &sess).unwrap();
-        let docs = item.attrs.iter().filter(|a| a.name().get() == "doc")
-                    .map(|a| a.value_str().unwrap().get().to_string()).collect::<Vec<_>>();
+        let docs = item.attrs.iter().filter(|a| &a.name()[] == "doc")
+                    .map(|a| a.value_str().unwrap().to_string()).collect::<Vec<_>>();
         let b: &[_] = &["/// doc comment".to_string(), "/// line 2".to_string()];
         assert_eq!(&docs[], b);
 
         let source = "/** doc comment\r\n *  with CRLF */\r\nfn foo() {}".to_string();
         let item = parse_item_from_source_str(name, source, Vec::new(), &sess).unwrap();
-        let doc = first_attr_value_str_by_name(item.attrs.as_slice(), "doc").unwrap();
-        assert_eq!(doc.get(), "/** doc comment\n *  with CRLF */");
+        let doc = first_attr_value_str_by_name(&item.attrs, "doc").unwrap();
+        assert_eq!(&doc[], "/** doc comment\n *  with CRLF */");
     }
 
     #[test]
@@ -1233,8 +1233,8 @@ mod test {
         let span = tts.iter().rev().next().unwrap().get_span();
 
         match sess.span_diagnostic.cm.span_to_snippet(span) {
-            Some(s) => assert_eq!(&s[], "{ body }"),
-            None => panic!("could not get snippet"),
+            Ok(s) => assert_eq!(&s[], "{ body }"),
+            Err(_) => panic!("could not get snippet"),
         }
     }
 }

@@ -1139,7 +1139,7 @@ impl<'a> Parser<'a> {
 
     /// Parses an obsolete closure kind (`&:`, `&mut:`, or `:`).
     pub fn parse_obsolete_closure_kind(&mut self) {
-        // let lo = self.span.lo;
+         let lo = self.span.lo;
         if
             self.check(&token::BinOp(token::And)) &&
             self.look_ahead(1, |t| t.is_keyword(keywords::Mut)) &&
@@ -1163,10 +1163,8 @@ impl<'a> Parser<'a> {
             return;
         }
 
-        // SNAP 474b324
-        // Enable these obsolete errors after snapshot:
-        // let span = mk_sp(lo, self.span.hi);
-        // self.obsolete(span, ObsoleteSyntax::ClosureKind);
+         let span = mk_sp(lo, self.span.hi);
+         self.obsolete(span, ObsoleteSyntax::ClosureKind);
     }
 
     pub fn parse_ty_bare_fn_or_ty_closure(&mut self, lifetime_defs: Vec<LifetimeDef>) -> Ty_ {
@@ -1683,7 +1681,7 @@ impl<'a> Parser<'a> {
 
                     token::Str_(s) => {
                         (true,
-                         LitStr(token::intern_and_get_ident(parse::str_lit(s.as_str()).as_slice()),
+                         LitStr(token::intern_and_get_ident(&parse::str_lit(s.as_str())),
                                 ast::CookedStr))
                     }
                     token::StrRaw(s, n) => {
@@ -2529,16 +2527,7 @@ impl<'a> Parser<'a> {
                 let bracket_pos = self.span.lo;
                 self.bump();
 
-                let mut found_dotdot = false;
-                if self.token == token::DotDot &&
-                   self.look_ahead(1, |t| t == &token::CloseDelim(token::Bracket)) {
-                    // Using expr[..], which is a mistake, should be expr[]
-                    self.bump();
-                    self.bump();
-                    found_dotdot = true;
-                }
-
-                if found_dotdot || self.eat(&token::CloseDelim(token::Bracket)) {
+                if self.eat(&token::CloseDelim(token::Bracket)) {
                     // No expression, expand to a RangeFull
                     // FIXME(#20516) It would be better to use a lang item or
                     // something for RangeFull.
@@ -2562,7 +2551,11 @@ impl<'a> Parser<'a> {
                     let range = ExprStruct(path, vec![], None);
                     let ix = self.mk_expr(bracket_pos, hi, range);
                     let index = self.mk_index(e, ix);
-                    e = self.mk_expr(lo, hi, index)
+                    e = self.mk_expr(lo, hi, index);
+                    // Enable after snapshot.
+                    // self.span_warn(e.span, "deprecated slicing syntax: `[]`");
+                    // self.span_note(e.span,
+                    //               "use `&expr[..]` to construct a slice of the whole of expr");
                 } else {
                     let ix = self.parse_expr();
                     hi = self.span.hi;
@@ -2571,11 +2564,6 @@ impl<'a> Parser<'a> {
                     e = self.mk_expr(lo, hi, index)
                 }
 
-                if found_dotdot {
-                    self.span_err(e.span, "incorrect slicing expression: `[..]`");
-                    self.span_note(e.span,
-                                   "use `&expr[]` to construct a slice of the whole of expr");
-                }
               }
               _ => return e
             }
@@ -2598,7 +2586,7 @@ impl<'a> Parser<'a> {
                         |p| p.parse_token_tree()
                     );
                     let (sep, repeat) = self.parse_sep_and_kleene_op();
-                    let name_num = macro_parser::count_names(seq.as_slice());
+                    let name_num = macro_parser::count_names(&seq);
                     return TtSequence(mk_sp(sp.lo, seq_span.hi),
                                       Rc::new(SequenceRepetition {
                                           tts: seq,
@@ -2936,9 +2924,14 @@ impl<'a> Parser<'a> {
             // with the postfix-form 'expr..'
             let lo = self.span.lo;
             self.bump();
-            let rhs = self.parse_binops();
-            let hi = rhs.span.hi;
-            let ex = self.mk_range(None, Some(rhs));
+            let opt_end = if self.is_at_start_of_range_notation_rhs() {
+                let end = self.parse_binops();
+                Some(end)
+            } else {
+                None
+            };
+            let hi = self.span.hi;
+            let ex = self.mk_range(None, opt_end);
             self.mk_expr(lo, hi, ex)
           }
           _ => {
@@ -5140,7 +5133,7 @@ impl<'a> Parser<'a> {
                 outer_attrs, "path") {
             Some(d) => (dir_path.join(d), true),
             None => {
-                let mod_name = mod_string.get().to_string();
+                let mod_name = mod_string.to_string();
                 let default_path_str = format!("{}.rs", mod_name);
                 let secondary_path_str = format!("{}/mod.rs", mod_name);
                 let default_path = dir_path.join(&default_path_str[]);
@@ -5152,7 +5145,7 @@ impl<'a> Parser<'a> {
                     self.span_err(id_sp,
                                   "cannot declare a new module at this location");
                     let this_module = match self.mod_path_stack.last() {
-                        Some(name) => name.get().to_string(),
+                        Some(name) => name.to_string(),
                         None => self.root_module_name.as_ref().unwrap().clone(),
                     };
                     self.span_note(id_sp,
@@ -5198,7 +5191,7 @@ impl<'a> Parser<'a> {
         };
 
         self.eval_src_mod_from_path(file_path, owns_directory,
-                                    mod_string.get().to_string(), id_sp)
+                                    mod_string.to_string(), id_sp)
     }
 
     fn eval_src_mod_from_path(&mut self,

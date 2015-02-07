@@ -224,7 +224,6 @@ pub struct RegionVarBindings<'a, 'tcx: 'a> {
 }
 
 #[derive(Debug)]
-#[allow(missing_copy_implementations)]
 pub struct RegionSnapshot {
     length: uint,
     skolemization_count: u32,
@@ -973,8 +972,8 @@ impl<'a, 'tcx> RegionVarBindings<'a, 'tcx> {
         debug!("----() End constraint listing {:?}---", self.dump_constraints());
         graphviz::maybe_print_constraints_for(self, subject);
 
-        self.expansion(var_data.as_mut_slice());
-        self.contraction(var_data.as_mut_slice());
+        self.expansion(&mut var_data);
+        self.contraction(&mut var_data);
         let values =
             self.extract_values_and_collect_conflicts(&var_data[],
                                                       errors);
@@ -1303,12 +1302,12 @@ impl<'a, 'tcx> RegionVarBindings<'a, 'tcx> {
                     match var_data[idx].classification {
                         Expanding => {
                             self.collect_error_for_expanding_node(
-                                graph, var_data, dup_vec.as_mut_slice(),
+                                graph, var_data, &mut dup_vec,
                                 node_vid, errors);
                         }
                         Contracting => {
                             self.collect_error_for_contracting_node(
-                                graph, var_data, dup_vec.as_mut_slice(),
+                                graph, var_data, &mut dup_vec,
                                 node_vid, errors);
                         }
                     }

@@ -86,14 +86,14 @@ fn report_on_unimplemented<'a, 'tcx>(infcx: &InferCtxt<'a, 'tcx>,
                                               }).collect::<HashMap<String, String>>();
                 generic_map.insert("Self".to_string(),
                                    trait_ref.self_ty().user_string(infcx.tcx));
-                let parser = Parser::new(istring.get());
+                let parser = Parser::new(&istring);
                 let mut errored = false;
                 let err: String = parser.filter_map(|p| {
                     match p {
                         Piece::String(s) => Some(s),
                         Piece::NextArgument(a) => match a.position {
                             Position::ArgumentNamed(s) => match generic_map.get(s) {
-                                Some(val) => Some(val.as_slice()),
+                                Some(val) => Some(val),
                                 None => {
                                     span_err!(infcx.tcx.sess, err_sp, E0272,
                                                    "the #[rustc_on_unimplemented] \
@@ -181,7 +181,7 @@ pub fn report_selection_error<'a, 'tcx>(infcx: &InferCtxt<'a, 'tcx>,
                                                                           obligation.cause.span);
                                 if let Some(s) = custom_note {
                                     infcx.tcx.sess.span_note(obligation.cause.span,
-                                                             s.as_slice());
+                                                             &s);
                                 }
                             }
                         }
@@ -289,12 +289,12 @@ pub fn maybe_report_ambiguity<'a, 'tcx>(infcx: &InferCtxt<'a, 'tcx>,
                 // Ambiguity. Coherence should have reported an error.
                 infcx.tcx.sess.span_bug(
                     obligation.cause.span,
-                    format!(
+                    &format!(
                         "coherence failed to report ambiguity: \
                          cannot locate the impl of the trait `{}` for \
                          the type `{}`",
                         trait_ref.user_string(infcx.tcx),
-                        self_ty.user_string(infcx.tcx)).as_slice());
+                        self_ty.user_string(infcx.tcx)));
             }
         }
 
@@ -330,14 +330,14 @@ fn note_obligation_cause_code<'a, 'tcx>(infcx: &InferCtxt<'a, 'tcx>,
             let item_name = ty::item_path_str(tcx, item_def_id);
             tcx.sess.span_note(
                 cause_span,
-                format!("required by `{}`", item_name).as_slice());
+                &format!("required by `{}`", item_name));
         }
         ObligationCauseCode::ObjectCastObligation(object_ty) => {
             tcx.sess.span_note(
                 cause_span,
-                format!(
+                &format!(
                     "required for the cast to the object type `{}`",
-                    infcx.ty_to_string(object_ty)).as_slice());
+                    infcx.ty_to_string(object_ty)));
         }
         ObligationCauseCode::RepeatVec => {
             tcx.sess.span_note(

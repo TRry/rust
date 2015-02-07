@@ -341,7 +341,7 @@ pub fn gather_attrs(attrs: &[ast::Attribute])
                     -> Vec<Result<(InternedString, Level, Span), Span>> {
     let mut out = vec!();
     for attr in attrs {
-        let level = match Level::from_str(attr.name().get()) {
+        let level = match Level::from_str(&attr.name()) {
             None => continue,
             Some(lvl) => lvl,
         };
@@ -499,18 +499,18 @@ impl<'a, 'tcx> Context<'a, 'tcx> {
                     continue;
                 }
                 Ok((lint_name, level, span)) => {
-                    match self.lints.find_lint(lint_name.get(), &self.tcx.sess, Some(span)) {
+                    match self.lints.find_lint(&lint_name, &self.tcx.sess, Some(span)) {
                         Some(lint_id) => vec![(lint_id, level, span)],
                         None => {
-                            match self.lints.lint_groups.get(lint_name.get()) {
+                            match self.lints.lint_groups.get(&lint_name[]) {
                                 Some(&(ref v, _)) => v.iter()
                                                       .map(|lint_id: &LintId|
                                                            (*lint_id, level, span))
                                                       .collect(),
                                 None => {
                                     self.span_lint(builtin::UNKNOWN_LINTS, span,
-                                               format!("unknown `{}` attribute: `{}`",
-                                                       level.as_str(), lint_name).as_slice());
+                                                   &format!("unknown `{}` attribute: `{}`",
+                                                            level.as_str(), lint_name));
                                     continue;
                                 }
                             }
@@ -797,8 +797,8 @@ pub fn check_crate(tcx: &ty::ctxt,
     for (id, v) in &*tcx.sess.lints.borrow() {
         for &(lint, span, ref msg) in v {
             tcx.sess.span_bug(span,
-                              format!("unprocessed lint {} at {}: {}",
-                                      lint.as_str(), tcx.map.node_to_string(*id), *msg).as_slice())
+                              &format!("unprocessed lint {} at {}: {}",
+                                       lint.as_str(), tcx.map.node_to_string(*id), *msg))
         }
     }
 

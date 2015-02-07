@@ -82,8 +82,8 @@ pub fn load_plugins(sess: &Session, krate: &ast::Crate,
     visit::walk_crate(&mut loader, krate);
 
     if let Some(plugins) = addl_plugins {
-        for plugin in &plugins {
-            loader.load_plugin(CrateOrString::Str(plugin.as_slice()),
+        for plugin in plugins {
+            loader.load_plugin(CrateOrString::Str(&plugin),
                                                   None, None, None)
         }
     }
@@ -109,7 +109,7 @@ impl<'a, 'v> Visitor<'v> for PluginLoader<'a> {
         let mut reexport = HashSet::new();
         for attr in &item.attrs {
             let mut used = true;
-            match attr.name().get() {
+            match &attr.name()[] {
                 "phase" => {
                     self.sess.span_err(attr.span, "#[phase] is deprecated; use \
                                        #[macro_use], #[plugin], and/or #[no_link]");

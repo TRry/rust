@@ -775,7 +775,7 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
                                      -> bool
     {
         // In general, it's a good idea to cache results, even
-        // ambigious ones, to save us some trouble later. But we have
+        // ambiguous ones, to save us some trouble later. But we have
         // to be careful not to cache results that could be
         // invalidated later by advances in inference. Normally, this
         // is not an issue, because any inference variables whose
@@ -933,9 +933,9 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
             _ => {
                 self.tcx().sess.span_bug(
                     obligation.cause.span,
-                    format!("match_projection_obligation_against_bounds_from_trait() called \
-                             but self-ty not a projection: {}",
-                            skol_trait_predicate.trait_ref.self_ty().repr(self.tcx())).as_slice());
+                    &format!("match_projection_obligation_against_bounds_from_trait() called \
+                              but self-ty not a projection: {}",
+                             skol_trait_predicate.trait_ref.self_ty().repr(self.tcx())));
             }
         };
         debug!("match_projection_obligation_against_bounds_from_trait: \
@@ -1273,7 +1273,7 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
     ///
     /// - The impl is conditional, in which case we may not have winnowed it out
     ///   because we don't know if the conditions apply, but the where clause is basically
-    ///   telling us taht there is some impl, though not necessarily the one we see.
+    ///   telling us that there is some impl, though not necessarily the one we see.
     ///
     /// In both cases we prefer to take the where clause, which is
     /// essentially harmless.  See issue #18453 for more details of
@@ -1334,25 +1334,6 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
                 // where both the projection bounds for `Self::A` and
                 // the where clauses are in scope.
                 true
-            }
-            (&ParamCandidate(ref bound1), &ParamCandidate(ref bound2)) => {
-                self.infcx.probe(|_| {
-                    let bound1 =
-                        project::normalize_with_depth(self,
-                                                      stack.obligation.cause.clone(),
-                                                      stack.obligation.recursion_depth+1,
-                                                      bound1);
-                    let bound2 =
-                        project::normalize_with_depth(self,
-                                                      stack.obligation.cause.clone(),
-                                                      stack.obligation.recursion_depth+1,
-                                                      bound2);
-                    let origin =
-                        infer::RelateOutputImplTypes(stack.obligation.cause.span);
-                    self.infcx
-                        .sub_poly_trait_refs(false, origin, bound1.value, bound2.value)
-                        .is_ok()
-                })
             }
             _ => {
                 false
@@ -1787,9 +1768,9 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
             Ok(obligations) => obligations,
             Err(()) => {
                 self.tcx().sess.bug(
-                    format!("Where clause `{}` was applicable to `{}` but now is not",
-                            param.repr(self.tcx()),
-                            obligation.repr(self.tcx())).as_slice());
+                    &format!("Where clause `{}` was applicable to `{}` but now is not",
+                             param.repr(self.tcx()),
+                             obligation.repr(self.tcx())));
             }
         }
     }
@@ -1953,9 +1934,9 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
             Some(r) => r,
             None => {
                 self.tcx().sess.span_bug(obligation.cause.span,
-                                         format!("unable to upcast from {} to {}",
-                                                 poly_trait_ref.repr(self.tcx()),
-                                                 obligation_def_id.repr(self.tcx())).as_slice());
+                                         &format!("unable to upcast from {} to {}",
+                                                  poly_trait_ref.repr(self.tcx()),
+                                                  obligation_def_id.repr(self.tcx())));
             }
         };
 

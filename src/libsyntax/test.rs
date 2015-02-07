@@ -512,7 +512,7 @@ fn mk_test_module(cx: &mut TestCtxt) -> (P<ast::Item>, Option<P<ast::Item>>) {
     });
     let reexport = cx.reexport_test_harness_main.as_ref().map(|s| {
         // building `use <ident> = __test::main`
-        let reexport_ident = token::str_to_ident(s.get());
+        let reexport_ident = token::str_to_ident(&s);
 
         let use_path =
             nospan(ast::ViewPathSimple(reexport_ident,
@@ -575,7 +575,7 @@ fn mk_tests(cx: &TestCtxt) -> P<ast::Item> {
 
 fn is_test_crate(krate: &ast::Crate) -> bool {
     match attr::find_crate_name(&krate.attrs[]) {
-        Some(ref s) if "test" == &s.get()[] => true,
+        Some(ref s) if "test" == &s[] => true,
         _ => false
     }
 }
@@ -609,11 +609,11 @@ fn mk_test_desc_and_fn_rec(cx: &TestCtxt, test: &Test) -> P<ast::Expr> {
     let test_id = ecx.ident_of("test");
 
     // creates self::test::$name
-    let test_path = |&: name| {
+    let test_path = |name| {
         ecx.path(span, vec![self_id, test_id, ecx.ident_of(name)])
     };
     // creates $name: $expr
-    let field = |&: name, expr| ecx.field_imm(span, ecx.ident_of(name), expr);
+    let field = |name, expr| ecx.field_imm(span, ecx.ident_of(name), expr);
 
     debug!("encoding {}", ast_util::path_name_i(&path[]));
 
@@ -627,7 +627,7 @@ fn mk_test_desc_and_fn_rec(cx: &TestCtxt, test: &Test) -> P<ast::Expr> {
                                   vec![name_expr]);
 
     let ignore_expr = ecx.expr_bool(span, test.ignore);
-    let should_fail_path = |&: name| {
+    let should_fail_path = |name| {
         ecx.path(span, vec![self_id, test_id, ecx.ident_of("ShouldFail"), ecx.ident_of(name)])
     };
     let fail_expr = match test.should_fail {

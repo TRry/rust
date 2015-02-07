@@ -118,7 +118,8 @@ fn parse_args(ecx: &mut ExtCtxt, sp: Span, tts: &[ast::TokenTree])
                 }
             };
             let interned_name = token::get_ident(ident);
-            let name = interned_name.get();
+            let name = &interned_name[];
+
             p.expect(&token::Eq);
             let e = p.parse_expr();
             match names.get(name) {
@@ -307,7 +308,7 @@ impl<'a, 'b> Context<'a, 'b> {
 
     fn trans_count(&self, c: parse::Count) -> P<ast::Expr> {
         let sp = self.fmtsp;
-        let count = |: c, arg| {
+        let count = |c, arg| {
             let mut path = Context::rtpath(self.ecx, "Count");
             path.push(self.ecx.ident_of(c));
             match arg {
@@ -353,7 +354,7 @@ impl<'a, 'b> Context<'a, 'b> {
             parse::NextArgument(ref arg) => {
                 // Translate the position
                 let pos = {
-                    let pos = |: c, arg| {
+                    let pos = |c, arg| {
                         let mut path = Context::rtpath(self.ecx, "Position");
                         path.push(self.ecx.ident_of(c));
                         match arg {
@@ -404,7 +405,7 @@ impl<'a, 'b> Context<'a, 'b> {
 
                 // Translate the format
                 let fill = self.ecx.expr_lit(sp, ast::LitChar(fill));
-                let align = |:name| {
+                let align = |name| {
                     let mut p = Context::rtpath(self.ecx, "Alignment");
                     p.push(self.ecx.ident_of(name));
                     self.ecx.path_global(sp, p)
@@ -672,7 +673,8 @@ pub fn expand_preparsed_format_args(ecx: &mut ExtCtxt, sp: Span,
         None => return DummyResult::raw_expr(sp)
     };
 
-    let mut parser = parse::Parser::new(fmt.get());
+    let mut parser = parse::Parser::new(&fmt);
+
     loop {
         match parser.next() {
             Some(piece) => {

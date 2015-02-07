@@ -58,13 +58,13 @@ pub fn const_lit(cx: &CrateContext, e: &ast::Expr, lit: &ast::Lit)
             }
         }
         ast::LitFloat(ref fs, t) => {
-            C_floating(fs.get(), Type::float_from_ty(cx, t))
+            C_floating(&fs, Type::float_from_ty(cx, t))
         }
         ast::LitFloatUnsuffixed(ref fs) => {
             let lit_float_ty = ty::node_id_to_type(cx.tcx(), e.id);
             match lit_float_ty.sty {
                 ty::ty_float(t) => {
-                    C_floating(fs.get(), Type::float_from_ty(cx, t))
+                    C_floating(&fs, Type::float_from_ty(cx, t))
                 }
                 _ => {
                     cx.sess().span_bug(lit.span,
@@ -241,8 +241,10 @@ pub fn const_expr<'a, 'tcx>(cx: &CrateContext<'a, 'tcx>, e: &ast::Expr)
                                         ty::ty_vec(unit_ty, Some(len)) => {
                                             let llunitty = type_of::type_of(cx, unit_ty);
                                             let llptr = ptrcast(llconst, llunitty.ptr_to());
-                                            assert!(cx.const_globals().borrow_mut()
-                                                      .insert(llptr as int, llconst).is_none());
+                                            let prev_const = cx.const_globals().borrow_mut()
+                                                             .insert(llptr as int, llconst);
+                                            assert!(prev_const.is_none() ||
+                                                    prev_const == Some(llconst));
                                             assert_eq!(abi::FAT_PTR_ADDR, 0);
                                             assert_eq!(abi::FAT_PTR_EXTRA, 1);
                                             llconst = C_struct(cx, &[
@@ -289,7 +291,7 @@ pub fn const_expr<'a, 'tcx>(cx: &CrateContext<'a, 'tcx>, e: &ast::Expr)
 // the bool returned is whether this expression can be inlined into other crates
 // if it's assigned to a static.
 fn const_expr_unadjusted(cx: &CrateContext, e: &ast::Expr) -> ValueRef {
-    let map_list = |&: exprs: &[P<ast::Expr>]| {
+    let map_list = |exprs: &[P<ast::Expr>]| {
         exprs.iter().map(|e| const_expr(cx, &**e).0)
              .fold(Vec::new(), |mut l, val| { l.push(val); l })
     };
@@ -582,7 +584,7 @@ fn const_expr_unadjusted(cx: &CrateContext, e: &ast::Expr) -> ValueRef {
               })
           }
           ast::ExprVec(ref es) => {
-            const_vec(cx, e, es.as_slice()).0
+            const_vec(cx, e, es).0
           }
           ast::ExprRepeat(ref elem, ref count) => {
             let vec_ty = ty::expr_ty(cx.tcx(), e);
