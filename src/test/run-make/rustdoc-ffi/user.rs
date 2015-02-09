@@ -1,4 +1,4 @@
-// Copyright 2014 The Rust Project Developers. See the COPYRIGHT
+// Copyright 2015 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
 //
@@ -8,17 +8,9 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#![allow(unknown_features)]
-#![feature(box_syntax)]
+#![crate_type="lib"]
 
-fn f() {
-    let mut a = [box 0, box 1];
-    drop(a[0]);
-    a[1] = box 2;
-    drop(a[0]); //~ ERROR use of moved value: `a[..]`
-}
+extern crate lib;
 
-fn main() {
-    f();
-}
-
+// @has user/fn.foreigner.html //pre 'pub unsafe fn foreigner(cold_as_ice: u32)'
+pub use lib::foreigner;
