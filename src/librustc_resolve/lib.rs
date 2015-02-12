@@ -101,7 +101,7 @@ use std::cell::{Cell, RefCell};
 use std::fmt;
 use std::mem::replace;
 use std::rc::{Rc, Weak};
-use std::uint;
+use std::usize;
 
 // NB: This module needs to be declared first so diagnostics are
 // registered before they are used.
@@ -2196,7 +2196,9 @@ impl<'a, 'tcx> Resolver<'a, 'tcx> {
 
         // Search for external modules.
         if namespace == TypeNS {
-            if let Some(module) = module_.external_module_children.borrow().get(&name).cloned() {
+            // FIXME (21114): In principle unclear `child` *has* to be lifted.
+            let child = module_.external_module_children.borrow().get(&name).cloned();
+            if let Some(module) = child {
                 let name_bindings =
                     Rc::new(Resolver::create_name_bindings_from_module(module));
                 debug!("lower name bindings succeeded");
@@ -2481,7 +2483,9 @@ impl<'a, 'tcx> Resolver<'a, 'tcx> {
 
         // Finally, search through external children.
         if namespace == TypeNS {
-            if let Some(module) = module_.external_module_children.borrow().get(&name).cloned() {
+            // FIXME (21114): In principle unclear `child` *has* to be lifted.
+            let child = module_.external_module_children.borrow().get(&name).cloned();
+            if let Some(module) = child {
                 let name_bindings =
                     Rc::new(Resolver::create_name_bindings_from_module(module));
                 return Success((Target::new(module_,
@@ -4366,7 +4370,7 @@ impl<'a, 'tcx> Resolver<'a, 'tcx> {
         for rib in this.value_ribs.iter().rev() {
             for (&k, _) in &rib.bindings {
                 maybes.push(token::get_name(k));
-                values.push(uint::MAX);
+                values.push(usize::MAX);
             }
         }
 
@@ -4380,7 +4384,7 @@ impl<'a, 'tcx> Resolver<'a, 'tcx> {
         }
 
         if values.len() > 0 &&
-            values[smallest] != uint::MAX &&
+            values[smallest] != usize::MAX &&
             values[smallest] < name.len() + 2 &&
             values[smallest] <= max_distance &&
             name != &maybes[smallest][] {

@@ -18,6 +18,7 @@
        html_root_url = "http://doc.rust-lang.org/nightly/",
        html_playground_url = "http://play.rust-lang.org/")]
 
+#![feature(box_patterns)]
 #![feature(box_syntax)]
 #![feature(collections)]
 #![feature(core)]
@@ -121,10 +122,10 @@ struct Output {
 }
 
 pub fn main() {
-    static STACK_SIZE: uint = 32000000; // 32MB
+    const STACK_SIZE: usize = 32000000; // 32MB
     let res = std::thread::Builder::new().stack_size(STACK_SIZE).scoped(move || {
-        let s = env::args().map(|s| s.into_string().unwrap());
-        main_args(&s.collect::<Vec<_>>())
+        let s = env::args().collect::<Vec<_>>();
+        main_args(&s)
     }).join();
     env::set_exit_status(res.ok().unwrap() as i32);
 }
