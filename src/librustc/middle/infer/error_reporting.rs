@@ -619,7 +619,7 @@ impl<'a, 'tcx> ErrorReporting<'tcx> for InferCtxt<'a, 'tcx> {
             infer::RelateRegionParamBound(span) => {
                 self.tcx.sess.span_err(
                     span,
-                    "declared lifetime bound not satisfied");
+                    "lifetime bound not satisfied");
                 note_and_explain_region(
                     self.tcx,
                     "lifetime parameter instantiated with ",
@@ -1435,7 +1435,6 @@ impl<'a, 'tcx> ErrorReportingHelpers<'tcx> for InferCtxt<'a, 'tcx> {
             infer::MiscVariable(_) => "".to_string(),
             infer::PatternRegion(_) => " for pattern".to_string(),
             infer::AddrOfRegion(_) => " for borrow expression".to_string(),
-            infer::AddrOfSlice(_) => " for slice expression".to_string(),
             infer::Autoref(_) => " for autoref".to_string(),
             infer::Coercion(_) => " for automatic coercion".to_string(),
             infer::LateBoundRegion(_, br, infer::FnCall) => {
@@ -1629,7 +1628,7 @@ impl<'a, 'tcx> ErrorReportingHelpers<'tcx> for InferCtxt<'a, 'tcx> {
                 self.tcx.sess.span_note(
                     span,
                     &format!("...so that the type `{}` \
-                             will meet the declared lifetime bounds",
+                             will meet its required lifetime bounds",
                             self.ty_to_string(t))[]);
             }
             infer::RelateDefaultParamBound(span, t) => {

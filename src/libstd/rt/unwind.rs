@@ -62,7 +62,7 @@ use prelude::v1::*;
 use any::Any;
 use cell::Cell;
 use cmp;
-use failure;
+use panicking;
 use fmt;
 use intrinsics;
 use libc::c_void;
@@ -292,7 +292,6 @@ pub mod eabi {
 
     #[lang="eh_personality"]
     #[no_mangle] // referenced from rust_try.ll
-    #[allow(private_no_mangle_fns)]
     pub extern "C" fn rust_eh_personality(
         version: c_int,
         actions: uw::_Unwind_Action,
@@ -534,10 +533,10 @@ pub fn begin_unwind<M: Any + Send>(msg: M, file_line: &(&'static str, uint)) -> 
 /// }` from ~1900/3700 (-O/no opts) to 180/590.
 #[inline(never)] #[cold] // this is the slow path, please never inline this
 fn begin_unwind_inner(msg: Box<Any + Send>, file_line: &(&'static str, uint)) -> ! {
-    // Make sure the default failure handler is registered before we look at the
+    // Make sure the default panic handler is registered before we look at the
     // callbacks.
     static INIT: Once = ONCE_INIT;
-    INIT.call_once(|| unsafe { register(failure::on_fail); });
+    INIT.call_once(|| unsafe { register(panicking::on_panic); });
 
     // First, invoke call the user-defined callbacks triggered on thread panic.
     //

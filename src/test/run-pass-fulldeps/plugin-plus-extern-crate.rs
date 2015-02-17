@@ -15,6 +15,7 @@
 // macro_crate_test will not compile on a cross-compiled target because
 // libsyntax is not compiled for it.
 
+#![allow(plugin_as_library)]
 #![feature(plugin)]
 #![plugin(macro_crate_test)]
 

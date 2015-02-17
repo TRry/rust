@@ -560,7 +560,12 @@ impl<T> DList<T> {
     /// Splits the list into two at the given index. Returns everything after the given index,
     /// including the index.
     ///
+    /// # Panics
+    ///
+    /// Panics if `at > len`.
+    ///
     /// This operation should compute in O(n) time.
+    ///
     /// # Examples
     ///
     /// ```
@@ -580,9 +585,11 @@ impl<T> DList<T> {
     #[stable(feature = "rust1", since = "1.0.0")]
     pub fn split_off(&mut self, at: usize) -> DList<T> {
         let len = self.len();
-        assert!(at < len, "Cannot split off at a nonexistent index");
+        assert!(at <= len, "Cannot split off at a nonexistent index");
         if at == 0 {
             return mem::replace(self, DList::new());
+        } else if at == len {
+            return DList::new();
         }
 
         // Below, we iterate towards the `i-1`th node, either from the start or the end,
@@ -756,7 +763,7 @@ impl<'a, A> IterMut<'a, A> {
     /// ```
     /// use std::collections::DList;
     ///
-    /// let mut list: DList<int> = vec![1, 3, 4].into_iter().collect();
+    /// let mut list: DList<_> = vec![1, 3, 4].into_iter().collect();
     ///
     /// {
     ///     let mut it = list.iter_mut();
@@ -765,7 +772,7 @@ impl<'a, A> IterMut<'a, A> {
     ///     it.insert_next(2);
     /// }
     /// {
-    ///     let vec: Vec<int> = list.into_iter().collect();
+    ///     let vec: Vec<_> = list.into_iter().collect();
     ///     assert_eq!(vec, vec![1, 2, 3, 4]);
     /// }
     /// ```
@@ -783,7 +790,7 @@ impl<'a, A> IterMut<'a, A> {
     /// ```
     /// use std::collections::DList;
     ///
-    /// let mut list: DList<int> = vec![1, 2, 3].into_iter().collect();
+    /// let mut list: DList<_> = vec![1, 2, 3].into_iter().collect();
     ///
     /// let mut it = list.iter_mut();
     /// assert_eq!(it.next().unwrap(), &1);
@@ -830,6 +837,8 @@ impl<A> FromIterator<A> for DList<A> {
     }
 }
 
+// NOTE(stage0): remove impl after a snapshot
+#[cfg(stage0)]
 impl<T> IntoIterator for DList<T> {
     type IntoIter = IntoIter<T>;
 
@@ -838,6 +847,18 @@ impl<T> IntoIterator for DList<T> {
     }
 }
 
+#[cfg(not(stage0))]  // NOTE(stage0): remove cfg after a snapshot
+impl<T> IntoIterator for DList<T> {
+    type Item = T;
+    type IntoIter = IntoIter<T>;
+
+    fn into_iter(self) -> IntoIter<T> {
+        self.into_iter()
+    }
+}
+
+// NOTE(stage0): remove impl after a snapshot
+#[cfg(stage0)]
 impl<'a, T> IntoIterator for &'a DList<T> {
     type IntoIter = Iter<'a, T>;
 
@@ -846,7 +867,29 @@ impl<'a, T> IntoIterator for &'a DList<T> {
     }
 }
 
+#[cfg(not(stage0))]  // NOTE(stage0): remove cfg after a snapshot
+impl<'a, T> IntoIterator for &'a DList<T> {
+    type Item = &'a T;
+    type IntoIter = Iter<'a, T>;
+
+    fn into_iter(self) -> Iter<'a, T> {
+        self.iter()
+    }
+}
+
+// NOTE(stage0): remove impl after a snapshot
+#[cfg(stage0)]
 impl<'a, T> IntoIterator for &'a mut DList<T> {
+    type IntoIter = IterMut<'a, T>;
+
+    fn into_iter(mut self) -> IterMut<'a, T> {
+        self.iter_mut()
+    }
+}
+
+#[cfg(not(stage0))]  // NOTE(stage0): remove cfg after a snapshot
+impl<'a, T> IntoIterator for &'a mut DList<T> {
+    type Item = &'a mut T;
     type IntoIter = IterMut<'a, T>;
 
     fn into_iter(mut self) -> IterMut<'a, T> {
@@ -1114,6 +1157,18 @@ mod tests {
             for elt in 5..6 {
                 assert_eq!(n.pop_front(), Some(elt));
             }
+        }
+
+        // no-op on the last index
+        {
+            let mut m = DList::new();
+            m.push_back(1);
+
+            let p = m.split_off(1);
+            assert_eq!(m.len(), 1);
+            assert_eq!(p.len(), 0);
+            assert_eq!(m.back(), Some(&1));
+            assert_eq!(m.front(), Some(&1));
         }
 
     }

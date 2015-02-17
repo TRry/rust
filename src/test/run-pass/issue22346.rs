@@ -1,4 +1,4 @@
-// Copyright 2014 The Rust Project Developers. See the COPYRIGHT
+// Copyright 2015 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
 //
@@ -8,8 +8,10 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// Trying to create a fixed-length vector with a negative size
+// This used to cause an ICE because the retslot for the "return" had the wrong type
+fn testcase<'a>() -> Box<Iterator<Item=usize> + 'a> {
+    return Box::new(range(0, 3).map(|i| { return i; }));
+}
 
 fn main() {
-      let _x = [0; -1]; //~ ERROR found negative integer
 }

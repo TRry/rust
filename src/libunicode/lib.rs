@@ -31,8 +31,6 @@
        html_playground_url = "http://play.rust-lang.org/")]
 #![feature(no_std)]
 #![no_std]
-#![feature(slicing_syntax)]
-#![feature(int_uint)]
 #![feature(core)]
 
 extern crate core;
@@ -62,6 +60,7 @@ mod u_str;
 /// however the converse is not always true due to the above range limits
 /// and, as such, should be performed via the `from_u32` function.
 #[stable(feature = "rust1", since = "1.0.0")]
+#[doc(primitive = "char")]
 pub mod char {
     pub use core::char::{MAX, from_u32, from_digit};
 

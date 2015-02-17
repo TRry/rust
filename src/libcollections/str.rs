@@ -1285,7 +1285,8 @@ pub trait StrExt: Index<RangeFull, Output = str> {
     /// let v: Vec<&str> = some_words.words().collect();
     /// assert_eq!(v, vec!["Mary", "had", "a", "little", "lamb"]);
     /// ```
-    #[stable(feature = "rust1", since = "1.0.0")]
+    #[unstable(feature = "str_words",
+               reason = "the precise algorithm to use is unclear")]
     fn words(&self) -> Words {
         UnicodeStr::words(&self[])
     }
@@ -2705,22 +2706,22 @@ mod tests {
 
         for &(s, g) in &test_same[] {
             // test forward iterator
-            assert!(order::equals(s.graphemes(true), g.iter().map(|&x| x)));
-            assert!(order::equals(s.graphemes(false), g.iter().map(|&x| x)));
+            assert!(order::equals(s.graphemes(true), g.iter().cloned()));
+            assert!(order::equals(s.graphemes(false), g.iter().cloned()));
 
             // test reverse iterator
-            assert!(order::equals(s.graphemes(true).rev(), g.iter().rev().map(|&x| x)));
-            assert!(order::equals(s.graphemes(false).rev(), g.iter().rev().map(|&x| x)));
+            assert!(order::equals(s.graphemes(true).rev(), g.iter().rev().cloned()));
+            assert!(order::equals(s.graphemes(false).rev(), g.iter().rev().cloned()));
         }
 
         for &(s, gt, gf) in &test_diff {
             // test forward iterator
-            assert!(order::equals(s.graphemes(true), gt.iter().map(|&x| x)));
-            assert!(order::equals(s.graphemes(false), gf.iter().map(|&x| x)));
+            assert!(order::equals(s.graphemes(true), gt.iter().cloned()));
+            assert!(order::equals(s.graphemes(false), gf.iter().cloned()));
 
             // test reverse iterator
-            assert!(order::equals(s.graphemes(true).rev(), gt.iter().rev().map(|&x| x)));
-            assert!(order::equals(s.graphemes(false).rev(), gf.iter().rev().map(|&x| x)));
+            assert!(order::equals(s.graphemes(true).rev(), gt.iter().rev().cloned()));
+            assert!(order::equals(s.graphemes(false).rev(), gf.iter().rev().cloned()));
         }
 
         // test the indices iterators

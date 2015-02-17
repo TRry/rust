@@ -27,7 +27,7 @@
 ######################################################################
 DOCS := index intro tutorial complement-bugreport \
     complement-lang-faq complement-design-faq complement-project-faq \
-    rustdoc reference
+    rustdoc reference grammar
 
 # Legacy guides, preserved for a while to reduce the number of 404s
 DOCS += guide-crates guide-error-handling guide-ffi guide-macros guide \
@@ -129,21 +129,21 @@ doc/:
 HTML_DEPS += doc/rust.css
 doc/rust.css: $(D)/rust.css | doc/
 	@$(call E, cp: $@)
-	$(Q)cp -a $< $@ 2> /dev/null
+	$(Q)cp -PRp $< $@ 2> /dev/null
 
 HTML_DEPS += doc/favicon.inc
 doc/favicon.inc: $(D)/favicon.inc | doc/
 	@$(call E, cp: $@)
-	$(Q)cp -a $< $@ 2> /dev/null
+	$(Q)cp -PRp $< $@ 2> /dev/null
 
 doc/full-toc.inc: $(D)/full-toc.inc | doc/
 	@$(call E, cp: $@)
-	$(Q)cp -a $< $@ 2> /dev/null
+	$(Q)cp -PRp $< $@ 2> /dev/null
 
 HTML_DEPS += doc/footer.inc
 doc/footer.inc: $(D)/footer.inc | doc/
 	@$(call E, cp: $@)
-	$(Q)cp -a $< $@ 2> /dev/null
+	$(Q)cp -PRp $< $@ 2> /dev/null
 
 # The (english) documentation for each doc item.
 

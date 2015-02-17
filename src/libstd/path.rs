@@ -942,6 +942,11 @@ impl PathBuf {
 
         true
     }
+
+    /// Consume the `PathBuf`, yielding its internal `OsString` storage
+    pub fn into_os_string(self) -> OsString {
+        self.inner
+    }
 }
 
 impl<'a, P: ?Sized + 'a> iter::FromIterator<&'a P> for PathBuf where P: AsPath {
@@ -1028,6 +1033,7 @@ impl AsOsStr for PathBuf {
 /// let parent_dir = path.parent();
 /// ```
 ///
+#[derive(Hash)]
 pub struct Path {
     inner: OsStr
 }

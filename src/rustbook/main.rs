@@ -8,7 +8,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#![feature(slicing_syntax, box_syntax)]
+#![feature(box_syntax)]
 #![feature(collections)]
 #![feature(core)]
 #![feature(io)]
@@ -50,7 +50,7 @@ fn main() {
     let mut term = Term::new();
     let cmd = os::args();
 
-    if cmd.len() < 1 {
+    if cmd.len() <= 1 {
         help::usage()
     } else {
         match subcommand::parse_name(&cmd[1][]) {

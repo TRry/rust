@@ -462,6 +462,8 @@ impl<K: Ord, V> BTreeMap<K, V> {
     }
 }
 
+// NOTE(stage0): remove impl after a snapshot
+#[cfg(stage0)]
 impl<K, V> IntoIterator for BTreeMap<K, V> {
     type IntoIter = IntoIter<K, V>;
 
@@ -470,6 +472,18 @@ impl<K, V> IntoIterator for BTreeMap<K, V> {
     }
 }
 
+#[cfg(not(stage0))]  // NOTE(stage0): remove cfg after a snapshot
+impl<K, V> IntoIterator for BTreeMap<K, V> {
+    type Item = (K, V);
+    type IntoIter = IntoIter<K, V>;
+
+    fn into_iter(self) -> IntoIter<K, V> {
+        self.into_iter()
+    }
+}
+
+// NOTE(stage0): remove impl after a snapshot
+#[cfg(stage0)]
 impl<'a, K, V> IntoIterator for &'a BTreeMap<K, V> {
     type IntoIter = Iter<'a, K, V>;
 
@@ -478,7 +492,29 @@ impl<'a, K, V> IntoIterator for &'a BTreeMap<K, V> {
     }
 }
 
+#[cfg(not(stage0))]  // NOTE(stage0): remove cfg after a snapshot
+impl<'a, K, V> IntoIterator for &'a BTreeMap<K, V> {
+    type Item = (&'a K, &'a V);
+    type IntoIter = Iter<'a, K, V>;
+
+    fn into_iter(self) -> Iter<'a, K, V> {
+        self.iter()
+    }
+}
+
+// NOTE(stage0): remove impl after a snapshot
+#[cfg(stage0)]
 impl<'a, K, V> IntoIterator for &'a mut BTreeMap<K, V> {
+    type IntoIter = IterMut<'a, K, V>;
+
+    fn into_iter(mut self) -> IterMut<'a, K, V> {
+        self.iter_mut()
+    }
+}
+
+#[cfg(not(stage0))]  // NOTE(stage0): remove cfg after a snapshot
+impl<'a, K, V> IntoIterator for &'a mut BTreeMap<K, V> {
+    type Item = (&'a K, &'a mut V);
     type IntoIter = IterMut<'a, K, V>;
 
     fn into_iter(mut self) -> IterMut<'a, K, V> {
@@ -1783,7 +1819,7 @@ mod test {
     fn test_entry(){
         let xs = [(1, 10), (2, 20), (3, 30), (4, 40), (5, 50), (6, 60)];
 
-        let mut map: BTreeMap<_, _> = xs.iter().map(|&x| x).collect();
+        let mut map: BTreeMap<_, _> = xs.iter().cloned().collect();
 
         // Existing key (insert)
         match map.entry(1) {

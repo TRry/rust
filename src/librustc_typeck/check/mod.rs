@@ -1890,7 +1890,14 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
 }
 
 impl<'a, 'tcx> RegionScope for FnCtxt<'a, 'tcx> {
-    fn default_region_bound(&self, span: Span) -> Option<ty::Region> {
+    fn object_lifetime_default(&self, span: Span) -> Option<ty::Region> {
+        // RFC #599 specifies that object lifetime defaults take
+        // precedence over other defaults. But within a fn body we
+        // don't have a *default* region, rather we use inference to
+        // find the *correct* region, which is strictly more general
+        // (and anyway, within a fn body the right region may not even
+        // be something the user can write explicitly, since it might
+        // be some expression).
         Some(self.infcx().next_region_var(infer::MiscVariable(span)))
     }
 
@@ -2496,16 +2503,6 @@ fn check_lit<'a, 'tcx>(fcx: &FnCtxt<'a, 'tcx>,
                 || ty::mk_float_var(tcx, fcx.infcx().next_float_var_id()))
         }
         ast::LitBool(_) => tcx.types.bool
-    }
-}
-
-pub fn valid_range_bounds(ccx: &CrateCtxt,
-                          from: &ast::Expr,
-                          to: &ast::Expr)
-                       -> Option<bool> {
-    match const_eval::compare_lit_exprs(ccx.tcx, from, to) {
-        Some(val) => Some(val <= 0),
-        None => None
     }
 }
 
@@ -3596,24 +3593,8 @@ fn check_expr_with_unifier<'a, 'tcx, F>(fcx: &FnCtxt<'a, 'tcx>,
             // Finally, borrowck is charged with guaranteeing that the
             // value whose address was taken can actually be made to live
             // as long as it needs to live.
-            match oprnd.node {
-                // String literals are already, implicitly converted to slices.
-                //ast::ExprLit(lit) if ast_util::lit_is_str(lit) => fcx.expr_ty(oprnd),
-                // Empty slices live in static memory.
-                ast::ExprVec(ref elements) if elements.len() == 0 => {
-                    // Note: we do not assign a lifetime of
-                    // static. This is because the resulting type
-                    // `&'static [T]` would require that T outlives
-                    // `'static`!
-                    let region = fcx.infcx().next_region_var(
-                        infer::AddrOfSlice(expr.span));
-                    ty::mk_rptr(tcx, tcx.mk_region(region), tm)
-                }
-                _ => {
-                    let region = fcx.infcx().next_region_var(infer::AddrOfRegion(expr.span));
-                    ty::mk_rptr(tcx, tcx.mk_region(region), tm)
-                }
-            }
+            let region = fcx.infcx().next_region_var(infer::AddrOfRegion(expr.span));
+            ty::mk_rptr(tcx, tcx.mk_region(region), tm)
         };
         fcx.write_ty(id, oprnd_t);
       }
@@ -4550,7 +4531,7 @@ pub fn check_enum_variants<'a,'tcx>(ccx: &CrateCtxt<'a,'tcx>,
                     // that the expression is in a form that eval_const_expr can
                     // handle, so we may still get an internal compiler error
 
-                    match const_eval::eval_const_expr_partial(ccx.tcx, &**e) {
+                    match const_eval::eval_const_expr_partial(ccx.tcx, &**e, Some(declty)) {
                         Ok(const_eval::const_int(val)) => current_disr_val = val as Disr,
                         Ok(const_eval::const_uint(val)) => current_disr_val = val as Disr,
                         Ok(_) => {

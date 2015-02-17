@@ -36,7 +36,7 @@
 #![feature(quote)]
 #![feature(rustc_diagnostic_macros)]
 #![feature(rustc_private)]
-#![feature(slicing_syntax, unsafe_destructor)]
+#![feature(unsafe_destructor)]
 #![feature(staged_api)]
 #![feature(std_misc)]
 #![feature(unicode)]
@@ -90,7 +90,6 @@ pub mod middle {
     pub mod check_loop;
     pub mod check_match;
     pub mod check_rvalues;
-    pub mod check_static;
     pub mod const_eval;
     pub mod dataflow;
     pub mod dead;
