@@ -124,7 +124,7 @@
 //!     # #![allow(dead_code)]
 //!     use std::old_io::{TcpListener, TcpStream};
 //!     use std::old_io::{Acceptor, Listener};
-//!     use std::thread::Thread;
+//!     use std::thread;
 //!
 //!     let listener = TcpListener::bind("127.0.0.1:80");
 //!
@@ -140,7 +140,7 @@
 //!         match stream {
 //!             Err(e) => { /* connection failed */ }
 //!             Ok(stream) => {
-//!                 Thread::spawn(move|| {
+//!                 thread::spawn(move|| {
 //!                     // connection succeeded
 //!                     handle_client(stream)
 //!                 });
@@ -238,7 +238,7 @@
 //! concerned with error handling; instead its caller is responsible for
 //! responding to errors that may occur while attempting to read the numbers.
 
-#![unstable(feature = "io")]
+#![unstable(feature = "old_io")]
 #![deny(unused_must_use)]
 
 pub use self::SeekStyle::*;
@@ -1023,14 +1023,14 @@ pub trait Writer {
     ///
     /// This function will return any I/O error reported while formatting.
     fn write_fmt(&mut self, fmt: fmt::Arguments) -> IoResult<()> {
-        // Create a shim which translates a Writer to a fmt::Writer and saves
+        // Create a shim which translates a Writer to a fmt::Write and saves
         // off I/O errors. instead of discarding them
         struct Adaptor<'a, T: ?Sized +'a> {
             inner: &'a mut T,
             error: IoResult<()>,
         }
 
-        impl<'a, T: ?Sized + Writer> fmt::Writer for Adaptor<'a, T> {
+        impl<'a, T: ?Sized + Writer> fmt::Write for Adaptor<'a, T> {
             fn write_str(&mut self, s: &str) -> fmt::Result {
                 match self.inner.write_all(s.as_bytes()) {
                     Ok(()) => Ok(()),
