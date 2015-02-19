@@ -443,9 +443,9 @@ impl<'a, 'tcx> FunctionContext<'a, 'tcx> {
 
     pub fn env_arg_pos(&self) -> uint {
         if self.caller_expects_out_pointer {
-            1u
+            1
         } else {
-            0u
+            0
         }
     }
 
@@ -637,10 +637,6 @@ impl<'blk, 'tcx> BlockS<'blk, 'tcx> {
 }
 
 impl<'blk, 'tcx> mc::Typer<'tcx> for BlockS<'blk, 'tcx> {
-    fn tcx<'a>(&'a self) -> &'a ty::ctxt<'tcx> {
-        self.tcx()
-    }
-
     fn node_ty(&self, id: ast::NodeId) -> mc::McResult<Ty<'tcx>> {
         Ok(node_id_type(self, id))
     }
