@@ -148,6 +148,7 @@ pub trait AstBuilder {
     fn expr_usize(&self, span: Span, i: usize) -> P<ast::Expr>;
     fn expr_int(&self, sp: Span, i: isize) -> P<ast::Expr>;
     fn expr_u8(&self, sp: Span, u: u8) -> P<ast::Expr>;
+    fn expr_u32(&self, sp: Span, u: u32) -> P<ast::Expr>;
     fn expr_bool(&self, sp: Span, value: bool) -> P<ast::Expr>;
 
     fn expr_vec(&self, sp: Span, exprs: Vec<P<ast::Expr>>) -> P<ast::Expr>;
@@ -701,6 +702,9 @@ impl<'a> AstBuilder for ExtCtxt<'a> {
         self.expr_lit(sp, ast::LitInt(i as u64, ast::SignedIntLit(ast::TyIs(false),
                                                                   ast::Sign::new(i))))
     }
+    fn expr_u32(&self, sp: Span, u: u32) -> P<ast::Expr> {
+        self.expr_lit(sp, ast::LitInt(u as u64, ast::UnsignedIntLit(ast::TyU32)))
+    }
     fn expr_u8(&self, sp: Span, u: u8) -> P<ast::Expr> {
         self.expr_lit(sp, ast::LitInt(u as u64, ast::UnsignedIntLit(ast::TyU8)))
     }
@@ -762,7 +766,7 @@ impl<'a> AstBuilder for ExtCtxt<'a> {
     fn expr_fail(&self, span: Span, msg: InternedString) -> P<ast::Expr> {
         let loc = self.codemap().lookup_char_pos(span.lo);
         let expr_file = self.expr_str(span,
-                                      token::intern_and_get_ident(&loc.file.name[]));
+                                      token::intern_and_get_ident(&loc.file.name));
         let expr_line = self.expr_usize(span, loc.line);
         let expr_file_line_tuple = self.expr_tuple(span, vec!(expr_file, expr_line));
         let expr_file_line_ptr = self.expr_addr_of(span, expr_file_line_tuple);

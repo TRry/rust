@@ -1619,7 +1619,6 @@ impl<'tcx> Clean<Type> for ty::Ty<'tcx> {
             ty::ty_closure(..) => Tuple(vec![]), // FIXME(pcwalton)
 
             ty::ty_infer(..) => panic!("ty_infer"),
-            ty::ty_open(..) => panic!("ty_open"),
             ty::ty_err => panic!("ty_err"),
         }
     }
@@ -2169,7 +2168,7 @@ impl Clean<Vec<Item>> for doctree::Import {
         // forcefully don't inline if this is not public or if the
         // #[doc(no_inline)] attribute is present.
         let denied = self.vis != ast::Public || self.attrs.iter().any(|a| {
-            &a.name()[] == "doc" && match a.meta_item_list() {
+            &a.name()[..] == "doc" && match a.meta_item_list() {
                 Some(l) => attr::contains_name(l, "no_inline"),
                 None => false,
             }
@@ -2431,7 +2430,7 @@ fn register_def(cx: &DocContext, def: def::Def) -> ast::DefId {
         def::DefFn(i, _) => (i, TypeFunction),
         def::DefTy(i, false) => (i, TypeTypedef),
         def::DefTy(i, true) => (i, TypeEnum),
-        def::DefTrait(i) => (i, TypeTrait),
+        def::DefaultImpl(i) => (i, TypeTrait),
         def::DefStruct(i) => (i, TypeStruct),
         def::DefMod(i) => (i, TypeModule),
         def::DefStatic(i, _) => (i, TypeStatic),

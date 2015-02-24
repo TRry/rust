@@ -49,7 +49,7 @@ pub fn get_rpath_flags<F, G>(config: RPathConfig<F, G>) -> Vec<String> where
 fn rpaths_to_flags(rpaths: &[String]) -> Vec<String> {
     let mut ret = Vec::new();
     for rpath in rpaths {
-        ret.push(format!("-Wl,-rpath,{}", &(*rpath)[]));
+        ret.push(format!("-Wl,-rpath,{}", &(*rpath)));
     }
     return ret;
 }
@@ -212,6 +212,7 @@ mod test {
     #[test]
     #[cfg(any(target_os = "freebsd",
               target_os = "dragonfly",
+              target_os = "bitrig",
               target_os = "openbsd"))]
     fn test_rpath_relative() {
         let config = &mut RPathConfig {

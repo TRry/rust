@@ -76,6 +76,7 @@
 //! one from Berkeley after the lawsuits died down and the CSRG dissolved.
 
 #![allow(bad_style, raw_pointer_derive)]
+#![cfg_attr(target_os = "nacl", allow(unused_imports))]
 #[cfg(feature = "cargo-build")] extern crate "std" as core;
 #[cfg(not(feature = "cargo-build"))] extern crate core;
 
@@ -86,78 +87,33 @@
 // you can write more-platform-agnostic code if you stick to just these
 // symbols.
 
-pub use types::common::c95::{FILE, c_void, fpos_t};
-pub use types::common::c99::{int8_t, int16_t, int32_t, int64_t};
-pub use types::common::c99::{uint8_t, uint16_t, uint32_t, uint64_t};
-pub use types::common::posix88::{DIR, dirent_t};
-pub use types::os::common::posix01::{timeval};
-pub use types::os::common::bsd44::{addrinfo, in_addr, in6_addr, sockaddr_storage};
-pub use types::os::common::bsd44::{ip_mreq, ip6_mreq, sockaddr, sockaddr_un};
-pub use types::os::common::bsd44::{sa_family_t, sockaddr_in, sockaddr_in6, socklen_t};
-pub use types::os::arch::c95::{c_char, c_double, c_float, c_int, c_uint};
-pub use types::os::arch::c95::{c_long, c_short, c_uchar, c_ulong, wchar_t};
-pub use types::os::arch::c95::{c_ushort, clock_t, ptrdiff_t, c_schar};
-pub use types::os::arch::c95::{size_t, time_t, suseconds_t};
-pub use types::os::arch::c99::{c_longlong, c_ulonglong};
-pub use types::os::arch::c99::{intptr_t, uintptr_t};
-pub use types::os::arch::c99::{intmax_t, uintmax_t};
-pub use types::os::arch::posix88::{dev_t, ino_t, mode_t};
-pub use types::os::arch::posix88::{off_t, pid_t, ssize_t};
+pub use types::common::c95::*;
+pub use types::common::c99::*;
+pub use types::common::posix88::*;
+pub use types::os::common::posix01::*;
+pub use types::os::common::bsd44::*;
+pub use types::os::arch::c95::*;
+pub use types::os::arch::c99::*;
+pub use types::os::arch::posix88::*;
+pub use types::os::arch::posix01::*;
+pub use types::os::arch::extra::*;
 
-pub use consts::os::c95::{_IOFBF, _IOLBF, _IONBF, BUFSIZ, EOF};
-pub use consts::os::c95::{EXIT_FAILURE, EXIT_SUCCESS};
-pub use consts::os::c95::{FILENAME_MAX, FOPEN_MAX, L_tmpnam};
-pub use consts::os::c95::{RAND_MAX, SEEK_CUR, SEEK_END};
-pub use consts::os::c95::{SEEK_SET, TMP_MAX};
-pub use consts::os::posix88::{F_OK, O_APPEND, O_CREAT, O_EXCL};
-pub use consts::os::posix88::{O_RDONLY, O_RDWR, O_TRUNC, O_WRONLY};
-pub use consts::os::posix88::{R_OK, S_IEXEC, S_IFBLK, S_IFCHR};
-pub use consts::os::posix88::{S_IFDIR, S_IFIFO, S_IFMT, S_IFREG, S_IFLNK};
-pub use consts::os::posix88::{S_IREAD, S_IRUSR, S_IRWXU, S_IWUSR};
-pub use consts::os::posix88::{STDERR_FILENO, STDIN_FILENO, S_IXUSR};
-pub use consts::os::posix88::{STDOUT_FILENO, W_OK, X_OK};
-pub use consts::os::bsd44::{AF_INET, AF_INET6, SOCK_STREAM, SOCK_DGRAM, SOCK_RAW};
-pub use consts::os::bsd44::{IPPROTO_IP, IPPROTO_IPV6, IPPROTO_TCP, TCP_NODELAY};
-pub use consts::os::bsd44::{SOL_SOCKET, SO_KEEPALIVE, SO_ERROR};
-pub use consts::os::bsd44::{SO_REUSEADDR, SO_BROADCAST, SHUT_WR, IP_MULTICAST_LOOP};
-pub use consts::os::bsd44::{IP_ADD_MEMBERSHIP, IP_DROP_MEMBERSHIP};
-pub use consts::os::bsd44::{IPV6_ADD_MEMBERSHIP, IPV6_DROP_MEMBERSHIP};
-pub use consts::os::bsd44::{IP_MULTICAST_TTL, IP_TTL, IP_HDRINCL, SHUT_RD};
-pub use consts::os::extra::{IPPROTO_RAW};
+pub use consts::os::c95::*;
+pub use consts::os::posix88::*;
+pub use consts::os::posix01::*;
+pub use consts::os::bsd44::*;
+pub use consts::os::extra::*;
 
-pub use funcs::c95::ctype::{isalnum, isalpha, iscntrl, isdigit};
-pub use funcs::c95::ctype::{islower, isprint, ispunct, isspace};
-pub use funcs::c95::ctype::{isupper, isxdigit, tolower, toupper};
+pub use funcs::c95::ctype::*;
+pub use funcs::c95::stdio::*;
+pub use funcs::c95::stdlib::*;
+pub use funcs::c95::string::*;
+pub use funcs::posix88::fcntl::*;
+pub use funcs::posix88::stat_::*;
+pub use funcs::posix88::stdio::*;
+pub use funcs::posix88::unistd::*;
 
-pub use funcs::c95::stdio::{fclose, feof, ferror, fflush, fgetc};
-pub use funcs::c95::stdio::{fgetpos, fgets, fopen, fputc, fputs};
-pub use funcs::c95::stdio::{fread, freopen, fseek, fsetpos, ftell};
-pub use funcs::c95::stdio::{fwrite, perror, puts, remove, rename, rewind};
-pub use funcs::c95::stdio::{setbuf, setvbuf, tmpfile, ungetc};
-
-pub use funcs::c95::stdlib::{abs, atof, atoi, calloc, exit, _exit, atexit};
-pub use funcs::c95::stdlib::{free, getenv, labs, malloc, rand};
-pub use funcs::c95::stdlib::{realloc, srand, strtod, strtol};
-pub use funcs::c95::stdlib::{strtoul, system};
-
-pub use funcs::c95::string::{memchr, memcmp};
-pub use funcs::c95::string::{strcat, strchr, strcmp};
-pub use funcs::c95::string::{strcoll, strcpy, strcspn, strerror};
-pub use funcs::c95::string::{strlen, strncat, strncmp, strncpy};
-pub use funcs::c95::string::{strpbrk, strrchr, strspn, strstr};
-pub use funcs::c95::string::{strtok, strxfrm};
-
-pub use funcs::posix88::fcntl::{open, creat};
-pub use funcs::posix88::stat_::{chmod, fstat, mkdir, stat};
-pub use funcs::posix88::stdio::{fdopen, fileno, pclose, popen};
-pub use funcs::posix88::unistd::{access, chdir, close, dup, dup2};
-pub use funcs::posix88::unistd::{execv, execve, execvp, getcwd};
-pub use funcs::posix88::unistd::{getpid, isatty, lseek, pipe, read};
-pub use funcs::posix88::unistd::{rmdir, unlink, write};
-
-pub use funcs::bsd43::{socket, setsockopt, bind, send, recv, recvfrom};
-pub use funcs::bsd43::{listen, sendto, accept, connect, getpeername, getsockname};
-pub use funcs::bsd43::{shutdown};
+pub use funcs::bsd43::*;
 
 // But we also reexport most everything
 // if you're interested in writing platform-specific code.
@@ -169,146 +125,41 @@ pub use funcs::bsd43::{shutdown};
 //
 // So the following exports don't follow any particular plan.
 
-#[cfg(unix)] pub use consts::os::sysconf::{_SC_PAGESIZE};
-#[cfg(unix)] pub use consts::os::posix88::{PROT_READ, PROT_WRITE, PROT_EXEC};
-#[cfg(unix)] pub use consts::os::posix88::{MAP_FIXED, MAP_FILE, MAP_ANON, MAP_PRIVATE, MAP_FAILED};
-#[cfg(unix)] pub use consts::os::posix88::{EACCES, EBADF, EINVAL, ENODEV, ENOMEM};
-#[cfg(unix)] pub use consts::os::posix88::{ECONNREFUSED, ECONNRESET, EPERM, EPIPE};
-#[cfg(unix)] pub use consts::os::posix88::{ENOTCONN, ECONNABORTED, EADDRNOTAVAIL, EINTR};
-#[cfg(unix)] pub use consts::os::posix88::{EADDRINUSE, ENOENT, EISDIR, EAGAIN, EWOULDBLOCK};
-#[cfg(unix)] pub use consts::os::posix88::{ECANCELED, SIGINT, EINPROGRESS};
-#[cfg(unix)] pub use consts::os::posix88::{ENOSYS, ENOTTY, ETIMEDOUT, EMFILE};
-#[cfg(unix)] pub use consts::os::posix88::{SIGTERM, SIGKILL, SIGPIPE, PROT_NONE};
-#[cfg(unix)] pub use consts::os::posix01::{SIG_IGN, F_GETFL, F_SETFL};
-#[cfg(unix)] pub use consts::os::bsd44::{AF_UNIX};
-#[cfg(unix)] pub use consts::os::extra::{O_NONBLOCK};
+#[cfg(unix)] pub use consts::os::sysconf::*;
 
-#[cfg(unix)] pub use types::os::common::posix01::{pthread_t, timespec, timezone};
-
-#[cfg(unix)] pub use types::os::arch::posix88::{uid_t, gid_t};
-#[cfg(unix)] pub use types::os::arch::posix01::{pthread_attr_t};
-#[cfg(unix)] pub use types::os::arch::posix01::{stat, utimbuf};
-#[cfg(unix)] pub use types::os::common::bsd44::{ifaddrs};
-#[cfg(unix)] pub use funcs::posix88::unistd::{sysconf, setgid, setsid, setuid, pread, pwrite};
-#[cfg(unix)] pub use funcs::posix88::unistd::{getgid, getuid, getsid};
-#[cfg(unix)] pub use funcs::posix88::unistd::{_PC_NAME_MAX, utime, nanosleep, pathconf, link};
-#[cfg(unix)] pub use funcs::posix88::unistd::{chown};
-#[cfg(unix)] pub use funcs::posix88::mman::{mmap, munmap, mprotect};
-#[cfg(unix)] pub use funcs::posix88::dirent::{opendir, readdir_r, closedir};
-#[cfg(unix)] pub use funcs::posix88::fcntl::{fcntl};
-#[cfg(unix)] pub use funcs::posix88::net::{if_nametoindex};
-#[cfg(unix)] pub use funcs::posix01::stat_::{lstat};
-#[cfg(unix)] pub use funcs::posix01::unistd::{fsync, ftruncate};
-#[cfg(unix)] pub use funcs::posix01::unistd::{readlink, symlink};
-#[cfg(unix)] pub use funcs::bsd43::{getifaddrs, freeifaddrs};
-
-#[cfg(windows)] pub use consts::os::c95::{WSAECONNREFUSED, WSAECONNRESET, WSAEACCES};
-#[cfg(windows)] pub use consts::os::c95::{WSAEWOULDBLOCK, WSAENOTCONN, WSAECONNABORTED};
-#[cfg(windows)] pub use consts::os::c95::{WSAEADDRNOTAVAIL, WSAEADDRINUSE, WSAEINTR};
-#[cfg(windows)] pub use consts::os::c95::{WSAEINPROGRESS, WSAEINVAL, WSAEMFILE};
-#[cfg(windows)] pub use consts::os::extra::{ERROR_INSUFFICIENT_BUFFER};
-#[cfg(windows)] pub use consts::os::extra::{O_BINARY, O_NOINHERIT, PAGE_NOACCESS};
-#[cfg(windows)] pub use consts::os::extra::{PAGE_READONLY, PAGE_READWRITE, PAGE_EXECUTE};
-#[cfg(windows)] pub use consts::os::extra::{PAGE_EXECUTE_READ, PAGE_EXECUTE_READWRITE};
-#[cfg(windows)] pub use consts::os::extra::{MEM_COMMIT, MEM_RESERVE, MEM_RELEASE};
-#[cfg(windows)] pub use consts::os::extra::{FILE_MAP_READ, FILE_MAP_WRITE, FILE_MAP_EXECUTE};
-#[cfg(windows)] pub use consts::os::extra::{ERROR_ALREADY_EXISTS, ERROR_NO_DATA};
-#[cfg(windows)] pub use consts::os::extra::{ERROR_FILE_NOT_FOUND, ERROR_INVALID_NAME};
-#[cfg(windows)] pub use consts::os::extra::{ERROR_BROKEN_PIPE, ERROR_INVALID_FUNCTION};
-#[cfg(windows)] pub use consts::os::extra::{ERROR_CALL_NOT_IMPLEMENTED};
-#[cfg(windows)] pub use consts::os::extra::{ERROR_NOTHING_TO_TERMINATE};
-#[cfg(windows)] pub use consts::os::extra::{ERROR_INVALID_HANDLE};
-#[cfg(windows)] pub use consts::os::extra::{TRUE, FALSE, INFINITE};
-#[cfg(windows)] pub use consts::os::extra::{PROCESS_TERMINATE, PROCESS_QUERY_INFORMATION};
-#[cfg(windows)] pub use consts::os::extra::{STILL_ACTIVE, DETACHED_PROCESS};
-#[cfg(windows)] pub use consts::os::extra::{CREATE_NEW_PROCESS_GROUP, CREATE_UNICODE_ENVIRONMENT};
-#[cfg(windows)] pub use consts::os::extra::{FILE_BEGIN, FILE_END, FILE_CURRENT};
-#[cfg(windows)] pub use consts::os::extra::{FILE_GENERIC_READ, FILE_GENERIC_WRITE};
-#[cfg(windows)] pub use consts::os::extra::{FILE_SHARE_READ, FILE_SHARE_WRITE, FILE_SHARE_DELETE};
-#[cfg(windows)] pub use consts::os::extra::{TRUNCATE_EXISTING, CREATE_ALWAYS, OPEN_EXISTING};
-#[cfg(windows)] pub use consts::os::extra::{CREATE_NEW, FILE_APPEND_DATA, FILE_WRITE_DATA};
-#[cfg(windows)] pub use consts::os::extra::{OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL};
-#[cfg(windows)] pub use consts::os::extra::{FILE_FLAG_BACKUP_SEMANTICS, INVALID_HANDLE_VALUE};
-#[cfg(windows)] pub use consts::os::extra::{MOVEFILE_REPLACE_EXISTING};
-#[cfg(windows)] pub use consts::os::extra::{GENERIC_READ, GENERIC_WRITE};
-#[cfg(windows)] pub use consts::os::extra::{VOLUME_NAME_DOS};
-#[cfg(windows)] pub use consts::os::extra::{PIPE_ACCESS_DUPLEX, FILE_FLAG_FIRST_PIPE_INSTANCE};
-#[cfg(windows)] pub use consts::os::extra::{FILE_FLAG_OVERLAPPED, PIPE_TYPE_BYTE};
-#[cfg(windows)] pub use consts::os::extra::{PIPE_READMODE_BYTE, PIPE_WAIT};
-#[cfg(windows)] pub use consts::os::extra::{PIPE_UNLIMITED_INSTANCES, ERROR_ACCESS_DENIED};
-#[cfg(windows)] pub use consts::os::extra::{FILE_WRITE_ATTRIBUTES, FILE_READ_ATTRIBUTES};
-#[cfg(windows)] pub use consts::os::extra::{ERROR_PIPE_BUSY, ERROR_IO_PENDING};
-#[cfg(windows)] pub use consts::os::extra::{ERROR_PIPE_CONNECTED, WAIT_OBJECT_0};
-#[cfg(windows)] pub use consts::os::extra::{ERROR_NOT_FOUND};
-#[cfg(windows)] pub use consts::os::extra::{ERROR_OPERATION_ABORTED};
-#[cfg(windows)] pub use consts::os::extra::{FIONBIO};
-#[cfg(windows)] pub use types::os::common::bsd44::{SOCKET};
-#[cfg(windows)] pub use types::os::common::posix01::{stat, utimbuf};
-#[cfg(windows)] pub use types::os::arch::extra::{HANDLE, BOOL, LPSECURITY_ATTRIBUTES};
-#[cfg(windows)] pub use types::os::arch::extra::{LPCSTR, WORD, DWORD, BYTE, FILETIME};
-#[cfg(windows)] pub use types::os::arch::extra::{LARGE_INTEGER, LPVOID, LONG};
-#[cfg(windows)] pub use types::os::arch::extra::{time64_t, OVERLAPPED, LPCWSTR};
-#[cfg(windows)] pub use types::os::arch::extra::{LPOVERLAPPED, SIZE_T, LPDWORD};
-#[cfg(windows)] pub use types::os::arch::extra::{SECURITY_ATTRIBUTES, WIN32_FIND_DATAW};
-#[cfg(windows)] pub use funcs::c95::string::{wcslen};
-#[cfg(windows)] pub use funcs::posix88::stat_::{wstat, wutime, wchmod, wrmdir};
-#[cfg(windows)] pub use funcs::bsd43::{closesocket};
-#[cfg(windows)] pub use funcs::extra::kernel32::{GetCurrentDirectoryW, GetLastError};
-#[cfg(windows)] pub use funcs::extra::kernel32::{GetEnvironmentVariableW, SetEnvironmentVariableW};
-#[cfg(windows)] pub use funcs::extra::kernel32::{GetModuleFileNameW, SetCurrentDirectoryW};
-#[cfg(windows)] pub use funcs::extra::kernel32::{GetSystemInfo, VirtualAlloc, VirtualFree};
-#[cfg(windows)] pub use funcs::extra::kernel32::{CreateFileMappingW, MapViewOfFile};
-#[cfg(windows)] pub use funcs::extra::kernel32::{UnmapViewOfFile, CloseHandle};
-#[cfg(windows)] pub use funcs::extra::kernel32::{WaitForSingleObject, GetSystemTimeAsFileTime};
-#[cfg(windows)] pub use funcs::extra::kernel32::{QueryPerformanceCounter};
-#[cfg(windows)] pub use funcs::extra::kernel32::{QueryPerformanceFrequency};
-#[cfg(windows)] pub use funcs::extra::kernel32::{GetExitCodeProcess, TerminateProcess};
-#[cfg(windows)] pub use funcs::extra::kernel32::{ReadFile, WriteFile, SetFilePointerEx};
-#[cfg(windows)] pub use funcs::extra::kernel32::{SetEndOfFile, CreateFileW};
-#[cfg(windows)] pub use funcs::extra::kernel32::{CreateDirectoryW, FindFirstFileW};
-#[cfg(windows)] pub use funcs::extra::kernel32::{FindNextFileW, FindClose, DeleteFileW};
-#[cfg(windows)] pub use funcs::extra::kernel32::{CreateHardLinkW, CreateEventW};
-#[cfg(windows)] pub use funcs::extra::kernel32::{FlushFileBuffers, CreateNamedPipeW};
-#[cfg(windows)] pub use funcs::extra::kernel32::{SetNamedPipeHandleState, WaitNamedPipeW};
-#[cfg(windows)] pub use funcs::extra::kernel32::{GetOverlappedResult, ConnectNamedPipe};
-#[cfg(windows)] pub use funcs::extra::kernel32::{DisconnectNamedPipe, OpenProcess};
-#[cfg(windows)] pub use funcs::extra::kernel32::{MoveFileExW, VirtualProtect};
-#[cfg(windows)] pub use funcs::extra::kernel32::{RemoveDirectoryW};
-#[cfg(windows)] pub use funcs::extra::msvcrt::{get_osfhandle, open_osfhandle};
-#[cfg(windows)] pub use funcs::extra::winsock::{ioctlsocket};
-
-#[cfg(any(target_os = "linux",
-          target_os = "android",
-          target_os = "freebsd",
-          target_os = "dragonfly",
-          target_os = "openbsd"))]
-pub use consts::os::posix01::{CLOCK_REALTIME, CLOCK_MONOTONIC};
-
-#[cfg(any(target_os = "linux", target_os = "android"))]
-pub use funcs::posix01::unistd::{fdatasync};
-#[cfg(any(target_os = "linux", target_os = "android"))]
-pub use types::os::arch::extra::{sockaddr_ll};
-#[cfg(any(target_os = "linux", target_os = "android"))]
-pub use consts::os::extra::{AF_PACKET};
-
-#[cfg(all(unix, not(any(target_os = "freebsd", target_os = "openbsd"))))]
-pub use consts::os::extra::{MAP_STACK};
-
-#[cfg(any(target_os = "freebsd", target_os = "dragonfly"))]
-pub use consts::os::bsd44::{TCP_KEEPIDLE};
-
-#[cfg(any(target_os = "macos", target_os = "ios"))]
-pub use consts::os::bsd44::{TCP_KEEPALIVE};
-#[cfg(any(target_os = "macos", target_os = "ios"))]
-pub use consts::os::extra::{F_FULLFSYNC};
-
-#[cfg(any(target_os = "macos", target_os = "ios"))]
-pub use types::os::arch::extra::{mach_timebase_info};
+#[cfg(unix)] pub use funcs::posix88::mman::*;
+#[cfg(unix)] pub use funcs::posix88::dirent::*;
+#[cfg(unix)] pub use funcs::posix88::net::*;
+#[cfg(unix)] pub use funcs::posix01::stat_::*;
+#[cfg(unix)] pub use funcs::posix01::unistd::*;
 
 
-#[cfg(not(windows))]
+#[cfg(windows)] pub use funcs::extra::kernel32::*;
+#[cfg(windows)] pub use funcs::extra::winsock::*;
+#[cfg(windows)] pub use funcs::extra::msvcrt::*;
+
+// On NaCl, these libraries are static. Thus it would be a Bad Idea to link them
+// in when creating a test crate.
+#[cfg(not(any(windows, all(target_os = "nacl", test))))]
 #[link(name = "c")]
 #[link(name = "m")]
+extern {}
+
+// libnacl provides functions that require a trip through the IRT to work.
+// ie: _exit, mmap, nanosleep, etc. Anything that would otherwise require a trip
+// to the kernel.
+#[cfg(all(target_os = "nacl", not(feature = "cargo-build"), not(test)))]
+#[link(name = "nacl", kind = "static")]
+extern {}
+
+// pnaclmm provides a number of functions that the toolchain's Clang emits calls
+// to when codegening atomic ops. All the functions within wrap various atomic
+// operations.
+// Yes, it could be linked by rustc explicitly, however by linking it here
+// instead we save a bit of time where bins are involved (by not running the
+// optimizations on the whole pnaclmm foreach binary built).
+#[cfg(all(target_os = "nacl", not(feature = "cargo-build"), not(test)))]
+#[link(name = "pnaclmm", kind = "static")]
 extern {}
 
 pub mod types {
@@ -361,7 +212,7 @@ pub mod types {
 
     // Standard types that are scalar but vary by OS and arch.
 
-    #[cfg(any(target_os = "linux", target_os = "android"))]
+    #[cfg(any(target_os = "linux", target_os = "android", target_os = "nacl"))]
     pub mod os {
         pub mod common {
             pub mod posix01 {
@@ -369,7 +220,10 @@ pub mod types {
                 use types::os::arch::c95::{c_char, c_ulong, size_t,
                                                  time_t, suseconds_t, c_long};
 
+                #[cfg(not(target_os = "nacl"))]
                 pub type pthread_t = c_ulong;
+                #[cfg(target_os = "nacl")]
+                pub type pthread_t = *mut c_void;
 
                 #[repr(C)]
                 #[derive(Copy)] pub struct glob_t {
@@ -466,10 +320,10 @@ pub mod types {
                     #[cfg(target_os = "linux")]
                     pub ai_canonname: *mut c_char,
 
-                    #[cfg(target_os = "android")]
+                    #[cfg(any(target_os = "android", target_os = "nacl"))]
                     pub ai_canonname: *mut c_char,
 
-                    #[cfg(target_os = "android")]
+                    #[cfg(any(target_os = "android", target_os = "nacl"))]
                     pub ai_addr: *mut sockaddr,
 
                     pub ai_next: *mut addrinfo,
@@ -498,7 +352,8 @@ pub mod types {
                   target_arch = "arm",
                   target_arch = "mips",
                   target_arch = "mipsel",
-                  target_arch = "powerpc"))]
+                  target_arch = "powerpc",
+                  target_arch = "le32"))]
         pub mod arch {
             pub mod c95 {
                 pub type c_char = i8;
@@ -530,7 +385,8 @@ pub mod types {
             #[cfg(any(target_arch = "x86",
                       target_arch = "mips",
                       target_arch = "mipsel",
-                      target_arch = "powerpc"))]
+                      target_arch = "powerpc",
+                      target_arch = "le32"))]
             pub mod posix88 {
                 pub type off_t = i32;
                 pub type dev_t = u64;
@@ -555,6 +411,7 @@ pub mod types {
                 pub type ssize_t = i32;
             }
             #[cfg(any(target_arch = "x86",
+                      target_arch = "le32",
                       target_arch = "powerpc"))]
             pub mod posix01 {
                 use types::os::arch::c95::{c_short, c_long, time_t};
@@ -1322,7 +1179,7 @@ pub mod types {
         }
     }
 
-    #[cfg(target_os = "openbsd")]
+    #[cfg(any(target_os = "bitrig", target_os = "openbsd"))]
     pub mod os {
         pub mod common {
             pub mod posix01 {
@@ -1333,6 +1190,24 @@ pub mod types {
 
                 pub type pthread_t = uintptr_t;
 
+                #[cfg(target_os = "bitrig")]
+                #[repr(C)]
+                #[derive(Copy)] pub struct glob_t {
+                    pub gl_pathc:  c_int,
+                    pub gl_matchc: c_int,
+                    pub gl_offs:   c_int,
+                    pub gl_flags:  c_int,
+                    pub gl_pathv:  *mut *mut c_char,
+                    pub __unused1: *mut c_void,
+                    pub __unused2: *mut c_void,
+                    pub __unused3: *mut c_void,
+                    pub __unused4: *mut c_void,
+                    pub __unused5: *mut c_void,
+                    pub __unused6: *mut c_void,
+                    pub __unused7: *mut c_void,
+                }
+
+                #[cfg(target_os = "openbsd")]
                 #[repr(C)]
                 #[derive(Copy)] pub struct glob_t {
                     pub gl_pathc:  c_int,
@@ -1451,7 +1326,6 @@ pub mod types {
                     pub ifa_dstaddr: *mut sockaddr,
                     pub ifa_data: *mut c_void
                 }
-
             }
         }
 
@@ -1485,15 +1359,16 @@ pub mod types {
                 pub type uintmax_t = u64;
             }
             pub mod posix88 {
+                use types::os::arch::c95::{c_long};
                 pub type off_t = i64;
-                pub type dev_t = u32;
+                pub type dev_t = i32;
                 pub type ino_t = u64;
                 pub type pid_t = i32;
                 pub type uid_t = u32;
                 pub type gid_t = u32;
                 pub type useconds_t = u32;
                 pub type mode_t = u32;
-                pub type ssize_t = i64;
+                pub type ssize_t = c_long;
             }
             pub mod posix01 {
                 use types::common::c95::{c_void};
@@ -1503,7 +1378,7 @@ pub mod types {
                 use types::os::arch::posix88::{mode_t, off_t};
                 use types::os::arch::posix88::{uid_t};
 
-                pub type nlink_t = u32;
+                pub type nlink_t = uint32_t;
                 pub type blksize_t = uint32_t;
                 pub type ino_t = uint64_t;
                 pub type blkcnt_t = i64;
@@ -2461,7 +2336,7 @@ pub mod consts {
             pub const SHUT_RDWR: c_int = 2;
         }
         pub mod extra {
-            use SOCKET;
+            use types::os::common::bsd44::SOCKET;
             use types::os::arch::c95::{c_int, c_long};
             use types::os::arch::extra::{WORD, DWORD, BOOL, HANDLE};
 
@@ -2696,7 +2571,7 @@ pub mod consts {
     }
 
 
-    #[cfg(any(target_os = "linux", target_os = "android"))]
+    #[cfg(any(target_os = "linux", target_os = "android", target_os = "nacl"))]
     pub mod os {
         pub mod c95 {
             use types::os::arch::c95::{c_int, c_uint};
@@ -2723,6 +2598,7 @@ pub mod consts {
                   target_arch = "x86_64",
                   target_arch = "arm",
                   target_arch = "aarch64",
+                  target_arch = "le32",
                   target_arch = "powerpc"))]
         pub mod posix88 {
             use types::os::arch::c95::c_int;
@@ -3146,6 +3022,7 @@ pub mod consts {
 
             pub const EDQUOT: c_int = 1133;
         }
+        #[cfg(not(target_os = "nacl"))]
         pub mod posix01 {
             use types::os::arch::c95::{c_int, size_t};
 
@@ -3156,7 +3033,6 @@ pub mod consts {
             pub const F_SETFL : c_int = 4;
 
             pub const SIGTRAP : c_int = 5;
-            pub const SIGPIPE: c_int = 13;
             pub const SIG_IGN: size_t = 1;
 
             pub const GLOB_ERR      : c_int = 1 << 0;
@@ -3228,12 +3104,81 @@ pub mod consts {
             pub const CLOCK_REALTIME: c_int = 0;
             pub const CLOCK_MONOTONIC: c_int = 1;
         }
+        #[cfg(target_os = "nacl")]
+        pub mod posix01 {
+            use types::os::arch::c95::{c_int, size_t};
+
+            pub const F_DUPFD : c_int = 0;
+            pub const F_GETFD : c_int = 1;
+            pub const F_SETFD : c_int = 2;
+            pub const F_GETFL : c_int = 3;
+            pub const F_SETFL : c_int = 4;
+
+            pub const SIGTRAP : c_int = 5;
+            pub const SIG_IGN: size_t = 1;
+
+            pub const GLOB_ERR      : c_int = 1 << 0;
+            pub const GLOB_MARK     : c_int = 1 << 1;
+            pub const GLOB_NOSORT   : c_int = 1 << 2;
+            pub const GLOB_DOOFFS   : c_int = 1 << 3;
+            pub const GLOB_NOCHECK  : c_int = 1 << 4;
+            pub const GLOB_APPEND   : c_int = 1 << 5;
+            pub const GLOB_NOESCAPE : c_int = 1 << 6;
+
+            pub const GLOB_NOSPACE  : c_int = 1;
+            pub const GLOB_ABORTED  : c_int = 2;
+            pub const GLOB_NOMATCH  : c_int = 3;
+
+            pub const POSIX_MADV_NORMAL : c_int = 0;
+            pub const POSIX_MADV_RANDOM : c_int = 1;
+            pub const POSIX_MADV_SEQUENTIAL : c_int = 2;
+            pub const POSIX_MADV_WILLNEED : c_int = 3;
+            pub const POSIX_MADV_DONTNEED : c_int = 4;
+
+            pub const _SC_MQ_PRIO_MAX : c_int = 28;
+            pub const _SC_IOV_MAX : c_int = 60;
+            pub const _SC_GETGR_R_SIZE_MAX : c_int = 69;
+            pub const _SC_GETPW_R_SIZE_MAX : c_int = 70;
+            pub const _SC_LOGIN_NAME_MAX : c_int = 71;
+            pub const _SC_TTY_NAME_MAX : c_int = 72;
+            pub const _SC_THREADS : c_int = 67;
+            pub const _SC_THREAD_SAFE_FUNCTIONS : c_int = 68;
+            pub const _SC_THREAD_DESTRUCTOR_ITERATIONS : c_int = 73;
+            pub const _SC_THREAD_KEYS_MAX : c_int = 74;
+            pub const _SC_THREAD_STACK_MIN : c_int = 75;
+            pub const _SC_THREAD_THREADS_MAX : c_int = 76;
+            pub const _SC_THREAD_ATTR_STACKADDR : c_int = 77;
+            pub const _SC_THREAD_ATTR_STACKSIZE : c_int = 78;
+            pub const _SC_THREAD_PRIORITY_SCHEDULING : c_int = 79;
+            pub const _SC_THREAD_PRIO_INHERIT : c_int = 80;
+            pub const _SC_THREAD_PRIO_PROTECT : c_int = 81;
+            pub const _SC_THREAD_PROCESS_SHARED : c_int = 82;
+            pub const _SC_ATEXIT_MAX : c_int = 87;
+            pub const _SC_XOPEN_VERSION : c_int = 89;
+            pub const _SC_XOPEN_XCU_VERSION : c_int = 90;
+            pub const _SC_XOPEN_UNIX : c_int = 91;
+            pub const _SC_XOPEN_CRYPT : c_int = 92;
+            pub const _SC_XOPEN_ENH_I18N : c_int = 93;
+            pub const _SC_XOPEN_SHM : c_int = 94;
+            pub const _SC_XOPEN_LEGACY : c_int = 129;
+            pub const _SC_XOPEN_REALTIME : c_int = 130;
+            pub const _SC_XOPEN_REALTIME_THREADS : c_int = 131;
+
+            pub const PTHREAD_CREATE_JOINABLE: c_int = 1;
+            pub const PTHREAD_CREATE_DETACHED: c_int = 0;
+
+            pub const PTHREAD_STACK_MIN: size_t = 1024;
+
+            pub const CLOCK_REALTIME: c_int = 0;
+            pub const CLOCK_MONOTONIC: c_int = 1;
+        }
         pub mod posix08 {
         }
         #[cfg(any(target_arch = "arm",
                   target_arch = "aarch64",
                   target_arch = "x86",
                   target_arch = "x86_64",
+                  target_arch = "le32",
                   target_arch = "powerpc"))]
         pub mod bsd44 {
             use types::os::arch::c95::c_int;
@@ -3331,6 +3276,7 @@ pub mod consts {
                   target_arch = "x86_64",
                   target_arch = "arm",
                   target_arch = "aarch64",
+                  target_arch = "le32",
                   target_arch = "powerpc"))]
         pub mod extra {
             use types::os::arch::c95::c_int;
@@ -3445,6 +3391,14 @@ pub mod consts {
             pub const _SC_XBS5_ILP32_OFF32 : c_int = 125;
             pub const _SC_XBS5_ILP32_OFFBIG : c_int = 126;
             pub const _SC_XBS5_LPBIG_OFFBIG : c_int = 128;
+        }
+        #[cfg(target_os = "nacl")]
+        pub mod sysconf {
+            use types::os::arch::c95::c_int;
+
+            pub static _SC_SENDMSG_MAX_SIZE : c_int = 0;
+            pub static _SC_NPROCESSORS_ONLN : c_int = 1;
+            pub static _SC_PAGESIZE : c_int = 2;
         }
         #[cfg(target_os = "android")]
         pub mod sysconf {
@@ -3687,7 +3641,6 @@ pub mod consts {
             pub const F_SETFL : c_int = 4;
 
             pub const SIGTRAP : c_int = 5;
-            pub const SIGPIPE: c_int = 13;
             pub const SIG_IGN: size_t = 1;
 
             pub const GLOB_APPEND   : c_int = 0x0001;
@@ -3892,7 +3845,7 @@ pub mod consts {
         }
     }
 
-    #[cfg(target_os = "openbsd")]
+    #[cfg(any(target_os = "bitrig", target_os = "openbsd"))]
     pub mod os {
         pub mod c95 {
             use types::os::arch::c95::{c_int, c_uint};
@@ -3980,11 +3933,11 @@ pub mod consts {
             pub const MCL_CURRENT : c_int = 0x0001;
             pub const MCL_FUTURE : c_int = 0x0002;
 
-            pub const MS_SYNC : c_int = 0x0002; // changed
             pub const MS_ASYNC : c_int = 0x0001;
-            pub const MS_INVALIDATE : c_int = 0x0004; // changed
+            pub const MS_SYNC : c_int = 0x0002;
+            pub const MS_INVALIDATE : c_int = 0x0004;
 
-            pub const EPERM : c_int = 1; // not checked
+            pub const EPERM : c_int = 1;
             pub const ENOENT : c_int = 2;
             pub const ESRCH : c_int = 3;
             pub const EINTR : c_int = 4;
@@ -4066,25 +4019,17 @@ pub mod consts {
             pub const EFTYPE : c_int = 79;
             pub const EAUTH : c_int = 80;
             pub const ENEEDAUTH : c_int = 81;
-            pub const EIDRM : c_int = 82;
-            pub const ENOMSG : c_int = 83;
-            pub const EOVERFLOW : c_int = 84;
-            pub const ECANCELED : c_int = 85;
-            pub const EILSEQ : c_int = 86;
-            pub const ENOATTR : c_int = 87;
-            pub const EDOOFUS : c_int = 88;
-            pub const EBADMSG : c_int = 89;
-            pub const EMULTIHOP : c_int = 90;
-            pub const ENOLINK : c_int = 91;
-            pub const EPROTO : c_int = 92;
-            pub const ENOMEDIUM : c_int = 93;
-            pub const EUNUSED94 : c_int = 94;
-            pub const EUNUSED95 : c_int = 95;
-            pub const EUNUSED96 : c_int = 96;
-            pub const EUNUSED97 : c_int = 97;
-            pub const EUNUSED98 : c_int = 98;
-            pub const EASYNC : c_int = 99;
-            pub const ELAST : c_int = 99;
+            pub const EIPSEC : c_int = 82;
+            pub const ENOATTR : c_int = 83;
+            pub const EILSEQ : c_int = 84;
+            pub const ENOMEDIUM : c_int = 85;
+            pub const EMEDIUMTYPE : c_int = 86;
+            pub const EOVERFLOW : c_int = 87;
+            pub const ECANCELED : c_int = 88;
+            pub const EIDRM : c_int = 89;
+            pub const ENOMSG : c_int = 90;
+            pub const ENOTSUP : c_int = 91;
+            pub const ELAST : c_int = 91; // must be equal to largest errno
         }
         pub mod posix01 {
             use types::os::arch::c95::{c_int, size_t};
@@ -4094,9 +4039,14 @@ pub mod consts {
             pub const F_SETFD : c_int = 2;
             pub const F_GETFL : c_int = 3;
             pub const F_SETFL : c_int = 4;
+            pub const F_GETOWN : c_int = 5;
+            pub const F_SETOWN : c_int = 6;
+            pub const F_GETLK : c_int = 7;
+            pub const F_SETLK : c_int = 8;
+            pub const F_SETLKW : c_int = 9;
+            pub const F_DUPFD_CLOEXEC : c_int = 10;
 
             pub const SIGTRAP : c_int = 5;
-            pub const SIGPIPE: c_int = 13;
             pub const SIG_IGN: size_t = 1;
 
             pub const GLOB_APPEND   : c_int = 0x0001;
@@ -4105,11 +4055,12 @@ pub mod consts {
             pub const GLOB_MARK     : c_int = 0x0008;
             pub const GLOB_NOCHECK  : c_int = 0x0010;
             pub const GLOB_NOSORT   : c_int = 0x0020;
-            pub const GLOB_NOESCAPE : c_int = 0x1000; // changed
+            pub const GLOB_NOESCAPE : c_int = 0x1000;
 
             pub const GLOB_NOSPACE  : c_int = -1;
             pub const GLOB_ABORTED  : c_int = -2;
             pub const GLOB_NOMATCH  : c_int = -3;
+            pub const GLOB_NOSYS : c_int = -4;
 
             pub const POSIX_MADV_NORMAL : c_int = 0;
             pub const POSIX_MADV_RANDOM : c_int = 1;
@@ -4117,7 +4068,7 @@ pub mod consts {
             pub const POSIX_MADV_WILLNEED : c_int = 3;
             pub const POSIX_MADV_DONTNEED : c_int = 4;
 
-            pub const _SC_IOV_MAX : c_int = 51; // all changed...
+            pub const _SC_IOV_MAX : c_int = 51;
             pub const _SC_GETGR_R_SIZE_MAX : c_int = 100;
             pub const _SC_GETPW_R_SIZE_MAX : c_int = 101;
             pub const _SC_LOGIN_NAME_MAX : c_int = 102;
@@ -4144,14 +4095,13 @@ pub mod consts {
             pub const _SC_XOPEN_SHM : c_int = 30;
             pub const _SC_XOPEN_UNIX : c_int = 123;
             pub const _SC_XOPEN_VERSION : c_int = 125;
-            //pub const _SC_XOPEN_XCU_VERSION : c_int = ;
 
-            pub const PTHREAD_CREATE_JOINABLE: c_int = 0;
-            pub const PTHREAD_CREATE_DETACHED: c_int = 1;
-            pub const PTHREAD_STACK_MIN: size_t = 2048;
+            pub const PTHREAD_CREATE_JOINABLE : c_int = 0;
+            pub const PTHREAD_CREATE_DETACHED : c_int = 1;
+            pub const PTHREAD_STACK_MIN : size_t = 2048;
 
-            pub const CLOCK_REALTIME: c_int = 0;
-            pub const CLOCK_MONOTONIC: c_int = 3;
+            pub const CLOCK_REALTIME : c_int = 0;
+            pub const CLOCK_MONOTONIC : c_int = 3;
         }
         pub mod posix08 {
         }
@@ -4163,23 +4113,11 @@ pub mod consts {
             pub const MADV_SEQUENTIAL : c_int = 2;
             pub const MADV_WILLNEED : c_int = 3;
             pub const MADV_DONTNEED : c_int = 4;
-            pub const MADV_FREE : c_int = 6; // changed
-            //pub const MADV_NOSYNC : c_int = ;
-            //pub const MADV_AUTOSYNC : c_int = ;
-            //pub const MADV_NOCORE : c_int = ;
-            //pub const MADV_CORE : c_int = ;
-            //pub const MADV_PROTECT : c_int = ;
+            pub const MADV_FREE : c_int = 6;
 
-            //pub const MINCORE_INCORE : c_int =  ;
-            //pub const MINCORE_REFERENCED : c_int = ;
-            //pub const MINCORE_MODIFIED : c_int = ;
-            //pub const MINCORE_REFERENCED_OTHER : c_int = ;
-            //pub const MINCORE_MODIFIED_OTHER : c_int = ;
-            //pub const MINCORE_SUPER : c_int = ;
-
-            pub const AF_INET: c_int = 2;
-            pub const AF_INET6: c_int = 24; // changed
             pub const AF_UNIX: c_int = 1;
+            pub const AF_INET: c_int = 2;
+            pub const AF_INET6: c_int = 24;
             pub const SOCK_STREAM: c_int = 1;
             pub const SOCK_DGRAM: c_int = 2;
             pub const SOCK_RAW: c_int = 3;
@@ -4192,13 +4130,10 @@ pub mod consts {
             pub const IP_HDRINCL: c_int = 2;
             pub const IP_ADD_MEMBERSHIP: c_int = 12;
             pub const IP_DROP_MEMBERSHIP: c_int = 13;
-            // don't exist, keep same as IP_ADD_MEMBERSHIP
-            pub const IPV6_ADD_MEMBERSHIP: c_int = 12;
-            // don't exist, keep same as IP_DROP_MEMBERSHIP
-            pub const IPV6_DROP_MEMBERSHIP: c_int = 13;
+            pub const IPV6_ADD_MEMBERSHIP: c_int = 12; // don't exist
+            pub const IPV6_DROP_MEMBERSHIP: c_int = 13; // don't exist
 
-            pub const TCP_NODELAY: c_int = 1;
-            //pub const TCP_KEEPIDLE: c_int = ;
+            pub const TCP_NODELAY: c_int = 0x01;
             pub const SOL_SOCKET: c_int = 0xffff;
             pub const SO_KEEPALIVE: c_int = 0x0008;
             pub const SO_BROADCAST: c_int = 0x0020;
@@ -4214,20 +4149,21 @@ pub mod consts {
         pub mod extra {
             use types::os::arch::c95::c_int;
 
+            pub const O_DSYNC : c_int = 128; // same as SYNC
             pub const O_SYNC : c_int = 128;
             pub const O_NONBLOCK : c_int = 4;
-            pub const CTL_KERN: c_int = 1;
-            pub const KERN_PROC: c_int = 66;
+            pub const CTL_KERN : c_int = 1;
+            pub const KERN_PROC : c_int = 66;
 
             pub const MAP_COPY : c_int = 0x0002;
-            pub const MAP_RENAME : c_int = 0x0000; // changed
-            pub const MAP_NORESERVE : c_int = 0x0000; // changed
-            pub const MAP_HASSEMAPHORE : c_int = 0x0000; // changed
-            //pub const MAP_STACK : c_int = ;
-            //pub const MAP_NOSYNC : c_int = ;
-            //pub const MAP_NOCORE : c_int = ;
+            pub const MAP_RENAME : c_int = 0x0000;
+            pub const MAP_NORESERVE : c_int = 0x0000;
+            pub const MAP_NOEXTEND : c_int = 0x0000;
+            pub const MAP_HASSEMAPHORE : c_int = 0x0000;
 
             pub const IPPROTO_RAW : c_int = 255;
+
+            pub const PATH_MAX: c_int = 1024;
         }
         pub mod sysconf {
             use types::os::arch::c95::c_int;
@@ -4259,31 +4195,31 @@ pub mod consts {
             pub const _SC_2_UPE : c_int = 25;
             pub const _SC_STREAM_MAX : c_int = 26;
             pub const _SC_TZNAME_MAX : c_int = 27;
-            pub const _SC_ASYNCHRONOUS_IO : c_int = 45; // changed...
+            pub const _SC_PAGESIZE : c_int = 28;
+            pub const _SC_FSYNC : c_int = 29;
+            pub const _SC_SEM_NSEMS_MAX : c_int = 31;
+            pub const _SC_SEM_VALUE_MAX : c_int = 32;
+            pub const _SC_AIO_LISTIO_MAX : c_int = 42;
+            pub const _SC_AIO_MAX : c_int = 43;
+            pub const _SC_AIO_PRIO_DELTA_MAX : c_int = 44;
+            pub const _SC_ASYNCHRONOUS_IO : c_int = 45;
+            pub const _SC_DELAYTIMER_MAX : c_int = 50;
             pub const _SC_MAPPED_FILES : c_int = 53;
             pub const _SC_MEMLOCK : c_int = 54;
             pub const _SC_MEMLOCK_RANGE : c_int = 55;
             pub const _SC_MEMORY_PROTECTION : c_int = 56;
             pub const _SC_MESSAGE_PASSING : c_int = 57;
+            pub const _SC_MQ_OPEN_MAX : c_int = 58;
             pub const _SC_PRIORITIZED_IO : c_int = 60;
             pub const _SC_PRIORITY_SCHEDULING : c_int = 61;
             pub const _SC_REALTIME_SIGNALS : c_int = 64;
-            pub const _SC_SEMAPHORES : c_int = 67;
-            pub const _SC_FSYNC : c_int = 29;
-            pub const _SC_SHARED_MEMORY_OBJECTS : c_int = 68;
-            pub const _SC_SYNCHRONIZED_IO : c_int = 75;
-            pub const _SC_TIMERS : c_int = 94; // ...changed
-            pub const _SC_AIO_LISTIO_MAX : c_int = 42;
-            pub const _SC_AIO_MAX : c_int = 43;
-            pub const _SC_AIO_PRIO_DELTA_MAX : c_int = 44;
-            pub const _SC_DELAYTIMER_MAX : c_int = 50; // changed...
-            pub const _SC_MQ_OPEN_MAX : c_int = 58;
-            pub const _SC_PAGESIZE : c_int = 28;
             pub const _SC_RTSIG_MAX : c_int = 66;
-            pub const _SC_SEM_NSEMS_MAX : c_int = 31;
-            pub const _SC_SEM_VALUE_MAX : c_int = 32;
+            pub const _SC_SEMAPHORES : c_int = 67;
+            pub const _SC_SHARED_MEMORY_OBJECTS : c_int = 68;
             pub const _SC_SIGQUEUE_MAX : c_int = 70;
+            pub const _SC_SYNCHRONIZED_IO : c_int = 75;
             pub const _SC_TIMER_MAX : c_int = 93;
+            pub const _SC_TIMERS : c_int = 94;
         }
     }
 
@@ -4501,7 +4437,6 @@ pub mod consts {
             pub const F_SETFL : c_int = 4;
 
             pub const SIGTRAP : c_int = 5;
-            pub const SIGPIPE: c_int = 13;
             pub const SIG_IGN: size_t = 1;
 
             pub const GLOB_APPEND   : c_int = 0x0001;
@@ -5005,7 +4940,9 @@ pub mod funcs {
               target_os = "ios",
               target_os = "freebsd",
               target_os = "dragonfly",
-              target_os = "openbsd"))]
+              target_os = "bitrig",
+              target_os = "openbsd",
+              target_os = "nacl"))]
     pub mod posix88 {
         pub mod stat_ {
             use types::os::arch::c95::{c_char, c_int};
@@ -5019,9 +4956,11 @@ pub mod funcs {
                 #[cfg(any(target_os = "linux",
                           target_os = "freebsd",
                           target_os = "dragonfly",
+                          target_os = "bitrig",
                           target_os = "openbsd",
                           target_os = "android",
-                          target_os = "ios"))]
+                          target_os = "ios",
+                          target_os = "nacl"))]
                 pub fn fstat(fildes: c_int, buf: *mut stat) -> c_int;
 
                 #[cfg(target_os = "macos")]
@@ -5029,14 +4968,17 @@ pub mod funcs {
                 pub fn fstat(fildes: c_int, buf: *mut stat) -> c_int;
 
                 pub fn mkdir(path: *const c_char, mode: mode_t) -> c_int;
+                #[cfg(not(target_os = "nacl"))]
                 pub fn mkfifo(path: *const c_char, mode: mode_t) -> c_int;
 
                 #[cfg(any(target_os = "linux",
                           target_os = "freebsd",
                           target_os = "dragonfly",
+                          target_os = "bitrig",
                           target_os = "openbsd",
                           target_os = "android",
-                          target_os = "ios"))]
+                          target_os = "ios",
+                          target_os = "nacl"))]
                 pub fn stat(path: *const c_char, buf: *mut stat) -> c_int;
 
                 #[cfg(target_os = "macos")]
@@ -5108,6 +5050,7 @@ pub mod funcs {
 
             pub const _PC_NAME_MAX: c_int = 4;
 
+            #[cfg(not(target_os = "nacl"))]
             extern {
                 pub fn access(path: *const c_char, amode: c_int) -> c_int;
                 pub fn alarm(seconds: c_uint) -> c_uint;
@@ -5129,7 +5072,7 @@ pub mod funcs {
                 pub fn getcwd(buf: *mut c_char, size: size_t) -> *mut c_char;
                 pub fn getegid() -> gid_t;
                 pub fn geteuid() -> uid_t;
-                pub fn getgid() -> gid_t ;
+                pub fn getgid() -> gid_t;
                 pub fn getgroups(ngroups_max: c_int, groups: *mut gid_t)
                                  -> c_int;
                 pub fn getlogin() -> *mut c_char;
@@ -5170,6 +5113,57 @@ pub mod funcs {
                               offset: off_t) -> ssize_t;
                 pub fn utime(file: *const c_char, buf: *const utimbuf) -> c_int;
             }
+            #[cfg(target_os = "nacl")]
+            extern {
+                pub fn access(path: *const c_char, amode: c_int) -> c_int;
+                pub fn chdir(dir: *const c_char) -> c_int;
+                pub fn chown(path: *const c_char, uid: uid_t,
+                             gid: gid_t) -> c_int;
+                pub fn close(fd: c_int) -> c_int;
+                pub fn dup(fd: c_int) -> c_int;
+                pub fn dup2(src: c_int, dst: c_int) -> c_int;
+                pub fn execv(prog: *const c_char,
+                             argv: *mut *const c_char) -> c_int;
+                pub fn execve(prog: *const c_char, argv: *mut *const c_char,
+                              envp: *mut *const c_char)
+                              -> c_int;
+                pub fn execvp(c: *const c_char,
+                              argv: *mut *const c_char) -> c_int;
+                pub fn fork() -> pid_t;
+                pub fn getcwd(buf: *mut c_char, size: size_t) -> *mut c_char;
+                pub fn getegid() -> gid_t;
+                pub fn geteuid() -> uid_t;
+                pub fn getgid() -> gid_t;
+                pub fn getlogin() -> *mut c_char;
+                pub fn getopt(argc: c_int, argv: *mut *const c_char,
+                              optstr: *const c_char) -> c_int;
+                pub fn getuid() -> uid_t;
+                pub fn getsid(pid: pid_t) -> pid_t;
+                pub fn isatty(fd: c_int) -> c_int;
+                pub fn link(src: *const c_char, dst: *const c_char) -> c_int;
+                pub fn lseek(fd: c_int, offset: off_t, whence: c_int)
+                             -> off_t;
+                pub fn pipe(fds: *mut c_int) -> c_int;
+                pub fn read(fd: c_int, buf: *mut c_void, count: size_t)
+                            -> ssize_t;
+                pub fn rmdir(path: *const c_char) -> c_int;
+                pub fn setgid(gid: gid_t) -> c_int;
+                pub fn setuid(uid: uid_t) -> c_int;
+                pub fn sleep(secs: c_uint) -> c_uint;
+                pub fn usleep(secs: c_uint) -> c_int;
+                pub fn nanosleep(rqtp: *const timespec,
+                                 rmtp: *mut timespec) -> c_int;
+                pub fn sysconf(name: c_int) -> c_long;
+                pub fn ttyname(fd: c_int) -> *mut c_char;
+                pub fn unlink(c: *const c_char) -> c_int;
+                pub fn write(fd: c_int, buf: *const c_void, count: size_t)
+                             -> ssize_t;
+                pub fn pread(fd: c_int, buf: *mut c_void, count: size_t,
+                             offset: off_t) -> ssize_t;
+                pub fn pwrite(fd: c_int, buf: *const c_void, count: size_t,
+                              offset: off_t) -> ssize_t;
+                pub fn utime(file: *const c_char, buf: *const utimbuf) -> c_int;
+            }
         }
 
         pub mod signal {
@@ -5186,20 +5180,12 @@ pub mod funcs {
             use types::os::arch::c95::{size_t, c_int, c_char};
             use types::os::arch::posix88::{mode_t, off_t};
 
+            #[cfg(not(target_os = "nacl"))]
             extern {
                 pub fn mlock(addr: *const c_void, len: size_t) -> c_int;
                 pub fn munlock(addr: *const c_void, len: size_t) -> c_int;
                 pub fn mlockall(flags: c_int) -> c_int;
                 pub fn munlockall() -> c_int;
-
-                pub fn mmap(addr: *mut c_void,
-                            len: size_t,
-                            prot: c_int,
-                            flags: c_int,
-                            fd: c_int,
-                            offset: off_t)
-                            -> *mut c_void;
-                pub fn munmap(addr: *mut c_void, len: size_t) -> c_int;
 
                 pub fn mprotect(addr: *mut c_void, len: size_t, prot: c_int)
                                 -> c_int;
@@ -5209,6 +5195,18 @@ pub mod funcs {
                 pub fn shm_open(name: *const c_char, oflag: c_int, mode: mode_t)
                                 -> c_int;
                 pub fn shm_unlink(name: *const c_char) -> c_int;
+            }
+
+            extern {
+                pub fn mmap(addr: *mut c_void,
+                            len: size_t,
+                            prot: c_int,
+                            flags: c_int,
+                            fd: c_int,
+                            offset: off_t)
+                            -> *mut c_void;
+                pub fn munmap(addr: *mut c_void, len: size_t) -> c_int;
+
             }
         }
 
@@ -5228,7 +5226,9 @@ pub mod funcs {
               target_os = "ios",
               target_os = "freebsd",
               target_os = "dragonfly",
-              target_os = "openbsd"))]
+              target_os = "bitrig",
+              target_os = "openbsd",
+              target_os = "nacl"))]
     pub mod posix01 {
         pub mod stat_ {
             use types::os::arch::c95::{c_char, c_int};
@@ -5238,9 +5238,11 @@ pub mod funcs {
                 #[cfg(any(target_os = "linux",
                           target_os = "freebsd",
                           target_os = "dragonfly",
+                          target_os = "bitrig",
                           target_os = "openbsd",
                           target_os = "android",
-                          target_os = "ios"))]
+                          target_os = "ios",
+                          target_os = "nacl"))]
                 pub fn lstat(path: *const c_char, buf: *mut stat) -> c_int;
 
                 #[cfg(target_os = "macos")]
@@ -5312,6 +5314,7 @@ pub mod funcs {
             use types::common::c95::{c_void};
             use types::os::arch::c95::{c_int, size_t};
 
+            #[cfg(not(target_os = "nacl"))]
             extern {
                 pub fn posix_madvise(addr: *mut c_void,
                                      len: size_t,
@@ -5347,7 +5350,9 @@ pub mod funcs {
               target_os = "ios",
               target_os = "freebsd",
               target_os = "dragonfly",
-              target_os = "openbsd"))]
+              target_os = "bitrig",
+              target_os = "openbsd",
+              target_os = "nacl"))]
     pub mod posix08 {
         pub mod unistd {
         }
@@ -5434,6 +5439,7 @@ pub mod funcs {
               target_os = "ios",
               target_os = "freebsd",
               target_os = "dragonfly",
+              target_os = "bitrig",
               target_os = "openbsd"))]
     pub mod bsd44 {
         use types::common::c95::{c_void};
@@ -5463,9 +5469,10 @@ pub mod funcs {
                            -> c_int;
             pub fn mincore(addr: *mut c_void, len: size_t, vec: *mut c_uchar)
                            -> c_int;
+            pub fn realpath(pathname: *const c_char, resolved: *mut c_char)
+                            -> *mut c_char;
         }
     }
-
 
     #[cfg(any(target_os = "linux", target_os = "android"))]
     pub mod bsd44 {
@@ -5483,6 +5490,13 @@ pub mod funcs {
         }
     }
 
+    #[cfg(target_os = "nacl")]
+    pub mod bsd44 {
+        use types::os::arch::c95::c_int;
+        extern {
+            pub fn getdtablesize() -> c_int;
+        }
+    }
 
     #[cfg(target_os = "windows")]
     pub mod bsd44 {
@@ -5500,11 +5514,12 @@ pub mod funcs {
 
     #[cfg(any(target_os = "freebsd",
               target_os = "dragonfly",
+              target_os = "bitrig",
               target_os = "openbsd"))]
     pub mod extra {
     }
 
-    #[cfg(any(target_os = "linux", target_os = "android"))]
+    #[cfg(any(target_os = "linux", target_os = "android", target_os = "nacl"))]
     pub mod extra {
     }
 

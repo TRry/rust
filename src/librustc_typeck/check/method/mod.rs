@@ -8,7 +8,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-//! Method lookup: the secret sauce of Rust. See `doc.rs`.
+//! Method lookup: the secret sauce of Rust. See `README.md`.
 
 use astconv::AstConv;
 use check::{FnCtxt};
@@ -272,7 +272,7 @@ pub fn lookup_in_trait_adjusted<'a, 'tcx>(fcx: &FnCtxt<'a, 'tcx>,
                                 span,
                                 &format!(
                                     "trait method is &self but first arg is: {}",
-                                    transformed_self_ty.repr(fcx.tcx()))[]);
+                                    transformed_self_ty.repr(fcx.tcx())));
                         }
                     }
                 }
@@ -282,7 +282,7 @@ pub fn lookup_in_trait_adjusted<'a, 'tcx>(fcx: &FnCtxt<'a, 'tcx>,
                         span,
                         &format!(
                             "unexpected explicit self type in operator method: {:?}",
-                            method_ty.explicit_self)[]);
+                            method_ty.explicit_self));
                 }
             }
         }

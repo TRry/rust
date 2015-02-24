@@ -8,7 +8,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-//! See `doc.rs` for high-level documentation
+//! See `README.md` for high-level documentation
 
 use super::Normalized;
 use super::SelectionContext;
@@ -194,11 +194,10 @@ fn ty_is_local_constructor<'tcx>(tcx: &ty::ctxt<'tcx>, ty: Ty<'tcx>) -> bool {
 
         ty::ty_closure(..) |
         ty::ty_infer(..) |
-        ty::ty_open(..) |
         ty::ty_err => {
             tcx.sess.bug(
                 &format!("ty_is_local invoked on unexpected type: {}",
-                        ty.repr(tcx))[])
+                        ty.repr(tcx)))
         }
     }
 }

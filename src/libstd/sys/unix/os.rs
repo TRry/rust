@@ -42,6 +42,16 @@ pub fn errno() -> i32 {
         __error()
     }
 
+    #[cfg(target_os = "bitrig")]
+    fn errno_location() -> *const c_int {
+        extern {
+            fn __errno() -> *const c_int;
+        }
+        unsafe {
+            __errno()
+        }
+    }
+
     #[cfg(target_os = "dragonfly")]
     unsafe fn errno_location() -> *const c_int {
         extern { fn __dfly_error() -> *const c_int; }
@@ -194,10 +204,9 @@ pub fn current_exe() -> IoResult<Path> {
     fs::readlink(&Path::new("/proc/curproc/file"))
 }
 
-#[cfg(target_os = "openbsd")]
+#[cfg(any(target_os = "bitrig", target_os = "openbsd"))]
 pub fn current_exe() -> IoResult<Path> {
     use sync::{StaticMutex, MUTEX_INIT};
-
     static LOCK: StaticMutex = MUTEX_INIT;
 
     extern {
@@ -211,7 +220,7 @@ pub fn current_exe() -> IoResult<Path> {
         if v.is_null() {
             Err(IoError::last_error())
         } else {
-            Ok(Path::new(CStr::from_ptr(&v).to_bytes().to_vec()))
+            Ok(Path::new(CStr::from_ptr(v).to_bytes().to_vec()))
         }
     }
 }
@@ -336,6 +345,7 @@ pub fn args() -> Args {
           target_os = "android",
           target_os = "freebsd",
           target_os = "dragonfly",
+          target_os = "bitrig",
           target_os = "openbsd"))]
 pub fn args() -> Args {
     use rt;

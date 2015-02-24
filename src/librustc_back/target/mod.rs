@@ -56,6 +56,7 @@ mod apple_base;
 mod apple_ios_base;
 mod freebsd_base;
 mod dragonfly_base;
+mod bitrig_base;
 mod openbsd_base;
 
 mod armv7_apple_ios;
@@ -80,6 +81,7 @@ mod x86_64_apple_ios;
 mod x86_64_pc_windows_gnu;
 mod x86_64_unknown_freebsd;
 mod x86_64_unknown_dragonfly;
+mod x86_64_unknown_bitrig;
 mod x86_64_unknown_linux_gnu;
 mod x86_64_unknown_openbsd;
 
@@ -237,7 +239,7 @@ impl Target {
                      .and_then(|os| os.map(|s| s.to_string())) {
                 Some(val) => val,
                 None =>
-                    handler.fatal(&format!("Field {} in target specification is required", name)[])
+                    handler.fatal(&format!("Field {} in target specification is required", name))
             }
         };
 
@@ -361,6 +363,7 @@ impl Target {
             i686_unknown_dragonfly,
             x86_64_unknown_dragonfly,
 
+            x86_64_unknown_bitrig,
             x86_64_unknown_openbsd,
 
             x86_64_apple_darwin,

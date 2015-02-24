@@ -110,7 +110,7 @@ fn reverse_bits(byte: u8) -> u8 {
     result
 }
 
-// Take two BitV's, and return iterators of their words, where the shorter one
+// Take two BitVec's, and return iterators of their words, where the shorter one
 // has been padded with 0's
 fn match_words <'a,'b>(a: &'a BitVec, b: &'b BitVec) -> (MatchWords<'a>, MatchWords<'b>) {
     let a_len = a.storage.len();
@@ -985,17 +985,6 @@ impl fmt::Debug for BitVec {
 }
 
 #[stable(feature = "rust1", since = "1.0.0")]
-#[cfg(stage0)]
-impl<S: hash::Writer + hash::Hasher> hash::Hash<S> for BitVec {
-    fn hash(&self, state: &mut S) {
-        self.nbits.hash(state);
-        for elem in self.blocks() {
-            elem.hash(state);
-        }
-    }
-}
-#[stable(feature = "rust1", since = "1.0.0")]
-#[cfg(not(stage0))]
 impl hash::Hash for BitVec {
     fn hash<H: hash::Hasher>(&self, state: &mut H) {
         self.nbits.hash(state);
@@ -1776,16 +1765,7 @@ impl fmt::Debug for BitSet {
     }
 }
 
-#[cfg(stage0)]
-impl<S: hash::Writer + hash::Hasher> hash::Hash<S> for BitSet {
-    fn hash(&self, state: &mut S) {
-        for pos in self {
-            pos.hash(state);
-        }
-    }
-}
 #[stable(feature = "rust1", since = "1.0.0")]
-#[cfg(not(stage0))]
 impl hash::Hash for BitSet {
     fn hash<H: hash::Hasher>(&self, state: &mut H) {
         for pos in self {

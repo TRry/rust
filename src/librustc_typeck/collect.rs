@@ -648,6 +648,12 @@ fn convert_item(ccx: &CollectCtxt, it: &ast::Item) {
                                    predicates,
                                    &enum_definition.variants);
         },
+        ast::ItemDefaultImpl(_, ref ast_trait_ref) => {
+            let trait_ref = astconv::instantiate_trait_ref(ccx, &ExplicitRscope,
+                                                           ast_trait_ref, None, None);
+
+            ty::record_default_trait_implementation(tcx, trait_ref.def_id, local_def(it.id))
+        }
         ast::ItemImpl(_, _,
                       ref generics,
                       ref opt_trait_ref,
@@ -899,7 +905,7 @@ fn get_trait_def<'a, 'tcx>(ccx: &CollectCtxt<'a, 'tcx>,
         ast_map::NodeItem(item) => trait_def_of_item(ccx, &*item),
         _ => {
             tcx.sess.bug(&format!("get_trait_def({}): not an item",
-                                  trait_id.node)[])
+                                  trait_id.node))
         }
     }
 }
@@ -925,7 +931,7 @@ fn trait_def_of_item<'a, 'tcx>(ccx: &CollectCtxt<'a, 'tcx>,
         ref s => {
             tcx.sess.span_bug(
                 it.span,
-                &format!("trait_def_of_item invoked on {:?}", s)[]);
+                &format!("trait_def_of_item invoked on {:?}", s));
         }
     };
 
@@ -1025,7 +1031,7 @@ fn convert_trait_predicates<'a, 'tcx>(ccx: &CollectCtxt<'a, 'tcx>, it: &ast::Ite
         ref s => {
             tcx.sess.span_bug(
                 it.span,
-                &format!("trait_def_of_item invoked on {:?}", s)[]);
+                &format!("trait_def_of_item invoked on {:?}", s));
         }
     };
 
@@ -1141,6 +1147,7 @@ fn compute_type_scheme_of_item<'a,'tcx>(ccx: &CollectCtxt<'a,'tcx>,
             let t = ty::mk_struct(tcx, local_def(it.id), tcx.mk_substs(substs));
             ty::TypeScheme { ty: t, generics: ty_generics }
         }
+        ast::ItemDefaultImpl(..) |
         ast::ItemTrait(..) |
         ast::ItemImpl(..) |
         ast::ItemMod(..) |
@@ -1183,6 +1190,7 @@ fn convert_typed_item<'a, 'tcx>(ccx: &CollectCtxt<'a, 'tcx>,
         ast::ItemStruct(_, ref generics) => {
             ty_generic_bounds_for_type_or_impl(ccx, &scheme.generics, generics)
         }
+        ast::ItemDefaultImpl(..) |
         ast::ItemTrait(..) |
         ast::ItemExternCrate(..) |
         ast::ItemUse(..) |
@@ -1284,8 +1292,8 @@ fn ty_generics_for_type_or_impl<'a, 'tcx>(ccx: &CollectCtxt<'a, 'tcx>,
                                           -> ty::Generics<'tcx> {
     ty_generics(ccx,
                 subst::TypeSpace,
-                &generics.lifetimes[],
-                &generics.ty_params[],
+                &generics.lifetimes,
+                &generics.ty_params,
                 &generics.where_clause,
                 ty::Generics::empty())
 }
@@ -1314,8 +1322,8 @@ fn ty_generics_for_trait<'a, 'tcx>(ccx: &CollectCtxt<'a, 'tcx>,
     let mut generics =
         ty_generics(ccx,
                     subst::TypeSpace,
-                    &ast_generics.lifetimes[],
-                    &ast_generics.ty_params[],
+                    &ast_generics.lifetimes,
+                    &ast_generics.ty_params,
                     &ast_generics.where_clause,
                     ty::Generics::empty());
 
@@ -1360,7 +1368,7 @@ fn ty_generics_for_fn_or_method<'a,'tcx>(ccx: &CollectCtxt<'a,'tcx>,
     ty_generics(ccx,
                 subst::FnSpace,
                 &early_lifetimes[..],
-                &generics.ty_params[],
+                &generics.ty_params,
                 &generics.where_clause,
                 base_generics)
 }
@@ -1557,7 +1565,7 @@ fn get_or_create_type_parameter_def<'a,'tcx>(ccx: &CollectCtxt<'a,'tcx>,
     let param_ty = ty::ParamTy::new(space, index, param.ident.name);
     let bounds = compute_bounds(ccx,
                                 param_ty.to_ty(ccx.tcx),
-                                &param.bounds[],
+                                &param.bounds,
                                 SizedByDefault::Yes,
                                 param.span);
     let default = match param.default {
@@ -1733,7 +1741,7 @@ fn check_bounds_compatible<'a,'tcx>(ccx: &CollectCtxt<'a,'tcx>,
     if !param_bounds.builtin_bounds.contains(&ty::BoundSized) {
         ty::each_bound_trait_and_supertraits(
             ccx.tcx,
-            &param_bounds.trait_bounds[],
+            &param_bounds.trait_bounds,
             |trait_ref| {
                 let trait_def = ccx.get_trait_def(trait_ref.def_id());
                 if trait_def.bounds.builtin_bounds.contains(&ty::BoundSized) {

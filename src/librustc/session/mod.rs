@@ -186,7 +186,7 @@ impl Session {
     // cases later on
     pub fn impossible_case(&self, sp: Span, msg: &str) -> ! {
         self.span_bug(sp,
-                      &format!("impossible case reached: {}", msg)[]);
+                      &format!("impossible case reached: {}", msg));
     }
     pub fn verbose(&self) -> bool { self.opts.debugging_opts.verbose }
     pub fn time_passes(&self) -> bool { self.opts.debugging_opts.time_passes }
@@ -228,7 +228,7 @@ impl Session {
     }
     pub fn target_filesearch(&self, kind: PathKind) -> filesearch::FileSearch {
         filesearch::FileSearch::new(self.sysroot(),
-                                    &self.opts.target_triple[],
+                                    &self.opts.target_triple,
                                     &self.opts.search_paths,
                                     kind)
     }
@@ -280,9 +280,9 @@ fn split_msg_into_multilines(msg: &str) -> Option<String> {
     }
 
     let mut tail = &msg[head..];
-    let third = tail.find_str("(values differ")
-                   .or(tail.find_str("(lifetime"))
-                   .or(tail.find_str("(cyclic type of infinite size"));
+    let third = tail.find("(values differ")
+                   .or(tail.find("(lifetime"))
+                   .or(tail.find("(cyclic type of infinite size"));
     // Insert `\n` before any remaining messages which match.
     if let Some(pos) = third {
         // The end of the message may just be wrapped in `()` without

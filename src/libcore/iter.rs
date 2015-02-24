@@ -86,6 +86,7 @@ use usize;
 #[rustc_on_unimplemented = "`{Self}` is not an iterator; maybe try calling `.iter()` or a similar \
                             method"]
 pub trait Iterator {
+    /// The type of the elements being iterated
     #[stable(feature = "rust1", since = "1.0.0")]
     type Item;
 
@@ -122,9 +123,11 @@ pub trait FromIterator<A> {
 /// Conversion into an `Iterator`
 #[stable(feature = "rust1", since = "1.0.0")]
 pub trait IntoIterator {
+    /// The type of the elements being iterated
     #[stable(feature = "rust1", since = "1.0.0")]
     type Item;
 
+    /// A container for iterating over elements of type Item
     #[stable(feature = "rust1", since = "1.0.0")]
     type IntoIter: Iterator<Item=Self::Item>;
 
@@ -2592,7 +2595,29 @@ pub struct RangeStep<A> {
     rev: bool,
 }
 
-/// Return an iterator over the range [start, stop) by `step`. It handles overflow by stopping.
+/// Return an iterator over the range [start, stop) by `step`.
+///
+/// It handles overflow by stopping.
+///
+/// # Examples
+///
+/// ```
+/// use std::iter::range_step;
+///
+/// for i in range_step(0, 10, 2) {
+///     println!("{}", i);
+/// }
+/// ```
+///
+/// This prints:
+///
+/// ```text
+/// 0
+/// 2
+/// 4
+/// 6
+/// 8
+/// ```
 #[inline]
 #[unstable(feature = "core",
            reason = "likely to be replaced by range notation and adapters")]
@@ -2633,7 +2658,30 @@ pub struct RangeStepInclusive<A> {
     done: bool,
 }
 
-/// Return an iterator over the range [start, stop] by `step`. It handles overflow by stopping.
+/// Return an iterator over the range [start, stop] by `step`.
+///
+/// It handles overflow by stopping.
+///
+/// # Examples
+///
+/// ```
+/// use std::iter::range_step_inclusive;
+///
+/// for i in range_step_inclusive(0, 10, 2) {
+///     println!("{}", i);
+/// }
+/// ```
+///
+/// This prints:
+///
+/// ```text
+/// 0
+/// 2
+/// 4
+/// 6
+/// 8
+/// 10
+/// ```
 #[inline]
 #[unstable(feature = "core",
            reason = "likely to be replaced by range notation and adapters")]

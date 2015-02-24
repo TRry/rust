@@ -88,7 +88,6 @@ impl DefaultResizePolicy {
 
 #[test]
 fn test_resize_policy() {
-    use prelude::v1::*;
     let rp = DefaultResizePolicy;
     for n in 0..1000 {
         assert!(rp.min_capacity(rp.usable_capacity(n)) <= n);
@@ -204,7 +203,7 @@ fn test_resize_policy() {
 // produces identical results to a linear naive reinsertion from the same
 // element.
 //
-// FIXME(Gankro, pczarn): review the proof and put it all in a separate doc.rs
+// FIXME(Gankro, pczarn): review the proof and put it all in a separate README.md
 
 /// A hash map implementation which uses linear probing with Robin
 /// Hood bucket stealing.
@@ -2256,6 +2255,7 @@ mod test_map {
 
     #[test]
     fn test_entry_take_doesnt_corrupt() {
+        #![allow(deprecated)] //rand
         // Test for #19292
         fn check(m: &HashMap<isize, ()>) {
             for k in m.keys() {

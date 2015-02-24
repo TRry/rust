@@ -40,7 +40,7 @@ use syntax::ast::{Block, Crate};
 use syntax::ast::{DeclItem, DefId};
 use syntax::ast::{ForeignItem, ForeignItemFn, ForeignItemStatic};
 use syntax::ast::{Item, ItemConst, ItemEnum, ItemExternCrate, ItemFn};
-use syntax::ast::{ItemForeignMod, ItemImpl, ItemMac, ItemMod, ItemStatic};
+use syntax::ast::{ItemForeignMod, ItemImpl, ItemMac, ItemMod, ItemStatic, ItemDefaultImpl};
 use syntax::ast::{ItemStruct, ItemTrait, ItemTy, ItemUse};
 use syntax::ast::{MethodImplItem, Name, NamedField, NodeId};
 use syntax::ast::{PathListIdent, PathListMod};
@@ -220,14 +220,14 @@ impl<'a, 'b:'a, 'tcx:'b> GraphBuilder<'a, 'b, 'tcx> {
                     self.resolve_error(sp,
                         &format!("duplicate definition of {} `{}`",
                              namespace_error_to_string(duplicate_type),
-                             token::get_name(name))[]);
+                             token::get_name(name)));
                     {
                         let r = child.span_for_namespace(ns);
                         if let Some(sp) = r {
                             self.session.span_note(sp,
                                  &format!("first definition of {} `{}` here",
                                       namespace_error_to_string(duplicate_type),
-                                      token::get_name(name))[]);
+                                      token::get_name(name)));
                         }
                     }
                 }
@@ -307,8 +307,8 @@ impl<'a, 'b:'a, 'tcx:'b> GraphBuilder<'a, 'b, 'tcx> {
                     ViewPathSimple(binding, ref full_path) => {
                         let source_name =
                             full_path.segments.last().unwrap().identifier.name;
-                        if &token::get_name(source_name)[] == "mod" ||
-                           &token::get_name(source_name)[] == "self" {
+                        if &token::get_name(source_name)[..] == "mod" ||
+                           &token::get_name(source_name)[..] == "self" {
                             self.resolve_error(view_path.span,
                                 "`self` imports are only allowed within a { } list");
                         }
@@ -656,6 +656,7 @@ impl<'a, 'b:'a, 'tcx:'b> GraphBuilder<'a, 'b, 'tcx> {
                 parent.clone()
             }
 
+            ItemDefaultImpl(_, _) |
             ItemImpl(_, _, _, Some(_), _, _) => parent.clone(),
 
             ItemTrait(_, _, _, ref items) => {
@@ -735,7 +736,7 @@ impl<'a, 'b:'a, 'tcx:'b> GraphBuilder<'a, 'b, 'tcx> {
                     self.trait_item_map.insert((name, def_id), kind);
                 }
 
-                name_bindings.define_type(DefTrait(def_id), sp, modifiers);
+                name_bindings.define_type(DefaultImpl(def_id), sp, modifiers);
                 parent.clone()
             }
             ItemMac(..) => parent.clone()
@@ -917,7 +918,7 @@ impl<'a, 'b:'a, 'tcx:'b> GraphBuilder<'a, 'b, 'tcx> {
             }
             child_name_bindings.define_value(def, DUMMY_SP, modifiers);
           }
-          DefTrait(def_id) => {
+          DefaultImpl(def_id) => {
               debug!("(building reduced graph for external \
                       crate) building type {}", final_ident);
 
@@ -1192,7 +1193,7 @@ impl<'a, 'b:'a, 'tcx:'b> GraphBuilder<'a, 'b, 'tcx> {
                 debug!("(building import directive) building import \
                         directive: {}::{}",
                        self.names_to_string(&module_.imports.borrow().last().unwrap().
-                                                             module_path[]),
+                                                             module_path),
                        token::get_name(target));
 
                 let mut import_resolutions = module_.import_resolutions

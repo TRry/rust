@@ -118,7 +118,7 @@ fn trans<'blk, 'tcx>(bcx: Block<'blk, 'tcx>, expr: &ast::Expr)
                     expr.span,
                     &format!("type of callee is neither bare-fn nor closure: \
                              {}",
-                            bcx.ty_to_string(datum.ty))[]);
+                            bcx.ty_to_string(datum.ty)));
             }
         }
     }
@@ -207,7 +207,7 @@ fn trans<'blk, 'tcx>(bcx: Block<'blk, 'tcx>, expr: &ast::Expr)
             def::DefUpvar(..) => {
                 datum_callee(bcx, ref_expr)
             }
-            def::DefMod(..) | def::DefForeignMod(..) | def::DefTrait(..) |
+            def::DefMod(..) | def::DefForeignMod(..) | def::DefaultImpl(..) |
             def::DefTy(..) | def::DefPrimTy(..) | def::DefAssociatedTy(..) |
             def::DefUse(..) | def::DefTyParamBinder(..) |
             def::DefRegion(..) | def::DefLabel(..) | def::DefTyParam(..) |
@@ -215,7 +215,7 @@ fn trans<'blk, 'tcx>(bcx: Block<'blk, 'tcx>, expr: &ast::Expr)
                 bcx.tcx().sess.span_bug(
                     ref_expr.span,
                     &format!("cannot translate def {:?} \
-                             to a callable thing!", def)[]);
+                             to a callable thing!", def));
             }
         }
     }
@@ -298,7 +298,7 @@ pub fn trans_fn_pointer_shim<'a, 'tcx>(
 
             _ => {
                 tcx.sess.bug(&format!("trans_fn_pointer_shim invoked on invalid type: {}",
-                                           bare_fn_ty.repr(tcx))[]);
+                                           bare_fn_ty.repr(tcx)));
             }
         };
     let sig = ty::erase_late_bound_regions(tcx, sig);
@@ -765,8 +765,16 @@ pub fn trans_call_inner<'a, 'blk, 'tcx, F>(bcx: Block<'blk, 'tcx>,
     if is_rust_fn {
         let mut llargs = Vec::new();
 
-        if let (ty::FnConverging(ret_ty), Some(llretslot)) = (ret_ty, opt_llretslot) {
+        if let (ty::FnConverging(ret_ty), Some(mut llretslot)) = (ret_ty, opt_llretslot) {
             if type_of::return_uses_outptr(ccx, ret_ty) {
+                let llformal_ret_ty = type_of::type_of(ccx, ret_ty).ptr_to();
+                let llret_ty = common::val_ty(llretslot);
+                if llformal_ret_ty != llret_ty {
+                    // this could happen due to e.g. subtyping
+                    debug!("casting actual return type ({}) to match formal ({})",
+                        bcx.llty_str(llret_ty), bcx.llty_str(llformal_ret_ty));
+                    llretslot = PointerCast(bcx, llretslot, llformal_ret_ty);
+                }
                 llargs.push(llretslot);
             }
         }

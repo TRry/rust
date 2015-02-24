@@ -73,7 +73,6 @@ use std::cell::{Cell, RefCell};
 use std::cmp;
 use std::fmt;
 use std::hash::{Hash, SipHasher, Hasher};
-#[cfg(stage0)] use std::hash::Writer;
 use std::mem;
 use std::ops;
 use std::rc::Rc;
@@ -757,6 +756,9 @@ pub struct ctxt<'tcx> {
     /// Maps a trait onto a list of impls of that trait.
     pub trait_impls: RefCell<DefIdMap<Rc<RefCell<Vec<ast::DefId>>>>>,
 
+    /// Maps a trait onto a list of *default* trait implementations
+    default_trait_impls: RefCell<DefIdMap<ast::DefId>>,
+
     /// Maps a DefId of a type to a list of its inherent impls.
     /// Contains implementations of methods that are inherent to a type.
     /// Methods in these implementations don't need to be exported.
@@ -928,7 +930,7 @@ impl<'tcx> ctxt<'tcx> {
         sty_debug_print!(
             self,
             ty_enum, ty_uniq, ty_vec, ty_ptr, ty_rptr, ty_bare_fn, ty_trait,
-            ty_struct, ty_closure, ty_tup, ty_param, ty_open, ty_infer, ty_projection);
+            ty_struct, ty_closure, ty_tup, ty_param, ty_infer, ty_projection);
 
         println!("Substs interner: #{}", self.substs_interner.borrow().len());
         println!("BareFnTy interner: #{}", self.bare_fn_interner.borrow().len());
@@ -959,13 +961,6 @@ impl<'tcx> PartialEq for TyS<'tcx> {
 }
 impl<'tcx> Eq for TyS<'tcx> {}
 
-#[cfg(stage0)]
-impl<'tcx, S: Writer + Hasher> Hash<S> for TyS<'tcx> {
-    fn hash(&self, s: &mut S) {
-        (self as *const _).hash(s)
-    }
-}
-#[cfg(not(stage0))]
 impl<'tcx> Hash for TyS<'tcx> {
     fn hash<H: Hasher>(&self, s: &mut H) {
         (self as *const _).hash(s)
@@ -988,13 +983,6 @@ impl<'tcx> PartialEq for InternedTy<'tcx> {
 
 impl<'tcx> Eq for InternedTy<'tcx> {}
 
-#[cfg(stage0)]
-impl<'tcx, S: Writer + Hasher> Hash<S> for InternedTy<'tcx> {
-    fn hash(&self, s: &mut S) {
-        self.ty.sty.hash(s)
-    }
-}
-#[cfg(not(stage0))]
 impl<'tcx> Hash for InternedTy<'tcx> {
     fn hash<H: Hasher>(&self, s: &mut H) {
         self.ty.sty.hash(s)
@@ -1385,12 +1373,6 @@ pub enum sty<'tcx> {
 
     ty_projection(ProjectionTy<'tcx>),
     ty_param(ParamTy), // type parameter
-
-    ty_open(Ty<'tcx>), // A deref'ed fat pointer, i.e., a dynamically sized value
-                       // and its size. Only ever used in trans. It is not necessary
-                       // earlier since we don't need to distinguish a DST with its
-                       // size (e.g., in a deref) vs a DST with the size elsewhere (
-                       // e.g., in a field).
 
     ty_infer(InferTy), // something used only during inference/typeck
     ty_err, // Also only used during inference/typeck, to represent
@@ -2295,7 +2277,7 @@ impl<'a, 'tcx> ParameterEnvironment<'a, 'tcx> {
             _ => {
                 cx.sess.bug(&format!("ParameterEnvironment::from_item(): \
                                      `{}` is not an item",
-                                    cx.map.node_to_string(id))[])
+                                    cx.map.node_to_string(id)))
             }
         }
     }
@@ -2493,6 +2475,7 @@ pub fn mk_ctxt<'tcx>(s: Session,
         destructor_for_type: RefCell::new(DefIdMap()),
         destructors: RefCell::new(DefIdSet()),
         trait_impls: RefCell::new(DefIdMap()),
+        default_trait_impls: RefCell::new(DefIdMap()),
         inherent_impls: RefCell::new(DefIdMap()),
         impl_items: RefCell::new(DefIdMap()),
         used_unsafe: RefCell::new(NodeSet()),
@@ -2700,7 +2683,7 @@ impl FlagComputation {
                 self.add_bounds(bounds);
             }
 
-            &ty_uniq(tt) | &ty_vec(tt, _) | &ty_open(tt) => {
+            &ty_uniq(tt) | &ty_vec(tt, _) => {
                 self.add_ty(tt)
             }
 
@@ -2737,7 +2720,7 @@ impl FlagComputation {
     fn add_fn_sig(&mut self, fn_sig: &PolyFnSig) {
         let mut computation = FlagComputation::new();
 
-        computation.add_tys(&fn_sig.0.inputs[]);
+        computation.add_tys(&fn_sig.0.inputs);
 
         if let ty::FnConverging(output) = fn_sig.0.output {
             computation.add_ty(output);
@@ -2975,8 +2958,6 @@ pub fn mk_param_from_def<'tcx>(cx: &ctxt<'tcx>, def: &TypeParameterDef) -> Ty<'t
     mk_param(cx, def.space, def.index, def.name)
 }
 
-pub fn mk_open<'tcx>(cx: &ctxt<'tcx>, ty: Ty<'tcx>) -> Ty<'tcx> { mk_t(cx, ty_open(ty)) }
-
 impl<'tcx> TyS<'tcx> {
     /// Iterator that walks `self` and any types reachable from
     /// `self`, in depth-first order. Note that just walks the types
@@ -3175,9 +3156,8 @@ pub fn sequence_element_type<'tcx>(cx: &ctxt<'tcx>, ty: Ty<'tcx>) -> Ty<'tcx> {
     match ty.sty {
         ty_vec(ty, _) => ty,
         ty_str => mk_mach_uint(cx, ast::TyU8),
-        ty_open(ty) => sequence_element_type(cx, ty),
         _ => cx.sess.bug(&format!("sequence_element_type called on non-sequence value: {}",
-                                 ty_to_string(cx, ty))[]),
+                                 ty_to_string(cx, ty))),
     }
 }
 
@@ -3538,7 +3518,7 @@ pub fn type_contents<'tcx>(cx: &ctxt<'tcx>, ty: Ty<'tcx>) -> TypeContents {
                 let variants = substd_enum_variants(cx, did, substs);
                 let mut res =
                     TypeContents::union(&variants[..], |variant| {
-                        TypeContents::union(&variant.args[],
+                        TypeContents::union(&variant.args,
                                             |arg_ty| {
                             tc_ty(cx, *arg_ty, cache)
                         })
@@ -3592,12 +3572,6 @@ pub fn type_contents<'tcx>(cx: &ctxt<'tcx>, ty: Ty<'tcx>) -> TypeContents {
             ty_projection(..) |
             ty_param(_) => {
                 TC::All
-            }
-
-            ty_open(ty) => {
-                let result = tc_ty(cx, ty, cache);
-                assert!(!result.is_sized(cx));
-                result.unsafe_pointer() | TC::Nonsized
             }
 
             ty_infer(_) |
@@ -3758,7 +3732,7 @@ pub fn is_instantiable<'tcx>(cx: &ctxt<'tcx>, r_ty: Ty<'tcx>) -> bool {
             ty_vec(_, None) => {
                 false
             }
-            ty_uniq(typ) | ty_open(typ) => {
+            ty_uniq(typ) => {
                 type_requires(cx, seen, r_ty, typ)
             }
             ty_rptr(_, ref mt) => {
@@ -4117,26 +4091,10 @@ pub fn deref<'tcx>(ty: Ty<'tcx>, explicit: bool) -> Option<mt<'tcx>> {
     }
 }
 
-pub fn close_type<'tcx>(cx: &ctxt<'tcx>, ty: Ty<'tcx>) -> Ty<'tcx> {
-    match ty.sty {
-        ty_open(ty) => mk_rptr(cx, cx.mk_region(ReStatic), mt {ty: ty, mutbl:ast::MutImmutable}),
-        _ => cx.sess.bug(&format!("Trying to close a non-open type {}",
-                                 ty_to_string(cx, ty))[])
-    }
-}
-
 pub fn type_content<'tcx>(ty: Ty<'tcx>) -> Ty<'tcx> {
     match ty.sty {
         ty_uniq(ty) => ty,
         ty_rptr(_, mt) |ty_ptr(mt) => mt.ty,
-        _ => ty
-    }
-}
-
-// Extract the unsized type in an open type (or just return ty if it is not open).
-pub fn unopen_type<'tcx>(ty: Ty<'tcx>) -> Ty<'tcx> {
-    match ty.sty {
-        ty_open(ty) => ty,
         _ => ty
     }
 }
@@ -4222,7 +4180,7 @@ pub fn node_id_to_trait_ref<'tcx>(cx: &ctxt<'tcx>, id: ast::NodeId)
         Some(ty) => ty.clone(),
         None => cx.sess.bug(
             &format!("node_id_to_trait_ref: no trait ref for node `{}`",
-                    cx.map.node_to_string(id))[])
+                    cx.map.node_to_string(id)))
     }
 }
 
@@ -4231,7 +4189,7 @@ pub fn node_id_to_type<'tcx>(cx: &ctxt<'tcx>, id: ast::NodeId) -> Ty<'tcx> {
        Some(ty) => ty,
        None => cx.sess.bug(
            &format!("node_id_to_type: no type for node `{}`",
-                   cx.map.node_to_string(id))[])
+                   cx.map.node_to_string(id)))
     }
 }
 
@@ -4305,7 +4263,7 @@ pub fn ty_region(tcx: &ctxt,
             tcx.sess.span_bug(
                 span,
                 &format!("ty_region() invoked on an inappropriate ty: {:?}",
-                        s)[]);
+                        s));
         }
     }
 }
@@ -4370,11 +4328,11 @@ pub fn expr_span(cx: &ctxt, id: NodeId) -> Span {
         Some(f) => {
             cx.sess.bug(&format!("Node id {} is not an expr: {:?}",
                                 id,
-                                f)[]);
+                                f));
         }
         None => {
             cx.sess.bug(&format!("Node id {} is not present \
-                                in the node map", id)[]);
+                                in the node map", id));
         }
     }
 }
@@ -4390,14 +4348,14 @@ pub fn local_var_name_str(cx: &ctxt, id: NodeId) -> InternedString {
                     cx.sess.bug(
                         &format!("Variable id {} maps to {:?}, not local",
                                 id,
-                                pat)[]);
+                                pat));
                 }
             }
         }
         r => {
             cx.sess.bug(&format!("Variable id {} maps to {:?}, not local",
                                 id,
-                                r)[]);
+                                r));
         }
     }
 }
@@ -4428,7 +4386,7 @@ pub fn adjust_ty<'tcx, F>(cx: &ctxt<'tcx>,
                             cx.sess.bug(
                                 &format!("AdjustReifyFnPointer adjustment on non-fn-item: \
                                          {:?}",
-                                        b)[]);
+                                        b));
                         }
                     }
                 }
@@ -4459,7 +4417,7 @@ pub fn adjust_ty<'tcx, F>(cx: &ctxt<'tcx>,
                                                 {}",
                                                 i,
                                                 ty_to_string(cx, adjusted_ty))
-                                        []);
+                                        );
                                 }
                             }
                         }
@@ -4522,7 +4480,7 @@ pub fn unsize_ty<'tcx>(cx: &ctxt<'tcx>,
             }
             _ => cx.sess.span_bug(span,
                                   &format!("UnsizeLength with bad sty: {:?}",
-                                          ty_to_string(cx, ty))[])
+                                          ty_to_string(cx, ty)))
         },
         &UnsizeStruct(box ref k, tp_index) => match ty.sty {
             ty_struct(did, substs) => {
@@ -4534,7 +4492,7 @@ pub fn unsize_ty<'tcx>(cx: &ctxt<'tcx>,
             }
             _ => cx.sess.span_bug(span,
                                   &format!("UnsizeStruct with bad sty: {:?}",
-                                          ty_to_string(cx, ty))[])
+                                          ty_to_string(cx, ty)))
         },
         &UnsizeVtable(TyTrait { ref principal, ref bounds }, _) => {
             mk_trait(cx, principal.clone(), bounds.clone())
@@ -4547,7 +4505,7 @@ pub fn resolve_expr(tcx: &ctxt, expr: &ast::Expr) -> def::Def {
         Some(&def) => def,
         None => {
             tcx.sess.span_bug(expr.span, &format!(
-                "no def-map entry for expr {}", expr.id)[]);
+                "no def-map entry for expr {}", expr.id));
         }
     }
 }
@@ -4639,7 +4597,7 @@ pub fn expr_kind(tcx: &ctxt, expr: &ast::Expr) -> ExprKind {
                         expr.span,
                         &format!("uncategorized def for expr {}: {:?}",
                                 expr.id,
-                                def)[]);
+                                def));
                 }
             }
         }
@@ -4767,7 +4725,7 @@ pub fn field_idx_strict(tcx: &ctxt, name: ast::Name, fields: &[field])
         token::get_name(name),
         fields.iter()
               .map(|f| token::get_name(f.name).to_string())
-              .collect::<Vec<String>>())[]);
+              .collect::<Vec<String>>()));
 }
 
 pub fn impl_or_trait_item_idx(id: ast::Name, trait_items: &[ImplOrTraitItem])
@@ -4813,7 +4771,6 @@ pub fn ty_sort_string<'tcx>(cx: &ctxt<'tcx>, ty: Ty<'tcx>) -> String {
             }
         }
         ty_err => "type error".to_string(),
-        ty_open(_) => "opened DST".to_string(),
     }
 }
 
@@ -5019,14 +4976,14 @@ pub fn provided_trait_methods<'tcx>(cx: &ctxt<'tcx>, id: ast::DefId)
                     _ => {
                         cx.sess.bug(&format!("provided_trait_methods: `{:?}` is \
                                              not a trait",
-                                            id)[])
+                                            id))
                     }
                 }
             }
             _ => {
                 cx.sess.bug(&format!("provided_trait_methods: `{:?}` is not a \
                                      trait",
-                                    id)[])
+                                    id))
             }
         }
     } else {
@@ -5171,6 +5128,9 @@ pub fn impl_trait_ref<'tcx>(cx: &ctxt<'tcx>, id: ast::DefId)
                                 &None => None
                             }
                         }
+                        ast::ItemDefaultImpl(_, ref ast_trait_ref) => {
+                            Some(ty::node_id_to_trait_ref(cx, ast_trait_ref.ref_id))
+                        }
                         _ => None
                     }
                 }
@@ -5262,7 +5222,7 @@ impl<'tcx> VariantInfo<'tcx> {
                 };
             },
             ast::StructVariantKind(ref struct_def) => {
-                let fields: &[StructField] = &struct_def.fields[];
+                let fields: &[StructField] = &struct_def.fields;
 
                 assert!(fields.len() > 0);
 
@@ -5624,7 +5584,7 @@ pub fn get_attrs<'tcx>(tcx: &'tcx ctxt, did: DefId)
                        -> CowVec<'tcx, ast::Attribute> {
     if is_local(did) {
         let item = tcx.map.expect_item(did.node);
-        Cow::Borrowed(&item.attrs[])
+        Cow::Borrowed(&item.attrs)
     } else {
         Cow::Owned(csearch::get_item_attrs(&tcx.sess.cstore, did))
     }
@@ -5686,7 +5646,7 @@ pub fn lookup_struct_fields(cx: &ctxt, did: ast::DefId) -> Vec<field_ty> {
             _ => {
                 cx.sess.bug(
                     &format!("ID not mapped to struct fields: {}",
-                            cx.map.node_to_string(did.node))[]);
+                            cx.map.node_to_string(did.node)));
             }
         }
     } else {
@@ -5719,7 +5679,7 @@ pub fn struct_fields<'tcx>(cx: &ctxt<'tcx>, did: ast::DefId, substs: &Substs<'tc
 pub fn tup_fields<'tcx>(v: &[Ty<'tcx>]) -> Vec<field<'tcx>> {
     v.iter().enumerate().map(|(i, &f)| {
        field {
-            name: token::intern(&i.to_string()[]),
+            name: token::intern(&i.to_string()),
             mt: mt {
                 ty: f,
                 mutbl: MutImmutable
@@ -5992,6 +5952,32 @@ pub fn item_variances(tcx: &ctxt, item_id: ast::DefId) -> Rc<ItemVariances> {
         || Rc::new(csearch::get_item_variances(&tcx.sess.cstore, item_id)))
 }
 
+pub fn trait_default_impl(tcx: &ctxt, trait_def_id: DefId) -> Option<ast::DefId> {
+    match tcx.default_trait_impls.borrow().get(&trait_def_id) {
+        Some(id) => Some(*id),
+        None => None
+    }
+}
+
+pub fn trait_has_default_impl(tcx: &ctxt, trait_def_id: DefId) -> bool {
+    match tcx.lang_items.to_builtin_kind(trait_def_id) {
+        Some(BoundSend) | Some(BoundSync) => true,
+        _ => tcx.default_trait_impls.borrow().contains_key(&trait_def_id)
+    }
+}
+
+/// Records a trait-to-implementation mapping.
+pub fn record_default_trait_implementation(tcx: &ctxt,
+                                           trait_def_id: DefId,
+                                           impl_def_id: DefId) {
+
+    // We're using the latest implementation found as the reference one.
+    // Duplicated implementations are caught and reported in the coherence
+    // step.
+    tcx.default_trait_impls.borrow_mut().insert(trait_def_id, impl_def_id);
+}
+
+
 /// Records a trait-to-implementation mapping.
 pub fn record_trait_implementation(tcx: &ctxt,
                                    trait_def_id: DefId,
@@ -6074,11 +6060,22 @@ pub fn populate_implementations_for_trait_if_necessary(
     }
 
     csearch::each_implementation_for_trait(&tcx.sess.cstore, trait_id,
-            |implementation_def_id| {
+            |implementation_def_id|{
         let impl_items = csearch::get_impl_items(&tcx.sess.cstore, implementation_def_id);
 
-        // Record the trait->implementation mapping.
-        record_trait_implementation(tcx, trait_id, implementation_def_id);
+        if csearch::is_default_trait(&tcx.sess.cstore, implementation_def_id) {
+            record_default_trait_implementation(tcx, trait_id,
+                                                implementation_def_id);
+            tcx.populated_external_traits.borrow_mut().insert(trait_id);
+
+            // Nothing else to do for default trait implementations since
+            // they are not allowed to have type parameters, methods, or any
+            // other item that could be associated to a trait implementation.
+            return;
+        } else {
+            // Record the trait->implementation mapping.
+            record_trait_implementation(tcx, trait_id, implementation_def_id);
+        }
 
         // For any methods that use a default implementation, add them to
         // the map. This is a bit unfortunate.
@@ -6299,16 +6296,15 @@ pub fn hash_crate_independent<'tcx>(tcx: &ctxt<'tcx>, ty: Ty<'tcx>, svh: &Svh) -
                     hash!(p.idx);
                     hash!(token::get_name(p.name));
                 }
-                ty_open(_) => byte!(22),
                 ty_infer(_) => unreachable!(),
-                ty_err => byte!(23),
+                ty_err => byte!(21),
                 ty_closure(d, r, _) => {
-                    byte!(24);
+                    byte!(22);
                     did(state, d);
                     region(state, *r);
                 }
                 ty_projection(ref data) => {
-                    byte!(25);
+                    byte!(23);
                     did(state, data.trait_ref.def_id);
                     hash!(token::get_name(data.item_name));
                 }
@@ -6637,7 +6633,6 @@ pub fn accumulate_lifetimes_in_type(accumulator: &mut Vec<ty::Region>,
             ty_projection(_) |
             ty_param(_) |
             ty_infer(_) |
-            ty_open(_) |
             ty_err => {
             }
         }
