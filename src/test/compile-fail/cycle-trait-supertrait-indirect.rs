@@ -1,4 +1,4 @@
-// Copyright 2012 The Rust Project Developers. See the COPYRIGHT
+// Copyright 2015 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
 //
@@ -8,16 +8,15 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// ignore-tidy-linelength
+// Test a supertrait cycle where the first trait we find (`A`) is not
+// a direct participant in the cycle.
 
-pub struct Foo;
-
-mod bar {
-    use Foo;
-
-    impl Foo { //~ERROR inherent implementations are only allowed on types defined in the current module
-        fn baz(&self) {}
-    }
+trait A: B {
 }
-fn main() {}
 
+trait B: C { }
+
+trait C: B { }
+    //~^ ERROR unsupported cyclic reference
+
+fn main() { }

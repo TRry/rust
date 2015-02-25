@@ -1,4 +1,4 @@
-// Copyright 2014 The Rust Project Developers. See the COPYRIGHT
+// Copyright 2015 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
 //
@@ -8,17 +8,11 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-mod foo {
-    pub struct Foo {
-        x: isize,
-        y: isize,
-    }
+// Regression test for #15477. This test just needs to compile.
+
+use std::marker::PhantomFn;
+
+trait Chromosome<X: Chromosome<i32>> : PhantomFn<(Self,X)> {
 }
 
-impl foo::Foo {
-//~^ ERROR implementations may only be implemented in the same module
-    fn bar() {}
-}
-
-fn main() {}
-
+fn main() { }
