@@ -433,8 +433,10 @@ impl<T> Vec<T> {
     #[stable(feature = "rust1", since = "1.0.0")]
     pub fn as_mut_slice(&mut self) -> &mut [T] {
         unsafe {
+            let ptr = *self.ptr;
+            assume(!ptr.is_null());
             mem::transmute(RawSlice {
-                data: *self.ptr,
+                data: ptr,
                 len: self.len,
             })
         }
@@ -458,6 +460,7 @@ impl<T> Vec<T> {
     pub fn into_iter(self) -> IntoIter<T> {
         unsafe {
             let ptr = *self.ptr;
+            assume(!ptr.is_null());
             let cap = self.cap;
             let begin = ptr as *const T;
             let end = if mem::size_of::<T>() == 0 {
@@ -2093,7 +2096,7 @@ mod tests {
             let (left, right) = values.split_at_mut(2);
             {
                 let left: &[_] = left;
-                assert!(&left[..left.len()] == &[1, 2][]);
+                assert!(&left[..left.len()] == &[1, 2]);
             }
             for p in left {
                 *p += 1;
@@ -2101,7 +2104,7 @@ mod tests {
 
             {
                 let right: &[_] = right;
-                assert!(&right[..right.len()] == &[3, 4, 5][]);
+                assert!(&right[..right.len()] == &[3, 4, 5]);
             }
             for p in right {
                 *p += 2;

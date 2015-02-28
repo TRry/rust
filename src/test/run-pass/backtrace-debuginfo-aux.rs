@@ -1,4 +1,4 @@
-// Copyright 2012 The Rust Project Developers. See the COPYRIGHT
+// Copyright 2015 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
 //
@@ -8,14 +8,15 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-pub fn main() {
-    // sometimes we have had trouble finding
-    // the right type for f, as we unified
-    // bot and u32 here
-    let f = match "1234".parse::<usize>().ok() {
-        None => return (),
-        Some(num) => num as u32
-    };
-    assert_eq!(f, 1234u32);
-    println!("{}", f)
+// ignore-test: not a test, used by backtrace-debuginfo.rs to test file!()
+
+#[inline(never)]
+pub fn callback<F>(f: F) where F: FnOnce((&'static str, u32)) {
+    f((file!(), line!()))
 }
+
+#[inline(always)]
+pub fn callback_inlined<F>(f: F) where F: FnOnce((&'static str, u32)) {
+    f((file!(), line!()))
+}
+
