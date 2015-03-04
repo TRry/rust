@@ -510,10 +510,10 @@ numbers[1] is 3
 numbers[0] is 2
 ```
 
-Each time, we can get a slithtly different output because the threads
-are not quaranteed to run in any set order. If you get the same order
-every time it is because each of these threads are very small and
-complete too fast for their indeterminate behavior to surface.
+Each time, we can get a slightly different output because the threads are not
+guaranteed to run in any set order. If you get the same order every time it is
+because each of these threads are very small and complete too fast for their
+indeterminate behavior to surface.
 
 The important part here is that the Rust compiler was able to use ownership to
 give us assurance _at compile time_ that we weren't doing something incorrect
@@ -536,7 +536,7 @@ use std::thread::Thread;
 
 fn main() {
     let numbers = vec![1, 2, 3];
-    
+
     let guards: Vec<_> = (0..3).map(|i| {
         Thread::scoped(move || {
             println!("{}", numbers[i]);
@@ -565,7 +565,7 @@ while retaining safety. The answer is iterators:
 ```{rust}
 let vec = vec![1, 2, 3];
 
-for x in vec.iter() {
+for x in &vec {
     println!("{}", x);
 }
 ```

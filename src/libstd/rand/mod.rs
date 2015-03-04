@@ -321,7 +321,7 @@ impl reseeding::Reseeder<StdRng> for ThreadRngReseeder {
         }
     }
 }
-static THREAD_RNG_RESEED_THRESHOLD: usize = 32_768;
+const THREAD_RNG_RESEED_THRESHOLD: usize = 32_768;
 type ThreadRngInner = reseeding::ReseedingRng<StdRng, ThreadRngReseeder>;
 
 /// The thread-local RNG.
@@ -386,8 +386,8 @@ impl Rng for ThreadRng {
 /// ```
 /// use std::rand;
 ///
-/// let x = rand::random();
-/// println!("{}", 2u8 * x);
+/// let x: u8 = rand::random();
+/// println!("{}", 2 * x as u16);
 ///
 /// let y = rand::random::<f64>();
 /// println!("{}", y);
@@ -639,17 +639,16 @@ mod test {
 }
 
 #[cfg(test)]
-static RAND_BENCH_N: u64 = 100;
-
-#[cfg(test)]
 mod bench {
     extern crate test;
     use prelude::v1::*;
 
     use self::test::Bencher;
-    use super::{XorShiftRng, StdRng, IsaacRng, Isaac64Rng, Rng, RAND_BENCH_N};
+    use super::{XorShiftRng, StdRng, IsaacRng, Isaac64Rng, Rng};
     use super::{OsRng, weak_rng};
     use mem::size_of;
+
+    const RAND_BENCH_N: u64 = 100;
 
     #[bench]
     fn rand_xorshift(b: &mut Bencher) {

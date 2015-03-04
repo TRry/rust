@@ -568,9 +568,9 @@ impl<'a, 'tcx, 'v> Visitor<'v> for Context<'a, 'tcx> {
         })
     }
 
-    // FIXME(#10894) should continue recursing
     fn visit_ty(&mut self, t: &ast::Ty) {
         run_lints!(self, check_ty, t);
+        visit::walk_ty(self, t);
     }
 
     fn visit_ident(&mut self, sp: Span, id: ast::Ident) {
@@ -612,7 +612,7 @@ impl<'a, 'tcx, 'v> Visitor<'v> for Context<'a, 'tcx> {
     }
 
     fn visit_trait_item(&mut self, m: &ast::TraitItem) {
-        run_lints!(self, check_trait_method, m);
+        run_lints!(self, check_trait_item, m);
         visit::walk_trait_item(self, m);
     }
 

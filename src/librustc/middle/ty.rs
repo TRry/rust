@@ -76,7 +76,7 @@ use std::hash::{Hash, SipHasher, Hasher};
 use std::mem;
 use std::ops;
 use std::rc::Rc;
-use std::vec::{CowVec, IntoIter};
+use std::vec::IntoIter;
 use collections::enum_set::{EnumSet, CLike};
 use std::collections::{HashMap, HashSet};
 use syntax::abi;
@@ -1367,7 +1367,7 @@ pub enum sty<'tcx> {
     ty_trait(Box<TyTrait<'tcx>>),
     ty_struct(DefId, &'tcx Substs<'tcx>),
 
-    ty_closure(DefId, &'tcx Region, &'tcx Substs<'tcx>),
+    ty_closure(DefId, &'tcx Substs<'tcx>),
 
     ty_tup(Vec<Ty<'tcx>>),
 
@@ -2658,8 +2658,7 @@ impl FlagComputation {
                 }
             }
 
-            &ty_closure(_, region, substs) => {
-                self.add_region(*region);
+            &ty_closure(_, substs) => {
                 self.add_substs(substs);
             }
 
@@ -2927,10 +2926,9 @@ pub fn mk_struct<'tcx>(cx: &ctxt<'tcx>, struct_id: ast::DefId,
     mk_t(cx, ty_struct(struct_id, substs))
 }
 
-pub fn mk_closure<'tcx>(cx: &ctxt<'tcx>, closure_id: ast::DefId,
-                        region: &'tcx Region, substs: &'tcx Substs<'tcx>)
+pub fn mk_closure<'tcx>(cx: &ctxt<'tcx>, closure_id: ast::DefId, substs: &'tcx Substs<'tcx>)
                         -> Ty<'tcx> {
-    mk_t(cx, ty_closure(closure_id, region, substs))
+    mk_t(cx, ty_closure(closure_id, substs))
 }
 
 pub fn mk_var<'tcx>(cx: &ctxt<'tcx>, v: TyVid) -> Ty<'tcx> {
@@ -3513,13 +3511,11 @@ pub fn type_contents<'tcx>(cx: &ctxt<'tcx>, ty: Ty<'tcx>) -> TypeContents {
                 apply_lang_items(cx, did, res)
             }
 
-            ty_closure(did, r, substs) => {
+            ty_closure(did, substs) => {
                 // FIXME(#14449): `borrowed_contents` below assumes `&mut` closure.
                 let param_env = ty::empty_parameter_environment(cx);
                 let upvars = closure_upvars(&param_env, did, substs).unwrap();
-                TypeContents::union(&upvars,
-                                    |f| tc_ty(cx, &f.ty, cache))
-                    | borrowed_contents(*r, MutMutable)
+                TypeContents::union(&upvars, |f| tc_ty(cx, &f.ty, cache))
             }
 
             ty_tup(ref tys) => {
@@ -5175,7 +5171,7 @@ pub fn ty_to_def_id(ty: Ty) -> Option<ast::DefId> {
             Some(tt.principal_def_id()),
         ty_struct(id, _) |
         ty_enum(id, _) |
-        ty_closure(id, _, _) =>
+        ty_closure(id, _) =>
             Some(id),
         _ =>
             None
@@ -5337,6 +5333,7 @@ pub fn type_is_empty(cx: &ctxt, ty: Ty) -> bool {
 
 pub fn enum_variants<'tcx>(cx: &ctxt<'tcx>, id: ast::DefId)
                            -> Rc<Vec<Rc<VariantInfo<'tcx>>>> {
+    use std::num::Int; // For checked_add
     memoized(&cx.enum_var_cache, id, |id: ast::DefId| {
         if ast::LOCAL_CRATE != id.krate {
             Rc::new(csearch::get_enum_variants(cx, id))
@@ -5353,11 +5350,7 @@ pub fn enum_variants<'tcx>(cx: &ctxt<'tcx>, id: ast::DefId)
                             let mut last_discriminant: Option<Disr> = None;
                             Rc::new(enum_definition.variants.iter().map(|variant| {
 
-                                let mut discriminant = match last_discriminant {
-                                    Some(val) => val + 1,
-                                    None => INITIAL_DISCRIMINANT_VALUE
-                                };
-
+                                let mut discriminant = INITIAL_DISCRIMINANT_VALUE;
                                 if let Some(ref e) = variant.node.disr_expr {
                                     // Preserve all values, and prefer signed.
                                     let ty = Some(cx.types.i64);
@@ -5373,11 +5366,24 @@ pub fn enum_variants<'tcx>(cx: &ctxt<'tcx>, id: ast::DefId)
                                                       "expected signed integer constant");
                                         }
                                         Err(err) => {
-                                            span_err!(cx.sess, e.span, E0305,
-                                                      "expected constant: {}", err);
+                                            span_err!(cx.sess, err.span, E0305,
+                                                      "constant evaluation error: {}",
+                                                      err.description().as_slice());
                                         }
                                     }
-                                };
+                                } else {
+                                    if let Some(val) = last_discriminant {
+                                        if let Some(v) = val.checked_add(1) {
+                                            discriminant = v
+                                        } else {
+                                            cx.sess.span_err(
+                                                variant.span,
+                                                &format!("Discriminant overflowed!"));
+                                        }
+                                    } else {
+                                        discriminant = INITIAL_DISCRIMINANT_VALUE;
+                                    }
+                                }
 
                                 last_discriminant = Some(discriminant);
                                 Rc::new(VariantInfo::from_ast_variant(cx, &**variant,
@@ -5584,7 +5590,7 @@ pub fn predicates<'tcx>(
 
 /// Get the attributes of a definition.
 pub fn get_attrs<'tcx>(tcx: &'tcx ctxt, did: DefId)
-                       -> CowVec<'tcx, ast::Attribute> {
+                       -> Cow<'tcx, [ast::Attribute]> {
     if is_local(did) {
         let item = tcx.map.expect_item(did.node);
         Cow::Borrowed(&item.attrs)
@@ -5757,22 +5763,22 @@ pub fn closure_upvars<'tcx>(typer: &mc::Typer<'tcx>,
 
 pub fn is_binopable<'tcx>(cx: &ctxt<'tcx>, ty: Ty<'tcx>, op: ast::BinOp) -> bool {
     #![allow(non_upper_case_globals)]
-    static tycat_other: int = 0;
-    static tycat_bool: int = 1;
-    static tycat_char: int = 2;
-    static tycat_int: int = 3;
-    static tycat_float: int = 4;
-    static tycat_raw_ptr: int = 6;
+    const tycat_other: int = 0;
+    const tycat_bool: int = 1;
+    const tycat_char: int = 2;
+    const tycat_int: int = 3;
+    const tycat_float: int = 4;
+    const tycat_raw_ptr: int = 6;
 
-    static opcat_add: int = 0;
-    static opcat_sub: int = 1;
-    static opcat_mult: int = 2;
-    static opcat_shift: int = 3;
-    static opcat_rel: int = 4;
-    static opcat_eq: int = 5;
-    static opcat_bit: int = 6;
-    static opcat_logic: int = 7;
-    static opcat_mod: int = 8;
+    const opcat_add: int = 0;
+    const opcat_sub: int = 1;
+    const opcat_mult: int = 2;
+    const opcat_shift: int = 3;
+    const opcat_rel: int = 4;
+    const opcat_eq: int = 5;
+    const opcat_bit: int = 6;
+    const opcat_logic: int = 7;
+    const opcat_mod: int = 8;
 
     fn opcat(op: ast::BinOp) -> int {
         match op.node {
@@ -5811,8 +5817,8 @@ pub fn is_binopable<'tcx>(cx: &ctxt<'tcx>, ty: Ty<'tcx>, op: ast::BinOp) -> bool
         }
     }
 
-    static t: bool = true;
-    static f: bool = false;
+    const t: bool = true;
+    const f: bool = false;
 
     let tbl = [
     //           +, -, *, shift, rel, ==, bit, logic, mod
@@ -6301,10 +6307,9 @@ pub fn hash_crate_independent<'tcx>(tcx: &ctxt<'tcx>, ty: Ty<'tcx>, svh: &Svh) -
                 }
                 ty_infer(_) => unreachable!(),
                 ty_err => byte!(21),
-                ty_closure(d, r, _) => {
+                ty_closure(d, _) => {
                     byte!(22);
                     did(state, d);
-                    region(state, *r);
                 }
                 ty_projection(ref data) => {
                     byte!(23);
@@ -6618,8 +6623,7 @@ pub fn accumulate_lifetimes_in_type(accumulator: &mut Vec<ty::Region>,
             ty_struct(_, substs) => {
                 accum_substs(accumulator, substs);
             }
-            ty_closure(_, region, substs) => {
-                accumulator.push(*region);
+            ty_closure(_, substs) => {
                 accum_substs(accumulator, substs);
             }
             ty_bool |

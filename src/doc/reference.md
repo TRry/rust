@@ -2495,6 +2495,12 @@ The currently implemented features of the reference compiler are:
 
 * `staged_api` - Allows usage of stability markers and `#![staged_api]` in a crate
 
+* `static_assert` - The `#[static_assert]` functionality is experimental and
+                    unstable. The attribute can be attached to a `static` of
+                    type `bool` and the compiler will error if the `bool` is
+                    `false` at compile time. This version of this functionality
+                    is unintuitive and suboptimal.
+
 * `start` - Allows use of the `#[start]` attribute, which changes the entry point
             into a Rust program. This capabiilty, especially the signature for the
             annotated function, is subject to change.
@@ -3765,9 +3771,9 @@ An example of creating and calling a closure:
 ```rust
 let captured_var = 10;
 
-let closure_no_args = |&:| println!("captured_var={}", captured_var);
+let closure_no_args = || println!("captured_var={}", captured_var);
 
-let closure_args = |&: arg: i32| -> i32 {
+let closure_args = |arg: i32| -> i32 {
   println!("captured_var={}, arg={}", captured_var, arg);
   arg // Note lack of semicolon after 'arg'
 };

@@ -176,7 +176,7 @@ pub fn write(w: &mut Writer) -> IoResult<()> {
         let mut ip = unsafe {
             uw::_Unwind_GetIPInfo(ctx, &mut ip_before_insn) as *mut libc::c_void
         };
-        if ip_before_insn == 0 {
+        if !ip.is_null() && ip_before_insn == 0 {
             // this is a non-signaling frame, so `ip` refers to the address
             // after the calling instruction. account for that.
             ip = (ip as usize - 1) as *mut _;
@@ -566,7 +566,7 @@ mod uw {
 
     // This function doesn't exist on Android or ARM/Linux, so make it same
     // to _Unwind_GetIP
-    #[cfg(any(target_os = "android",
+    #[cfg(any(all(target_os = "android", target_arch = "arm"),
               all(target_os = "linux", target_arch = "arm")))]
     pub unsafe fn _Unwind_GetIPInfo(ctx: *mut _Unwind_Context,
                                     ip_before_insn: *mut libc::c_int)

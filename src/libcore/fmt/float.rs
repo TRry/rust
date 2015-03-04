@@ -53,7 +53,7 @@ pub enum SignFormat {
     SignNeg
 }
 
-static DIGIT_E_RADIX: u32 = ('e' as u32) - ('a' as u32) + 11;
+const DIGIT_E_RADIX: u32 = ('e' as u32) - ('a' as u32) + 11;
 
 /// Converts a number to its string representation as a byte vector.
 /// This is meant to be a common base implementation for all numeric string
@@ -156,7 +156,7 @@ pub fn float_to_str_bytes_common<T: Float, U, F>(
         deccum = deccum / radix_gen;
         deccum = deccum.trunc();
 
-        let c = char::from_digit(current_digit.to_int().unwrap() as u32, radix);
+        let c = char::from_digit(current_digit.to_isize().unwrap() as u32, radix);
         buf[end] = c.unwrap() as u8;
         end += 1;
 
@@ -211,7 +211,7 @@ pub fn float_to_str_bytes_common<T: Float, U, F>(
             // See note in first loop.
             let current_digit = deccum.trunc().abs();
 
-            let c = char::from_digit(current_digit.to_int().unwrap() as u32,
+            let c = char::from_digit(current_digit.to_isize().unwrap() as u32,
                                      radix);
             buf[end] = c.unwrap() as u8;
             end += 1;

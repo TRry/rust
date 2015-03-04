@@ -8,4 +8,18 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-uint_module!(uint, uint);
+use m::{START, END};
+
+fn main() {
+    match 42u32 {
+        m::START...m::END => {},
+        0u32...m::END => {},
+        m::START...59u32 => {},
+        _  => {},
+    }
+}
+
+mod m {
+  pub const START: u32 = 4;
+  pub const END:   u32 = 14;
+}

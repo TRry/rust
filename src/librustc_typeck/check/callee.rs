@@ -137,7 +137,7 @@ fn try_overloaded_call_step<'a, 'tcx>(fcx: &FnCtxt<'a, 'tcx>,
             return Some(CallStep::Builtin);
         }
 
-        ty::ty_closure(def_id, _, substs) => {
+        ty::ty_closure(def_id, substs) => {
             assert_eq!(def_id.krate, ast::LOCAL_CRATE);
 
             // Check whether this is a call to a closure where we
@@ -152,12 +152,12 @@ fn try_overloaded_call_step<'a, 'tcx>(fcx: &FnCtxt<'a, 'tcx>,
                                                                           &closure_ty.sig).0;
                 fcx.record_deferred_call_resolution(
                     def_id,
-                    box CallResolution {call_expr: call_expr,
-                                        callee_expr: callee_expr,
-                                        adjusted_ty: adjusted_ty,
-                                        autoderefref: autoderefref,
-                                        fn_sig: fn_sig.clone(),
-                                        closure_def_id: def_id});
+                    Box::new(CallResolution {call_expr: call_expr,
+                                         callee_expr: callee_expr,
+                                         adjusted_ty: adjusted_ty,
+                                         autoderefref: autoderefref,
+                                         fn_sig: fn_sig.clone(),
+                                         closure_def_id: def_id}));
                 return Some(CallStep::DeferredClosure(fn_sig));
             }
         }

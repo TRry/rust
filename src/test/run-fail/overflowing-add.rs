@@ -1,4 +1,4 @@
-// Copyright 2012-2014 The Rust Project Developers. See the COPYRIGHT
+// Copyright 2015 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
 //
@@ -8,13 +8,11 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-//! Deprecated: replaced by `usize`.
-//!
-//! The rollout of the new type will gradually take place over the
-//! alpha cycle along with the development of clearer conventions
-//! around integer types.
+// error-pattern:thread '<main>' panicked at 'arithmetic operation overflowed'
 
-#![unstable(feature = "core")]
-#![deprecated(since = "1.0.0", reason = "replaced by usize")]
+// (Work around constant-evaluation)
+fn value() -> u8 { 200 }
 
-uint_module! { uint, int, ::int::BITS }
+fn main() {
+    let _x = value() + value() + value();
+}
