@@ -29,7 +29,7 @@ const CHARS: &'static [u8] = b"0123456789abcdef";
 impl ToHex for [u8] {
     /// Turn a vector of `u8` bytes into a hexadecimal string.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```rust
     /// extern crate serialize;
@@ -96,7 +96,7 @@ impl FromHex for str {
     /// You can use the `String::from_utf8` function to turn a
     /// `Vec<u8>` into a string with characters corresponding to those values.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// This converts a string literal to hexadecimal and back.
     ///
@@ -117,7 +117,7 @@ impl FromHex for str {
         // This may be an overestimate if there is any whitespace
         let mut b = Vec::with_capacity(self.len() / 2);
         let mut modulus = 0;
-        let mut buf = 0u8;
+        let mut buf = 0;
 
         for (idx, byte) in self.bytes().enumerate() {
             buf <<= 4;

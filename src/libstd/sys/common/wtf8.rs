@@ -21,6 +21,10 @@
 //! nor can it decode WTF-8 from arbitrary bytes.
 //! WTF-8 strings can be obtained from UTF-8, UTF-16, or code points.
 
+// this module is imported from @SimonSapin's repo and has tons of dead code on
+// unix (it's mostly used on windows), so don't worry about dead code here.
+#![allow(dead_code)]
+
 use core::prelude::*;
 
 use core::char::{encode_utf8_raw, encode_utf16_raw};
@@ -714,7 +718,7 @@ pub fn is_code_point_boundary(slice: &Wtf8, index: uint) -> bool {
     if index == slice.len() { return true; }
     match slice.bytes.get(index) {
         None => false,
-        Some(&b) => b < 128u8 || b >= 192u8,
+        Some(&b) => b < 128 || b >= 192,
     }
 }
 
@@ -776,7 +780,7 @@ impl<'a> Iterator for EncodeWide<'a> {
             return Some(tmp);
         }
 
-        let mut buf = [0u16; 2];
+        let mut buf = [0; 2];
         self.code_points.next().map(|code_point| {
             let n = encode_utf16_raw(code_point.value, &mut buf)
                 .unwrap_or(0);
@@ -1030,14 +1034,14 @@ mod tests {
     }
 
     #[test]
-    #[should_fail]
+    #[should_panic]
     fn wtf8buf_truncate_fail_code_point_boundary() {
         let mut string = Wtf8Buf::from_str("aé");
         string.truncate(2);
     }
 
     #[test]
-    #[should_fail]
+    #[should_panic]
     fn wtf8buf_truncate_fail_longer() {
         let mut string = Wtf8Buf::from_str("aé");
         string.truncate(4);
@@ -1133,7 +1137,7 @@ mod tests {
     }
 
     #[test]
-    #[should_fail]
+    #[should_panic]
     fn wtf8_slice_not_code_point_boundary() {
         &Wtf8::from_str("aé 💩")[2.. 4];
     }
@@ -1144,7 +1148,7 @@ mod tests {
     }
 
     #[test]
-    #[should_fail]
+    #[should_panic]
     fn wtf8_slice_from_not_code_point_boundary() {
         &Wtf8::from_str("aé 💩")[2..];
     }
@@ -1155,7 +1159,7 @@ mod tests {
     }
 
     #[test]
-    #[should_fail]
+    #[should_panic]
     fn wtf8_slice_to_not_code_point_boundary() {
         &Wtf8::from_str("aé 💩")[5..];
     }

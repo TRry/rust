@@ -38,7 +38,7 @@ trait GenericRadix {
         // characters for a base 2 number.
         let zero = Int::zero();
         let is_positive = x >= zero;
-        let mut buf = [0u8; 64];
+        let mut buf = [0; 64];
         let mut curr = buf.len();
         let base = cast(self.base()).unwrap();
         if is_positive {
@@ -143,7 +143,7 @@ pub struct RadixFmt<T, R>(T, R);
 
 /// Constructs a radix formatter in the range of `2..36`.
 ///
-/// # Example
+/// # Examples
 ///
 /// ```
 /// use std::fmt::radix;

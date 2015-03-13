@@ -32,7 +32,6 @@ use middle::ty::{self, Ty, MethodCall, MethodCallee, MethodOrigin};
 use util::ppaux::ty_to_string;
 
 use syntax::{ast, ast_map, ast_util, codemap, fold};
-use syntax::ast_util::PostExpansionMethod;
 use syntax::codemap::Span;
 use syntax::fold::Folder;
 use syntax::parse::token;
@@ -42,6 +41,7 @@ use syntax;
 use std::old_io::Seek;
 use std::num::FromPrimitive;
 use std::rc::Rc;
+use std::cell::Cell;
 
 use rbml::reader;
 use rbml::writer::Encoder;
@@ -58,7 +58,9 @@ struct DecodeContext<'a, 'b, 'tcx: 'a> {
     tcx: &'a ty::ctxt<'tcx>,
     cdata: &'b cstore::crate_metadata,
     from_id_range: ast_util::IdRange,
-    to_id_range: ast_util::IdRange
+    to_id_range: ast_util::IdRange,
+    // Cache the last used filemap for translating spans as an optimization.
+    last_filemap_index: Cell<usize>,
 }
 
 trait tr {
@@ -78,11 +80,8 @@ pub fn encode_inlined_item(ecx: &e::EncodeContext,
     let id = match ii {
         e::IIItemRef(i) => i.id,
         e::IIForeignRef(i) => i.id,
-        e::IITraitItemRef(_, &ast::ProvidedMethod(ref m)) => m.id,
-        e::IITraitItemRef(_, &ast::RequiredMethod(ref m)) => m.id,
-        e::IITraitItemRef(_, &ast::TypeTraitItem(ref ti)) => ti.ty_param.id,
-        e::IIImplItemRef(_, &ast::MethodImplItem(ref m)) => m.id,
-        e::IIImplItemRef(_, &ast::TypeImplItem(ref ti)) => ti.id,
+        e::IITraitItemRef(_, ti) => ti.id,
+        e::IIImplItemRef(_, ii) => ii.id,
     };
     debug!("> Encoding inlined item: {} ({:?})",
            ecx.tcx.map.path_to_string(id),
@@ -120,6 +119,8 @@ impl<'a, 'b, 'c, 'tcx> ast_map::FoldOps for &'a DecodeContext<'b, 'c, 'tcx> {
     }
 }
 
+/// Decodes an item from its AST in the cdata's metadata and adds it to the
+/// ast-map.
 pub fn decode_inlined_item<'tcx>(cdata: &cstore::crate_metadata,
                                  tcx: &ty::ctxt<'tcx>,
                                  path: Vec<ast_map::PathElem>,
@@ -143,7 +144,8 @@ pub fn decode_inlined_item<'tcx>(cdata: &cstore::crate_metadata,
             cdata: cdata,
             tcx: tcx,
             from_id_range: from_id_range,
-            to_id_range: to_id_range
+            to_id_range: to_id_range,
+            last_filemap_index: Cell::new(0)
         };
         let raw_ii = decode_ast(ast_doc);
         let ii = ast_map::map_decoded_item(&dcx.tcx.map, path, raw_ii, dcx);
@@ -151,19 +153,8 @@ pub fn decode_inlined_item<'tcx>(cdata: &cstore::crate_metadata,
         let ident = match *ii {
             ast::IIItem(ref i) => i.ident,
             ast::IIForeign(ref i) => i.ident,
-            ast::IITraitItem(_, ref ti) => {
-                match *ti {
-                    ast::ProvidedMethod(ref m) => m.pe_ident(),
-                    ast::RequiredMethod(ref ty_m) => ty_m.ident,
-                    ast::TypeTraitItem(ref ti) => ti.ty_param.ident,
-                }
-            },
-            ast::IIImplItem(_, ref m) => {
-                match *m {
-                    ast::MethodImplItem(ref m) => m.pe_ident(),
-                    ast::TypeImplItem(ref ti) => ti.ident,
-                }
-            }
+            ast::IITraitItem(_, ref ti) => ti.ident,
+            ast::IIImplItem(_, ref ii) => ii.ident
         };
         debug!("Fn named: {}", token::get_ident(ident));
         debug!("< Decoded inlined fn: {}::{}",
@@ -234,8 +225,47 @@ impl<'a, 'b, 'tcx> DecodeContext<'a, 'b, 'tcx> {
         assert_eq!(did.krate, ast::LOCAL_CRATE);
         ast::DefId { krate: ast::LOCAL_CRATE, node: self.tr_id(did.node) }
     }
-    pub fn tr_span(&self, _span: Span) -> Span {
-        codemap::DUMMY_SP // FIXME (#1972): handle span properly
+
+    /// Translates a `Span` from an extern crate to the corresponding `Span`
+    /// within the local crate's codemap. `creader::import_codemap()` will
+    /// already have allocated any additionally needed FileMaps in the local
+    /// codemap as a side-effect of creating the crate_metadata's
+    /// `codemap_import_info`.
+    pub fn tr_span(&self, span: Span) -> Span {
+        let imported_filemaps = &self.cdata.codemap_import_info[..];
+
+        let filemap_index = {
+            // Optimize for the case that most spans within a translated item
+            // originate from the same filemap.
+            let last_filemap_index = self.last_filemap_index.get();
+
+            if span.lo >= imported_filemaps[last_filemap_index].original_start_pos &&
+               span.hi <= imported_filemaps[last_filemap_index].original_end_pos {
+                last_filemap_index
+            } else {
+                let mut a = 0;
+                let mut b = imported_filemaps.len();
+
+                while b - a > 1 {
+                    let m = (a + b) / 2;
+                    if imported_filemaps[m].original_start_pos > span.lo {
+                        b = m;
+                    } else {
+                        a = m;
+                    }
+                }
+
+                self.last_filemap_index.set(a);
+                a
+            }
+        };
+
+        let lo = (span.lo - imported_filemaps[filemap_index].original_start_pos) +
+                  imported_filemaps[filemap_index].translated_filemap.start_pos;
+        let hi = (span.hi - imported_filemaps[filemap_index].original_start_pos) +
+                  imported_filemaps[filemap_index].translated_filemap.start_pos;
+
+        codemap::mk_sp(lo, hi)
     }
 }
 
@@ -367,38 +397,16 @@ fn simplify_ast(ii: e::InlinedItemRef) -> ast::InlinedItem {
                             .expect_one("expected one item"))
         }
         e::IITraitItemRef(d, ti) => {
-            ast::IITraitItem(d, match *ti {
-                ast::ProvidedMethod(ref m) => {
-                    ast::ProvidedMethod(
-                        fold::noop_fold_method(m.clone(), &mut fld)
-                            .expect_one("noop_fold_method must produce \
-                                         exactly one method"))
-                }
-                ast::RequiredMethod(ref ty_m) => {
-                    ast::RequiredMethod(
-                        fold::noop_fold_type_method(ty_m.clone(), &mut fld))
-                }
-                ast::TypeTraitItem(ref associated_type) => {
-                    ast::TypeTraitItem(
-                        P(fold::noop_fold_associated_type(
-                            (**associated_type).clone(),
-                            &mut fld)))
-                }
-            })
+            ast::IITraitItem(d,
+                fold::noop_fold_trait_item(P(ti.clone()), &mut fld)
+                    .expect_one("noop_fold_trait_item must produce \
+                                 exactly one trait item"))
         }
-        e::IIImplItemRef(d, m) => {
-            ast::IIImplItem(d, match *m {
-                ast::MethodImplItem(ref m) => {
-                    ast::MethodImplItem(
-                        fold::noop_fold_method(m.clone(), &mut fld)
-                            .expect_one("noop_fold_method must produce \
-                                         exactly one method"))
-                }
-                ast::TypeImplItem(ref td) => {
-                    ast::TypeImplItem(
-                        P(fold::noop_fold_typedef((**td).clone(), &mut fld)))
-                }
-            })
+        e::IIImplItemRef(d, ii) => {
+            ast::IIImplItem(d,
+                fold::noop_fold_impl_item(P(ii.clone()), &mut fld)
+                    .expect_one("noop_fold_impl_item must produce \
+                                 exactly one impl item"))
         }
         e::IIForeignRef(i) => {
             ast::IIForeign(fold::noop_fold_foreign_item(P(i.clone()), &mut fld))

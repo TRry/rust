@@ -343,8 +343,7 @@ impl IoError {
     pub fn from_errno(errno: i32, detail: bool) -> IoError {
         let mut err = sys::decode_error(errno as i32);
         if detail && err.kind == OtherIoError {
-            err.detail = Some(os::error_string(errno).chars()
-                                 .map(|c| c.to_lowercase()).collect())
+            err.detail = Some(os::error_string(errno).to_lowercase());
         }
         err
     }
@@ -670,7 +669,7 @@ pub trait Reader {
     fn read_le_uint_n(&mut self, nbytes: uint) -> IoResult<u64> {
         assert!(nbytes > 0 && nbytes <= 8);
 
-        let mut val = 0u64;
+        let mut val = 0;
         let mut pos = 0;
         let mut i = nbytes;
         while i > 0 {
@@ -694,7 +693,7 @@ pub trait Reader {
     fn read_be_uint_n(&mut self, nbytes: uint) -> IoResult<u64> {
         assert!(nbytes > 0 && nbytes <= 8);
 
-        let mut val = 0u64;
+        let mut val = 0;
         let mut i = nbytes;
         while i > 0 {
             i -= 1;
@@ -1078,7 +1077,7 @@ pub trait Writer {
     /// Write a single char, encoded as UTF-8.
     #[inline]
     fn write_char(&mut self, c: char) -> IoResult<()> {
-        let mut buf = [0u8; 4];
+        let mut buf = [0; 4];
         let n = c.encode_utf8(&mut buf).unwrap_or(0);
         self.write_all(&buf[..n])
     }
@@ -1277,7 +1276,7 @@ impl<'a> Writer for &'a mut (Writer+'a) {
 /// A `RefWriter` is a struct implementing `Writer` which contains a reference
 /// to another writer. This is often useful when composing streams.
 ///
-/// # Example
+/// # Examples
 ///
 /// ```
 /// use std::old_io::util::TeeReader;
@@ -1402,7 +1401,7 @@ pub trait Buffer: Reader {
     /// encoded Unicode codepoints. If a newline is encountered, then the
     /// newline is contained in the returned string.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```rust
     /// use std::old_io::BufReader;
@@ -1626,7 +1625,7 @@ impl<'a, T, A: ?Sized + Acceptor<T>> Iterator for IncomingConnections<'a, A> {
 /// Creates a standard error for a commonly used flavor of error. The `detail`
 /// field of the returned error will always be `None`.
 ///
-/// # Example
+/// # Examples
 ///
 /// ```
 /// use std::old_io as io;
@@ -1896,7 +1895,7 @@ mod tests {
     fn test_read_at_least() {
         let mut r = BadReader::new(MemReader::new(b"hello, world!".to_vec()),
                                    vec![GoodBehavior(usize::MAX)]);
-        let buf = &mut [0u8; 5];
+        let buf = &mut [0; 5];
         assert!(r.read_at_least(1, buf).unwrap() >= 1);
         assert!(r.read_exact(5).unwrap().len() == 5); // read_exact uses read_at_least
         assert!(r.read_at_least(0, buf).is_ok());

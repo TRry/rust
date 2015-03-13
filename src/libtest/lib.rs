@@ -23,6 +23,8 @@
 // running tests while providing a base that other test frameworks may
 // build off of.
 
+// Do not remove on snapshot creation. Needed for bootstrap. (Issue #22364)
+#![cfg_attr(stage0, feature(custom_attribute))]
 #![crate_name = "test"]
 #![unstable(feature = "test")]
 #![staged_api]
@@ -38,10 +40,10 @@
 #![feature(core)]
 #![feature(int_uint)]
 #![feature(old_io)]
-#![feature(old_path)]
 #![feature(rustc_private)]
 #![feature(staged_api)]
 #![feature(std_misc)]
+#![feature(io)]
 
 extern crate getopts;
 extern crate serialize;
@@ -65,13 +67,16 @@ use term::color::{Color, RED, YELLOW, GREEN, CYAN};
 use std::any::Any;
 use std::cmp;
 use std::collections::BTreeMap;
+use std::env;
 use std::fmt;
-use std::old_io::stdio::StdWriter;
-use std::old_io::{File, ChanReader, ChanWriter};
-use std::old_io;
+use std::fs::File;
+use std::io::{self, Write};
 use std::iter::repeat;
 use std::num::{Float, Int};
-use std::env;
+use std::old_io::stdio::StdWriter;
+use std::old_io::{ChanReader, ChanWriter};
+use std::old_io;
+use std::path::{PathBuf};
 use std::sync::mpsc::{channel, Sender};
 use std::thread;
 use std::thunk::{Thunk, Invoke};
@@ -84,7 +89,7 @@ pub mod test {
              Metric, MetricMap,
              StaticTestFn, StaticTestName, DynTestName, DynTestFn,
              run_test, test_main, test_main_static, filter_tests,
-             parse_opts, StaticBenchFn, ShouldFail};
+             parse_opts, StaticBenchFn, ShouldPanic};
 }
 
 pub mod stats;
@@ -196,7 +201,7 @@ pub struct Bencher {
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
-pub enum ShouldFail {
+pub enum ShouldPanic {
     No,
     Yes(Option<&'static str>)
 }
@@ -207,7 +212,7 @@ pub enum ShouldFail {
 pub struct TestDesc {
     pub name: TestName,
     pub ignore: bool,
-    pub should_fail: ShouldFail,
+    pub should_panic: ShouldPanic,
 }
 
 unsafe impl Send for TestDesc {}
@@ -287,7 +292,7 @@ pub struct TestOpts {
     pub run_ignored: bool,
     pub run_tests: bool,
     pub run_benchmarks: bool,
-    pub logfile: Option<Path>,
+    pub logfile: Option<PathBuf>,
     pub nocapture: bool,
     pub color: ColorConfig,
 }
@@ -345,10 +350,10 @@ Test Attributes:
                      takes no arguments.
     #[bench]       - Indicates a function is a benchmark to be run. This
                      function takes one argument (test::Bencher).
-    #[should_fail] - This function (also labeled with #[test]) will only pass if
-                     the code causes a failure (an assertion failure or panic!)
+    #[should_panic] - This function (also labeled with #[test]) will only pass if
+                     the code causes a panic (an assertion failure or panic!)
                      A message may be provided, which the failure string must
-                     contain: #[should_fail(expected = "foo")].
+                     contain: #[should_panic(expected = "foo")].
     #[ignore]      - When applied to a function which is already attributed as a
                      test, then the test runner will ignore these tests during
                      normal test runs. Running with --ignored will run these
@@ -376,7 +381,7 @@ pub fn parse_opts(args: &[String]) -> Option<OptRes> {
     let run_ignored = matches.opt_present("ignored");
 
     let logfile = matches.opt_str("logfile");
-    let logfile = logfile.map(|s| Path::new(s));
+    let logfile = logfile.map(|s| PathBuf::new(&s));
 
     let run_benchmarks = matches.opt_present("bench");
     let run_tests = ! run_benchmarks ||
@@ -446,11 +451,19 @@ struct ConsoleTestState<T> {
     max_name_len: uint, // number of columns to fill when aligning names
 }
 
+fn new2old(new: io::Error) -> old_io::IoError {
+    old_io::IoError {
+        kind: old_io::OtherIoError,
+        desc: "other error",
+        detail: Some(new.to_string()),
+    }
+}
+
 impl<T: Writer> ConsoleTestState<T> {
     pub fn new(opts: &TestOpts,
                _: Option<T>) -> old_io::IoResult<ConsoleTestState<StdWriter>> {
         let log_out = match opts.logfile {
-            Some(ref path) => Some(try!(File::create(path))),
+            Some(ref path) => Some(try!(File::create(path).map_err(new2old))),
             None => None
         };
         let out = match term::stdout() {
@@ -560,7 +573,7 @@ impl<T: Writer> ConsoleTestState<T> {
     }
 
     pub fn write_log(&mut self, test: &TestDesc,
-                     result: &TestResult) -> old_io::IoResult<()> {
+                     result: &TestResult) -> io::Result<()> {
         match self.log_out {
             None => Ok(()),
             Some(ref mut o) => {
@@ -646,7 +659,7 @@ pub fn run_tests_console(opts: &TestOpts, tests: Vec<TestDescAndFn> ) -> old_io:
             TeFiltered(ref filtered_tests) => st.write_run_start(filtered_tests.len()),
             TeWait(ref test, padding) => st.write_test_start(test, padding),
             TeResult(test, result, stdout) => {
-                try!(st.write_log(&test, &result));
+                try!(st.write_log(&test, &result).map_err(new2old));
                 try!(st.write_result(&result));
                 match result {
                     TrOk => st.passed += 1,
@@ -703,13 +716,13 @@ fn should_sort_failures_before_printing_them() {
     let test_a = TestDesc {
         name: StaticTestName("a"),
         ignore: false,
-        should_fail: ShouldFail::No
+        should_panic: ShouldPanic::No
     };
 
     let test_b = TestDesc {
         name: StaticTestName("b"),
         ignore: false,
-        should_fail: ShouldFail::No
+        should_panic: ShouldPanic::No
     };
 
     let mut st = ConsoleTestState {
@@ -732,8 +745,8 @@ fn should_sort_failures_before_printing_them() {
         Pretty(_) => unreachable!()
     };
 
-    let apos = s.find_str("a").unwrap();
-    let bpos = s.find_str("b").unwrap();
+    let apos = s.find("a").unwrap();
+    let bpos = s.find("b").unwrap();
     assert!(apos < bpos);
 }
 
@@ -939,10 +952,10 @@ pub fn run_test(opts: &TestOpts,
 }
 
 fn calc_result(desc: &TestDesc, task_result: Result<(), Box<Any+Send>>) -> TestResult {
-    match (&desc.should_fail, task_result) {
-        (&ShouldFail::No, Ok(())) |
-        (&ShouldFail::Yes(None), Err(_)) => TrOk,
-        (&ShouldFail::Yes(Some(msg)), Err(ref err))
+    match (&desc.should_panic, task_result) {
+        (&ShouldPanic::No, Ok(())) |
+        (&ShouldPanic::Yes(None), Err(_)) => TrOk,
+        (&ShouldPanic::Yes(Some(msg)), Err(ref err))
             if err.downcast_ref::<String>()
                 .map(|e| &**e)
                 .or_else(|| err.downcast_ref::<&'static str>().map(|e| *e))
@@ -1011,7 +1024,7 @@ impl Bencher {
     pub fn iter<T, F>(&mut self, mut inner: F) where F: FnMut() -> T {
         self.dur = Duration::span(|| {
             let k = self.iterations;
-            for _ in 0u64..k {
+            for _ in 0..k {
                 black_box(inner());
             }
         });
@@ -1037,7 +1050,7 @@ impl Bencher {
     // This is a more statistics-driven benchmark algorithm
     pub fn auto_bench<F>(&mut self, mut f: F) -> stats::Summary<f64> where F: FnMut(&mut Bencher) {
         // Initial bench run to get ballpark figure.
-        let mut n = 1_u64;
+        let mut n = 1;
         self.bench_n(n, |x| f(x));
 
         // Try to estimate iter count for 1ms falling back to 1m
@@ -1095,7 +1108,14 @@ impl Bencher {
                 return summ5;
             }
 
-            n *= 2;
+            // If we overflow here just return the results so far. We check a
+            // multiplier of 10 because we're about to multiply by 2 and the
+            // next iteration of the loop will also multiply by 5 (to calculate
+            // the summ5 result)
+            n = match n.checked_mul(10) {
+                Some(_) => n * 2,
+                None => return summ5,
+            };
         }
     }
 }
@@ -1130,7 +1150,7 @@ mod tests {
     use test::{TrFailed, TrIgnored, TrOk, filter_tests, parse_opts,
                TestDesc, TestDescAndFn, TestOpts, run_test,
                MetricMap,
-               StaticTestName, DynTestName, DynTestFn, ShouldFail};
+               StaticTestName, DynTestName, DynTestFn, ShouldPanic};
     use std::thunk::Thunk;
     use std::sync::mpsc::channel;
 
@@ -1141,7 +1161,7 @@ mod tests {
             desc: TestDesc {
                 name: StaticTestName("whatever"),
                 ignore: true,
-                should_fail: ShouldFail::No,
+                should_panic: ShouldPanic::No,
             },
             testfn: DynTestFn(Thunk::new(move|| f())),
         };
@@ -1158,7 +1178,7 @@ mod tests {
             desc: TestDesc {
                 name: StaticTestName("whatever"),
                 ignore: true,
-                should_fail: ShouldFail::No,
+                should_panic: ShouldPanic::No,
             },
             testfn: DynTestFn(Thunk::new(move|| f())),
         };
@@ -1169,13 +1189,13 @@ mod tests {
     }
 
     #[test]
-    fn test_should_fail() {
+    fn test_should_panic() {
         fn f() { panic!(); }
         let desc = TestDescAndFn {
             desc: TestDesc {
                 name: StaticTestName("whatever"),
                 ignore: false,
-                should_fail: ShouldFail::Yes(None)
+                should_panic: ShouldPanic::Yes(None)
             },
             testfn: DynTestFn(Thunk::new(move|| f())),
         };
@@ -1186,13 +1206,13 @@ mod tests {
     }
 
     #[test]
-    fn test_should_fail_good_message() {
+    fn test_should_panic_good_message() {
         fn f() { panic!("an error message"); }
         let desc = TestDescAndFn {
             desc: TestDesc {
                 name: StaticTestName("whatever"),
                 ignore: false,
-                should_fail: ShouldFail::Yes(Some("error message"))
+                should_panic: ShouldPanic::Yes(Some("error message"))
             },
             testfn: DynTestFn(Thunk::new(move|| f())),
         };
@@ -1203,13 +1223,13 @@ mod tests {
     }
 
     #[test]
-    fn test_should_fail_bad_message() {
+    fn test_should_panic_bad_message() {
         fn f() { panic!("an error message"); }
         let desc = TestDescAndFn {
             desc: TestDesc {
                 name: StaticTestName("whatever"),
                 ignore: false,
-                should_fail: ShouldFail::Yes(Some("foobar"))
+                should_panic: ShouldPanic::Yes(Some("foobar"))
             },
             testfn: DynTestFn(Thunk::new(move|| f())),
         };
@@ -1220,13 +1240,13 @@ mod tests {
     }
 
     #[test]
-    fn test_should_fail_but_succeeds() {
+    fn test_should_panic_but_succeeds() {
         fn f() { }
         let desc = TestDescAndFn {
             desc: TestDesc {
                 name: StaticTestName("whatever"),
                 ignore: false,
-                should_fail: ShouldFail::Yes(None)
+                should_panic: ShouldPanic::Yes(None)
             },
             testfn: DynTestFn(Thunk::new(move|| f())),
         };
@@ -1262,7 +1282,7 @@ mod tests {
                 desc: TestDesc {
                     name: StaticTestName("1"),
                     ignore: true,
-                    should_fail: ShouldFail::No,
+                    should_panic: ShouldPanic::No,
                 },
                 testfn: DynTestFn(Thunk::new(move|| {})),
             },
@@ -1270,7 +1290,7 @@ mod tests {
                 desc: TestDesc {
                     name: StaticTestName("2"),
                     ignore: false,
-                    should_fail: ShouldFail::No,
+                    should_panic: ShouldPanic::No,
                 },
                 testfn: DynTestFn(Thunk::new(move|| {})),
             });
@@ -1306,7 +1326,7 @@ mod tests {
                     desc: TestDesc {
                         name: DynTestName((*name).clone()),
                         ignore: false,
-                        should_fail: ShouldFail::No,
+                        should_panic: ShouldPanic::No,
                     },
                     testfn: DynTestFn(Thunk::new(testfn)),
                 };

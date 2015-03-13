@@ -8,7 +8,6 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// ignore-fast doesn't like extern crate
 
 extern crate libc;
 use std::ffi::CString;
@@ -32,5 +31,5 @@ fn strlen(str: String) -> uint {
 
 pub fn main() {
     let len = strlen("Rust".to_string());
-    assert_eq!(len, 4_usize);
+    assert_eq!(len, 4);
 }

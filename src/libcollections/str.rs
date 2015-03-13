@@ -10,12 +10,16 @@
 //
 // ignore-lexer-test FIXME #15679
 
-//! Unicode string manipulation (the `str` type).
+//! Unicode string manipulation (the [`str`](../primitive.str.html) type).
 //!
-//! Rust's `str` type is one of the core primitive types of the language. `&str` is the borrowed
-//! string type. This type of string can only be created from other strings, unless it is a static
-//! string (see below). As the word "borrowed" implies, this type of string is owned elsewhere, and
-//! this string cannot be moved out of.
+//! Rust's [`str`](../primitive.str.html) type is one of the core primitive
+//! types of the language. `&str` is the borrowed string type. This type of
+//! string can only be created from other strings, unless it is a `&'static str`
+//! (see below). It is not possible to move out of borrowed strings because they
+//! are owned elsewhere.
+//!
+//! Basic operations are implemented directly by the compiler, but more advanced
+//! operations are defined on the [`StrExt`](trait.StrExt.html) trait.
 //!
 //! # Examples
 //!
@@ -25,8 +29,9 @@
 //! let s = "Hello, world.";
 //! ```
 //!
-//! This `&str` is a `&'static str`, which is the type of string literals. They're `'static`
-//! because literals are available for the entire lifetime of the program.
+//! This `&str` is a `&'static str`, which is the type of string literals.
+//! They're `'static` because literals are available for the entire lifetime of
+//! the program.
 //!
 //! You can get a non-`'static` `&str` by taking a slice of a `String`:
 //!
@@ -37,12 +42,13 @@
 //!
 //! # Representation
 //!
-//! Rust's string type, `str`, is a sequence of Unicode scalar values encoded as a stream of UTF-8
-//! bytes. All [strings](../../reference.html#literals) are guaranteed to be validly encoded UTF-8
-//! sequences. Additionally, strings are not null-terminated and can thus contain null bytes.
+//! Rust's string type, `str`, is a sequence of Unicode scalar values encoded as
+//! a stream of UTF-8 bytes. All [strings](../../reference.html#literals) are
+//! guaranteed to be validly encoded UTF-8 sequences. Additionally, strings are
+//! not null-terminated and can thus contain null bytes.
 //!
-//! The actual representation of `str`s have direct mappings to slices: `&str` is the same as
-//! `&[u8]`.
+//! The actual representation of `str`s have direct mappings to slices: `&str`
+//! is the same as `&[u8]`.
 
 #![doc(primitive = "str")]
 #![stable(feature = "rust1", since = "1.0.0")]
@@ -50,16 +56,16 @@
 use self::RecompositionState::*;
 use self::DecompositionType::*;
 
-use core::char::CharExt;
 use core::clone::Clone;
 use core::iter::AdditiveIterator;
-use core::iter::{Iterator, IteratorExt};
+use core::iter::{Iterator, IteratorExt, Extend};
 use core::ops::Index;
 use core::ops::RangeFull;
 use core::option::Option::{self, Some, None};
 use core::result::Result;
 use core::slice::AsSlice;
 use core::str as core_str;
+use unicode::char::CharExt;
 use unicode::str::{UnicodeStr, Utf16Encoder};
 
 use vec_deque::VecDeque;
@@ -383,7 +389,7 @@ macro_rules! utf8_first_byte {
 
 // return the value of $ch updated with continuation byte $byte
 macro_rules! utf8_acc_cont_byte {
-    ($ch:expr, $byte:expr) => (($ch << 6) | ($byte & 63u8) as u32)
+    ($ch:expr, $byte:expr) => (($ch << 6) | ($byte & 63) as u32)
 }
 
 #[stable(feature = "rust1", since = "1.0.0")]
@@ -833,17 +839,19 @@ pub trait StrExt: Index<RangeFull, Output = str> {
 
     /// Returns a slice of the string from the character range [`begin`..`end`).
     ///
-    /// That is, start at the `begin`-th code point of the string and continue to the `end`-th code
-    /// point. This does not detect or handle edge cases such as leaving a combining character as
-    /// the first code point of the string.
+    /// That is, start at the `begin`-th code point of the string and continue
+    /// to the `end`-th code point. This does not detect or handle edge cases
+    /// such as leaving a combining character as the first code point of the
+    /// string.
     ///
-    /// Due to the design of UTF-8, this operation is `O(end)`. See `slice`, `slice_to` and
-    /// `slice_from` for `O(1)` variants that use byte indices rather than code point indices.
+    /// Due to the design of UTF-8, this operation is `O(end)`. See `slice`,
+    /// `slice_to` and `slice_from` for `O(1)` variants that use byte indices
+    /// rather than code point indices.
     ///
     /// # Panics
     ///
-    /// Panics if `begin` > `end` or the either `begin` or `end` are beyond the last character of
-    /// the string.
+    /// Panics if `begin` > `end` or the either `begin` or `end` are beyond the
+    /// last character of the string.
     ///
     /// # Examples
     ///
@@ -865,8 +873,8 @@ pub trait StrExt: Index<RangeFull, Output = str> {
     ///
     /// # Unsafety
     ///
-    /// Caller must check both UTF-8 character boundaries and the boundaries of the entire slice as
-    /// well.
+    /// Caller must check both UTF-8 character boundaries and the boundaries of
+    /// the entire slice as well.
     ///
     /// # Examples
     ///
@@ -1083,7 +1091,7 @@ pub trait StrExt: Index<RangeFull, Output = str> {
     ///
     /// let s = "中华Việt Nam";
     /// let mut i = s.len();
-    /// while i < 0 {
+    /// while i > 0 {
     ///     let CharRange {ch, next} = s.char_range_at_reverse(i);
     ///     println!("{}: {}", i, ch);
     ///     i = next;
@@ -1369,7 +1377,7 @@ pub trait StrExt: Index<RangeFull, Output = str> {
     ///
     /// Will return `Err` if it's not possible to parse `self` into the type.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// assert_eq!("4".parse::<u32>(), Ok(4));
@@ -1502,6 +1510,32 @@ pub trait StrExt: Index<RangeFull, Output = str> {
     #[stable(feature = "rust1", since = "1.0.0")]
     fn trim_right(&self) -> &str {
         UnicodeStr::trim_right(&self[..])
+    }
+
+    /// Returns the lowercase equivalent of this string.
+    ///
+    /// # Examples
+    ///
+    /// let s = "HELLO";
+    /// assert_eq!(s.to_lowercase(), "hello");
+    #[unstable(feature = "collections")]
+    fn to_lowercase(&self) -> String {
+        let mut s = String::with_capacity(self.len());
+        s.extend(self[..].chars().flat_map(|c| c.to_lowercase()));
+        return s;
+    }
+
+    /// Returns the uppercase equivalent of this string.
+    ///
+    /// # Examples
+    ///
+    /// let s = "hello";
+    /// assert_eq!(s.to_uppercase(), "HELLO");
+    #[unstable(feature = "collections")]
+    fn to_uppercase(&self) -> String {
+        let mut s = String::with_capacity(self.len());
+        s.extend(self[..].chars().flat_map(|c| c.to_uppercase()));
+        return s;
     }
 }
 
@@ -1874,7 +1908,7 @@ mod tests {
     }
 
     #[test]
-    #[should_fail]
+    #[should_panic]
     fn test_slice_fail() {
         "中华Việt Nam".slice(0, 2);
     }
@@ -2092,7 +2126,7 @@ mod tests {
     }
 
     #[test]
-    #[should_fail]
+    #[should_panic]
     fn test_as_bytes_fail() {
         // Don't double free. (I'm not sure if this exercises the
         // original problem code path anymore.)
@@ -2129,7 +2163,7 @@ mod tests {
     }
 
     #[test]
-    #[should_fail]
+    #[should_panic]
     fn test_subslice_offset_2() {
         let a = "alchemiter";
         let b = "cruxtruder";
@@ -2300,8 +2334,8 @@ mod tests {
 
     #[test]
     fn test_chars_decoding() {
-        let mut bytes = [0u8; 4];
-        for c in (0u32..0x110000).filter_map(|c| ::core::char::from_u32(c)) {
+        let mut bytes = [0; 4];
+        for c in (0..0x110000).filter_map(|c| ::core::char::from_u32(c)) {
             let len = c.encode_utf8(&mut bytes).unwrap_or(0);
             let s = ::core::str::from_utf8(&bytes[..len]).unwrap();
             if Some(c) != s.chars().next() {
@@ -2312,8 +2346,8 @@ mod tests {
 
     #[test]
     fn test_chars_rev_decoding() {
-        let mut bytes = [0u8; 4];
-        for c in (0u32..0x110000).filter_map(|c| ::core::char::from_u32(c)) {
+        let mut bytes = [0; 4];
+        for c in (0..0x110000).filter_map(|c| ::core::char::from_u32(c)) {
             let len = c.encode_utf8(&mut bytes).unwrap_or(0);
             let s = ::core::str::from_utf8(&bytes[..len]).unwrap();
             if Some(c) != s.chars().rev().next() {

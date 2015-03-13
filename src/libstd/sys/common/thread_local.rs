@@ -28,7 +28,7 @@
 //! more useful in practice than this OS-based version which likely requires
 //! unsafe code to interoperate with.
 //!
-//! # Example
+//! # Examples
 //!
 //! Using a dynamically allocated TLS key. Note that this key can be shared
 //! among many threads via an `Arc`.
@@ -55,6 +55,8 @@
 //! ```
 
 #![allow(non_camel_case_types)]
+#![unstable(feature = "thread_local_internals")]
+#![allow(dead_code)] // sys isn't exported yet
 
 use prelude::v1::*;
 
@@ -72,7 +74,7 @@ use sys::thread_local as imp;
 /// time. The key is also deallocated when the Rust runtime exits or `destroy`
 /// is called, whichever comes first.
 ///
-/// # Example
+/// # Examples
 ///
 /// ```ignore
 /// use tls::os::{StaticKey, INIT};
@@ -84,17 +86,14 @@ use sys::thread_local as imp;
 ///     KEY.set(1 as *mut u8);
 /// }
 /// ```
-#[stable(feature = "rust1", since = "1.0.0")]
 pub struct StaticKey {
     /// Inner static TLS key (internals), created with by `INIT_INNER` in this
     /// module.
-    #[stable(feature = "rust1", since = "1.0.0")]
     pub inner: StaticKeyInner,
     /// Destructor for the TLS value.
     ///
     /// See `Key::new` for information about when the destructor runs and how
     /// it runs.
-    #[stable(feature = "rust1", since = "1.0.0")]
     pub dtor: Option<unsafe extern fn(*mut u8)>,
 }
 
@@ -112,7 +111,7 @@ pub struct StaticKeyInner {
 /// Implementations will likely, however, contain unsafe code as this type only
 /// operates on `*mut u8`, an unsafe pointer.
 ///
-/// # Example
+/// # Examples
 ///
 /// ```rust,ignore
 /// use tls::os::Key;
@@ -131,7 +130,6 @@ pub struct Key {
 /// Constant initialization value for static TLS keys.
 ///
 /// This value specifies no destructor by default.
-#[stable(feature = "rust1", since = "1.0.0")]
 pub const INIT: StaticKey = StaticKey {
     inner: INIT_INNER,
     dtor: None,
@@ -140,7 +138,6 @@ pub const INIT: StaticKey = StaticKey {
 /// Constant initialization value for the inner part of static TLS keys.
 ///
 /// This value allows specific configuration of the destructor for a TLS key.
-#[stable(feature = "rust1", since = "1.0.0")]
 pub const INIT_INNER: StaticKeyInner = StaticKeyInner {
     key: atomic::ATOMIC_USIZE_INIT,
 };

@@ -115,7 +115,7 @@ pub fn explain_region_and_span(cx: &ctxt, region: ty::Region)
             region::CodeExtent::Misc(_) => tag,
             region::CodeExtent::DestructionScope(_) => {
                 new_string = format!("destruction scope surrounding {}", tag);
-                new_string.as_slice()
+                &*new_string
             }
             region::CodeExtent::Remainder(r) => {
                 new_string = format!("block suffix following statement {}",
@@ -820,23 +820,19 @@ impl<'tcx> Repr<'tcx> for ty::TraitRef<'tcx> {
 
 impl<'tcx> Repr<'tcx> for ty::TraitDef<'tcx> {
     fn repr(&self, tcx: &ctxt<'tcx>) -> String {
-        format!("TraitDef(generics={}, bounds={}, trait_ref={})",
+        format!("TraitDef(generics={}, trait_ref={})",
                 self.generics.repr(tcx),
-                self.bounds.repr(tcx),
                 self.trait_ref.repr(tcx))
     }
 }
 
 impl<'tcx> Repr<'tcx> for ast::TraitItem {
     fn repr(&self, _tcx: &ctxt) -> String {
-        match *self {
-            ast::RequiredMethod(ref data) => format!("RequiredMethod({}, id={})",
-                                                     data.ident, data.id),
-            ast::ProvidedMethod(ref data) => format!("ProvidedMethod(id={})",
-                                                     data.id),
-            ast::TypeTraitItem(ref data) => format!("TypeTraitItem({}, id={})",
-                                                     data.ty_param.ident, data.ty_param.id),
-        }
+        let kind = match self.node {
+            ast::MethodTraitItem(..) => "MethodTraitItem",
+            ast::TypeTraitItem(..) => "TypeTraitItem",
+        };
+        format!("{}({}, id={})", kind, self.ident, self.id)
     }
 }
 

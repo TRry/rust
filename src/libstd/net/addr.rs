@@ -293,7 +293,7 @@ impl ToSocketAddrs for str {
         }
 
         // split the string by ':' and convert the second part to u16
-        let mut parts_iter = self.rsplitn(2, ':');
+        let mut parts_iter = self.rsplitn(1, ':');
         let port_str = try_opt!(parts_iter.next(), "invalid socket address");
         let host = try_opt!(parts_iter.next(), "invalid socket address");
         let port: u16 = try_opt!(port_str.parse().ok(), "invalid port value");
@@ -562,7 +562,7 @@ mod tests {
     #[test]
     fn to_socket_addr_ipaddr_u16() {
         let a = IpAddr::new_v4(77, 88, 21, 11);
-        let p = 12345u16;
+        let p = 12345;
         let e = SocketAddr::new(a, p);
         assert_eq!(Ok(vec![e]), tsa((a, p)));
     }
@@ -570,13 +570,13 @@ mod tests {
     #[test]
     fn to_socket_addr_str_u16() {
         let a = SocketAddr::new(IpAddr::new_v4(77, 88, 21, 11), 24352);
-        assert_eq!(Ok(vec![a]), tsa(("77.88.21.11", 24352u16)));
+        assert_eq!(Ok(vec![a]), tsa(("77.88.21.11", 24352)));
 
         let a = SocketAddr::new(IpAddr::new_v6(0x2a02, 0x6b8, 0, 1, 0, 0, 0, 1), 53);
         assert_eq!(Ok(vec![a]), tsa(("2a02:6b8:0:1::1", 53)));
 
         let a = SocketAddr::new(IpAddr::new_v4(127, 0, 0, 1), 23924);
-        assert!(tsa(("localhost", 23924u16)).unwrap().contains(&a));
+        assert!(tsa(("localhost", 23924)).unwrap().contains(&a));
     }
 
     #[test]
@@ -589,5 +589,11 @@ mod tests {
 
         let a = SocketAddr::new(IpAddr::new_v4(127, 0, 0, 1), 23924);
         assert!(tsa("localhost:23924").unwrap().contains(&a));
+    }
+
+    #[test]
+    #[cfg(not(windows))]
+    fn to_socket_addr_str_bad() {
+        assert!(tsa("1200::AB00:1234::2552:7777:1313:34300").is_err());
     }
 }

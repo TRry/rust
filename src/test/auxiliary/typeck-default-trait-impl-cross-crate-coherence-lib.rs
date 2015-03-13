@@ -1,4 +1,4 @@
-// Copyright 2014 The Rust Project Developers. See the COPYRIGHT
+// Copyright 2015 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
 //
@@ -8,12 +8,12 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// Test that bounds are sized-compatible.
+#![feature(optin_builtin_traits)]
+#![crate_type = "rlib"]
 
-trait T : Sized {}
-fn f<Y: ?Sized + T>() {
-//~^ERROR incompatible bounds on `Y`, bound `T` does not allow unsized type
-}
+use std::marker::MarkerTrait;
 
-pub fn main() {
-}
+pub trait DefaultedTrait : MarkerTrait { }
+impl DefaultedTrait for .. { }
+
+pub struct Something<T> { t: T }

@@ -15,7 +15,7 @@ use ext::base::{NormalTT, TTMacroExpander};
 use ext::tt::macro_parser::{Success, Error, Failure};
 use ext::tt::macro_parser::{NamedMatch, MatchedSeq, MatchedNonterminal};
 use ext::tt::macro_parser::{parse, parse_or_else};
-use parse::lexer::{new_tt_reader, new_tt_reader_with_doc_flag};
+use parse::lexer::new_tt_reader;
 use parse::parser::Parser;
 use parse::attr::ParserAttr;
 use parse::token::{self, special_idents, gensym_ident, NtTT, Token};
@@ -71,7 +71,7 @@ impl<'a> MacResult for ParserAnyMacro<'a> {
         loop {
             let mut parser = self.parser.borrow_mut();
             // so... do outer attributes attached to the macro invocation
-            // just disappear? This question applies to make_methods, as
+            // just disappear? This question applies to make_impl_items, as
             // well.
             match parser.parse_item_with_outer_attributes() {
                 Some(item) => ret.push(item),
@@ -82,15 +82,14 @@ impl<'a> MacResult for ParserAnyMacro<'a> {
         Some(ret)
     }
 
-    fn make_methods(self: Box<ParserAnyMacro<'a>>) -> Option<SmallVector<P<ast::Method>>> {
+    fn make_impl_items(self: Box<ParserAnyMacro<'a>>)
+                       -> Option<SmallVector<P<ast::ImplItem>>> {
         let mut ret = SmallVector::zero();
         loop {
             let mut parser = self.parser.borrow_mut();
             match parser.token {
                 token::Eof => break,
-                _ => {
-                    ret.push(parser.parse_method_with_outer_attributes());
-                }
+                _ => ret.push(parser.parse_impl_item_with_outer_attributes())
             }
         }
         self.ensure_complete_parse(false);
@@ -154,15 +153,8 @@ fn generic_extension<'cx>(cx: &'cx ExtCtxt,
                 TtDelimited(_, ref delim) => &delim.tts[..],
                 _ => cx.span_fatal(sp, "malformed macro lhs")
             };
-            // `None` is because we're not interpolating
-            let arg_rdr = new_tt_reader_with_doc_flag(&cx.parse_sess().span_diagnostic,
-                                                      None,
-                                                      None,
-                                                      arg.iter()
-                                                         .cloned()
-                                                         .collect(),
-                                                      true);
-            match parse(cx.parse_sess(), cx.cfg(), arg_rdr, lhs_tt) {
+
+            match TokenTree::parse(cx, lhs_tt, arg) {
               Success(named_matches) => {
                 let rhs = match *rhses[i] {
                     // okay, what's your transcriber?
@@ -274,7 +266,7 @@ pub fn compile<'cx>(cx: &'cx mut ExtCtxt,
         rhses: rhses,
     };
 
-    NormalTT(exp, Some(def.span))
+    NormalTT(exp, Some(def.span), def.allow_internal_unstable)
 }
 
 fn check_lhs_nt_follows(cx: &mut ExtCtxt, lhs: &NamedMatch, sp: Span) {

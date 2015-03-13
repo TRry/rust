@@ -8,15 +8,14 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+// Do not remove on snapshot creation. Needed for bootstrap. (Issue #22364)
+#![cfg_attr(stage0, feature(custom_attribute))]
 #![crate_name = "libc"]
 #![crate_type = "rlib"]
-#![cfg_attr(not(feature = "cargo-build"),
-            unstable(feature = "libc"))]
-#![cfg_attr(not(feature = "cargo-build"), feature(staged_api))]
+#![cfg_attr(not(feature = "cargo-build"), unstable(feature = "libc"))]
+#![cfg_attr(not(feature = "cargo-build"), feature(staged_api, core, no_std))]
 #![cfg_attr(not(feature = "cargo-build"), staged_api)]
-#![cfg_attr(not(feature = "cargo-build"), feature(core))]
-#![feature(no_std)]
-#![no_std]
+#![cfg_attr(not(feature = "cargo-build"), no_std)]
 #![doc(html_logo_url = "http://www.rust-lang.org/logos/rust-logo-128x128-blk-v2.png",
        html_favicon_url = "http://www.rust-lang.org/favicon.ico",
        html_root_url = "http://doc.rust-lang.org/nightly/",
@@ -386,7 +385,8 @@ pub mod types {
                       target_arch = "mips",
                       target_arch = "mipsel",
                       target_arch = "powerpc",
-                      target_arch = "le32"))]
+                      target_arch = "le32",
+                      all(target_arch = "arm", not(target_os = "android"))))]
             pub mod posix88 {
                 pub type off_t = i32;
                 pub type dev_t = u64;
@@ -398,7 +398,7 @@ pub mod types {
                 pub type mode_t = u32;
                 pub type ssize_t = i32;
             }
-            #[cfg(target_arch = "arm")]
+            #[cfg(all(target_arch = "arm", target_os = "android"))]
             pub mod posix88 {
                 pub type off_t = i32;
                 pub type dev_t = u32;
@@ -412,7 +412,8 @@ pub mod types {
             }
             #[cfg(any(target_arch = "x86",
                       target_arch = "le32",
-                      target_arch = "powerpc"))]
+                      target_arch = "powerpc",
+                      all(target_arch = "arm", not(target_os = "android"))))]
             pub mod posix01 {
                 use types::os::arch::c95::{c_short, c_long, time_t};
                 use types::os::arch::posix88::{dev_t, gid_t, ino_t};
@@ -458,7 +459,7 @@ pub mod types {
                     pub __size: [u32; 9]
                 }
             }
-            #[cfg(target_arch = "arm")]
+            #[cfg(all(target_arch = "arm", target_os = "android"))]
             pub mod posix01 {
                 use types::os::arch::c95::{c_uchar, c_uint, c_ulong, time_t};
                 use types::os::arch::c99::{c_longlong, c_ulonglong};
@@ -2203,11 +2204,11 @@ pub mod consts {
             pub const _IOFBF : c_int = 0;
             pub const _IONBF : c_int = 4;
             pub const _IOLBF : c_int = 64;
-            pub const BUFSIZ : c_uint = 512_u32;
-            pub const FOPEN_MAX : c_uint = 20_u32;
-            pub const FILENAME_MAX : c_uint = 260_u32;
-            pub const L_tmpnam : c_uint = 16_u32;
-            pub const TMP_MAX : c_uint = 32767_u32;
+            pub const BUFSIZ : c_uint = 512;
+            pub const FOPEN_MAX : c_uint = 20;
+            pub const FILENAME_MAX : c_uint = 260;
+            pub const L_tmpnam : c_uint = 16;
+            pub const TMP_MAX : c_uint = 32767;
 
             pub const WSAEINTR: c_int = 10004;
             pub const WSAEBADF: c_int = 10009;
@@ -2584,11 +2585,11 @@ pub mod consts {
             pub const _IOFBF : c_int = 0;
             pub const _IONBF : c_int = 2;
             pub const _IOLBF : c_int = 1;
-            pub const BUFSIZ : c_uint = 8192_u32;
-            pub const FOPEN_MAX : c_uint = 16_u32;
-            pub const FILENAME_MAX : c_uint = 4096_u32;
-            pub const L_tmpnam : c_uint = 20_u32;
-            pub const TMP_MAX : c_uint = 238328_u32;
+            pub const BUFSIZ : c_uint = 8192;
+            pub const FOPEN_MAX : c_uint = 16;
+            pub const FILENAME_MAX : c_uint = 4096;
+            pub const L_tmpnam : c_uint = 20;
+            pub const TMP_MAX : c_uint = 238328;
         }
         pub mod c99 {
         }
@@ -3450,11 +3451,11 @@ pub mod consts {
             pub const _IOFBF : c_int = 0;
             pub const _IONBF : c_int = 2;
             pub const _IOLBF : c_int = 1;
-            pub const BUFSIZ : c_uint = 1024_u32;
-            pub const FOPEN_MAX : c_uint = 20_u32;
-            pub const FILENAME_MAX : c_uint = 1024_u32;
-            pub const L_tmpnam : c_uint = 1024_u32;
-            pub const TMP_MAX : c_uint = 308915776_u32;
+            pub const BUFSIZ : c_uint = 1024;
+            pub const FOPEN_MAX : c_uint = 20;
+            pub const FILENAME_MAX : c_uint = 1024;
+            pub const L_tmpnam : c_uint = 1024;
+            pub const TMP_MAX : c_uint = 308915776;
         }
         pub mod c99 {
         }
@@ -3858,11 +3859,11 @@ pub mod consts {
             pub const _IOFBF : c_int = 0;
             pub const _IONBF : c_int = 2;
             pub const _IOLBF : c_int = 1;
-            pub const BUFSIZ : c_uint = 1024_u32;
-            pub const FOPEN_MAX : c_uint = 20_u32;
-            pub const FILENAME_MAX : c_uint = 1024_u32;
-            pub const L_tmpnam : c_uint = 1024_u32;
-            pub const TMP_MAX : c_uint = 308915776_u32;
+            pub const BUFSIZ : c_uint = 1024;
+            pub const FOPEN_MAX : c_uint = 20;
+            pub const FILENAME_MAX : c_uint = 1024;
+            pub const L_tmpnam : c_uint = 1024;
+            pub const TMP_MAX : c_uint = 308915776;
         }
         pub mod c99 {
         }
@@ -4236,11 +4237,11 @@ pub mod consts {
             pub const _IOFBF : c_int = 0;
             pub const _IONBF : c_int = 2;
             pub const _IOLBF : c_int = 1;
-            pub const BUFSIZ : c_uint = 1024_u32;
-            pub const FOPEN_MAX : c_uint = 20_u32;
-            pub const FILENAME_MAX : c_uint = 1024_u32;
-            pub const L_tmpnam : c_uint = 1024_u32;
-            pub const TMP_MAX : c_uint = 308915776_u32;
+            pub const BUFSIZ : c_uint = 1024;
+            pub const FOPEN_MAX : c_uint = 20;
+            pub const FILENAME_MAX : c_uint = 1024;
+            pub const L_tmpnam : c_uint = 1024;
+            pub const TMP_MAX : c_uint = 308915776;
         }
         pub mod c99 {
         }
@@ -5019,14 +5020,15 @@ pub mod funcs {
             #[cfg(any(target_os = "macos",
                       target_os = "ios"))]
             #[inline]
-            pub unsafe fn open(path: *const c_char, oflag: c_int, mode: mode_t) -> c_int {
+            pub unsafe extern fn open(path: *const c_char, oflag: c_int, mode: mode_t) -> c_int {
+                use types::os::arch::c95::c_uint;
                 open_shim::open(path, oflag, mode as c_uint)
             }
 
             #[cfg(not(any(target_os = "macos",
                           target_os = "ios")))]
             #[inline]
-            pub unsafe fn open(path: *const c_char, oflag: c_int, mode: mode_t) -> c_int {
+            pub unsafe extern fn open(path: *const c_char, oflag: c_int, mode: mode_t) -> c_int {
                 open_shim::open(path, oflag, mode)
             }
 

@@ -119,8 +119,8 @@ use std::iter::repeat;
 use std::slice;
 use syntax::{self, abi, attr};
 use syntax::attr::AttrMetaMethods;
-use syntax::ast::{self, ProvidedMethod, RequiredMethod, TypeTraitItem, DefId, Visibility};
-use syntax::ast_util::{self, local_def, PostExpansionMethod};
+use syntax::ast::{self, DefId, Visibility};
+use syntax::ast_util::{self, local_def};
 use syntax::codemap::{self, Span};
 use syntax::owned_slice::OwnedSlice;
 use syntax::parse::token;
@@ -739,30 +739,33 @@ pub fn check_item<'a,'tcx>(ccx: &CrateCtxt<'a,'tcx>, it: &'tcx ast::Item) {
           }
 
         for impl_item in impl_items {
-            match *impl_item {
-                ast::MethodImplItem(ref m) => {
-                    check_method_body(ccx, &impl_pty.generics, &**m);
+            match impl_item.node {
+                ast::MethodImplItem(ref sig, ref body) => {
+                    check_method_body(ccx, &impl_pty.generics, sig, body,
+                                      impl_item.id, impl_item.span);
                 }
-                ast::TypeImplItem(_) => {
+                ast::TypeImplItem(_) |
+                ast::MacImplItem(_) => {
                     // Nothing to do here.
                 }
             }
         }
 
       }
-      ast::ItemTrait(_, ref generics, _, ref trait_methods) => {
+      ast::ItemTrait(_, ref generics, _, ref trait_items) => {
         check_trait_on_unimplemented(ccx, generics, it);
         let trait_def = ty::lookup_trait_def(ccx.tcx, local_def(it.id));
-        for trait_method in trait_methods {
-            match *trait_method {
-                RequiredMethod(..) => {
+        for trait_item in trait_items {
+            match trait_item.node {
+                ast::MethodTraitItem(_, None) => {
                     // Nothing to do, since required methods don't have
                     // bodies to check.
                 }
-                ProvidedMethod(ref m) => {
-                    check_method_body(ccx, &trait_def.generics, &**m);
+                ast::MethodTraitItem(ref sig, Some(ref body)) => {
+                    check_method_body(ccx, &trait_def.generics, sig, body,
+                                      trait_item.id, trait_item.span);
                 }
-                TypeTraitItem(_) => {
+                ast::TypeTraitItem(..) => {
                     // Nothing to do.
                 }
             }
@@ -855,28 +858,23 @@ fn check_trait_on_unimplemented<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>,
 /// * `method`: the method definition
 fn check_method_body<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>,
                                item_generics: &ty::Generics<'tcx>,
-                               method: &'tcx ast::Method) {
-    debug!("check_method_body(item_generics={}, method.id={})",
-            item_generics.repr(ccx.tcx),
-            method.id);
-    let param_env = ParameterEnvironment::for_item(ccx.tcx, method.id);
+                               sig: &'tcx ast::MethodSig,
+                               body: &'tcx ast::Block,
+                               id: ast::NodeId, span: Span) {
+    debug!("check_method_body(item_generics={}, id={})",
+            item_generics.repr(ccx.tcx), id);
+    let param_env = ParameterEnvironment::for_item(ccx.tcx, id);
 
-    let fty = ty::node_id_to_type(ccx.tcx, method.id);
+    let fty = ty::node_id_to_type(ccx.tcx, id);
     debug!("check_method_body: fty={}", fty.repr(ccx.tcx));
 
-    check_bare_fn(ccx,
-                  &*method.pe_fn_decl(),
-                  &*method.pe_body(),
-                  method.id,
-                  method.span,
-                  fty,
-                  param_env);
+    check_bare_fn(ccx, &sig.decl, body, id, span, fty, param_env);
 }
 
 fn check_impl_items_against_trait<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>,
                                             impl_span: Span,
                                             impl_trait_ref: &ty::TraitRef<'tcx>,
-                                            impl_items: &[ast::ImplItem]) {
+                                            impl_items: &[P<ast::ImplItem>]) {
     // Locate trait methods
     let tcx = ccx.tcx;
     let trait_items = ty::trait_items(tcx, impl_trait_ref.def_id);
@@ -884,9 +882,9 @@ fn check_impl_items_against_trait<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>,
     // Check existing impl methods to see if they are both present in trait
     // and compatible with trait signature
     for impl_item in impl_items {
-        match *impl_item {
-            ast::MethodImplItem(ref impl_method) => {
-                let impl_method_def_id = local_def(impl_method.id);
+        match impl_item.node {
+            ast::MethodImplItem(_, ref body) => {
+                let impl_method_def_id = local_def(impl_item.id);
                 let impl_item_ty = ty::impl_or_trait_item(ccx.tcx,
                                                           impl_method_def_id);
 
@@ -902,8 +900,8 @@ fn check_impl_items_against_trait<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>,
                              &ty::MethodTraitItem(ref impl_method_ty)) => {
                                 compare_impl_method(ccx.tcx,
                                                     &**impl_method_ty,
-                                                    impl_method.span,
-                                                    impl_method.pe_body().id,
+                                                    impl_item.span,
+                                                    body.id,
                                                     &**trait_method_ty,
                                                     &*impl_trait_ref);
                             }
@@ -911,7 +909,7 @@ fn check_impl_items_against_trait<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>,
                                 // This is span_bug as it should have already been
                                 // caught in resolve.
                                 tcx.sess.span_bug(
-                                    impl_method.span,
+                                    impl_item.span,
                                     &format!("item `{}` is of a different kind from its trait `{}`",
                                              token::get_name(impl_item_ty.name()),
                                              impl_trait_ref.repr(tcx)));
@@ -922,15 +920,15 @@ fn check_impl_items_against_trait<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>,
                         // This is span_bug as it should have already been
                         // caught in resolve.
                         tcx.sess.span_bug(
-                            impl_method.span,
+                            impl_item.span,
                             &format!("method `{}` is not a member of trait `{}`",
                                      token::get_name(impl_item_ty.name()),
                                      impl_trait_ref.repr(tcx)));
                     }
                 }
             }
-            ast::TypeImplItem(ref typedef) => {
-                let typedef_def_id = local_def(typedef.id);
+            ast::TypeImplItem(_) => {
+                let typedef_def_id = local_def(impl_item.id);
                 let typedef_ty = ty::impl_or_trait_item(ccx.tcx,
                                                         typedef_def_id);
 
@@ -947,7 +945,7 @@ fn check_impl_items_against_trait<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>,
                                 // This is `span_bug` as it should have
                                 // already been caught in resolve.
                                 tcx.sess.span_bug(
-                                    typedef.span,
+                                    impl_item.span,
                                     &format!("item `{}` is of a different kind from its trait `{}`",
                                              token::get_name(typedef_ty.name()),
                                              impl_trait_ref.repr(tcx)));
@@ -958,7 +956,7 @@ fn check_impl_items_against_trait<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>,
                         // This is `span_bug` as it should have already been
                         // caught in resolve.
                         tcx.sess.span_bug(
-                            typedef.span,
+                            impl_item.span,
                             &format!(
                                 "associated type `{}` is not a member of \
                                  trait `{}`",
@@ -967,6 +965,8 @@ fn check_impl_items_against_trait<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>,
                     }
                 }
             }
+            ast::MacImplItem(_) => tcx.sess.span_bug(impl_item.span,
+                                                     "unexpanded macro")
         }
     }
 
@@ -978,11 +978,12 @@ fn check_impl_items_against_trait<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>,
             ty::MethodTraitItem(ref trait_method) => {
                 let is_implemented =
                     impl_items.iter().any(|ii| {
-                        match *ii {
-                            ast::MethodImplItem(ref m) => {
-                                m.pe_ident().name == trait_method.name
+                        match ii.node {
+                            ast::MethodImplItem(..) => {
+                                ii.ident.name == trait_method.name
                             }
-                            ast::TypeImplItem(_) => false,
+                            ast::TypeImplItem(_) |
+                            ast::MacImplItem(_) => false,
                         }
                     });
                 let is_provided =
@@ -993,11 +994,12 @@ fn check_impl_items_against_trait<'a, 'tcx>(ccx: &CrateCtxt<'a, 'tcx>,
             }
             ty::TypeTraitItem(ref associated_type) => {
                 let is_implemented = impl_items.iter().any(|ii| {
-                    match *ii {
-                        ast::TypeImplItem(ref typedef) => {
-                            typedef.ident.name == associated_type.name
+                    match ii.node {
+                        ast::TypeImplItem(_) => {
+                            ii.ident.name == associated_type.name
                         }
-                        ast::MethodImplItem(_) => false,
+                        ast::MethodImplItem(..) |
+                        ast::MacImplItem(_) => false,
                     }
                 });
                 if !is_implemented {
@@ -1218,6 +1220,11 @@ impl<'a, 'tcx> AstConv<'tcx> for FnCtxt<'a, 'tcx> {
         Ok(ty::lookup_trait_def(self.tcx(), id))
     }
 
+    fn ensure_super_predicates(&self, _: Span, _: ast::DefId) -> Result<(), ErrorReported> {
+        // all super predicates are ensured during collect pass
+        Ok(())
+    }
+
     fn get_free_substs(&self) -> Option<&Substs<'tcx>> {
         Some(&self.inh.param_env.free_substs)
     }
@@ -1246,6 +1253,15 @@ impl<'a, 'tcx> AstConv<'tcx> for FnCtxt<'a, 'tcx> {
                                   })
                                   .collect();
         Ok(r)
+    }
+
+    fn trait_defines_associated_type_named(&self,
+                                           trait_def_id: ast::DefId,
+                                           assoc_name: ast::Name)
+                                           -> bool
+    {
+        let trait_def = ty::lookup_trait_def(self.ccx.tcx, trait_def_id);
+        trait_def.associated_type_names.contains(&assoc_name)
     }
 
     fn ty_infer(&self, _span: Span) -> Ty<'tcx> {
@@ -3098,7 +3114,7 @@ fn check_expr_with_unifier<'a, 'tcx, F>(fcx: &FnCtxt<'a, 'tcx>,
                 },
                 expr_t, None);
 
-            tcx.sess.span_help(field.span,
+            tcx.sess.fileline_help(field.span,
                                "maybe a `()` to call it is missing? \
                                If not, try an anonymous function");
         } else {
@@ -4480,7 +4496,7 @@ pub fn check_instantiable(tcx: &ty::ctxt,
         span_err!(tcx.sess, sp, E0073,
             "this type cannot be instantiated without an \
              instance of itself");
-        span_help!(tcx.sess, sp, "consider using `Option<{}>`",
+        fileline_help!(tcx.sess, sp, "consider using `Option<{}>`",
             ppaux::ty_to_string(tcx, item_ty));
         false
     } else {
@@ -4606,7 +4622,7 @@ pub fn check_enum_variants<'a,'tcx>(ccx: &CrateCtxt<'a,'tcx>,
                         Err(ref err) => {
                             span_err!(ccx.tcx.sess, err.span, E0080,
                                       "constant evaluation error: {}",
-                                      err.description().as_slice());
+                                      err.description());
                         }
                     }
                 },

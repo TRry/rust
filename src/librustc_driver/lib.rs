@@ -14,6 +14,8 @@
 //!
 //! This API is completely unstable and subject to change.
 
+// Do not remove on snapshot creation. Needed for bootstrap. (Issue #22364)
+#![cfg_attr(stage0, feature(custom_attribute))]
 #![crate_name = "rustc_driver"]
 #![unstable(feature = "rustc_private")]
 #![staged_api]
@@ -29,15 +31,13 @@
 #![feature(int_uint)]
 #![feature(old_io)]
 #![feature(libc)]
-#![feature(os)]
-#![feature(old_path)]
 #![feature(quote)]
 #![feature(rustc_diagnostic_macros)]
 #![feature(rustc_private)]
 #![feature(unsafe_destructor)]
 #![feature(staged_api)]
-#![feature(unicode)]
 #![feature(exit_status)]
+#![feature(io)]
 
 extern crate arena;
 extern crate flate;
@@ -73,9 +73,10 @@ use rustc::metadata;
 use rustc::util::common::time;
 
 use std::cmp::Ordering::Equal;
-use std::old_io::{self, stdio};
-use std::iter::repeat;
 use std::env;
+use std::iter::repeat;
+use std::old_io::{self, stdio};
+use std::path::PathBuf;
 use std::sync::mpsc::channel;
 use std::thread;
 
@@ -159,14 +160,14 @@ pub fn run_compiler<'a>(args: &[String],
 }
 
 // Extract output directory and file from matches.
-fn make_output(matches: &getopts::Matches) -> (Option<Path>, Option<Path>) {
-    let odir = matches.opt_str("out-dir").map(|o| Path::new(o));
-    let ofile = matches.opt_str("o").map(|o| Path::new(o));
+fn make_output(matches: &getopts::Matches) -> (Option<PathBuf>, Option<PathBuf>) {
+    let odir = matches.opt_str("out-dir").map(|o| PathBuf::new(&o));
+    let ofile = matches.opt_str("o").map(|o| PathBuf::new(&o));
     (odir, ofile)
 }
 
 // Extract input (string or file and optional path) from matches.
-fn make_input(free_matches: &[String]) -> Option<(Input, Option<Path>)> {
+fn make_input(free_matches: &[String]) -> Option<(Input, Option<PathBuf>)> {
     if free_matches.len() == 1 {
         let ifile = &free_matches[0][..];
         if ifile == "-" {
@@ -174,7 +175,7 @@ fn make_input(free_matches: &[String]) -> Option<(Input, Option<Path>)> {
             let src = String::from_utf8(contents).unwrap();
             Some((Input::Str(src), None))
         } else {
-            Some((Input::File(Path::new(ifile)), Some(Path::new(ifile))))
+            Some((Input::File(PathBuf::new(ifile)), Some(PathBuf::new(ifile))))
         }
     } else {
         None
@@ -215,14 +216,15 @@ pub trait CompilerCalls<'a> {
                      &getopts::Matches,
                      &Session,
                      &Input,
-                     &Option<Path>,
-                     &Option<Path>)
+                     &Option<PathBuf>,
+                     &Option<PathBuf>)
                      -> Compilation;
 
     // Called after we extract the input from the arguments. Gives the implementer
     // an opportunity to change the inputs or to add some custom input handling.
     // The default behaviour is to simply pass through the inputs.
-    fn some_input(&mut self, input: Input, input_path: Option<Path>) -> (Input, Option<Path>) {
+    fn some_input(&mut self, input: Input, input_path: Option<PathBuf>)
+                  -> (Input, Option<PathBuf>) {
         (input, input_path)
     }
 
@@ -234,10 +236,10 @@ pub trait CompilerCalls<'a> {
     fn no_input(&mut self,
                 &getopts::Matches,
                 &config::Options,
-                &Option<Path>,
-                &Option<Path>,
+                &Option<PathBuf>,
+                &Option<PathBuf>,
                 &diagnostics::registry::Registry)
-                -> Option<(Input, Option<Path>)>;
+                -> Option<(Input, Option<PathBuf>)>;
 
     // Parse pretty printing information from the arguments. The implementer can
     // choose to ignore this (the default will return None) which will skip pretty
@@ -293,10 +295,10 @@ impl<'a> CompilerCalls<'a> for RustcDefaultCalls {
     fn no_input(&mut self,
                 matches: &getopts::Matches,
                 sopts: &config::Options,
-                odir: &Option<Path>,
-                ofile: &Option<Path>,
+                odir: &Option<PathBuf>,
+                ofile: &Option<PathBuf>,
                 descriptions: &diagnostics::registry::Registry)
-                -> Option<(Input, Option<Path>)> {
+                -> Option<(Input, Option<PathBuf>)> {
         match matches.free.len() {
             0 => {
                 if sopts.describe_lints {
@@ -346,8 +348,8 @@ impl<'a> CompilerCalls<'a> for RustcDefaultCalls {
                      matches: &getopts::Matches,
                      sess: &Session,
                      input: &Input,
-                     odir: &Option<Path>,
-                     ofile: &Option<Path>)
+                     odir: &Option<PathBuf>,
+                     ofile: &Option<PathBuf>)
                      -> Compilation {
         RustcDefaultCalls::print_crate_info(sess, Some(input), odir, ofile).and_then(
             || RustcDefaultCalls::list_metadata(sess, matches, input))
@@ -400,11 +402,12 @@ impl RustcDefaultCalls {
         if r.contains(&("ls".to_string())) {
             match input {
                 &Input::File(ref ifile) => {
-                    let mut stdout = old_io::stdout();
                     let path = &(*ifile);
+                    let mut v = Vec::new();
                     metadata::loader::list_file_metadata(sess.target.target.options.is_like_osx,
                                                          path,
-                                                         &mut stdout).unwrap();
+                                                         &mut v).unwrap();
+                    println!("{}", String::from_utf8(v).unwrap());
                 }
                 &Input::Str(_) => {
                     early_error("cannot list metadata for stdin");
@@ -419,8 +422,8 @@ impl RustcDefaultCalls {
 
     fn print_crate_info(sess: &Session,
                         input: Option<&Input>,
-                        odir: &Option<Path>,
-                        ofile: &Option<Path>)
+                        odir: &Option<PathBuf>,
+                        ofile: &Option<PathBuf>)
                         -> Compilation {
         if sess.opts.prints.len() == 0 {
             return Compilation::Continue;
@@ -457,7 +460,8 @@ impl RustcDefaultCalls {
                                                              style,
                                                              &id,
                                                              &t_outputs.with_extension(""));
-                        println!("{}", fname.filename_display());
+                        println!("{}", fname.file_name().unwrap()
+                                            .to_string_lossy());
                     }
                 }
             }
@@ -612,8 +616,7 @@ Available lint options:
 
     let print_lint_groups = |lints: Vec<(&'static str, Vec<lint::LintId>)>| {
         for (name, to) in lints {
-            let name = name.chars().map(|x| x.to_lowercase())
-                           .collect::<String>().replace("_", "-");
+            let name = name.to_lowercase().replace("_", "-");
             let desc = to.into_iter().map(|x| x.as_str().replace("_", "-"))
                          .collect::<Vec<String>>().connect(", ");
             println!("    {}  {}",
@@ -682,39 +685,57 @@ pub fn handle_options(mut args: Vec<String>) -> Option<getopts::Matches> {
         return None;
     }
 
-    let matches =
-        match getopts::getopts(&args[..], &config::optgroups()) {
-            Ok(m) => m,
-            Err(f_stable_attempt) => {
-                // redo option parsing, including unstable options this time,
-                // in anticipation that the mishandled option was one of the
-                // unstable ones.
-                let all_groups : Vec<getopts::OptGroup>
-                    = config::rustc_optgroups().into_iter().map(|x|x.opt_group).collect();
-                match getopts::getopts(&args, &all_groups) {
-                    Ok(m_unstable) => {
-                        let r = m_unstable.opt_strs("Z");
-                        let include_unstable_options = r.iter().any(|x| *x == "unstable-options");
-                        if include_unstable_options {
-                            m_unstable
+    fn allows_unstable_options(matches: &getopts::Matches) -> bool {
+        let r = matches.opt_strs("Z");
+        r.iter().any(|x| *x == "unstable-options")
+    }
+
+    fn parse_all_options(args: &Vec<String>) -> getopts::Matches {
+        let all_groups : Vec<getopts::OptGroup>
+            = config::rustc_optgroups().into_iter().map(|x|x.opt_group).collect();
+        match getopts::getopts(&args[..], &all_groups) {
+            Ok(m) => {
+                if !allows_unstable_options(&m) {
+                    // If -Z unstable-options was not specified, verify that
+                    // no unstable options were present.
+                    for opt in config::rustc_optgroups().into_iter().filter(|x| !x.is_stable()) {
+                        let opt_name = if !opt.opt_group.long_name.is_empty() {
+                            &opt.opt_group.long_name
                         } else {
-                            early_error(&f_stable_attempt.to_string());
+                            &opt.opt_group.short_name
+                        };
+                        if m.opt_present(opt_name) {
+                            early_error(&format!("use of unstable option '{}' requires \
+                                                  -Z unstable-options", opt_name));
                         }
                     }
-                    Err(_) => {
-                        // ignore the error from the unstable attempt; just
-                        // pass the error we got from the first try.
-                        early_error(&f_stable_attempt.to_string());
-                    }
                 }
+                m
             }
-        };
+            Err(f) => early_error(&f.to_string())
+        }
+    }
 
-    let r = matches.opt_strs("Z");
-    let include_unstable_options = r.iter().any(|x| *x == "unstable-options");
+    // As a speed optimization, first try to parse the command-line using just
+    // the stable options.
+    let matches = match getopts::getopts(&args[..], &config::optgroups()) {
+        Ok(ref m) if allows_unstable_options(m) => {
+            // If -Z unstable-options was specified, redo parsing with the
+            // unstable options to ensure that unstable options are defined
+            // in the returned getopts::Matches.
+            parse_all_options(&args)
+        }
+        Ok(m) => m,
+        Err(_) => {
+            // redo option parsing, including unstable options this time,
+            // in anticipation that the mishandled option was one of the
+            // unstable ones.
+            parse_all_options(&args)
+        }
+    };
 
     if matches.opt_present("h") || matches.opt_present("help") {
-        usage(matches.opt_present("verbose"), include_unstable_options);
+        usage(matches.opt_present("verbose"), allows_unstable_options(&matches));
         return None;
     }
 
@@ -769,6 +790,7 @@ fn parse_crate_attrs(sess: &Session, input: &Input) ->
 ///
 /// The diagnostic emitter yielded to the procedure should be used for reporting
 /// errors of the compiler.
+#[allow(deprecated)]
 pub fn monitor<F:FnOnce()+Send+'static>(f: F) {
     const STACK_SIZE: uint = 8 * 1024 * 1024; // 8MB
 

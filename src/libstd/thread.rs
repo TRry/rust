@@ -281,17 +281,13 @@ impl Builder {
             let my_stack_top = addr as usize;
             let my_stack_bottom = my_stack_top - stack_size + 1024;
             unsafe {
-                stack::record_os_managed_stack_bounds(my_stack_bottom, my_stack_top);
+                if let Some(name) = their_thread.name() {
+                    imp::set_name(name);
+                }
+                stack::record_os_managed_stack_bounds(my_stack_bottom,
+                                                      my_stack_top);
+                thread_info::set(imp::guard::current(), their_thread);
             }
-            match their_thread.name() {
-                Some(name) => unsafe { imp::set_name(name.as_slice()); },
-                None => {}
-            }
-            thread_info::set(
-                (my_stack_bottom, my_stack_top),
-                unsafe { imp::guard::current() },
-                their_thread
-            );
 
             let mut output = None;
             let f: Thunk<(), T> = if stdout.is_some() || stderr.is_some() {
@@ -635,7 +631,7 @@ impl Drop for JoinHandle {
 /// Due to platform restrictions, it is not possible to `Clone` this
 /// handle: the ability to join a child thread is a uniquely-owned
 /// permission.
-#[must_use]
+#[must_use = "thread will be immediately joined if `JoinGuard` is not used"]
 #[stable(feature = "rust1", since = "1.0.0")]
 pub struct JoinGuard<'a, T: 'a> {
     inner: JoinInner<T>,
@@ -901,7 +897,7 @@ mod test {
                 assert!(e.is::<T>());
                 let any = e.downcast::<T>().ok().unwrap();
                 assert!(any.is::<u16>());
-                assert_eq!(*any.downcast::<u16>().ok().unwrap(), 413u16);
+                assert_eq!(*any.downcast::<u16>().ok().unwrap(), 413);
             }
             Ok(()) => panic!()
         }

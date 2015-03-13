@@ -42,7 +42,7 @@
 //! }
 //! ```
 //!
-//! This will print `Cons(1i32, Box(Cons(2i32, Box(Nil))))`.
+//! This will print `Cons(1, Box(Cons(2, Box(Nil))))`.
 
 #![stable(feature = "rust1", since = "1.0.0")]
 
@@ -133,7 +133,7 @@ impl<T : ?Sized> Box<T> {
 /// automatically managed that may lead to memory or other resource
 /// leak.
 ///
-/// # Example
+/// # Examples
 /// ```
 /// use std::boxed;
 ///

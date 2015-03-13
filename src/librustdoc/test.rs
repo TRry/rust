@@ -9,21 +9,25 @@
 // except according to those terms.
 
 use std::cell::RefCell;
-use std::sync::mpsc::channel;
+use std::collections::{HashSet, HashMap};
 use std::dynamic_lib::DynamicLibrary;
-use std::old_io::{Command, TempDir};
+use std::env;
+use std::ffi::OsString;
 use std::old_io;
-use std::os;
+use std::io;
+use std::path::PathBuf;
+use std::process::Command;
 use std::str;
+use std::sync::mpsc::channel;
 use std::thread;
 use std::thunk::Thunk;
 
-use std::collections::{HashSet, HashMap};
 use testing;
 use rustc_lint;
 use rustc::session::{self, config};
 use rustc::session::config::get_unstable_features_setting;
 use rustc::session::search_paths::{SearchPaths, PathKind};
+use rustc_back::tempdir::TempDir;
 use rustc_driver::{driver, Compilation};
 use syntax::codemap::CodeMap;
 use syntax::diagnostic;
@@ -43,11 +47,12 @@ pub fn run(input: &str,
            mut test_args: Vec<String>,
            crate_name: Option<String>)
            -> int {
-    let input_path = Path::new(input);
+    let input_path = PathBuf::new(input);
     let input = config::Input::File(input_path.clone());
 
     let sessopts = config::Options {
-        maybe_sysroot: Some(os::self_exe_name().unwrap().dir_path().dir_path()),
+        maybe_sysroot: Some(env::current_exe().unwrap().parent().unwrap()
+                                              .parent().unwrap().to_path_buf()),
         search_paths: libs.clone(),
         crate_types: vec!(config::CrateTypeDylib),
         externs: externs.clone(),
@@ -106,16 +111,18 @@ pub fn run(input: &str,
     0
 }
 
+#[allow(deprecated)]
 fn runtest(test: &str, cratename: &str, libs: SearchPaths,
            externs: core::Externs,
-           should_fail: bool, no_run: bool, as_test_harness: bool) {
+           should_panic: bool, no_run: bool, as_test_harness: bool) {
     // the test harness wants its own `main` & top level functions, so
     // never wrap the test in `fn main() { ... }`
     let test = maketest(test, Some(cratename), true, as_test_harness);
     let input = config::Input::Str(test.to_string());
 
     let sessopts = config::Options {
-        maybe_sysroot: Some(os::self_exe_name().unwrap().dir_path().dir_path()),
+        maybe_sysroot: Some(env::current_exe().unwrap().parent().unwrap()
+                                              .parent().unwrap().to_path_buf()),
         search_paths: libs,
         crate_types: vec!(config::CrateTypeExecutable),
         output_types: vec!(config::OutputTypeExe),
@@ -170,7 +177,7 @@ fn runtest(test: &str, cratename: &str, libs: SearchPaths,
     rustc_lint::register_builtins(&mut sess.lint_store.borrow_mut(), Some(&sess));
 
     let outdir = TempDir::new("rustdoctest").ok().expect("rustdoc needs a tempdir");
-    let out = Some(outdir.path().clone());
+    let out = Some(outdir.path().to_path_buf());
     let cfg = config::build_configuration(&sess);
     let libdir = sess.target_filesearch(PathKind::All).get_lib_path();
     let mut control = driver::CompileController::basic();
@@ -187,25 +194,27 @@ fn runtest(test: &str, cratename: &str, libs: SearchPaths,
     // environment to ensure that the target loads the right libraries at
     // runtime. It would be a sad day if the *host* libraries were loaded as a
     // mistake.
-    let mut cmd = Command::new(outdir.path().join("rust-out"));
+    let mut cmd = Command::new(&outdir.path().join("rust-out"));
+    let var = DynamicLibrary::envvar();
     let newpath = {
-        let mut path = DynamicLibrary::search_path();
+        let path = env::var_os(var).unwrap_or(OsString::new());
+        let mut path = env::split_paths(&path).collect::<Vec<_>>();
         path.insert(0, libdir.clone());
-        DynamicLibrary::create_path(&path)
+        env::join_paths(path.iter()).unwrap()
     };
-    cmd.env(DynamicLibrary::envvar(), newpath);
+    cmd.env(var, &newpath);
 
     match cmd.output() {
         Err(e) => panic!("couldn't run the test: {}{}", e,
-                        if e.kind == old_io::PermissionDenied {
+                        if e.kind() == io::ErrorKind::PermissionDenied {
                             " - maybe your tempdir is mounted with noexec?"
                         } else { "" }),
         Ok(out) => {
-            if should_fail && out.status.success() {
+            if should_panic && out.status.success() {
                 panic!("test executable succeeded when it should have failed");
-            } else if !should_fail && !out.status.success() {
+            } else if !should_panic && !out.status.success() {
                 panic!("test executable failed:\n{:?}",
-                      str::from_utf8(&out.error));
+                      str::from_utf8(&out.stdout));
             }
         }
     }
@@ -270,7 +279,7 @@ impl Collector {
     }
 
     pub fn add_test(&mut self, test: String,
-                    should_fail: bool, no_run: bool, should_ignore: bool, as_test_harness: bool) {
+                    should_panic: bool, no_run: bool, should_ignore: bool, as_test_harness: bool) {
         let name = if self.use_headers {
             let s = self.current_header.as_ref().map(|s| &**s).unwrap_or("");
             format!("{}_{}", s, self.cnt)
@@ -286,14 +295,14 @@ impl Collector {
             desc: testing::TestDesc {
                 name: testing::DynTestName(name),
                 ignore: should_ignore,
-                should_fail: testing::ShouldFail::No, // compiler failures are test failures
+                should_panic: testing::ShouldPanic::No, // compiler failures are test failures
             },
             testfn: testing::DynTestFn(Thunk::new(move|| {
                 runtest(&test,
                         &cratename,
                         libs,
                         externs,
-                        should_fail,
+                        should_panic,
                         no_run,
                         as_test_harness);
             }))

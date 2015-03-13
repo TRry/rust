@@ -14,6 +14,8 @@
 //!
 //! This API is completely unstable and subject to change.
 
+// Do not remove on snapshot creation. Needed for bootstrap. (Issue #22364)
+#![cfg_attr(stage0, feature(custom_attribute))]
 #![crate_name = "syntax"]
 #![unstable(feature = "rustc_private")]
 #![staged_api]
@@ -36,6 +38,8 @@
 #![feature(staged_api)]
 #![feature(std_misc)]
 #![feature(unicode)]
+#![feature(io)]
+#![feature(path_ext)]
 
 extern crate arena;
 extern crate fmt_macros;

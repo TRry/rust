@@ -1,4 +1,4 @@
-// Copyright 2013 The Rust Project Developers. See the COPYRIGHT
+// Copyright 2015 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
 //
@@ -8,19 +8,8 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-extern crate libc;
+#[derive(Show)]
+//~^ WARNING derive(Show) is deprecated
+struct Test1;
 
-extern {
-    fn rust_get_test_int() -> libc::intptr_t;
-}
-
-trait A {
-    fn foo(&self) {
-        unsafe {
-            rust_get_test_int();
-        }
-    }
-}
-
-pub fn main() {
-}
+fn main() { }

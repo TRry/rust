@@ -38,7 +38,7 @@ use sys_common;
 ///
 /// The socket will be closed when the value is dropped.
 ///
-/// # Example
+/// # Examples
 ///
 /// ```no_run
 /// use std::old_io::TcpStream;
@@ -130,7 +130,7 @@ impl TcpStream {
     /// This method will close the reading portion of this connection, causing
     /// all pending and future reads to immediately return with an error.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```no_run
     /// # #![allow(unused_must_use)]
@@ -373,7 +373,7 @@ impl TcpAcceptor {
     /// regardless of whether the timeout has expired or not (the accept will
     /// not block in this case).
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```no_run
     /// use std::old_io::TcpListener;
@@ -417,7 +417,7 @@ impl TcpAcceptor {
     /// This is useful for waking up a thread in an accept loop to indicate that
     /// it should exit.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// use std::old_io::{TcpListener, Listener, Acceptor, EndOfFile};
@@ -1162,7 +1162,7 @@ mod test {
                 tx.send(TcpStream::connect(addr).unwrap()).unwrap();
             });
             let _l = rx.recv().unwrap();
-            for i in 0i32..1001 {
+            for i in 0..1001 {
                 match a.accept() {
                     Ok(..) => break,
                     Err(ref e) if e.kind == TimedOut => {}
@@ -1262,7 +1262,7 @@ mod test {
         assert_eq!(s.read(&mut [0]).err().unwrap().kind, TimedOut);
 
         s.set_timeout(Some(20));
-        for i in 0i32..1001 {
+        for i in 0..1001 {
             match s.write(&[0; 128 * 1024]) {
                 Ok(()) | Err(IoError { kind: ShortWrite(..), .. }) => {},
                 Err(IoError { kind: TimedOut, .. }) => break,
@@ -1320,7 +1320,7 @@ mod test {
 
         let mut s = a.accept().unwrap();
         s.set_write_timeout(Some(20));
-        for i in 0i32..1001 {
+        for i in 0..1001 {
             match s.write(&[0; 128 * 1024]) {
                 Ok(()) | Err(IoError { kind: ShortWrite(..), .. }) => {},
                 Err(IoError { kind: TimedOut, .. }) => break,

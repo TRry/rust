@@ -8,6 +8,9 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+
+// Do not remove on snapshot creation. Needed for bootstrap. (Issue #22364)
+#![cfg_attr(stage0, feature(custom_attribute))]
 #![crate_name = "rustc_bitflags"]
 #![feature(staged_api)]
 #![staged_api]
@@ -26,7 +29,7 @@
 /// The flags should only be defined for integer types, otherwise unexpected
 /// type errors may occur at compile time.
 ///
-/// # Example
+/// # Examples
 ///
 /// ```{.rust}
 /// #[macro_use] extern crate rustc_bitflags;
@@ -83,7 +86,7 @@
 ///     let mut flags = FLAG_A | FLAG_B;
 ///     flags.clear();
 ///     assert!(flags.is_empty());
-///     assert_eq!(format!("{:?}", flags).as_slice(), "hi!");
+///     assert_eq!(format!("{:?}", flags), "hi!");
 /// }
 /// ```
 ///
@@ -316,7 +319,7 @@ mod tests {
 
     bitflags! {
         flags AnotherSetOfFlags: i8 {
-            const AnotherFlag = -1_i8,
+            const AnotherFlag = -1,
         }
     }
 
@@ -327,7 +330,7 @@ mod tests {
         assert_eq!(FlagABC.bits(), 0b00000111);
 
         assert_eq!(AnotherSetOfFlags::empty().bits(), 0b00);
-        assert_eq!(AnotherFlag.bits(), !0_i8);
+        assert_eq!(AnotherFlag.bits(), !0);
     }
 
     #[test]
@@ -338,7 +341,7 @@ mod tests {
         assert!(Flags::from_bits(0b11) == Some(FlagA | FlagB));
         assert!(Flags::from_bits(0b1000) == None);
 
-        assert!(AnotherSetOfFlags::from_bits(!0_i8) == Some(AnotherFlag));
+        assert!(AnotherSetOfFlags::from_bits(!0) == Some(AnotherFlag));
     }
 
     #[test]
@@ -350,7 +353,7 @@ mod tests {
         assert!(Flags::from_bits_truncate(0b1000) == Flags::empty());
         assert!(Flags::from_bits_truncate(0b1001) == FlagA);
 
-        assert!(AnotherSetOfFlags::from_bits_truncate(0_i8) == AnotherSetOfFlags::empty());
+        assert!(AnotherSetOfFlags::from_bits_truncate(0) == AnotherSetOfFlags::empty());
     }
 
     #[test]

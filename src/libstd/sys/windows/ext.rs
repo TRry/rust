@@ -39,6 +39,7 @@ pub trait AsRawHandle {
     fn as_raw_handle(&self) -> Handle;
 }
 
+#[allow(deprecated)]
 impl AsRawHandle for old_io::fs::File {
     fn as_raw_handle(&self) -> Handle {
         self.as_inner().handle()
@@ -57,18 +58,21 @@ impl AsRawHandle for old_io::pipe::PipeStream {
     }
 }
 
+#[allow(deprecated)]
 impl AsRawHandle for old_io::net::pipe::UnixStream {
     fn as_raw_handle(&self) -> Handle {
         self.as_inner().handle()
     }
 }
 
+#[allow(deprecated)]
 impl AsRawHandle for old_io::net::pipe::UnixListener {
     fn as_raw_handle(&self) -> Handle {
         self.as_inner().handle()
     }
 }
 
+#[allow(deprecated)]
 impl AsRawHandle for old_io::net::pipe::UnixAcceptor {
     fn as_raw_handle(&self) -> Handle {
         self.as_inner().handle()
@@ -80,24 +84,28 @@ pub trait AsRawSocket {
     fn as_raw_socket(&self) -> Socket;
 }
 
+#[allow(deprecated)]
 impl AsRawSocket for old_io::net::tcp::TcpStream {
     fn as_raw_socket(&self) -> Socket {
         self.as_inner().fd()
     }
 }
 
+#[allow(deprecated)]
 impl AsRawSocket for old_io::net::tcp::TcpListener {
     fn as_raw_socket(&self) -> Socket {
         self.as_inner().socket()
     }
 }
 
+#[allow(deprecated)]
 impl AsRawSocket for old_io::net::tcp::TcpAcceptor {
     fn as_raw_socket(&self) -> Socket {
         self.as_inner().socket()
     }
 }
 
+#[allow(deprecated)]
 impl AsRawSocket for old_io::net::udp::UdpSocket {
     fn as_raw_socket(&self) -> Socket {
         self.as_inner().fd()
@@ -114,7 +122,7 @@ impl AsRawSocket for net::UdpSocket {
     fn as_raw_socket(&self) -> Socket { *self.as_inner().socket().as_inner() }
 }
 
-// Windows-specific extensions to `OsString`.
+/// Windows-specific extensions to `OsString`.
 pub trait OsStringExt {
     /// Create an `OsString` from a potentially ill-formed UTF-16 slice of 16-bit code units.
     ///
@@ -129,8 +137,12 @@ impl OsStringExt for OsString {
     }
 }
 
-// Windows-specific extensions to `OsStr`.
+/// Windows-specific extensions to `OsStr`.
 pub trait OsStrExt {
+    /// Re-encode an `OsStr` as a wide character sequence,
+    /// i.e. potentially ill-formed UTF-16.
+    ///
+    /// This is lossless. Note that the encoding does not include a final null.
     fn encode_wide(&self) -> EncodeWide;
 }
 

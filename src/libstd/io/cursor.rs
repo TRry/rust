@@ -8,8 +8,6 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#![allow(missing_copy_implementations)]
-
 use prelude::v1::*;
 use io::prelude::*;
 
@@ -32,6 +30,7 @@ use slice;
 /// Implementations of the I/O traits for `Cursor<T>` are not currently generic
 /// over `T` itself. Instead, specific implementations are provided for various
 /// in-memory buffer types like `Vec<u8>` and `&[u8]`.
+#[stable(feature = "rust1", since = "1.0.0")]
 pub struct Cursor<T> {
     inner: T,
     pos: u64,
@@ -39,26 +38,32 @@ pub struct Cursor<T> {
 
 impl<T> Cursor<T> {
     /// Create a new cursor wrapping the provided underlying I/O object.
+    #[stable(feature = "rust1", since = "1.0.0")]
     pub fn new(inner: T) -> Cursor<T> {
         Cursor { pos: 0, inner: inner }
     }
 
     /// Consume this cursor, returning the underlying value.
+    #[stable(feature = "rust1", since = "1.0.0")]
     pub fn into_inner(self) -> T { self.inner }
 
     /// Get a reference to the underlying value in this cursor.
+    #[stable(feature = "rust1", since = "1.0.0")]
     pub fn get_ref(&self) -> &T { &self.inner }
 
     /// Get a mutable reference to the underlying value in this cursor.
     ///
     /// Care should be taken to avoid modifying the internal I/O state of the
     /// underlying value as it may corrupt this cursor's position.
+    #[stable(feature = "rust1", since = "1.0.0")]
     pub fn get_mut(&mut self) -> &mut T { &mut self.inner }
 
     /// Returns the current value of this cursor
+    #[stable(feature = "rust1", since = "1.0.0")]
     pub fn position(&self) -> u64 { self.pos }
 
     /// Sets the value of this cursor
+    #[stable(feature = "rust1", since = "1.0.0")]
     pub fn set_position(&mut self, pos: u64) { self.pos = pos; }
 }
 
@@ -83,8 +88,11 @@ macro_rules! seek {
     }
 }
 
+#[stable(feature = "rust1", since = "1.0.0")]
 impl<'a> io::Seek for Cursor<&'a [u8]> { seek!(); }
+#[stable(feature = "rust1", since = "1.0.0")]
 impl<'a> io::Seek for Cursor<&'a mut [u8]> { seek!(); }
+#[stable(feature = "rust1", since = "1.0.0")]
 impl io::Seek for Cursor<Vec<u8>> { seek!(); }
 
 macro_rules! read {
@@ -97,8 +105,11 @@ macro_rules! read {
     }
 }
 
+#[stable(feature = "rust1", since = "1.0.0")]
 impl<'a> Read for Cursor<&'a [u8]> { read!(); }
+#[stable(feature = "rust1", since = "1.0.0")]
 impl<'a> Read for Cursor<&'a mut [u8]> { read!(); }
+#[stable(feature = "rust1", since = "1.0.0")]
 impl Read for Cursor<Vec<u8>> { read!(); }
 
 macro_rules! buffer {
@@ -111,10 +122,14 @@ macro_rules! buffer {
     }
 }
 
+#[stable(feature = "rust1", since = "1.0.0")]
 impl<'a> BufRead for Cursor<&'a [u8]> { buffer!(); }
+#[stable(feature = "rust1", since = "1.0.0")]
 impl<'a> BufRead for Cursor<&'a mut [u8]> { buffer!(); }
+#[stable(feature = "rust1", since = "1.0.0")]
 impl<'a> BufRead for Cursor<Vec<u8>> { buffer!(); }
 
+#[stable(feature = "rust1", since = "1.0.0")]
 impl<'a> Write for Cursor<&'a mut [u8]> {
     fn write(&mut self, data: &[u8]) -> io::Result<usize> {
         let pos = cmp::min(self.pos, self.inner.len() as u64);
@@ -125,6 +140,7 @@ impl<'a> Write for Cursor<&'a mut [u8]> {
     fn flush(&mut self) -> io::Result<()> { Ok(()) }
 }
 
+#[stable(feature = "rust1", since = "1.0.0")]
 impl Write for Cursor<Vec<u8>> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         // Make sure the internal buffer is as least as big as where we
@@ -237,7 +253,7 @@ mod tests {
 
     #[test]
     fn test_mem_reader() {
-        let mut reader = Cursor::new(vec!(0u8, 1, 2, 3, 4, 5, 6, 7));
+        let mut reader = Cursor::new(vec!(0, 1, 2, 3, 4, 5, 6, 7));
         let mut buf = [];
         assert_eq!(reader.read(&mut buf), Ok(0));
         assert_eq!(reader.position(), 0);
@@ -259,7 +275,7 @@ mod tests {
 
     #[test]
     fn read_to_end() {
-        let mut reader = Cursor::new(vec!(0u8, 1, 2, 3, 4, 5, 6, 7));
+        let mut reader = Cursor::new(vec!(0, 1, 2, 3, 4, 5, 6, 7));
         let mut v = Vec::new();
         reader.read_to_end(&mut v).ok().unwrap();
         assert_eq!(v, [0, 1, 2, 3, 4, 5, 6, 7]);
@@ -267,7 +283,7 @@ mod tests {
 
     #[test]
     fn test_slice_reader() {
-        let in_buf = vec![0u8, 1, 2, 3, 4, 5, 6, 7];
+        let in_buf = vec![0, 1, 2, 3, 4, 5, 6, 7];
         let mut reader = &mut in_buf.as_slice();
         let mut buf = [];
         assert_eq!(reader.read(&mut buf), Ok(0));
@@ -289,7 +305,7 @@ mod tests {
 
     #[test]
     fn test_buf_reader() {
-        let in_buf = vec![0u8, 1, 2, 3, 4, 5, 6, 7];
+        let in_buf = vec![0, 1, 2, 3, 4, 5, 6, 7];
         let mut reader = Cursor::new(in_buf.as_slice());
         let mut buf = [];
         assert_eq!(reader.read(&mut buf), Ok(0));
@@ -335,7 +351,7 @@ mod tests {
         assert_eq!(r.seek(SeekFrom::Start(10)), Ok(10));
         assert_eq!(r.read(&mut [0]), Ok(0));
 
-        let mut r = Cursor::new(vec!(10u8));
+        let mut r = Cursor::new(vec!(10));
         assert_eq!(r.seek(SeekFrom::Start(10)), Ok(10));
         assert_eq!(r.read(&mut [0]), Ok(0));
 
@@ -347,11 +363,11 @@ mod tests {
 
     #[test]
     fn seek_before_0() {
-        let buf = [0xff_u8];
+        let buf = [0xff];
         let mut r = Cursor::new(&buf[..]);
         assert!(r.seek(SeekFrom::End(-2)).is_err());
 
-        let mut r = Cursor::new(vec!(10u8));
+        let mut r = Cursor::new(vec!(10));
         assert!(r.seek(SeekFrom::End(-2)).is_err());
 
         let mut buf = [0];

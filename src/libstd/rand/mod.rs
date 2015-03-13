@@ -424,7 +424,7 @@ pub fn random<T: Rand>() -> T {
 
 /// Randomly sample up to `amount` elements from an iterator.
 ///
-/// # Example
+/// # Examples
 ///
 /// ```rust
 /// use std::rand::{thread_rng, sample};
@@ -468,7 +468,7 @@ mod test {
         let lengths = [0, 1, 2, 3, 4, 5, 6, 7,
                        80, 81, 82, 83, 84, 85, 86, 87];
         for &n in &lengths {
-            let mut v = repeat(0u8).take(n).collect::<Vec<_>>();
+            let mut v = repeat(0).take(n).collect::<Vec<_>>();
             r.fill_bytes(&mut v);
 
             // use this to get nicer error messages.
@@ -500,14 +500,14 @@ mod test {
     }
 
     #[test]
-    #[should_fail]
+    #[should_panic]
     fn test_gen_range_panic_int() {
         let mut r = thread_rng();
         r.gen_range(5, -2);
     }
 
     #[test]
-    #[should_fail]
+    #[should_panic]
     fn test_gen_range_panic_uint() {
         let mut r = thread_rng();
         r.gen_range(5, 2);

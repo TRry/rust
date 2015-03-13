@@ -23,20 +23,18 @@
 //! this takes the route of using StackWalk64 in order to walk the stack.
 
 #![allow(dead_code)]
+#![allow(deprecated)] // for old path for dynamic lib
+
+use prelude::v1::*;
 
 use dynamic_lib::DynamicLibrary;
 use ffi::CStr;
 use intrinsics;
-use old_io::{IoResult, Writer};
+use old_io::IoResult;
 use libc;
 use mem;
-use ops::Drop;
-use option::Option::{Some};
-use old_path::Path;
 use ptr;
-use result::Result::{Ok, Err};
-use slice::SliceExt;
-use str::{self, StrExt};
+use str;
 use sync::{StaticMutex, MUTEX_INIT};
 
 use sys_common::backtrace::*;

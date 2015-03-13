@@ -206,16 +206,17 @@ use middle::pat_util;
 use session::config::{self, FullDebugInfo, LimitedDebugInfo, NoDebugInfo};
 use util::nodemap::{DefIdMap, NodeMap, FnvHashMap, FnvHashSet};
 use util::ppaux;
+use util::common::path2cstr;
 
 use libc::{c_uint, c_longlong};
-use std::ffi::CString;
 use std::cell::{Cell, RefCell};
+use std::ffi::CString;
+use std::path::Path;
 use std::ptr;
 use std::rc::{Rc, Weak};
 use syntax::util::interner::Interner;
 use syntax::codemap::{Span, Pos};
 use syntax::{ast, codemap, ast_util, ast_map, attr};
-use syntax::ast_util::PostExpansionMethod;
 use syntax::parse::token::{self, special_idents};
 
 const DW_LANG_RUST: c_uint = 0x9000;
@@ -695,6 +696,7 @@ struct FunctionDebugContextData {
     fn_metadata: DISubprogram,
     argument_counter: Cell<uint>,
     source_locations_enabled: Cell<bool>,
+    source_location_override: Cell<bool>,
 }
 
 enum VariableAccess<'a> {
@@ -1174,6 +1176,12 @@ pub fn set_source_location(fcx: &FunctionContext,
             return;
         }
         FunctionDebugContext::RegularContext(box ref function_debug_context) => {
+            if function_debug_context.source_location_override.get() {
+                // Just ignore any attempts to set a new debug location while
+                // the override is active.
+                return;
+            }
+
             let cx = fcx.ccx;
 
             debug!("set_source_location: {}", cx.sess().codemap().span_to_string(span));
@@ -1187,6 +1195,35 @@ pub fn set_source_location(fcx: &FunctionContext,
                                                                   loc.col.to_usize()));
             } else {
                 set_debug_location(cx, UnknownLocation);
+            }
+        }
+    }
+}
+
+/// This function makes sure that all debug locations emitted while executing
+/// `wrapped_function` are set to the given `debug_loc`.
+pub fn with_source_location_override<F, R>(fcx: &FunctionContext,
+                                           debug_loc: DebugLoc,
+                                           wrapped_function: F) -> R
+    where F: FnOnce() -> R
+{
+    match fcx.debug_context {
+        FunctionDebugContext::DebugInfoDisabled => {
+            wrapped_function()
+        }
+        FunctionDebugContext::FunctionWithoutDebugInfo => {
+            set_debug_location(fcx.ccx, UnknownLocation);
+            wrapped_function()
+        }
+        FunctionDebugContext::RegularContext(box ref function_debug_context) => {
+            if function_debug_context.source_location_override.get() {
+                wrapped_function()
+            } else {
+                debug_loc.apply(fcx);
+                function_debug_context.source_location_override.set(true);
+                let result = wrapped_function();
+                function_debug_context.source_location_override.set(false);
+                result
             }
         }
     }
@@ -1254,7 +1291,7 @@ pub fn create_function_debug_context<'a, 'tcx>(cx: &CrateContext<'a, 'tcx>,
 
             match item.node {
                 ast::ItemFn(ref fn_decl, _, _, ref generics, ref top_level_block) => {
-                    (item.ident, &**fn_decl, generics, &**top_level_block, item.span, true)
+                    (item.ident, fn_decl, generics, top_level_block, item.span, true)
                 }
                 _ => {
                     cx.sess().span_bug(item.span,
@@ -1262,24 +1299,29 @@ pub fn create_function_debug_context<'a, 'tcx>(cx: &CrateContext<'a, 'tcx>,
                 }
             }
         }
-        ast_map::NodeImplItem(ref item) => {
-            match **item {
-                ast::MethodImplItem(ref method) => {
-                    if contains_nodebug_attribute(&method.attrs) {
+        ast_map::NodeImplItem(impl_item) => {
+            match impl_item.node {
+                ast::MethodImplItem(ref sig, ref body) => {
+                    if contains_nodebug_attribute(&impl_item.attrs) {
                         return FunctionDebugContext::FunctionWithoutDebugInfo;
                     }
 
-                    (method.pe_ident(),
-                     method.pe_fn_decl(),
-                     method.pe_generics(),
-                     method.pe_body(),
-                     method.span,
+                    (impl_item.ident,
+                     &sig.decl,
+                     &sig.generics,
+                     body,
+                     impl_item.span,
                      true)
                 }
-                ast::TypeImplItem(ref typedef) => {
-                    cx.sess().span_bug(typedef.span,
+                ast::TypeImplItem(_) => {
+                    cx.sess().span_bug(impl_item.span,
                                        "create_function_debug_context() \
                                         called on associated type?!")
+                }
+                ast::MacImplItem(_) => {
+                    cx.sess().span_bug(impl_item.span,
+                                       "create_function_debug_context() \
+                                        called on unexpanded macro?!")
                 }
             }
         }
@@ -1288,11 +1330,11 @@ pub fn create_function_debug_context<'a, 'tcx>(cx: &CrateContext<'a, 'tcx>,
                 ast::ExprClosure(_, ref fn_decl, ref top_level_block) => {
                     let name = format!("fn{}", token::gensym("fn"));
                     let name = token::str_to_ident(&name[..]);
-                    (name, &**fn_decl,
+                    (name, fn_decl,
                         // This is not quite right. It should actually inherit
                         // the generics of the enclosing function.
                         &empty_generics,
-                        &**top_level_block,
+                        top_level_block,
                         expr.span,
                         // Don't try to lookup the item path:
                         false)
@@ -1301,18 +1343,18 @@ pub fn create_function_debug_context<'a, 'tcx>(cx: &CrateContext<'a, 'tcx>,
                         "create_function_debug_context: expected an expr_fn_block here")
             }
         }
-        ast_map::NodeTraitItem(ref trait_method) => {
-            match **trait_method {
-                ast::ProvidedMethod(ref method) => {
-                    if contains_nodebug_attribute(&method.attrs) {
+        ast_map::NodeTraitItem(trait_item) => {
+            match trait_item.node {
+                ast::MethodTraitItem(ref sig, Some(ref body)) => {
+                    if contains_nodebug_attribute(&trait_item.attrs) {
                         return FunctionDebugContext::FunctionWithoutDebugInfo;
                     }
 
-                    (method.pe_ident(),
-                     method.pe_fn_decl(),
-                     method.pe_generics(),
-                     method.pe_body(),
-                     method.span,
+                    (trait_item.ident,
+                     &sig.decl,
+                     &sig.generics,
+                     body,
+                     trait_item.span,
                      true)
                 }
                 _ => {
@@ -1412,6 +1454,7 @@ pub fn create_function_debug_context<'a, 'tcx>(cx: &CrateContext<'a, 'tcx>,
         fn_metadata: fn_metadata,
         argument_counter: Cell::new(1),
         source_locations_enabled: Cell::new(false),
+        source_location_override: Cell::new(false),
     };
 
 
@@ -1588,20 +1631,13 @@ fn compile_unit_metadata(cx: &CrateContext) -> DIDescriptor {
                 cx.sess().warn("debuginfo: Invalid path to crate's local root source file!");
                 fallback_path(cx)
             } else {
-                match abs_path.path_relative_from(work_dir) {
+                match abs_path.relative_from(work_dir) {
                     Some(ref p) if p.is_relative() => {
-                        // prepend "./" if necessary
-                        let dotdot = b"..";
-                        let prefix: &[u8] = &[dotdot[0], ::std::old_path::SEP_BYTE];
-                        let mut path_bytes = p.as_vec().to_vec();
-
-                        if &path_bytes[..2] != prefix &&
-                           &path_bytes[..2] != dotdot {
-                            path_bytes.insert(0, prefix[0]);
-                            path_bytes.insert(1, prefix[1]);
+                        if p.starts_with(Path::new("./")) {
+                            path2cstr(p)
+                        } else {
+                            path2cstr(&Path::new(".").join(p))
                         }
-
-                        CString::new(path_bytes).unwrap()
                     }
                     _ => fallback_path(cx)
                 }
@@ -1614,7 +1650,7 @@ fn compile_unit_metadata(cx: &CrateContext) -> DIDescriptor {
                            (option_env!("CFG_VERSION")).expect("CFG_VERSION"));
 
     let compile_unit_name = compile_unit_name.as_ptr();
-    let work_dir = CString::new(work_dir.as_vec()).unwrap();
+    let work_dir = path2cstr(&work_dir);
     let producer = CString::new(producer).unwrap();
     let flags = "\0";
     let split_name = "\0";
@@ -1716,7 +1752,7 @@ fn file_metadata(cx: &CrateContext, full_path: &str) -> DIFile {
     debug!("file_metadata: {}", full_path);
 
     // FIXME (#9639): This needs to handle non-utf8 paths
-    let work_dir = cx.sess().working_dir.as_str().unwrap();
+    let work_dir = cx.sess().working_dir.to_str().unwrap();
     let file_name =
         if full_path.starts_with(work_dir) {
             &full_path[work_dir.len() + 1..full_path.len()]

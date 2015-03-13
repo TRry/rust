@@ -21,7 +21,7 @@
 //! period of time and it is not required to relinquish ownership of the
 //! contents.
 //!
-//! # Example
+//! # Examples
 //!
 //! ```
 //! scoped_thread_local!(static FOO: u32);
@@ -65,6 +65,7 @@ pub struct Key<T> { #[doc(hidden)] pub inner: __impl::KeyInner<T> }
 /// This macro declares a `static` item on which methods are used to get and
 /// set the value stored within.
 #[macro_export]
+#[allow_internal_unstable]
 macro_rules! scoped_thread_local {
     (static $name:ident: $t:ty) => (
         __scoped_thread_local_inner!(static $name: $t);
@@ -76,6 +77,7 @@ macro_rules! scoped_thread_local {
 
 #[macro_export]
 #[doc(hidden)]
+#[allow_internal_unstable]
 macro_rules! __scoped_thread_local_inner {
     (static $name:ident: $t:ty) => (
         #[cfg_attr(not(any(windows,
@@ -137,7 +139,7 @@ impl<T> Key<T> {
     /// Upon return, this function will restore the previous value, if any
     /// was available.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```
     /// scoped_thread_local!(static FOO: u32);
@@ -189,7 +191,7 @@ impl<T> Key<T> {
     ///
     /// This function will panic if `set` has not previously been called.
     ///
-    /// # Example
+    /// # Examples
     ///
     /// ```no_run
     /// scoped_thread_local!(static FOO: u32);
