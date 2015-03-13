@@ -5000,7 +5000,7 @@ pub mod funcs {
         }
 
         pub mod fcntl {
-            use types::os::arch::c95::{c_char, c_int, c_uint};
+            use types::os::arch::c95::{c_char, c_int};
             use types::os::arch::posix88::mode_t;
 
             mod open_shim {
