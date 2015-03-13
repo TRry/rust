@@ -117,7 +117,7 @@ pub fn write(w: &mut Writer) -> IoResult<()> {
     // local, it still displays much nicer backtraces when a
     // couple of tasks panic simultaneously
     static LOCK: StaticMutex = MUTEX_INIT;
-    let _g = unsafe { LOCK.lock() };
+    let _g = LOCK.lock();
 
     try!(writeln!(w, "stack backtrace:"));
     // 100 lines should be enough
