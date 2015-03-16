@@ -242,6 +242,9 @@
 #![deny(unused_must_use)]
 #![allow(deprecated)] // seriously this is all deprecated
 #![allow(unused_imports)]
+#![deprecated(since = "1.0.0",
+              reasons = "APIs have been replaced with new I/O modules such as \
+                         std::{io, fs, net, process}")]
 
 pub use self::SeekStyle::*;
 pub use self::FileMode::*;
@@ -928,15 +931,15 @@ impl<'a> Reader for &'a mut (Reader+'a) {
 // Private function here because we aren't sure if we want to expose this as
 // API yet. If so, it should be a method on Vec.
 unsafe fn slice_vec_capacity<'a, T>(v: &'a mut Vec<T>, start: uint, end: uint) -> &'a mut [T] {
-    use raw::Slice;
+    use slice;
     use ptr::PtrExt;
 
     assert!(start <= end);
     assert!(end <= v.capacity());
-    transmute(Slice {
-        data: v.as_ptr().offset(start as int),
-        len: end - start
-    })
+    slice::from_raw_parts_mut(
+        v.as_mut_ptr().offset(start as int),
+        end - start
+    )
 }
 
 /// A `RefReader` is a struct implementing `Reader` which contains a reference

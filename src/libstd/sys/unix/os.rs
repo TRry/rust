@@ -13,7 +13,7 @@
 #![allow(unused_imports)] // lots of cfg code here
 
 use prelude::v1::*;
-use os::unix::*;
+use os::unix::prelude::*;
 
 use error::Error as StdError;
 use ffi::{CString, CStr, OsString, OsStr, AsOsStr};
@@ -22,7 +22,7 @@ use io;
 use iter;
 use libc::{self, c_int, c_char, c_void};
 use mem;
-use old_io::{IoError, IoResult};
+#[allow(deprecated)] use old_io::{IoError, IoResult};
 use ptr;
 use path::{self, PathBuf};
 use slice;
@@ -206,7 +206,7 @@ pub fn current_exe() -> io::Result<PathBuf> {
         if err != 0 { return Err(io::Error::last_os_error()); }
         if sz == 0 { return Err(io::Error::last_os_error()); }
         v.set_len(sz as uint - 1); // chop off trailing NUL
-        Ok(PathBuf::new::<OsString>(&OsStringExt::from_vec(v)))
+        Ok(PathBuf::new::<OsString>(OsStringExt::from_vec(v)))
     }
 }
 
@@ -232,7 +232,7 @@ pub fn current_exe() -> io::Result<PathBuf> {
             Err(io::Error::last_os_error())
         } else {
             let vec = CStr::from_ptr(v).to_bytes().to_vec();
-            Ok(PathBuf::new::<OsString>(&OsStringExt::from_vec(vec)))
+            Ok(PathBuf::new::<OsString>(OsStringExt::from_vec(vec)))
         }
     }
 }
@@ -253,7 +253,7 @@ pub fn current_exe() -> io::Result<PathBuf> {
         let err = _NSGetExecutablePath(v.as_mut_ptr() as *mut i8, &mut sz);
         if err != 0 { return Err(io::Error::last_os_error()); }
         v.set_len(sz as uint - 1); // chop off trailing NUL
-        Ok(PathBuf::new::<OsString>(&OsStringExt::from_vec(v)))
+        Ok(PathBuf::new(OsString::from_vec(v)))
     }
 }
 
@@ -398,7 +398,7 @@ pub fn env() -> Env {
         let mut environ = *environ();
         if environ as usize == 0 {
             panic!("os::env() failure getting env string from OS: {}",
-                   IoError::last_error());
+                   io::Error::last_os_error());
         }
         let mut result = Vec::new();
         while *environ != ptr::null() {
@@ -434,7 +434,7 @@ pub fn setenv(k: &OsStr, v: &OsStr) {
         let k = k.to_cstring().unwrap();
         let v = v.to_cstring().unwrap();
         if libc::funcs::posix01::unistd::setenv(k.as_ptr(), v.as_ptr(), 1) != 0 {
-            panic!("failed setenv: {}", IoError::last_error());
+            panic!("failed setenv: {}", io::Error::last_os_error());
         }
     }
 }
@@ -443,11 +443,12 @@ pub fn unsetenv(n: &OsStr) {
     unsafe {
         let nbuf = n.to_cstring().unwrap();
         if libc::funcs::posix01::unistd::unsetenv(nbuf.as_ptr()) != 0 {
-            panic!("failed unsetenv: {}", IoError::last_error());
+            panic!("failed unsetenv: {}", io::Error::last_os_error());
         }
     }
 }
 
+#[allow(deprecated)]
 pub unsafe fn pipe() -> IoResult<(FileDesc, FileDesc)> {
     let mut fds = [0; 2];
     if libc::pipe(fds.as_mut_ptr()) == 0 {

@@ -13,7 +13,7 @@
 #![allow(bad_style)]
 
 use prelude::v1::*;
-use os::windows::*;
+use os::windows::prelude::*;
 
 use error::Error as StdError;
 use ffi::{OsString, OsStr, AsOsStr};
@@ -22,8 +22,10 @@ use io;
 use libc::types::os::arch::extra::LPWCH;
 use libc::{self, c_int, c_void};
 use mem;
+#[allow(deprecated)]
 use old_io::{IoError, IoResult};
 use ops::Range;
+use os::windows::ffi::EncodeWide;
 use path::{self, PathBuf};
 use ptr;
 use slice;
@@ -134,7 +136,7 @@ pub fn env() -> Env {
         let ch = GetEnvironmentStringsW();
         if ch as usize == 0 {
             panic!("failure getting env string from OS: {}",
-                   IoError::last_error());
+                   io::Error::last_os_error());
         }
         Env { base: ch, cur: ch }
     }
@@ -269,7 +271,7 @@ pub fn setenv(k: &OsStr, v: &OsStr) {
 
     unsafe {
         if libc::SetEnvironmentVariableW(k.as_ptr(), v.as_ptr()) == 0 {
-            panic!("failed to set env: {}", IoError::last_error());
+            panic!("failed to set env: {}", io::Error::last_os_error());
         }
     }
 }
@@ -278,7 +280,7 @@ pub fn unsetenv(n: &OsStr) {
     let v = super::to_utf16_os(n);
     unsafe {
         if libc::SetEnvironmentVariableW(v.as_ptr(), ptr::null()) == 0 {
-            panic!("failed to unset env: {}", IoError::last_error());
+            panic!("failed to unset env: {}", io::Error::last_os_error());
         }
     }
 }
@@ -333,6 +335,7 @@ pub fn page_size() -> usize {
     }
 }
 
+#[allow(deprecated)]
 pub unsafe fn pipe() -> IoResult<(FileDesc, FileDesc)> {
     // Windows pipes work subtly differently than unix pipes, and their
     // inheritance has to be handled in a different way that I do not
