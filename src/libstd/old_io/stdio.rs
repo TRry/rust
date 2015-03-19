@@ -43,8 +43,6 @@ use ops::{Deref, DerefMut, FnOnce};
 use ptr;
 use result::Result::{Ok, Err};
 use rt;
-use slice::SliceExt;
-use str::StrExt;
 use string::String;
 use sys::{fs, tty};
 use sync::{Arc, Mutex, MutexGuard, Once, ONCE_INIT};
@@ -140,7 +138,7 @@ impl StdinReader {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```
     /// use std::old_io;
     ///
     /// let mut stdin = old_io::stdin();

@@ -41,9 +41,31 @@ pub use normalize::{decompose_canonical, decompose_compatible, compose};
 pub use tables::normalization::canonical_combining_class;
 pub use tables::UNICODE_VERSION;
 
-/// Functionality for manipulating `char`.
+/// An iterator over the lowercase mapping of a given character, returned from
+/// the `lowercase` method on characters.
 #[stable(feature = "rust1", since = "1.0.0")]
-pub trait CharExt {
+pub struct ToLowercase(Option<char>);
+
+#[stable(feature = "rust1", since = "1.0.0")]
+impl Iterator for ToLowercase {
+    type Item = char;
+    fn next(&mut self) -> Option<char> { self.0.take() }
+}
+
+/// An iterator over the uppercase mapping of a given character, returned from
+/// the `uppercase` method on characters.
+#[stable(feature = "rust1", since = "1.0.0")]
+pub struct ToUppercase(Option<char>);
+
+#[stable(feature = "rust1", since = "1.0.0")]
+impl Iterator for ToUppercase {
+    type Item = char;
+    fn next(&mut self) -> Option<char> { self.0.take() }
+}
+
+#[stable(feature = "rust1", since = "1.0.0")]
+#[lang = "char"]
+impl char {
     /// Checks if a `char` parses as a numeric digit in the given radix.
     ///
     /// Compared to `is_numeric()`, this function only recognizes the characters
@@ -68,7 +90,7 @@ pub trait CharExt {
     /// assert!('f'.is_digit(16));
     /// ```
     #[stable(feature = "rust1", since = "1.0.0")]
-    fn is_digit(self, radix: u32) -> bool;
+    pub fn is_digit(self, radix: u32) -> bool { C::is_digit(self, radix) }
 
     /// Converts a character to the corresponding digit.
     ///
@@ -92,7 +114,7 @@ pub trait CharExt {
     /// assert_eq!('f'.to_digit(16), Some(15));
     /// ```
     #[stable(feature = "rust1", since = "1.0.0")]
-    fn to_digit(self, radix: u32) -> Option<u32>;
+    pub fn to_digit(self, radix: u32) -> Option<u32> { C::to_digit(self, radix) }
 
     /// Returns an iterator that yields the hexadecimal Unicode escape of a
     /// character, as `char`s.
@@ -130,7 +152,7 @@ pub trait CharExt {
     /// assert_eq!(heart, r"\u{2764}");
     /// ```
     #[stable(feature = "rust1", since = "1.0.0")]
-    fn escape_unicode(self) -> EscapeUnicode;
+    pub fn escape_unicode(self) -> EscapeUnicode { C::escape_unicode(self) }
 
     /// Returns an iterator that yields the 'default' ASCII and
     /// C++11-like literal escape of a character, as `char`s.
@@ -168,7 +190,7 @@ pub trait CharExt {
     /// assert_eq!(quote, "\\\"");
     /// ```
     #[stable(feature = "rust1", since = "1.0.0")]
-    fn escape_default(self) -> EscapeDefault;
+    pub fn escape_default(self) -> EscapeDefault { C::escape_default(self) }
 
     /// Returns the number of bytes this character would need if encoded in
     /// UTF-8.
@@ -181,7 +203,7 @@ pub trait CharExt {
     /// assert_eq!(n, 2);
     /// ```
     #[stable(feature = "rust1", since = "1.0.0")]
-    fn len_utf8(self) -> usize;
+    pub fn len_utf8(self) -> usize { C::len_utf8(self) }
 
     /// Returns the number of 16-bit code units this character would need if
     /// encoded in UTF-16.
@@ -194,7 +216,7 @@ pub trait CharExt {
     /// assert_eq!(n, 1);
     /// ```
     #[stable(feature = "rust1", since = "1.0.0")]
-    fn len_utf16(self) -> usize;
+    pub fn len_utf16(self) -> usize { C::len_utf16(self) }
 
     /// Encodes this character as UTF-8 into the provided byte buffer, and then
     /// returns the number of bytes written.
@@ -226,7 +248,7 @@ pub trait CharExt {
     /// ```
     #[unstable(feature = "unicode",
                reason = "pending decision about Iterator/Writer/Reader")]
-    fn encode_utf8(self, dst: &mut [u8]) -> Option<usize>;
+    pub fn encode_utf8(self, dst: &mut [u8]) -> Option<usize> { C::encode_utf8(self, dst) }
 
     /// Encodes this character as UTF-16 into the provided `u16` buffer, and
     /// then returns the number of `u16`s written.
@@ -258,12 +280,18 @@ pub trait CharExt {
     /// ```
     #[unstable(feature = "unicode",
                reason = "pending decision about Iterator/Writer/Reader")]
-    fn encode_utf16(self, dst: &mut [u16]) -> Option<usize>;
+    pub fn encode_utf16(self, dst: &mut [u16]) -> Option<usize> { C::encode_utf16(self, dst) }
 
     /// Returns whether the specified character is considered a Unicode
     /// alphabetic code point.
     #[stable(feature = "rust1", since = "1.0.0")]
-    fn is_alphabetic(self) -> bool;
+    pub fn is_alphabetic(self) -> bool {
+        match self {
+            'a' ... 'z' | 'A' ... 'Z' => true,
+            c if c > '\x7f' => derived_property::Alphabetic(c),
+            _ => false
+        }
+    }
 
     /// Returns whether the specified character satisfies the 'XID_Start'
     /// Unicode property.
@@ -273,7 +301,7 @@ pub trait CharExt {
     /// mostly similar to ID_Start but modified for closure under NFKx.
     #[unstable(feature = "unicode",
                reason = "mainly needed for compiler internals")]
-    fn is_xid_start(self) -> bool;
+    pub fn is_xid_start(self) -> bool { derived_property::XID_Start(self) }
 
     /// Returns whether the specified `char` satisfies the 'XID_Continue'
     /// Unicode property.
@@ -283,45 +311,71 @@ pub trait CharExt {
     /// mostly similar to 'ID_Continue' but modified for closure under NFKx.
     #[unstable(feature = "unicode",
                reason = "mainly needed for compiler internals")]
-    fn is_xid_continue(self) -> bool;
+    pub fn is_xid_continue(self) -> bool { derived_property::XID_Continue(self) }
 
     /// Indicates whether a character is in lowercase.
     ///
     /// This is defined according to the terms of the Unicode Derived Core
     /// Property `Lowercase`.
     #[stable(feature = "rust1", since = "1.0.0")]
-    fn is_lowercase(self) -> bool;
+    pub fn is_lowercase(self) -> bool {
+        match self {
+            'a' ... 'z' => true,
+            c if c > '\x7f' => derived_property::Lowercase(c),
+            _ => false
+        }
+    }
 
     /// Indicates whether a character is in uppercase.
     ///
     /// This is defined according to the terms of the Unicode Derived Core
     /// Property `Uppercase`.
     #[stable(feature = "rust1", since = "1.0.0")]
-    fn is_uppercase(self) -> bool;
+    pub fn is_uppercase(self) -> bool {
+        match self {
+            'A' ... 'Z' => true,
+            c if c > '\x7f' => derived_property::Uppercase(c),
+            _ => false
+        }
+    }
 
     /// Indicates whether a character is whitespace.
     ///
     /// Whitespace is defined in terms of the Unicode Property `White_Space`.
     #[stable(feature = "rust1", since = "1.0.0")]
-    fn is_whitespace(self) -> bool;
+    pub fn is_whitespace(self) -> bool {
+        match self {
+            ' ' | '\x09' ... '\x0d' => true,
+            c if c > '\x7f' => property::White_Space(c),
+            _ => false
+        }
+    }
 
     /// Indicates whether a character is alphanumeric.
     ///
     /// Alphanumericness is defined in terms of the Unicode General Categories
     /// 'Nd', 'Nl', 'No' and the Derived Core Property 'Alphabetic'.
     #[stable(feature = "rust1", since = "1.0.0")]
-    fn is_alphanumeric(self) -> bool;
+    pub fn is_alphanumeric(self) -> bool {
+        self.is_alphabetic() || self.is_numeric()
+    }
 
     /// Indicates whether a character is a control code point.
     ///
     /// Control code points are defined in terms of the Unicode General
     /// Category `Cc`.
     #[stable(feature = "rust1", since = "1.0.0")]
-    fn is_control(self) -> bool;
+    pub fn is_control(self) -> bool { general_category::Cc(self) }
 
     /// Indicates whether the character is numeric (Nd, Nl, or No).
     #[stable(feature = "rust1", since = "1.0.0")]
-    fn is_numeric(self) -> bool;
+    pub fn is_numeric(self) -> bool {
+        match self {
+            '0' ... '9' => true,
+            c if c > '\x7f' => general_category::N(c),
+            _ => false
+        }
+    }
 
     /// Converts a character to its lowercase equivalent.
     ///
@@ -334,7 +388,9 @@ pub trait CharExt {
     /// lowercase equivalent of the character. If no conversion is possible then
     /// the input character is returned.
     #[stable(feature = "rust1", since = "1.0.0")]
-    fn to_lowercase(self) -> ToLowercase;
+    pub fn to_lowercase(self) -> ToLowercase {
+        ToLowercase(Some(conversions::to_lower(self)))
+    }
 
     /// Converts a character to its uppercase equivalent.
     ///
@@ -358,7 +414,9 @@ pub trait CharExt {
     ///
     /// [2]: http://www.unicode.org/versions/Unicode4.0.0/ch03.pdf#G33992
     #[stable(feature = "rust1", since = "1.0.0")]
-    fn to_uppercase(self) -> ToUppercase;
+    pub fn to_uppercase(self) -> ToUppercase {
+        ToUppercase(Some(conversions::to_upper(self)))
+    }
 
     /// Returns this character's displayed width in columns, or `None` if it is a
     /// control character other than `'\x00'`.
@@ -371,99 +429,5 @@ pub trait CharExt {
     /// `is_cjk` = `false`) if the context cannot be reliably determined.
     #[unstable(feature = "unicode",
                reason = "needs expert opinion. is_cjk flag stands out as ugly")]
-    fn width(self, is_cjk: bool) -> Option<usize>;
-}
-
-#[stable(feature = "rust1", since = "1.0.0")]
-impl CharExt for char {
-    fn is_digit(self, radix: u32) -> bool { C::is_digit(self, radix) }
-    fn to_digit(self, radix: u32) -> Option<u32> { C::to_digit(self, radix) }
-    fn escape_unicode(self) -> EscapeUnicode { C::escape_unicode(self) }
-    fn escape_default(self) -> EscapeDefault { C::escape_default(self) }
-    fn len_utf8(self) -> usize { C::len_utf8(self) }
-    fn len_utf16(self) -> usize { C::len_utf16(self) }
-    fn encode_utf8(self, dst: &mut [u8]) -> Option<usize> { C::encode_utf8(self, dst) }
-    fn encode_utf16(self, dst: &mut [u16]) -> Option<usize> { C::encode_utf16(self, dst) }
-
-    fn is_alphabetic(self) -> bool {
-        match self {
-            'a' ... 'z' | 'A' ... 'Z' => true,
-            c if c > '\x7f' => derived_property::Alphabetic(c),
-            _ => false
-        }
-    }
-
-    fn is_xid_start(self) -> bool { derived_property::XID_Start(self) }
-
-    fn is_xid_continue(self) -> bool { derived_property::XID_Continue(self) }
-
-    fn is_lowercase(self) -> bool {
-        match self {
-            'a' ... 'z' => true,
-            c if c > '\x7f' => derived_property::Lowercase(c),
-            _ => false
-        }
-    }
-
-    fn is_uppercase(self) -> bool {
-        match self {
-            'A' ... 'Z' => true,
-            c if c > '\x7f' => derived_property::Uppercase(c),
-            _ => false
-        }
-    }
-
-    fn is_whitespace(self) -> bool {
-        match self {
-            ' ' | '\x09' ... '\x0d' => true,
-            c if c > '\x7f' => property::White_Space(c),
-            _ => false
-        }
-    }
-
-    fn is_alphanumeric(self) -> bool {
-        self.is_alphabetic() || self.is_numeric()
-    }
-
-    fn is_control(self) -> bool { general_category::Cc(self) }
-
-    fn is_numeric(self) -> bool {
-        match self {
-            '0' ... '9' => true,
-            c if c > '\x7f' => general_category::N(c),
-            _ => false
-        }
-    }
-
-    fn to_lowercase(self) -> ToLowercase {
-        ToLowercase(Some(conversions::to_lower(self)))
-    }
-
-    fn to_uppercase(self) -> ToUppercase {
-        ToUppercase(Some(conversions::to_upper(self)))
-    }
-
-    fn width(self, is_cjk: bool) -> Option<usize> { charwidth::width(self, is_cjk) }
-}
-
-/// An iterator over the lowercase mapping of a given character, returned from
-/// the `lowercase` method on characters.
-#[stable(feature = "rust1", since = "1.0.0")]
-pub struct ToLowercase(Option<char>);
-
-#[stable(feature = "rust1", since = "1.0.0")]
-impl Iterator for ToLowercase {
-    type Item = char;
-    fn next(&mut self) -> Option<char> { self.0.take() }
-}
-
-/// An iterator over the uppercase mapping of a given character, returned from
-/// the `uppercase` method on characters.
-#[stable(feature = "rust1", since = "1.0.0")]
-pub struct ToUppercase(Option<char>);
-
-#[stable(feature = "rust1", since = "1.0.0")]
-impl Iterator for ToUppercase {
-    type Item = char;
-    fn next(&mut self) -> Option<char> { self.0.take() }
+    pub fn width(self, is_cjk: bool) -> Option<usize> { charwidth::width(self, is_cjk) }
 }
