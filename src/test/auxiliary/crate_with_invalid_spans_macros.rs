@@ -1,4 +1,4 @@
-// Copyright 2013 The Rust Project Developers. See the COPYRIGHT
+// Copyright 2015 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
 //
@@ -8,13 +8,10 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// This checks that RUST_TEST_THREADS not being 1, 2, ... is detected
-// properly.
-
-// error-pattern:should be a positive integer
-// compile-flags: --test
-// exec-env:RUST_TEST_THREADS=foo
-// ignore-pretty: does not work well with `--test`
-
-#[test]
-fn do_nothing() {}
+macro_rules! add1 {
+    ($e:expr) => ({
+        let a = 1 + $e;
+        let b = $e + 1;
+        a + b - 1
+    })
+}
