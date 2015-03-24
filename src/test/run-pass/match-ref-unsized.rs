@@ -8,10 +8,13 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// This used to cause an ICE because the retslot for the "return" had the wrong type
-fn testcase<'a>() -> Box<Iterator<Item=usize> + 'a> {
-    return Box::new((0..3).map(|i| { return i; }));
-}
+// Binding unsized expressions to ref patterns
 
-fn main() {
+pub fn main() {
+    let ref a = *"abcdef";
+    assert_eq!(a, "abcdef");
+
+    match *"12345" {
+        ref b => { assert_eq!(b, "12345") }
+    }
 }

@@ -8,24 +8,15 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#![allow(deprecated)]
+// Test that macro reexports item are gated by `macro_reexport` feature gate.
 
-use libc;
-use os;
+// aux-build:macro_reexport_1.rs
+// ignore-stage1
 
-use sys::fs::FileDesc;
+#![crate_type = "dylib"]
 
-pub type signal = libc::c_int;
-
-pub fn new() -> (signal, signal) {
-    let os::Pipe { reader, writer } = unsafe { os::pipe().unwrap() };
-    (reader, writer)
-}
-
-pub fn signal(fd: libc::c_int) {
-    FileDesc::new(fd, false).write(&[0]).unwrap();
-}
-
-pub fn close(fd: libc::c_int) {
-    let _fd = FileDesc::new(fd, true);
-}
+#[macro_reexport(reexported)]
+#[macro_use] #[no_link]
+extern crate macro_reexport_1;
+//~^ ERROR macros reexports are experimental and possibly buggy
+//~| HELP add #![feature(macro_reexport)] to the crate attributes to enable

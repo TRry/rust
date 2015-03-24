@@ -8,10 +8,15 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// This used to cause an ICE because the retslot for the "return" had the wrong type
-fn testcase<'a>() -> Box<Iterator<Item=usize> + 'a> {
-    return Box::new((0..3).map(|i| { return i; }));
-}
+// Test that patterns including the box syntax are gated by `box_patterns` feature gate.
 
 fn main() {
+    let x = Box::new(1);
+
+    match x {
+        box 1 => (),
+        //~^ box pattern syntax is experimental
+        //~| add #![feature(box_patterns)] to the crate attributes to enable
+        _     => ()
+    };
 }

@@ -150,11 +150,12 @@ use io;
 use marker::PhantomData;
 use rt::{self, unwind};
 use sync::{Mutex, Condvar, Arc};
+use sys::thread as imp;
+use sys_common::{stack, thread_info};
 use thunk::Thunk;
 use time::Duration;
 
-use sys::thread as imp;
-use sys_common::{stack, thread_info};
+#[allow(deprecated)] use old_io::Writer;
 
 /// Thread configuration. Provides detailed control over the properties
 /// and behavior of new threads.
@@ -869,7 +870,7 @@ mod test {
             Err(e) => {
                 type T = &'static str;
                 assert!(e.is::<T>());
-                assert_eq!(*e.downcast::<T>().ok().unwrap(), "static string");
+                assert_eq!(*e.downcast::<T>().unwrap(), "static string");
             }
             Ok(()) => panic!()
         }
@@ -883,7 +884,7 @@ mod test {
             Err(e) => {
                 type T = String;
                 assert!(e.is::<T>());
-                assert_eq!(*e.downcast::<T>().ok().unwrap(), "owned string".to_string());
+                assert_eq!(*e.downcast::<T>().unwrap(), "owned string".to_string());
             }
             Ok(()) => panic!()
         }
@@ -897,9 +898,9 @@ mod test {
             Err(e) => {
                 type T = Box<Any + Send>;
                 assert!(e.is::<T>());
-                let any = e.downcast::<T>().ok().unwrap();
+                let any = e.downcast::<T>().unwrap();
                 assert!(any.is::<u16>());
-                assert_eq!(*any.downcast::<u16>().ok().unwrap(), 413);
+                assert_eq!(*any.downcast::<u16>().unwrap(), 413);
             }
             Ok(()) => panic!()
         }
