@@ -8,12 +8,12 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#![feature(optin_builtin_traits)]
-#![crate_type = "rlib"]
+// error-pattern:thread '<main>' panicked at 'shift operation overflowed'
+// compile-flags: -C debug-assertions
 
-use std::marker::MarkerTrait;
+// (Work around constant-evaluation)
+fn id<T>(x: T) -> T { x }
 
-pub trait DefaultedTrait : MarkerTrait { }
-impl DefaultedTrait for .. { }
-
-pub struct Something<T> { t: T }
+fn main() {
+    let _x = 1_u64 << id(64);
+}

@@ -8,10 +8,12 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// Test that we generate obsolete syntax errors around usages of `for Sized?`
+// error-pattern:thread '<main>' panicked at 'shift operation overflowed'
+// compile-flags: -C debug-assertions
 
-trait Foo for Sized? {} //~ ERROR obsolete syntax: for Sized?
+// (Work around constant-evaluation)
+fn id<T>(x: T) -> T { x }
 
-trait Bar for ?Sized {} //~ ERROR obsolete syntax: for Sized?
-
-fn main() { }
+fn main() {
+    let _x = 1_i32 << id(32);
+}

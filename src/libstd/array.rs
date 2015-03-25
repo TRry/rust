@@ -1,4 +1,4 @@
-// Copyright 2013 The Rust Project Developers. See the COPYRIGHT
+// Copyright 2015 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
 //
@@ -8,17 +8,6 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#![forbid(unused_typecasts)]
+//! The fixed-size array type (`[T; n]`).
 
-fn foo_i32(_: i32) {}
-
-fn foo_u64(a: u64) {
-    let b: i32 = a as i32;
-    foo_i32(b as i32); //~ ERROR: unnecessary type cast
-}
-
-fn main() {
-    let x: u64 = 1;
-    let y: u64 = x as u64; //~ ERROR: unnecessary type cast
-    foo_u64(y as u64); //~ ERROR: unnecessary type cast
-}
+#![doc(primitive = "array")]
