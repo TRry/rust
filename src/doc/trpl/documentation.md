@@ -517,7 +517,7 @@ can be useful when changing some options, or when writing a macro.
 
 ### Re-exports
 
-`rustdoc` will show the documentation for a publc re-export in both places:
+`rustdoc` will show the documentation for a public re-export in both places:
 
 ```ignore
 extern crate foo;
@@ -529,7 +529,7 @@ This will create documentation for bar both inside the documentation for the
 crate `foo`, as well as the documentation for your crate. It will use the same
 documentation in both places.
 
-This behavior can be supressed with `no_inline`:
+This behavior can be suppressed with `no_inline`:
 
 ```ignore
 extern crate foo;

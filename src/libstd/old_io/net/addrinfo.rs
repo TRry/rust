@@ -19,8 +19,8 @@ pub use self::SocketType::*;
 pub use self::Flag::*;
 pub use self::Protocol::*;
 
-use iter::IteratorExt;
-use old_io::{IoResult};
+use iter::Iterator;
+use old_io::IoResult;
 use old_io::net::ip::{SocketAddr, IpAddr};
 use option::Option;
 use option::Option::{Some, None};

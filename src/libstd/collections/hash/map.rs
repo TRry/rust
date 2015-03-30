@@ -20,7 +20,7 @@ use cmp::{max, Eq, PartialEq};
 use default::Default;
 use fmt::{self, Debug};
 use hash::{Hash, SipHasher};
-use iter::{self, Iterator, ExactSizeIterator, IntoIterator, IteratorExt, FromIterator, Extend, Map};
+use iter::{self, Iterator, ExactSizeIterator, IntoIterator, FromIterator, Extend, Map};
 use marker::Sized;
 use mem::{self, replace};
 use ops::{Deref, FnMut, FnOnce, Index};
@@ -214,7 +214,14 @@ fn test_resize_policy() {
 /// overridden with one of the constructors.
 ///
 /// It is required that the keys implement the `Eq` and `Hash` traits, although
-/// this can frequently be achieved by using `#[derive(Eq, Hash)]`.
+/// this can frequently be achieved by using `#[derive(Eq, Hash)]`. If you
+/// implement these yourself, it is important that the following property holds:
+///
+/// ```text
+/// k1 == k2 -> hash(k1) == hash(k2)
+/// ```
+///
+/// In other words, if two keys are equal, their hashes must be equal.
 ///
 /// It is a logic error for a key to be modified in such a way that the key's
 /// hash, as determined by the `Hash` trait, or its equality, as determined by
@@ -1226,14 +1233,7 @@ impl<K, V, S> Debug for HashMap<K, V, S>
     where K: Eq + Hash + Debug, V: Debug, S: HashState
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        try!(write!(f, "{{"));
-
-        for (i, (k, v)) in self.iter().enumerate() {
-            if i != 0 { try!(write!(f, ", ")); }
-            try!(write!(f, "{:?}: {:?}", *k, *v));
-        }
-
-        write!(f, "}}")
+        self.iter().fold(f.debug_map(), |b, (k, v)| b.entry(k, v)).finish()
     }
 }
 
