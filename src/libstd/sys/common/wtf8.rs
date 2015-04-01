@@ -37,6 +37,7 @@ use fmt;
 use hash::{Hash, Hasher};
 use iter::{FromIterator, IntoIterator};
 use mem;
+#[allow(deprecated)] // Int
 use num::Int;
 use ops;
 use slice;
@@ -344,8 +345,8 @@ impl Wtf8Buf {
                 Some((surrogate_pos, _)) => {
                     pos = surrogate_pos + 3;
                     slice::bytes::copy_memory(
+                        UTF8_REPLACEMENT_CHARACTER,
                         &mut self.bytes[surrogate_pos .. pos],
-                        UTF8_REPLACEMENT_CHARACTER
                     );
                 },
                 None => return unsafe { String::from_utf8_unchecked(self.bytes) }

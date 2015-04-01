@@ -8,13 +8,13 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#![feature(tempdir)]
+//! Ensure the private trait Bar isn't complained about.
 
-use std::env;
-use std::fs::{self, TempDir};
+#![deny(missing_docs)]
 
-fn main() {
-    let td = TempDir::new("create-dir-all-bare").unwrap();
-    env::set_current_dir(td.path()).unwrap();
-    fs::create_dir_all("create-dir-all-bare").unwrap();
+mod foo {
+    trait Bar { fn bar(&self) { } }
+    impl Bar for i8 { fn bar(&self) { } }
 }
+
+fn main() { }

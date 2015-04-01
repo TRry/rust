@@ -18,6 +18,7 @@
 use prelude::v1::*;
 
 use io::{self, Error, ErrorKind};
+#[allow(deprecated)] // Int
 use num::Int;
 use sys_common::net2 as net_imp;
 
@@ -54,7 +55,9 @@ pub enum Shutdown {
     Both,
 }
 
+#[allow(deprecated)] // Int
 fn hton<I: Int>(i: I) -> I { i.to_be() }
+#[allow(deprecated)] // Int
 fn ntoh<I: Int>(i: I) -> I { Int::from_be(i) }
 
 fn each_addr<A: ToSocketAddrs, F, T>(addr: A, mut f: F) -> io::Result<T>
@@ -69,7 +72,7 @@ fn each_addr<A: ToSocketAddrs, F, T>(addr: A, mut f: F) -> io::Result<T>
     }
     Err(last_err.unwrap_or_else(|| {
         Error::new(ErrorKind::InvalidInput,
-                   "could not resolve to any addresses", None)
+                   "could not resolve to any addresses")
     }))
 }
 

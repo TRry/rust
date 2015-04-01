@@ -12,39 +12,40 @@
 //!
 //! # The `Iterator` trait
 //!
-//! This module defines Rust's core iteration trait. The `Iterator` trait has one
-//! unimplemented method, `next`. All other methods are derived through default
-//! methods to perform operations such as `zip`, `chain`, `enumerate`, and `fold`.
+//! This module defines Rust's core iteration trait. The `Iterator` trait has
+//! one unimplemented method, `next`. All other methods are derived through
+//! default methods to perform operations such as `zip`, `chain`, `enumerate`,
+//! and `fold`.
 //!
 //! The goal of this module is to unify iteration across all containers in Rust.
-//! An iterator can be considered as a state machine which is used to track which
-//! element will be yielded next.
+//! An iterator can be considered as a state machine which is used to track
+//! which element will be yielded next.
 //!
-//! There are various extensions also defined in this module to assist with various
-//! types of iteration, such as the `DoubleEndedIterator` for iterating in reverse,
-//! the `FromIterator` trait for creating a container from an iterator, and much
-//! more.
+//! There are various extensions also defined in this module to assist with
+//! various types of iteration, such as the `DoubleEndedIterator` for iterating
+//! in reverse, the `FromIterator` trait for creating a container from an
+//! iterator, and much more.
 //!
-//! ## Rust's `for` loop
+//! # Rust's `for` loop
 //!
-//! The special syntax used by rust's `for` loop is based around the `Iterator`
-//! trait defined in this module. For loops can be viewed as a syntactical expansion
-//! into a `loop`, for example, the `for` loop in this example is essentially
-//! translated to the `loop` below.
+//! The special syntax used by rust's `for` loop is based around the
+//! `IntoIterator` trait defined in this module. `for` loops can be viewed as a
+//! syntactical expansion into a `loop`, for example, the `for` loop in this
+//! example is essentially translated to the `loop` below.
 //!
 //! ```
 //! let values = vec![1, 2, 3];
 //!
-//! // "Syntactical sugar" taking advantage of an iterator
-//! for &x in values.iter() {
+//! for x in values {
 //!     println!("{}", x);
 //! }
 //!
 //! // Rough translation of the iteration without a `for` iterator.
-//! let mut it = values.iter();
+//! # let values = vec![1, 2, 3];
+//! let mut it = values.into_iter();
 //! loop {
 //!     match it.next() {
-//!         Some(&x) => {
+//!         Some(x) => {
 //!             println!("{}", x);
 //!         }
 //!         None => { break }
@@ -52,7 +53,8 @@
 //! }
 //! ```
 //!
-//! This `for` loop syntax can be applied to any iterator over any type.
+//! Because `Iterator`s implement `IntoIterator`, this `for` loop syntax can be applied to any
+//! iterator over any type.
 
 #![stable(feature = "rust1", since = "1.0.0")]
 
@@ -64,10 +66,9 @@ use cmp::Ord;
 use default::Default;
 use marker;
 use mem;
-use num::{ToPrimitive, Int};
-use ops::{Add, FnMut, RangeFrom};
-use option::Option;
-use option::Option::{Some, None};
+use num::{Int, Zero, One};
+use ops::{self, Add, Sub, FnMut, RangeFrom};
+use option::Option::{self, Some, None};
 use marker::Sized;
 use usize;
 
@@ -85,21 +86,22 @@ fn _assert_is_object_safe(_: &Iterator) {}
 /// else.
 #[lang="iterator"]
 #[stable(feature = "rust1", since = "1.0.0")]
-#[rustc_on_unimplemented = "`{Self}` is not an iterator; maybe try calling `.iter()` or a similar \
-                            method"]
+#[rustc_on_unimplemented = "`{Self}` is not an iterator; maybe try calling \
+                            `.iter()` or a similar method"]
 pub trait Iterator {
     /// The type of the elements being iterated
     #[stable(feature = "rust1", since = "1.0.0")]
     type Item;
 
-    /// Advance the iterator and return the next value. Return `None` when the end is reached.
+    /// Advance the iterator and return the next value. Return `None` when the
+    /// end is reached.
     #[stable(feature = "rust1", since = "1.0.0")]
     fn next(&mut self) -> Option<Self::Item>;
 
     /// Returns a lower and upper bound on the remaining length of the iterator.
     ///
-    /// An upper bound of `None` means either there is no known upper bound, or the upper bound
-    /// does not fit within a `usize`.
+    /// An upper bound of `None` means either there is no known upper bound, or
+    /// the upper bound does not fit within a `usize`.
     #[inline]
     #[stable(feature = "rust1", since = "1.0.0")]
     fn size_hint(&self) -> (usize, Option<usize>) { (0, None) }
@@ -275,7 +277,8 @@ pub trait Iterator {
     /// iterator plus the current index of iteration.
     ///
     /// `enumerate` keeps its count as a `usize`. If you want to count by a
-    /// different sized integer, the `zip` function provides similar functionality.
+    /// different sized integer, the `zip` function provides similar
+    /// functionality.
     ///
     /// # Examples
     ///
@@ -433,7 +436,7 @@ pub trait Iterator {
     /// # #![feature(core)]
     /// let xs = [2, 3];
     /// let ys = [0, 1, 0, 1, 2];
-    /// let it = xs.iter().flat_map(|&x| std::iter::count(0, 1).take(x));
+    /// let it = xs.iter().flat_map(|&x| (0..).take(x));
     /// // Check that `it` has the same elements as `ys`
     /// for (i, x) in it.enumerate() {
     ///     assert_eq!(x, ys[i]);
@@ -530,10 +533,9 @@ pub trait Iterator {
     /// # Examples
     ///
     /// ```
-    /// # #![feature(core)]
-    /// let a = [1, 2, 3, 4, 5];
-    /// let b: Vec<_> = a.iter().cloned().collect();
-    /// assert_eq!(a, b);
+    /// let expected = [1, 2, 3, 4, 5];
+    /// let actual: Vec<_> = expected.iter().cloned().collect();
+    /// assert_eq!(actual, expected);
     /// ```
     #[inline]
     #[stable(feature = "rust1", since = "1.0.0")]
@@ -553,8 +555,7 @@ pub trait Iterator {
     /// assert_eq!(even, [2, 4]);
     /// assert_eq!(odd, [1, 3]);
     /// ```
-    #[unstable(feature = "core",
-               reason = "recently added as part of collections reform")]
+    #[stable(feature = "rust1", since = "1.0.0")]
     fn partition<B, F>(self, mut f: F) -> (B, B) where
         Self: Sized,
         B: Default + Extend<Self::Item>,
@@ -613,7 +614,8 @@ pub trait Iterator {
         true
     }
 
-    /// Tests whether any element of an iterator satisfies the specified predicate.
+    /// Tests whether any element of an iterator satisfies the specified
+    /// predicate.
     ///
     /// Does not consume the iterator past the first found element.
     ///
@@ -624,7 +626,7 @@ pub trait Iterator {
     /// let a = [1, 2, 3, 4, 5];
     /// let mut it = a.iter();
     /// assert!(it.any(|x| *x == 3));
-    /// assert_eq!(it.as_slice(), [4, 5]);
+    /// assert_eq!(&it[..], [4, 5]);
     ///
     /// ```
     #[inline]
@@ -648,7 +650,7 @@ pub trait Iterator {
     /// let a = [1, 2, 3, 4, 5];
     /// let mut it = a.iter();
     /// assert_eq!(it.find(|&x| *x == 3).unwrap(), &3);
-    /// assert_eq!(it.as_slice(), [4, 5]);
+    /// assert_eq!(&it[..], [4, 5]);
     #[inline]
     #[stable(feature = "rust1", since = "1.0.0")]
     fn find<P>(&mut self, mut predicate: P) -> Option<Self::Item> where
@@ -672,7 +674,7 @@ pub trait Iterator {
     /// let a = [1, 2, 3, 4, 5];
     /// let mut it = a.iter();
     /// assert_eq!(it.position(|x| *x == 3).unwrap(), 2);
-    /// assert_eq!(it.as_slice(), [4, 5]);
+    /// assert_eq!(&it[..], [4, 5]);
     #[inline]
     #[stable(feature = "rust1", since = "1.0.0")]
     fn position<P>(&mut self, mut predicate: P) -> Option<usize> where
@@ -702,7 +704,7 @@ pub trait Iterator {
     /// let a = [1, 2, 2, 4, 5];
     /// let mut it = a.iter();
     /// assert_eq!(it.rposition(|x| *x == 2).unwrap(), 2);
-    /// assert_eq!(it.as_slice(), [1, 2]);
+    /// assert_eq!(&it[..], [1, 2]);
     #[inline]
     #[stable(feature = "rust1", since = "1.0.0")]
     fn rposition<P>(&mut self, mut predicate: P) -> Option<usize> where
@@ -722,6 +724,9 @@ pub trait Iterator {
 
     /// Consumes the entire iterator to return the maximum element.
     ///
+    /// Returns the rightmost element if the comparison determines two elements
+    /// to be equally maximum.
+    ///
     /// # Examples
     ///
     /// ```
@@ -732,15 +737,18 @@ pub trait Iterator {
     #[stable(feature = "rust1", since = "1.0.0")]
     fn max(self) -> Option<Self::Item> where Self: Sized, Self::Item: Ord
     {
-        self.fold(None, |max, x| {
+        self.fold(None, |max, y| {
             match max {
-                None    => Some(x),
-                Some(y) => Some(cmp::max(x, y))
+                None    => Some(y),
+                Some(x) => Some(cmp::max(x, y))
             }
         })
     }
 
     /// Consumes the entire iterator to return the minimum element.
+    ///
+    /// Returns the leftmost element if the comparison determines two elements
+    /// to be equally minimum.
     ///
     /// # Examples
     ///
@@ -752,10 +760,10 @@ pub trait Iterator {
     #[stable(feature = "rust1", since = "1.0.0")]
     fn min(self) -> Option<Self::Item> where Self: Sized, Self::Item: Ord
     {
-        self.fold(None, |min, x| {
+        self.fold(None, |min, y| {
             match min {
-                None    => Some(x),
-                Some(y) => Some(cmp::min(x, y))
+                None    => Some(y),
+                Some(x) => Some(cmp::min(x, y))
             }
         })
     }
@@ -771,7 +779,8 @@ pub trait Iterator {
     ///    element in the iterator and all elements are equal.
     ///
     /// On an iterator of length `n`, `min_max` does `1.5 * n` comparisons,
-    /// and so is faster than calling `min` and `max` separately which does `2 * n` comparisons.
+    /// and so is faster than calling `min` and `max` separately which does `2 *
+    /// n` comparisons.
     ///
     /// # Examples
     ///
@@ -799,16 +808,17 @@ pub trait Iterator {
             Some(x) => {
                 match self.next() {
                     None => return OneElement(x),
-                    Some(y) => if x < y {(x, y)} else {(y,x)}
+                    Some(y) => if x <= y {(x, y)} else {(y, x)}
                 }
             }
         };
 
         loop {
-            // `first` and `second` are the two next elements we want to look at.
-            // We first compare `first` and `second` (#1). The smaller one is then compared to
-            // current minimum (#2). The larger one is compared to current maximum (#3). This
-            // way we do 3 comparisons for 2 elements.
+            // `first` and `second` are the two next elements we want to look
+            // at.  We first compare `first` and `second` (#1). The smaller one
+            // is then compared to current minimum (#2). The larger one is
+            // compared to current maximum (#3). This way we do 3 comparisons
+            // for 2 elements.
             let first = match self.next() {
                 None => break,
                 Some(x) => x
@@ -817,19 +827,19 @@ pub trait Iterator {
                 None => {
                     if first < min {
                         min = first;
-                    } else if first > max {
+                    } else if first >= max {
                         max = first;
                     }
                     break;
                 }
                 Some(x) => x
             };
-            if first < second {
-                if first < min {min = first;}
-                if max < second {max = second;}
+            if first <= second {
+                if first < min { min = first }
+                if second >= max { max = second }
             } else {
-                if second < min {min = second;}
-                if max < first {max = first;}
+                if second < min { min = second }
+                if first >= max { max = first }
             }
         }
 
@@ -839,13 +849,15 @@ pub trait Iterator {
     /// Return the element that gives the maximum value from the
     /// specified function.
     ///
+    /// Returns the rightmost element if the comparison determines two elements
+    /// to be equally maximum.
+    ///
     /// # Examples
     ///
     /// ```
     /// # #![feature(core)]
-    /// use std::num::SignedInt;
     ///
-    /// let a = [-3, 0, 1, 5, -10];
+    /// let a = [-3_i32, 0, 1, 5, -10];
     /// assert_eq!(*a.iter().max_by(|x| x.abs()).unwrap(), -10);
     /// ```
     #[inline]
@@ -855,14 +867,14 @@ pub trait Iterator {
         Self: Sized,
         F: FnMut(&Self::Item) -> B,
     {
-        self.fold(None, |max: Option<(Self::Item, B)>, x| {
-            let x_val = f(&x);
+        self.fold(None, |max: Option<(Self::Item, B)>, y| {
+            let y_val = f(&y);
             match max {
-                None             => Some((x, x_val)),
-                Some((y, y_val)) => if x_val > y_val {
-                    Some((x, x_val))
-                } else {
+                None             => Some((y, y_val)),
+                Some((x, x_val)) => if y_val >= x_val {
                     Some((y, y_val))
+                } else {
+                    Some((x, x_val))
                 }
             }
         }).map(|(x, _)| x)
@@ -871,13 +883,15 @@ pub trait Iterator {
     /// Return the element that gives the minimum value from the
     /// specified function.
     ///
+    /// Returns the leftmost element if the comparison determines two elements
+    /// to be equally minimum.
+    ///
     /// # Examples
     ///
     /// ```
     /// # #![feature(core)]
-    /// use std::num::SignedInt;
     ///
-    /// let a = [-3, 0, 1, 5, -10];
+    /// let a = [-3_i32, 0, 1, 5, -10];
     /// assert_eq!(*a.iter().min_by(|x| x.abs()).unwrap(), 0);
     /// ```
     #[inline]
@@ -887,11 +901,11 @@ pub trait Iterator {
         Self: Sized,
         F: FnMut(&Self::Item) -> B,
     {
-        self.fold(None, |min: Option<(Self::Item, B)>, x| {
-            let x_val = f(&x);
+        self.fold(None, |min: Option<(Self::Item, B)>, y| {
+            let y_val = f(&y);
             match min {
-                None             => Some((x, x_val)),
-                Some((y, y_val)) => if x_val < y_val {
+                None             => Some((y, y_val)),
+                Some((x, x_val)) => if x_val <= y_val {
                     Some((x, x_val))
                 } else {
                     Some((y, y_val))
@@ -929,10 +943,10 @@ pub trait Iterator {
     /// # #![feature(core)]
     /// let a = [(1, 2), (3, 4)];
     /// let (left, right): (Vec<_>, Vec<_>) = a.iter().cloned().unzip();
-    /// assert_eq!([1, 3], left);
-    /// assert_eq!([2, 4], right);
+    /// assert_eq!(left, [1, 3]);
+    /// assert_eq!(right, [2, 4]);
     /// ```
-    #[unstable(feature = "core", reason = "recent addition")]
+    #[stable(feature = "rust1", since = "1.0.0")]
     fn unzip<A, B, FromA, FromB>(self) -> (FromA, FromB) where
         FromA: Default + Extend<A>,
         FromB: Default + Extend<B>,
@@ -1029,7 +1043,8 @@ pub trait FromIterator<A> {
     /// assert_eq!(colors_set.len(), 3);
     /// ```
     ///
-    /// `FromIterator` is more commonly used implicitly via the `Iterator::collect` method:
+    /// `FromIterator` is more commonly used implicitly via the
+    /// `Iterator::collect` method:
     ///
     /// ```
     /// use std::collections::HashSet;
@@ -1043,6 +1058,9 @@ pub trait FromIterator<A> {
 }
 
 /// Conversion into an `Iterator`
+///
+/// Implementing this trait allows you to use your type with Rust's `for` loop. See
+/// the [module level documentation](../index.html) for more details.
 #[stable(feature = "rust1", since = "1.0.0")]
 pub trait IntoIterator {
     /// The type of the elements being iterated
@@ -1096,12 +1114,13 @@ impl<'a, I: DoubleEndedIterator + ?Sized> DoubleEndedIterator for &'a mut I {
 
 /// An object implementing random access indexing by `usize`
 ///
-/// A `RandomAccessIterator` should be either infinite or a `DoubleEndedIterator`.
-/// Calling `next()` or `next_back()` on a `RandomAccessIterator`
-/// reduces the indexable range accordingly. That is, `it.idx(1)` will become `it.idx(0)`
-/// after `it.next()` is called.
+/// A `RandomAccessIterator` should be either infinite or a
+/// `DoubleEndedIterator`.  Calling `next()` or `next_back()` on a
+/// `RandomAccessIterator` reduces the indexable range accordingly. That is,
+/// `it.idx(1)` will become `it.idx(0)` after `it.next()` is called.
 #[unstable(feature = "core",
-           reason = "not widely used, may be better decomposed into Index and ExactSizeIterator")]
+           reason = "not widely used, may be better decomposed into Index \
+                     and ExactSizeIterator")]
 pub trait RandomAccessIterator: Iterator {
     /// Return the number of indexable elements. At most `std::usize::MAX`
     /// elements are indexable, even if the iterator represents a longer range.
@@ -1146,13 +1165,15 @@ impl<I: ExactSizeIterator, F> ExactSizeIterator for Inspect<I, F> where
     F: FnMut(&I::Item),
 {}
 #[stable(feature = "rust1", since = "1.0.0")]
-impl<I> ExactSizeIterator for Rev<I> where I: ExactSizeIterator + DoubleEndedIterator {}
+impl<I> ExactSizeIterator for Rev<I>
+    where I: ExactSizeIterator + DoubleEndedIterator {}
 #[stable(feature = "rust1", since = "1.0.0")]
 impl<B, I: ExactSizeIterator, F> ExactSizeIterator for Map<I, F> where
     F: FnMut(I::Item) -> B,
 {}
 #[stable(feature = "rust1", since = "1.0.0")]
-impl<A, B> ExactSizeIterator for Zip<A, B> where A: ExactSizeIterator, B: ExactSizeIterator {}
+impl<A, B> ExactSizeIterator for Zip<A, B>
+    where A: ExactSizeIterator, B: ExactSizeIterator {}
 
 /// An double-ended iterator with the direction inverted
 #[derive(Clone)]
@@ -1179,7 +1200,9 @@ impl<I> DoubleEndedIterator for Rev<I> where I: DoubleEndedIterator {
 }
 
 #[unstable(feature = "core", reason = "trait is experimental")]
-impl<I> RandomAccessIterator for Rev<I> where I: DoubleEndedIterator + RandomAccessIterator {
+impl<I> RandomAccessIterator for Rev<I>
+    where I: DoubleEndedIterator + RandomAccessIterator
+{
     #[inline]
     fn indexable(&self) -> usize { self.iter.indexable() }
     #[inline]
@@ -1246,10 +1269,10 @@ pub trait MultiplicativeIterator<A> {
     ///
     /// ```
     /// # #![feature(core)]
-    /// use std::iter::{count, MultiplicativeIterator};
+    /// use std::iter::MultiplicativeIterator;
     ///
     /// fn factorial(n: usize) -> usize {
-    ///     count(1, 1).take_while(|&i| i <= n).product()
+    ///     (1..).take_while(|&i| i <= n).product()
     /// }
     /// assert!(factorial(0) == 1);
     /// assert!(factorial(1) == 1);
@@ -1282,7 +1305,8 @@ impl_multiplicative! { usize, 1 }
 impl_multiplicative! { f32,  1.0 }
 impl_multiplicative! { f64,  1.0 }
 
-/// `MinMaxResult` is an enum returned by `min_max`. See `Iterator::min_max` for more detail.
+/// `MinMaxResult` is an enum returned by `min_max`. See `Iterator::min_max` for
+/// more detail.
 #[derive(Clone, PartialEq, Debug)]
 #[unstable(feature = "core",
            reason = "unclear whether such a fine-grained result is widely useful")]
@@ -1293,15 +1317,17 @@ pub enum MinMaxResult<T> {
     /// Iterator with one element, so the minimum and maximum are the same
     OneElement(T),
 
-    /// More than one element in the iterator, the first element is not larger than the second
+    /// More than one element in the iterator, the first element is not larger
+    /// than the second
     MinMax(T, T)
 }
 
 impl<T: Clone> MinMaxResult<T> {
-    /// `into_option` creates an `Option` of type `(T,T)`. The returned `Option` has variant
-    /// `None` if and only if the `MinMaxResult` has variant `NoElements`. Otherwise variant
-    /// `Some(x,y)` is returned where `x <= y`. If `MinMaxResult` has variant `OneElement(x)`,
-    /// performing this operation will make one clone of `x`.
+    /// `into_option` creates an `Option` of type `(T,T)`. The returned `Option`
+    /// has variant `None` if and only if the `MinMaxResult` has variant
+    /// `NoElements`. Otherwise variant `Some(x,y)` is returned where `x <= y`.
+    /// If `MinMaxResult` has variant `OneElement(x)`, performing this operation
+    /// will make one clone of `x`.
     ///
     /// # Examples
     ///
@@ -2417,6 +2443,67 @@ impl<A, St, F> Iterator for Unfold<St, F> where F: FnMut(&mut St) -> Option<A> {
     }
 }
 
+/// Objects that can be stepped over in both directions.
+///
+/// The `steps_between` function provides a way to efficiently compare
+/// two `Step` objects.
+#[unstable(feature = "step_trait",
+           reason = "likely to be replaced by finer-grained traits")]
+pub trait Step: Ord {
+    /// Steps `self` if possible.
+    fn step(&self, by: &Self) -> Option<Self>;
+
+    /// The number of steps between two step objects.
+    ///
+    /// `start` should always be less than `end`, so the result should never
+    /// be negative.
+    ///
+    /// Return `None` if it is not possible to calculate steps_between
+    /// without overflow.
+    fn steps_between(start: &Self, end: &Self, by: &Self) -> Option<usize>;
+}
+
+macro_rules! step_impl {
+    ($($t:ty)*) => ($(
+        impl Step for $t {
+            #[inline]
+            fn step(&self, by: &$t) -> Option<$t> {
+                (*self).checked_add(*by)
+            }
+            #[inline]
+            #[allow(trivial_numeric_casts)]
+            fn steps_between(start: &$t, end: &$t, by: &$t) -> Option<usize> {
+                if *start <= *end {
+                    Some(((*end - *start) / *by) as usize)
+                } else {
+                    Some(0)
+                }
+            }
+        }
+    )*)
+}
+
+macro_rules! step_impl_no_between {
+    ($($t:ty)*) => ($(
+        impl Step for $t {
+            #[inline]
+            fn step(&self, by: &$t) -> Option<$t> {
+                (*self).checked_add(*by)
+            }
+            #[inline]
+            fn steps_between(_a: &$t, _b: &$t, _by: &$t) -> Option<usize> {
+                None
+            }
+        }
+    )*)
+}
+
+step_impl!(usize u8 u16 u32 isize i8 i16 i32);
+#[cfg(target_pointer_width = "64")]
+step_impl!(u64 i64);
+#[cfg(target_pointer_width = "32")]
+step_impl_no_between!(u64 i64);
+
 /// An adapter for stepping range iterators by a custom amount.
 ///
 /// The resulting iterator handles overflow by stopping. The `A`
@@ -2429,7 +2516,7 @@ pub struct StepBy<A, R> {
     range: R,
 }
 
-impl<A: Add> RangeFrom<A> {
+impl<A: Step> RangeFrom<A> {
     /// Creates an iterator starting at the same point, but stepping by
     /// the given amount at each iteration.
     ///
@@ -2451,7 +2538,8 @@ impl<A: Add> RangeFrom<A> {
     }
 }
 
-impl<A: Int> ::ops::Range<A> {
+#[allow(deprecated)]
+impl<A: Step> ops::Range<A> {
     /// Creates an iterator with the same range, but stepping by the
     /// given amount at each iteration.
     ///
@@ -2484,35 +2572,18 @@ impl<A: Int> ::ops::Range<A> {
     }
 }
 
-/// An infinite iterator starting at `start` and advancing by `step` with each
-/// iteration
-#[unstable(feature = "core",
-           reason = "may be renamed or replaced by range notation adapters")]
-#[deprecated(since = "1.0.0-beta", reason = "use range notation and step_by")]
-pub type Counter<A> = StepBy<A, RangeFrom<A>>;
-
-/// Deprecated: use `(start..).step_by(step)` instead.
-#[inline]
-#[unstable(feature = "core",
-           reason = "may be renamed or replaced by range notation adapters")]
-#[deprecated(since = "1.0.0-beta", reason = "use (start..).step_by(step) instead")]
-#[allow(deprecated)]
-pub fn count<A>(start: A, step: A) -> Counter<A> {
-    StepBy {
-        range: RangeFrom { start: start },
-        step_by: step,
-    }
-}
-
 #[stable(feature = "rust1", since = "1.0.0")]
-impl<A: Add<Output=A> + Clone> Iterator for StepBy<A, RangeFrom<A>> {
+impl<A> Iterator for StepBy<A, RangeFrom<A>> where
+    A: Clone,
+    for<'a> &'a A: Add<&'a A, Output = A>
+{
     type Item = A;
 
     #[inline]
     fn next(&mut self) -> Option<A> {
-        let result = self.range.start.clone();
-        self.range.start = result.clone() + self.step_by.clone();
-        Some(result)
+        let mut n = &self.range.start + &self.step_by;
+        mem::swap(&mut n, &mut self.range.start);
+        Some(n)
     }
 
     #[inline]
@@ -2521,108 +2592,12 @@ impl<A: Add<Output=A> + Clone> Iterator for StepBy<A, RangeFrom<A>> {
     }
 }
 
-/// An iterator over the range [start, stop)
-#[allow(deprecated)]
-#[derive(Clone)]
-#[unstable(feature = "core",
-           reason = "will be replaced by range notation")]
-#[deprecated(since = "1.0.0-beta", reason = "use range notation")]
-pub struct Range<A> {
-    state: A,
-    stop: A,
-    one: A,
-}
-
-/// Deprecated: use `(start..stop)` instead.
-#[inline]
-#[unstable(feature = "core", reason = "will be replaced by range notation")]
-#[deprecated(since = "1.0.0-beta", reason = "use (start..stop) instead")]
-#[allow(deprecated)]
-pub fn range<A: Int>(start: A, stop: A) -> Range<A> {
-    Range {
-        state: start,
-        stop: stop,
-        one: Int::one(),
-    }
-}
-
-// FIXME: #10414: Unfortunate type bound
-#[unstable(feature = "core",
-           reason = "will be replaced by range notation")]
-#[deprecated(since = "1.0.0-beta", reason = "use range notation")]
-#[allow(deprecated)]
-impl<A: Int + ToPrimitive> Iterator for Range<A> {
-    type Item = A;
-
-    #[inline]
-    fn next(&mut self) -> Option<A> {
-        if self.state < self.stop {
-            let result = self.state.clone();
-            self.state = self.state + self.one;
-            Some(result)
-        } else {
-            None
-        }
-    }
-
-    #[inline]
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        // This first checks if the elements are representable as i64. If they aren't, try u64 (to
-        // handle cases like range(huge, huger)). We don't use usize/isize because the difference of
-        // the i64/u64 might lie within their range.
-        let bound = match self.state.to_i64() {
-            Some(a) => {
-                let sz = self.stop.to_i64().map(|b| b.checked_sub(a));
-                match sz {
-                    Some(Some(bound)) => bound.to_usize(),
-                    _ => None,
-                }
-            },
-            None => match self.state.to_u64() {
-                Some(a) => {
-                    let sz = self.stop.to_u64().map(|b| b.checked_sub(a));
-                    match sz {
-                        Some(Some(bound)) => bound.to_usize(),
-                        _ => None
-                    }
-                },
-                None => None
-            }
-        };
-
-        match bound {
-            Some(b) => (b, Some(b)),
-            // Standard fallback for unbounded/unrepresentable bounds
-            None => (0, None)
-        }
-    }
-}
-
-/// `Int` is required to ensure the range will be the same regardless of
-/// the direction it is consumed.
-#[unstable(feature = "core",
-           reason = "will be replaced by range notation")]
-#[deprecated(since = "1.0.0-beta", reason = "use range notation")]
-#[allow(deprecated)]
-impl<A: Int + ToPrimitive> DoubleEndedIterator for Range<A> {
-    #[inline]
-    fn next_back(&mut self) -> Option<A> {
-        if self.stop > self.state {
-            self.stop = self.stop - self.one;
-            Some(self.stop.clone())
-        } else {
-            None
-        }
-    }
-}
-
 /// An iterator over the range [start, stop]
 #[derive(Clone)]
 #[unstable(feature = "core",
            reason = "likely to be replaced by range notation and adapters")]
-#[allow(deprecated)]
 pub struct RangeInclusive<A> {
-    range: Range<A>,
+    range: ops::Range<A>,
     done: bool,
 }
 
@@ -2630,18 +2605,18 @@ pub struct RangeInclusive<A> {
 #[inline]
 #[unstable(feature = "core",
            reason = "likely to be replaced by range notation and adapters")]
-#[allow(deprecated)]
-pub fn range_inclusive<A: Int>(start: A, stop: A) -> RangeInclusive<A> {
+pub fn range_inclusive<A>(start: A, stop: A) -> RangeInclusive<A>
+    where A: Step + One + Clone
+{
     RangeInclusive {
-        range: range(start, stop),
+        range: start..stop,
         done: false,
     }
 }
 
 #[unstable(feature = "core",
            reason = "likely to be replaced by range notation and adapters")]
-#[allow(deprecated)]
-impl<A: Int + ToPrimitive> Iterator for RangeInclusive<A> {
+impl<A: Step + One + Clone> Iterator for RangeInclusive<A> {
     type Item = A;
 
     #[inline]
@@ -2649,9 +2624,9 @@ impl<A: Int + ToPrimitive> Iterator for RangeInclusive<A> {
         match self.range.next() {
             Some(x) => Some(x),
             None => {
-                if !self.done && self.range.state == self.range.stop {
+                if !self.done && self.range.start == self.range.end {
                     self.done = true;
-                    Some(self.range.stop.clone())
+                    Some(self.range.end.clone())
                 } else {
                     None
                 }
@@ -2677,57 +2652,47 @@ impl<A: Int + ToPrimitive> Iterator for RangeInclusive<A> {
 
 #[unstable(feature = "core",
            reason = "likely to be replaced by range notation and adapters")]
-#[allow(deprecated)]
-impl<A: Int + ToPrimitive> DoubleEndedIterator for RangeInclusive<A> {
+impl<A> DoubleEndedIterator for RangeInclusive<A>
+    where A: Step + One + Clone,
+          for<'a> &'a A: Sub<Output=A>
+{
     #[inline]
     fn next_back(&mut self) -> Option<A> {
-        if self.range.stop > self.range.state {
-            let result = self.range.stop.clone();
-            self.range.stop = self.range.stop - self.range.one;
+        if self.range.end > self.range.start {
+            let result = self.range.end.clone();
+            self.range.end = &self.range.end - &A::one();
             Some(result)
-        } else if !self.done && self.range.state == self.range.stop {
+        } else if !self.done && self.range.start == self.range.end {
             self.done = true;
-            Some(self.range.stop.clone())
+            Some(self.range.end.clone())
         } else {
             None
         }
     }
 }
 
-/// An iterator over the range [start, stop) by `step`. It handles overflow by stopping.
-#[unstable(feature = "core",
-           reason = "likely to be replaced by range notation and adapters")]
-#[deprecated(since = "1.0.0-beta", reason = "use range notation and step_by")]
-pub type RangeStep<A> = StepBy<A, ::ops::Range<A>>;
-
-/// Deprecated: use `(start..stop).step_by(step)` instead.
-#[inline]
-#[unstable(feature = "core",
-           reason = "likely to be replaced by range notation and adapters")]
-#[deprecated(since = "1.0.0-beta",
-             reason = "use `(start..stop).step_by(step)` instead")]
-#[allow(deprecated)]
-pub fn range_step<A: Int>(start: A, stop: A, step: A) -> RangeStep<A> {
-    StepBy {
-        step_by: step,
-        range: ::ops::Range { start: start, end: stop },
-    }
-}
-
 #[stable(feature = "rust1", since = "1.0.0")]
-impl<A: Int> Iterator for StepBy<A, ::ops::Range<A>> {
+#[allow(deprecated)]
+impl<A: Step + Zero + Clone> Iterator for StepBy<A, ops::Range<A>> {
     type Item = A;
 
     #[inline]
     fn next(&mut self) -> Option<A> {
-        let rev = self.step_by < Int::zero();
-        let start = self.range.start;
-        if (rev && start > self.range.end) || (!rev && start < self.range.end) {
-            match start.checked_add(self.step_by) {
-                Some(x) => self.range.start = x,
-                None => self.range.start = self.range.end.clone()
+        let rev = self.step_by < A::zero();
+        if (rev && self.range.start > self.range.end) ||
+           (!rev && self.range.start < self.range.end)
+        {
+            match self.range.start.step(&self.step_by) {
+                Some(mut n) => {
+                    mem::swap(&mut self.range.start, &mut n);
+                    Some(n)
+                },
+                None => {
+                    let mut n = self.range.end.clone();
+                    mem::swap(&mut self.range.start, &mut n);
+                    Some(n)
+                }
             }
-            Some(start)
         } else {
             None
         }
@@ -2774,6 +2739,7 @@ pub struct RangeStepInclusive<A> {
 #[inline]
 #[unstable(feature = "core",
            reason = "likely to be replaced by range notation and adapters")]
+#[allow(deprecated)]
 pub fn range_step_inclusive<A: Int>(start: A, stop: A, step: A) -> RangeStepInclusive<A> {
     let rev = step < Int::zero();
     RangeStepInclusive {
@@ -2787,6 +2753,7 @@ pub fn range_step_inclusive<A: Int>(start: A, stop: A, step: A) -> RangeStepIncl
 
 #[unstable(feature = "core",
            reason = "likely to be replaced by range notation and adapters")]
+#[allow(deprecated)]
 impl<A: Int> Iterator for RangeStepInclusive<A> {
     type Item = A;
 
@@ -2809,20 +2776,30 @@ impl<A: Int> Iterator for RangeStepInclusive<A> {
 macro_rules! range_exact_iter_impl {
     ($($t:ty)*) => ($(
         #[stable(feature = "rust1", since = "1.0.0")]
-        impl ExactSizeIterator for ::ops::Range<$t> { }
+        impl ExactSizeIterator for ops::Range<$t> { }
     )*)
 }
 
 #[stable(feature = "rust1", since = "1.0.0")]
-impl<A: Int> Iterator for ::ops::Range<A> {
+#[allow(deprecated)]
+impl<A: Step + One + Clone> Iterator for ops::Range<A> {
     type Item = A;
 
     #[inline]
     fn next(&mut self) -> Option<A> {
         if self.start < self.end {
-            let result = self.start;
-            self.start = self.start + Int::one();
-            Some(result)
+            match self.start.step(&A::one()) {
+                Some(mut n) => {
+                    mem::swap(&mut n, &mut self.start);
+                    Some(n)
+                },
+                None => {
+                    let mut n = self.end.clone();
+                    mem::swap(&mut n, &mut self.start);
+                    Some(n)
+
+                }
+            }
         } else {
             None
         }
@@ -2830,11 +2807,10 @@ impl<A: Int> Iterator for ::ops::Range<A> {
 
     #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
-        if self.start >= self.end {
-            (0, Some(0))
+        if let Some(hint) = Step::steps_between(&self.start, &self.end, &A::one()) {
+            (hint, Some(hint))
         } else {
-            let length = (self.end - self.start).to_usize();
-            (length.unwrap_or(0), length)
+            (0, None)
         }
     }
 }
@@ -2844,12 +2820,15 @@ impl<A: Int> Iterator for ::ops::Range<A> {
 range_exact_iter_impl!(usize u8 u16 u32 isize i8 i16 i32);
 
 #[stable(feature = "rust1", since = "1.0.0")]
-impl<A: Int> DoubleEndedIterator for ::ops::Range<A> {
+#[allow(deprecated)]
+impl<A: Step + One + Clone> DoubleEndedIterator for ops::Range<A> where
+    for<'a> &'a A: Sub<&'a A, Output = A>
+{
     #[inline]
     fn next_back(&mut self) -> Option<A> {
         if self.start < self.end {
-            self.end = self.end - Int::one();
-            Some(self.end)
+            self.end = &self.end - &A::one();
+            Some(self.end.clone())
         } else {
             None
         }
@@ -2857,15 +2836,16 @@ impl<A: Int> DoubleEndedIterator for ::ops::Range<A> {
 }
 
 #[stable(feature = "rust1", since = "1.0.0")]
-impl<A: Int> Iterator for ::ops::RangeFrom<A> {
+#[allow(deprecated)]
+impl<A: Step + One> Iterator for ops::RangeFrom<A> {
     type Item = A;
 
     #[inline]
     fn next(&mut self) -> Option<A> {
-        let result = self.start;
-        self.start = self.start + Int::one();
-        debug_assert!(result < self.start);
-        Some(result)
+        self.start.step(&A::one()).map(|mut n| {
+            mem::swap(&mut n, &mut self.start);
+            n
+        })
     }
 }
 

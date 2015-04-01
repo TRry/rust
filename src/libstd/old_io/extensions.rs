@@ -171,7 +171,7 @@ pub fn u64_from_be_bytes(data: &[u8], start: usize, size: usize) -> u64 {
     unsafe {
         let ptr = data.as_ptr().offset(start as isize);
         let out = buf.as_mut_ptr();
-        copy_nonoverlapping(out.offset((8 - size) as isize), ptr, size);
+        copy_nonoverlapping(ptr, out.offset((8 - size) as isize), size);
         (*(out as *const u64)).to_be()
     }
 }
@@ -519,7 +519,8 @@ mod bench {
         ({
             use super::u64_from_be_bytes;
 
-            let data = (0..$stride*100+$start_index).collect::<Vec<_>>();
+            let len = ($stride as u8).wrapping_mul(100).wrapping_add($start_index);
+            let data = (0..len).collect::<Vec<_>>();
             let mut sum = 0;
             $b.iter(|| {
                 let mut i = $start_index;

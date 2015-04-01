@@ -89,7 +89,6 @@ use core::iter::MultiplicativeIterator;
 use core::marker::Sized;
 use core::mem::size_of;
 use core::mem;
-use core::num::wrapping::WrappingOps;
 use core::ops::FnMut;
 use core::option::Option::{self, Some, None};
 use core::ptr;
@@ -106,7 +105,6 @@ pub use core::slice::{IntSliceExt, SplitMut, ChunksMut, Split};
 pub use core::slice::{SplitN, RSplitN, SplitNMut, RSplitNMut};
 pub use core::slice::{bytes, mut_ref_slice, ref_slice};
 pub use core::slice::{from_raw_parts, from_raw_parts_mut};
-pub use core::slice::{from_raw_buf, from_raw_mut_buf};
 
 ////////////////////////////////////////////////////////////////////////////////
 // Basic slice extension methods
@@ -278,33 +276,6 @@ impl<T> [T] {
             mem::swap(a, b);
         }
         cmp::min(self.len(), end-start)
-    }
-
-    /// Deprecated: use `&s[start .. end]` notation instead.
-    #[unstable(feature = "collections",
-               reason = "will be replaced by slice syntax")]
-    #[deprecated(since = "1.0.0", reason = "use &s[start .. end] instead")]
-    #[inline]
-    pub fn slice(&self, start: usize, end: usize) -> &[T] {
-        &self[start .. end]
-    }
-
-    /// Deprecated: use `&s[start..]` notation instead.
-    #[unstable(feature = "collections",
-               reason = "will be replaced by slice syntax")]
-    #[deprecated(since = "1.0.0", reason = "use &s[start..] instead")]
-    #[inline]
-    pub fn slice_from(&self, start: usize) -> &[T] {
-        &self[start ..]
-    }
-
-    /// Deprecated: use `&s[..end]` notation instead.
-    #[unstable(feature = "collections",
-               reason = "will be replaced by slice syntax")]
-    #[deprecated(since = "1.0.0", reason = "use &s[..end] instead")]
-    #[inline]
-    pub fn slice_to(&self, end: usize) -> &[T] {
-        &self[.. end]
     }
 
     /// Divides one slice into two at an index.
@@ -556,7 +527,6 @@ impl<T> [T] {
     /// ```rust
     /// # #![feature(core)]
     /// let s = [0, 1, 1, 1, 1, 2, 3, 5, 8, 13, 21, 34, 55];
-    /// let s = s.as_slice();
     ///
     /// let seek = 13;
     /// assert_eq!(s.binary_search_by(|probe| probe.cmp(&seek)), Ok(9));
@@ -608,42 +578,6 @@ impl<T> [T] {
     #[inline]
     pub fn get_mut(&mut self, index: usize) -> Option<&mut T> {
         core_slice::SliceExt::get_mut(self, index)
-    }
-
-    /// Deprecated: use `&mut s[..]` instead.
-    #[unstable(feature = "collections",
-               reason = "will be replaced by slice syntax")]
-    #[deprecated(since = "1.0.0", reason = "use &mut s[..] instead")]
-    #[allow(deprecated)]
-    pub fn as_mut_slice(&mut self) -> &mut [T] {
-        core_slice::SliceExt::as_mut_slice(self)
-    }
-
-    /// Deprecated: use `&mut s[start .. end]` instead.
-    #[unstable(feature = "collections",
-               reason = "will be replaced by slice syntax")]
-    #[deprecated(since = "1.0.0", reason = "use &mut s[start .. end] instead")]
-    #[inline]
-    pub fn slice_mut(&mut self, start: usize, end: usize) -> &mut [T] {
-        &mut self[start .. end]
-    }
-
-    /// Deprecated: use `&mut s[start ..]` instead.
-    #[unstable(feature = "collections",
-               reason = "will be replaced by slice syntax")]
-    #[deprecated(since = "1.0.0", reason = "use &mut s[start ..] instead")]
-    #[inline]
-    pub fn slice_from_mut(&mut self, start: usize) -> &mut [T] {
-        &mut self[start ..]
-    }
-
-    /// Deprecated: use `&mut s[.. end]` instead.
-    #[unstable(feature = "collections",
-               reason = "will be replaced by slice syntax")]
-    #[deprecated(since = "1.0.0", reason = "use &mut s[.. end] instead")]
-    #[inline]
-    pub fn slice_to_mut(&mut self, end: usize) -> &mut [T] {
-        &mut self[.. end]
     }
 
     /// Returns an iterator that allows modifying each value
@@ -923,7 +857,6 @@ impl<T> [T] {
     /// ```rust
     /// # #![feature(core)]
     /// let s = [0, 1, 1, 1, 1, 2, 3, 5, 8, 13, 21, 34, 55];
-    /// let s = s.as_slice();
     ///
     /// assert_eq!(s.binary_search(&13),  Ok(9));
     /// assert_eq!(s.binary_search(&4),   Err(7));
@@ -934,13 +867,6 @@ impl<T> [T] {
     #[stable(feature = "rust1", since = "1.0.0")]
     pub fn binary_search(&self, x: &T) -> Result<usize, usize> where T: Ord {
         core_slice::SliceExt::binary_search(self, x)
-    }
-
-    /// Deprecated: use `binary_search` instead.
-    #[unstable(feature = "collections")]
-    #[deprecated(since = "1.0.0", reason = "use binary_search instead")]
-    pub fn binary_search_elem(&self, x: &T) -> Result<usize, usize> where T: Ord {
-        self.binary_search(x)
     }
 
     /// Mutates the slice to the next lexicographic permutation.
@@ -1320,10 +1246,10 @@ fn insertion_sort<T, F>(v: &mut [T], mut compare: F) where F: FnMut(&T, &T) -> O
 
             if i != j {
                 let tmp = ptr::read(read_ptr);
-                ptr::copy(buf_v.offset(j + 1),
-                          &*buf_v.offset(j),
+                ptr::copy(&*buf_v.offset(j),
+                          buf_v.offset(j + 1),
                           (i - j) as usize);
-                ptr::copy_nonoverlapping(buf_v.offset(j), &tmp, 1);
+                ptr::copy_nonoverlapping(&tmp, buf_v.offset(j), 1);
                 mem::forget(tmp);
             }
         }
@@ -1396,10 +1322,10 @@ fn merge_sort<T, F>(v: &mut [T], mut compare: F) where F: FnMut(&T, &T) -> Order
                 // j + 1 could be `len` (for the last `i`), but in
                 // that case, `i == j` so we don't copy. The
                 // `.offset(j)` is always in bounds.
-                ptr::copy(buf_dat.offset(j + 1),
-                          &*buf_dat.offset(j),
+                ptr::copy(&*buf_dat.offset(j),
+                          buf_dat.offset(j + 1),
                           i - j as usize);
-                ptr::copy_nonoverlapping(buf_dat.offset(j), read_ptr, 1);
+                ptr::copy_nonoverlapping(read_ptr, buf_dat.offset(j), 1);
             }
         }
     }
@@ -1447,11 +1373,11 @@ fn merge_sort<T, F>(v: &mut [T], mut compare: F) where F: FnMut(&T, &T) -> Order
                     if left == right_start {
                         // the number remaining in this run.
                         let elems = (right_end as usize - right as usize) / mem::size_of::<T>();
-                        ptr::copy_nonoverlapping(out, &*right, elems);
+                        ptr::copy_nonoverlapping(&*right, out, elems);
                         break;
                     } else if right == right_end {
                         let elems = (right_start as usize - left as usize) / mem::size_of::<T>();
-                        ptr::copy_nonoverlapping(out, &*left, elems);
+                        ptr::copy_nonoverlapping(&*left, out, elems);
                         break;
                     }
 
@@ -1465,7 +1391,7 @@ fn merge_sort<T, F>(v: &mut [T], mut compare: F) where F: FnMut(&T, &T) -> Order
                     } else {
                         step(&mut left)
                     };
-                    ptr::copy_nonoverlapping(out, &*to_copy, 1);
+                    ptr::copy_nonoverlapping(&*to_copy, out, 1);
                     step(&mut out);
                 }
             }
@@ -1479,7 +1405,7 @@ fn merge_sort<T, F>(v: &mut [T], mut compare: F) where F: FnMut(&T, &T) -> Order
     // write the result to `v` in one go, so that there are never two copies
     // of the same object in `v`.
     unsafe {
-        ptr::copy_nonoverlapping(v.as_mut_ptr(), &*buf_dat, len);
+        ptr::copy_nonoverlapping(&*buf_dat, v.as_mut_ptr(), len);
     }
 
     // increment the pointer, returning the old pointer.

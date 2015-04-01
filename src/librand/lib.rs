@@ -30,6 +30,7 @@
 #![feature(staged_api)]
 #![staged_api]
 #![feature(core)]
+#![feature(step_by)]
 #![deprecated(reason = "use the crates.io `rand` library instead",
               since = "1.0.0-alpha")]
 
@@ -153,7 +154,7 @@ pub trait Rng : Sized {
     ///
     /// let mut v = [0; 13579];
     /// thread_rng().fill_bytes(&mut v);
-    /// println!("{:?}", v.as_slice());
+    /// println!("{:?}", &v[..]);
     /// ```
     fn fill_bytes(&mut self, dest: &mut [u8]) {
         // this could, in theory, be done by transmuting dest to a
@@ -309,9 +310,9 @@ pub trait Rng : Sized {
     /// let mut rng = thread_rng();
     /// let mut y = [1, 2, 3];
     /// rng.shuffle(&mut y);
-    /// println!("{:?}", y.as_slice());
+    /// println!("{:?}", y);
     /// rng.shuffle(&mut y);
-    /// println!("{:?}", y.as_slice());
+    /// println!("{:?}", y);
     /// ```
     fn shuffle<T>(&mut self, values: &mut [T]) {
         let mut i = values.len();

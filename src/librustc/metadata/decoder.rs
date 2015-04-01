@@ -35,7 +35,7 @@ use std::collections::HashMap;
 use std::hash::{self, Hash, SipHasher};
 use std::io::prelude::*;
 use std::io;
-use std::num::{FromPrimitive, Int};
+use std::num::FromPrimitive;
 use std::rc::Rc;
 use std::slice::bytes;
 use std::str;
@@ -62,7 +62,7 @@ pub type Cmd<'a> = &'a crate_metadata;
 
 fn u32_from_be_bytes(bytes: &[u8]) -> u32 {
     let mut b = [0; 4];
-    bytes::copy_memory(&mut b, &bytes[..4]);
+    bytes::copy_memory(&bytes[..4], &mut b);
     unsafe { (*(b.as_ptr() as *const u32)).to_be() }
 }
 

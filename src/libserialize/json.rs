@@ -100,7 +100,7 @@
 //!     let encoded = json::encode(&object).unwrap();
 //!
 //!     // Deserialize using `json::decode`
-//!     let decoded: TestStruct = json::decode(encoded.as_slice()).unwrap();
+//!     let decoded: TestStruct = json::decode(&encoded[..]).unwrap();
 //! }
 //! ```
 //!
@@ -204,6 +204,8 @@ use std::io::prelude::*;
 use std::io;
 use std::mem::swap;
 use std::num::FpCategory as Fp;
+#[allow(deprecated)]
+use std::num::wrapping::WrappingOps;
 use std::ops::Index;
 use std::str::FromStr;
 use std::string;
@@ -365,8 +367,8 @@ impl std::error::Error for EncoderError {
     fn description(&self) -> &str { "encoder error" }
 }
 
-impl std::error::FromError<fmt::Error> for EncoderError {
-    fn from_error(err: fmt::Error) -> EncoderError { EncoderError::FmtError(err) }
+impl From<fmt::Error> for EncoderError {
+    fn from(err: fmt::Error) -> EncoderError { EncoderError::FmtError(err) }
 }
 
 pub type EncodeResult = Result<(), EncoderError>;
@@ -1552,6 +1554,7 @@ impl<T: Iterator<Item=char>> Parser<T> {
         }
     }
 
+    #[allow(deprecated)] // possible resolve bug is mapping these to traits
     fn parse_u64(&mut self) -> Result<u64, ParserError> {
         let mut accum = 0;
         let last_accum = 0; // necessary to detect overflow.

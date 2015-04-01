@@ -123,7 +123,6 @@
        html_root_url = "http://doc.rust-lang.org/nightly/",
        html_playground_url = "http://play.rust-lang.org/")]
 
-#![feature(io)]
 #![feature(core)]
 #![feature(rustc_private)]
 #![feature(staged_api)]
@@ -241,7 +240,6 @@ pub mod reader {
 
     use std::isize;
     use std::mem::transmute;
-    use std::num::Int;
     use std::slice::bytes;
 
     use serialize;
@@ -346,7 +344,7 @@ pub mod reader {
 
         unsafe {
             let ptr = data.as_ptr().offset(start as isize) as *const u32;
-            let val = Int::from_be(*ptr);
+            let val = u32::from_be(*ptr);
 
             let i = (val >> 28) as usize;
             let (shift, mask) = SHIFT_MASK_TABLE[i];
@@ -449,21 +447,21 @@ pub mod reader {
     pub fn doc_as_u16(d: Doc) -> u16 {
         assert_eq!(d.end, d.start + 2);
         let mut b = [0; 2];
-        bytes::copy_memory(&mut b, &d.data[d.start..d.end]);
+        bytes::copy_memory(&d.data[d.start..d.end], &mut b);
         unsafe { (*(b.as_ptr() as *const u16)).to_be() }
     }
 
     pub fn doc_as_u32(d: Doc) -> u32 {
         assert_eq!(d.end, d.start + 4);
         let mut b = [0; 4];
-        bytes::copy_memory(&mut b, &d.data[d.start..d.end]);
+        bytes::copy_memory(&d.data[d.start..d.end], &mut b);
         unsafe { (*(b.as_ptr() as *const u32)).to_be() }
     }
 
     pub fn doc_as_u64(d: Doc) -> u64 {
         assert_eq!(d.end, d.start + 8);
         let mut b = [0; 8];
-        bytes::copy_memory(&mut b, &d.data[d.start..d.end]);
+        bytes::copy_memory(&d.data[d.start..d.end], &mut b);
         unsafe { (*(b.as_ptr() as *const u64)).to_be() }
     }
 
@@ -835,7 +833,6 @@ pub mod reader {
 
 pub mod writer {
     use std::mem;
-    use std::num::Int;
     use std::io::prelude::*;
     use std::io::{self, SeekFrom, Cursor};
     use std::slice::bytes;
@@ -864,8 +861,8 @@ pub mod writer {
         } else if 0x100 <= n && n < NUM_TAGS {
             w.write_all(&[0xf0 | (n >> 8) as u8, n as u8])
         } else {
-            Err(io::Error::new(io::ErrorKind::Other, "invalid tag",
-                               Some(n.to_string())))
+            Err(io::Error::new(io::ErrorKind::Other,
+                               &format!("invalid tag: {}", n)[..]))
         }
     }
 
@@ -878,7 +875,7 @@ pub mod writer {
             4 => w.write_all(&[0x10 | ((n >> 24) as u8), (n >> 16) as u8,
                             (n >> 8) as u8, n as u8]),
             _ => Err(io::Error::new(io::ErrorKind::Other,
-                                    "isize too big", Some(n.to_string())))
+                                    &format!("isize too big: {}", n)[..]))
         }
     }
 
@@ -887,8 +884,8 @@ pub mod writer {
         if n < 0x4000 { return write_sized_vuint(w, n, 2); }
         if n < 0x200000 { return write_sized_vuint(w, n, 3); }
         if n < 0x10000000 { return write_sized_vuint(w, n, 4); }
-        Err(io::Error::new(io::ErrorKind::Other, "isize too big",
-                           Some(n.to_string())))
+        Err(io::Error::new(io::ErrorKind::Other,
+                           &format!("isize too big: {}", n)[..]))
     }
 
     impl<'a> Encoder<'a> {
@@ -938,7 +935,7 @@ pub mod writer {
                 {
                     let last_size_pos = last_size_pos as usize;
                     let data = &self.writer.get_ref()[last_size_pos+4..cur_pos as usize];
-                    bytes::copy_memory(&mut buf, data);
+                    bytes::copy_memory(data, &mut buf);
                 }
 
                 // overwrite the size and data and continue
@@ -1079,8 +1076,8 @@ pub mod writer {
                 self.wr_tagged_raw_u32(EsSub32 as usize, v)
             } else {
                 Err(io::Error::new(io::ErrorKind::Other,
-                                   "length or variant id too big",
-                                   Some(v.to_string())))
+                                   &format!("length or variant id too big: {}",
+                                            v)[..]))
             }
         }
 

@@ -14,7 +14,7 @@
 
 #![allow(deprecated)] // to_be32
 
-use std::iter::{range_step, repeat};
+use std::iter::repeat;
 use std::num::Int;
 use std::slice::bytes::{MutableByteVector, copy_memory};
 use serialize::hex::ToHex;
@@ -64,7 +64,7 @@ impl ToBits for u64 {
 fn add_bytes_to_bits<T: Int + ToBits>(bits: T, bytes: T) -> T {
     let (new_high_bits, new_low_bits) = bytes.to_bits();
 
-    if new_high_bits > Int::zero() {
+    if new_high_bits > T::zero() {
         panic!("numeric overflow occurred.")
     }
 
@@ -139,15 +139,15 @@ impl FixedBuffer for FixedBuffer64 {
             let buffer_remaining = size - self.buffer_idx;
             if input.len() >= buffer_remaining {
                     copy_memory(
-                        &mut self.buffer[self.buffer_idx..size],
-                        &input[..buffer_remaining]);
+                        &input[..buffer_remaining],
+                        &mut self.buffer[self.buffer_idx..size]);
                 self.buffer_idx = 0;
                 func(&self.buffer);
                 i += buffer_remaining;
             } else {
                 copy_memory(
-                    &mut self.buffer[self.buffer_idx..self.buffer_idx + input.len()],
-                    input);
+                    input,
+                    &mut self.buffer[self.buffer_idx..self.buffer_idx + input.len()]);
                 self.buffer_idx += input.len();
                 return;
             }
@@ -165,8 +165,8 @@ impl FixedBuffer for FixedBuffer64 {
         // be empty.
         let input_remaining = input.len() - i;
         copy_memory(
-            &mut self.buffer[..input_remaining],
-            &input[i..]);
+            &input[i..],
+            &mut self.buffer[..input_remaining]);
         self.buffer_idx += input_remaining;
     }
 
@@ -368,7 +368,7 @@ impl Engine256State {
 
         // Putting the message schedule inside the same loop as the round calculations allows for
         // the compiler to generate better code.
-        for t in range_step(0, 48, 8) {
+        for t in (0..48).step_by(8) {
             schedule_round!(t + 16);
             schedule_round!(t + 17);
             schedule_round!(t + 18);
@@ -388,7 +388,7 @@ impl Engine256State {
             sha2_round!(b, c, d, e, f, g, h, a, K32, t + 7);
         }
 
-        for t in range_step(48, 64, 8) {
+        for t in (48..64).step_by(8) {
             sha2_round!(a, b, c, d, e, f, g, h, K32, t);
             sha2_round!(h, a, b, c, d, e, f, g, K32, t + 1);
             sha2_round!(g, h, a, b, c, d, e, f, K32, t + 2);
@@ -537,7 +537,7 @@ mod tests {
     use self::rand::isaac::IsaacRng;
     use serialize::hex::FromHex;
     use std::iter::repeat;
-    use std::num::Int;
+    use std::u64;
     use super::{Digest, Sha256, FixedBuffer};
 
     // A normal addition - no overflow occurs
@@ -550,7 +550,7 @@ mod tests {
     #[test]
     #[should_panic]
     fn test_add_bytes_to_bits_overflow() {
-        super::add_bytes_to_bits::<u64>(Int::max_value(), 1);
+        super::add_bytes_to_bits::<u64>(u64::MAX, 1);
     }
 
     struct Test {

@@ -118,7 +118,7 @@ impl<R: Reader> Reader for BufferedReader<R> {
         let nread = {
             let available = try!(self.fill_buf());
             let nread = cmp::min(available.len(), buf.len());
-            slice::bytes::copy_memory(buf, &available[..nread]);
+            slice::bytes::copy_memory(&available[..nread], buf);
             nread
         };
         self.pos += nread;
@@ -225,7 +225,7 @@ impl<W: Writer> Writer for BufferedWriter<W> {
             self.inner.as_mut().unwrap().write_all(buf)
         } else {
             let dst = &mut self.buf[self.pos..];
-            slice::bytes::copy_memory(dst, buf);
+            slice::bytes::copy_memory(buf, dst);
             self.pos += buf.len();
             Ok(())
         }
@@ -548,7 +548,7 @@ mod test {
         let mut w = BufferedWriter::with_capacity(3, Vec::new());
         w.write_all(&[0, 1]).unwrap();
         let a: &[_] = &[];
-        assert_eq!(a, &w.get_ref()[..]);
+        assert_eq!(&w.get_ref()[..], a);
         let w = w.into_inner();
         let a: &[_] = &[0, 1];
         assert_eq!(a, &w[..]);

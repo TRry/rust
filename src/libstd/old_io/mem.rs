@@ -168,7 +168,7 @@ impl Reader for MemReader {
             let input = &self.buf[self.pos.. self.pos + write_len];
             let output = &mut buf[..write_len];
             assert_eq!(input.len(), output.len());
-            slice::bytes::copy_memory(output, input);
+            slice::bytes::copy_memory(input, output);
         }
         self.pos += write_len;
         assert!(self.pos <= self.buf.len());
@@ -212,7 +212,7 @@ impl<'a> Reader for &'a [u8] {
         {
             let input = &self[..write_len];
             let output = &mut buf[.. write_len];
-            slice::bytes::copy_memory(output, input);
+            slice::bytes::copy_memory(input, output);
         }
 
         *self = &self[write_len..];
@@ -287,13 +287,13 @@ impl<'a> Writer for BufWriter<'a> {
         let src_len = src.len();
 
         if dst_len >= src_len {
-            slice::bytes::copy_memory(dst, src);
+            slice::bytes::copy_memory(src, dst);
 
             self.pos += src_len;
 
             Ok(())
         } else {
-            slice::bytes::copy_memory(dst, &src[..dst_len]);
+            slice::bytes::copy_memory(&src[..dst_len], dst);
 
             self.pos += dst_len;
 
@@ -360,7 +360,7 @@ impl<'a> Reader for BufReader<'a> {
             let input = &self.buf[self.pos.. self.pos + write_len];
             let output = &mut buf[..write_len];
             assert_eq!(input.len(), output.len());
-            slice::bytes::copy_memory(output, input);
+            slice::bytes::copy_memory(input, output);
         }
         self.pos += write_len;
         assert!(self.pos <= self.buf.len());
@@ -399,7 +399,7 @@ impl<'a> Buffer for BufReader<'a> {
 mod test {
     extern crate test as test_crate;
     use old_io::{SeekSet, SeekCur, SeekEnd, Reader, Writer, Seek, Buffer};
-    use prelude::v1::{Ok, Err, Vec,  AsSlice};
+    use prelude::v1::{Ok, Err, Vec};
     use prelude::v1::Iterator;
     use old_io;
     use iter::repeat;
@@ -744,7 +744,7 @@ mod test {
                     wr.write(&[5; 10]).unwrap();
                 }
             }
-            assert_eq!(buf.as_slice(), [5; 100].as_slice());
+            assert_eq!(&buf[..], &[5; 100][..]);
         });
     }
 
