@@ -18,7 +18,6 @@ pub use self::RegionResolutionError::*;
 pub use self::VarValue::*;
 use self::Classification::*;
 
-use super::cres;
 use super::{RegionVariableOrigin, SubregionOrigin, TypeTrace, MiscVariable};
 
 use middle::region;
@@ -26,6 +25,7 @@ use middle::ty::{self, Ty};
 use middle::ty::{BoundRegion, FreeRegion, Region, RegionVid};
 use middle::ty::{ReEmpty, ReStatic, ReInfer, ReFree, ReEarlyBound};
 use middle::ty::{ReLateBound, ReScope, ReVar, ReSkolemized, BrFresh};
+use middle::ty_relate::RelateResult;
 use middle::graph;
 use middle::graph::{Direction, NodeIndex};
 use util::common::indenter;
@@ -115,7 +115,7 @@ pub enum RegionResolutionError<'tcx> {
     /// Could not infer a value for `v` because `sub_r <= v` (due to
     /// `sub_origin`) but `v <= sup_r` (due to `sup_origin`) and
     /// `sub_r <= sup_r` does not hold.
-    SubSupConflict(RegionVariableOrigin<'tcx>,
+    SubSupConflict(RegionVariableOrigin,
                    SubregionOrigin<'tcx>, Region,
                    SubregionOrigin<'tcx>, Region),
 
@@ -124,7 +124,7 @@ pub enum RegionResolutionError<'tcx> {
     /// Could not infer a value for `v` because `v <= r1` (due to
     /// `origin1`) and `v <= r2` (due to `origin2`) and
     /// `r1` and `r2` have no intersection.
-    SupSupConflict(RegionVariableOrigin<'tcx>,
+    SupSupConflict(RegionVariableOrigin,
                    SubregionOrigin<'tcx>, Region,
                    SubregionOrigin<'tcx>, Region),
 
@@ -132,7 +132,7 @@ pub enum RegionResolutionError<'tcx> {
     /// more specific errors message by suggesting to the user where they
     /// should put a lifetime. In those cases we process and put those errors
     /// into `ProcessedErrors` before we do any reporting.
-    ProcessedErrors(Vec<RegionVariableOrigin<'tcx>>,
+    ProcessedErrors(Vec<RegionVariableOrigin>,
                     Vec<(TypeTrace<'tcx>, ty::type_err<'tcx>)>,
                     Vec<SameRegions>),
 }
@@ -168,7 +168,7 @@ pub type CombineMap = FnvHashMap<TwoRegions, RegionVid>;
 
 pub struct RegionVarBindings<'a, 'tcx: 'a> {
     tcx: &'a ty::ctxt<'tcx>,
-    var_origins: RefCell<Vec<RegionVariableOrigin<'tcx>>>,
+    var_origins: RefCell<Vec<RegionVariableOrigin>>,
 
     // Constraints of the form `A <= B` introduced by the region
     // checker.  Here at least one of `A` and `B` must be a region
@@ -316,7 +316,7 @@ impl<'a, 'tcx> RegionVarBindings<'a, 'tcx> {
         len as u32
     }
 
-    pub fn new_region_var(&self, origin: RegionVariableOrigin<'tcx>) -> RegionVid {
+    pub fn new_region_var(&self, origin: RegionVariableOrigin) -> RegionVid {
         let id = self.num_vars();
         self.var_origins.borrow_mut().push(origin.clone());
         let vid = RegionVid { index: id };
@@ -760,15 +760,17 @@ impl<'a, 'tcx> RegionVarBindings<'a, 'tcx> {
             // at least as big as the block fr.scope_id".  So, we can
             // reasonably compare free regions and scopes:
             let fr_scope = fr.scope.to_code_extent();
-            match self.tcx.region_maps.nearest_common_ancestor(fr_scope, s_id) {
+            let r_id = self.tcx.region_maps.nearest_common_ancestor(fr_scope, s_id);
+
+            if r_id == fr_scope {
               // if the free region's scope `fr.scope_id` is bigger than
               // the scope region `s_id`, then the LUB is the free
               // region itself:
-              Some(r_id) if r_id == fr_scope => f,
-
+              f
+            } else {
               // otherwise, we don't know what the free region is,
               // so we must conservatively say the LUB is static:
-              _ => ReStatic
+              ReStatic
             }
           }
 
@@ -776,10 +778,7 @@ impl<'a, 'tcx> RegionVarBindings<'a, 'tcx> {
             // The region corresponding to an outer block is a
             // subtype of the region corresponding to an inner
             // block.
-            match self.tcx.region_maps.nearest_common_ancestor(a_id, b_id) {
-              Some(r_id) => ReScope(r_id),
-              _ => ReStatic
-            }
+            ReScope(self.tcx.region_maps.nearest_common_ancestor(a_id, b_id))
           }
 
           (ReFree(ref a_fr), ReFree(ref b_fr)) => {
@@ -799,7 +798,8 @@ impl<'a, 'tcx> RegionVarBindings<'a, 'tcx> {
     /// regions are given as argument, in any order, a consistent result is returned.
     fn lub_free_regions(&self,
                         a: &FreeRegion,
-                        b: &FreeRegion) -> ty::Region
+                        b: &FreeRegion)
+                        -> ty::Region
     {
         return match a.cmp(b) {
             Less => helper(self, a, b),
@@ -824,7 +824,8 @@ impl<'a, 'tcx> RegionVarBindings<'a, 'tcx> {
     fn glb_concrete_regions(&self,
                             a: Region,
                             b: Region)
-                         -> cres<'tcx, Region> {
+                            -> RelateResult<'tcx, Region>
+    {
         debug!("glb_concrete_regions({:?}, {:?})", a, b);
         match (a, b) {
             (ReLateBound(..), _) |
@@ -866,9 +867,10 @@ impl<'a, 'tcx> RegionVarBindings<'a, 'tcx> {
                 // is the scope `s_id`.  Otherwise, as we do not know
                 // big the free region is precisely, the GLB is undefined.
                 let fr_scope = fr.scope.to_code_extent();
-                match self.tcx.region_maps.nearest_common_ancestor(fr_scope, s_id) {
-                    Some(r_id) if r_id == fr_scope => Ok(s),
-                    _ => Err(ty::terr_regions_no_overlap(b, a))
+                if self.tcx.region_maps.nearest_common_ancestor(fr_scope, s_id) == fr_scope {
+                    Ok(s)
+                } else {
+                    Err(ty::terr_regions_no_overlap(b, a))
                 }
             }
 
@@ -898,7 +900,8 @@ impl<'a, 'tcx> RegionVarBindings<'a, 'tcx> {
     /// returned.
     fn glb_free_regions(&self,
                         a: &FreeRegion,
-                        b: &FreeRegion) -> cres<'tcx, ty::Region>
+                        b: &FreeRegion)
+                        -> RelateResult<'tcx, ty::Region>
     {
         return match a.cmp(b) {
             Less => helper(self, a, b),
@@ -908,7 +911,7 @@ impl<'a, 'tcx> RegionVarBindings<'a, 'tcx> {
 
         fn helper<'a, 'tcx>(this: &RegionVarBindings<'a, 'tcx>,
                             a: &FreeRegion,
-                            b: &FreeRegion) -> cres<'tcx, ty::Region>
+                            b: &FreeRegion) -> RelateResult<'tcx, ty::Region>
         {
             if this.tcx.region_maps.sub_free_region(*a, *b) {
                 Ok(ty::ReFree(*a))
@@ -926,7 +929,8 @@ impl<'a, 'tcx> RegionVarBindings<'a, 'tcx> {
                         region_a: ty::Region,
                         region_b: ty::Region,
                         scope_a: region::CodeExtent,
-                        scope_b: region::CodeExtent) -> cres<'tcx, Region>
+                        scope_b: region::CodeExtent)
+                        -> RelateResult<'tcx, Region>
     {
         // We want to generate the intersection of two
         // scopes or two free regions.  So, if one of
@@ -934,10 +938,13 @@ impl<'a, 'tcx> RegionVarBindings<'a, 'tcx> {
         // it. Otherwise fail.
         debug!("intersect_scopes(scope_a={:?}, scope_b={:?}, region_a={:?}, region_b={:?})",
                scope_a, scope_b, region_a, region_b);
-        match self.tcx.region_maps.nearest_common_ancestor(scope_a, scope_b) {
-            Some(r_id) if scope_a == r_id => Ok(ReScope(scope_b)),
-            Some(r_id) if scope_b == r_id => Ok(ReScope(scope_a)),
-            _ => Err(ty::terr_regions_no_overlap(region_a, region_b))
+        let r_id = self.tcx.region_maps.nearest_common_ancestor(scope_a, scope_b);
+        if r_id == scope_a {
+            Ok(ReScope(scope_b))
+        } else if r_id == scope_b {
+            Ok(ReScope(scope_a))
+        } else {
+            Err(ty::terr_regions_no_overlap(region_a, region_b))
         }
     }
 }
