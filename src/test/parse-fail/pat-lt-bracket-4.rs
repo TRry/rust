@@ -8,10 +8,14 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+enum BtNode {
+    Node(u32,Box<BtNode>,Box<BtNode>),
+    Leaf(u32),
+}
+
 fn main() {
-  match 42 {
-    x < 7 => (),
-   //~^ error: unexpected token: `<`
-    _ => ()
-  }
+    let y = match x {
+        Foo<T>::A(value) => value, //~ error: expected one of `=>`, `@`, `if`, or `|`, found `<`
+        Foo<T>::B => 7,
+    };
 }

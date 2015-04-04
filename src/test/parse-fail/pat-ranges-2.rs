@@ -8,15 +8,8 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-struct Foo<T>(T, T);
+// Parsing of range patterns
 
-impl<T> Foo<T> {
-    fn foo(&self) {
-        match *self {
-            Foo<T>(x, y) => {
-            //~^ error: unexpected token: `<`
-              println!("Goodbye, World!")
-            }
-        }
-    }
+fn main() {
+    let 10 ... makropulos!() = 12; //~ error: expected one of `::`, `:`, `;`, or `=`, found `!`
 }

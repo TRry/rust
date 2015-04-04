@@ -1,4 +1,4 @@
-// Copyright 2012 The Rust Project Developers. See the COPYRIGHT
+// Copyright 2015 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
 //
@@ -8,18 +8,10 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// Test that disallow lifetime parameters that are unused.
-
-use std::marker;
-
-struct Bivariant<'a>; //~ ERROR parameter `'a` is never used
-
-struct Struct<'a, 'd> { //~ ERROR parameter `'d` is never used
-    field: &'a [i32]
+fn main() {
+  match 42 {
+    x < 7 => (),
+   //~^ error: expected one of `=>`, `@`, `if`, or `|`, found `<`
+    _ => ()
+  }
 }
-
-trait Trait<'a, 'd> { // OK on traits
-    fn method(&'a self);
-}
-
-fn main() {}

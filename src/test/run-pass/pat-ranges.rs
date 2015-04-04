@@ -1,4 +1,4 @@
-// Copyright 2012 The Rust Project Developers. See the COPYRIGHT
+// Copyright 2015 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
 //
@@ -8,18 +8,16 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// Test that disallow lifetime parameters that are unused.
+// Parsing of range patterns
 
-use std::marker;
+const NUM1: i32 = 10;
 
-struct Bivariant<'a>; //~ ERROR parameter `'a` is never used
-
-struct Struct<'a, 'd> { //~ ERROR parameter `'d` is never used
-    field: &'a [i32]
+mod m {
+    pub const NUM2: i32 = 16;
 }
 
-trait Trait<'a, 'd> { // OK on traits
-    fn method(&'a self);
+fn main() {
+    if let NUM1 ... m::NUM2 = 10 {} else { panic!() }
+    if let ::NUM1 ... ::m::NUM2 = 11 {} else { panic!() }
+    if let -13 ... -10 = 12 { panic!() } else {}
 }
-
-fn main() {}
