@@ -1,4 +1,4 @@
-// Copyright 2014 The Rust Project Developers. See the COPYRIGHT
+// Copyright 2015 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
 //
@@ -8,13 +8,13 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#![feature(unboxed_closures)]
+// ignore-tidy-linelength
 
-trait Zero { fn dummy(&self); }
+use std::ops::{Add, Sub};
 
-fn foo(_: Zero())
-    //~^ ERROR wrong number of type arguments
-    //~| ERROR associated type `Output` not found for `Zero`
-{}
+type Test = Add +
+            //~^ ERROR the type parameter `RHS` must be explicitly specified in an object type because its default value `Self` references the type `Self`
+            Sub;
+            //~^ ERROR only the builtin traits can be used as closure or object bounds
 
 fn main() { }
