@@ -8,22 +8,22 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use std::marker::MarkerTrait;
-
-trait Foo : MarkerTrait {
-    type Item;
+pub enum Attribute {
+    Code {attr_name_idx: u16},
 }
 
-struct X;
-
-impl Foo for X {
-    type Item = bool;
+pub enum Foo {
+    Bar
 }
 
-fn print_x(_: &Foo<Item=bool>, extra: &str) {
-    println!("{}", extra);
+fn test(a: Foo) {
+    println!("{}", a.b); //~ ERROR attempted access of field
 }
 
 fn main() {
-    print_x(X);  //~error this function takes 2 parameters but 1 parameter was supplied
+    let x = Attribute::Code {
+        attr_name_idx: 42,
+    };
+    let z = (&x).attr_name_idx; //~ ERROR attempted access of field
+    let y = x.attr_name_idx; //~ ERROR attempted access of field
 }
