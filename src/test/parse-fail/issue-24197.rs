@@ -1,4 +1,4 @@
-// Copyright 2013 The Rust Project Developers. See the COPYRIGHT
+// Copyright 2015 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
 //
@@ -8,19 +8,6 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#![deny(dead_code)]
-
-mod inner {
-    pub trait Trait {
-        fn f(&self) { f(); }
-    }
-
-    impl Trait for isize {}
-
-    fn f() {}
-}
-
-pub fn foo() {
-    let a = &1isize as &inner::Trait;
-    a.f();
+fn main() {
+    let buf[0] = 0; //~ ERROR expected one of `:`, `;`, `=`, or `@`, found `[`
 }
