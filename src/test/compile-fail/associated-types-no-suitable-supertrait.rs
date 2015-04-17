@@ -10,6 +10,14 @@
 
 // Check that we get an error when you use `<Self as Get>::Value` in
 // the trait definition but `Self` does not, in fact, implement `Get`.
+//
+// See also associated-types-no-suitable-supertrait-2.rs, which checks
+// that we see the same error if we get around to checking the default
+// method body.
+//
+// See also run-pass/associated-types-projection-to-unrelated-trait.rs,
+// which checks that the trait interface itself is not considered an
+// error as long as all impls satisfy the constraint.
 
 trait Get : ::std::marker::MarkerTrait {
     type Value;
@@ -17,13 +25,15 @@ trait Get : ::std::marker::MarkerTrait {
 
 trait Other {
     fn uhoh<U:Get>(&self, foo: U, bar: <Self as Get>::Value) {}
-    //~^ ERROR the trait `Get` is not implemented for the type `Self`
+    // (note that we no longer catch the error here, since the
+    //  error below aborts compilation.
+    //  See also associated-types-no-suitable-supertrait-2.rs
+    //  which checks that this error would be caught eventually.)
 }
 
 impl<T:Get> Other for T {
     fn uhoh<U:Get>(&self, foo: U, bar: <(T, U) as Get>::Value) {}
     //~^ ERROR the trait `Get` is not implemented for the type `(T, U)`
-    //~| ERROR the trait `Get` is not implemented for the type `(T, U)`
 }
 
 fn main() { }
