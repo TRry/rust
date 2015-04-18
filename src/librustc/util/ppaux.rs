@@ -163,8 +163,8 @@ pub fn explain_region_and_span(cx: &ctxt, region: ty::Region)
 
       ReEmpty => { ("the empty lifetime".to_string(), None) }
 
-      ReEarlyBound(_, _, _, name) => {
-        (format!("{}", token::get_name(name)), None)
+      ReEarlyBound(ref data) => {
+        (format!("{}", token::get_name(data.name)), None)
       }
 
       // I believe these cases should not occur (except when debugging,
@@ -223,8 +223,8 @@ pub fn region_to_string(cx: &ctxt, prefix: &str, space: bool, region: Region) ->
     // `explain_region()` or `note_and_explain_region()`.
     match region {
         ty::ReScope(_) => prefix.to_string(),
-        ty::ReEarlyBound(_, _, _, name) => {
-            token::get_name(name).to_string()
+        ty::ReEarlyBound(ref data) => {
+            token::get_name(data.name).to_string()
         }
         ty::ReLateBound(_, br) => bound_region_to_string(cx, prefix, space, br),
         ty::ReFree(ref fr) => bound_region_to_string(cx, prefix, space, fr.bound_region),
@@ -810,8 +810,12 @@ impl<'tcx> Repr<'tcx> for ty::TraitRef<'tcx> {
         // to enumerate the `for<...>` etc because the debruijn index
         // tells you everything you need to know.
         let base = ty::item_path_str(tcx, self.def_id);
-        parameterized(tcx, &base, self.substs, self.def_id, &[],
-                      || ty::lookup_trait_def(tcx, self.def_id).generics.clone())
+        let result = parameterized(tcx, &base, self.substs, self.def_id, &[],
+                      || ty::lookup_trait_def(tcx, self.def_id).generics.clone());
+        match self.substs.self_ty() {
+            None => result,
+            Some(sty) => format!("<{} as {}>", sty.repr(tcx), result)
+        }
     }
 }
 
@@ -899,12 +903,12 @@ impl<'tcx> Repr<'tcx> for ty::BoundRegion {
 impl<'tcx> Repr<'tcx> for ty::Region {
     fn repr(&self, tcx: &ctxt) -> String {
         match *self {
-            ty::ReEarlyBound(id, space, index, name) => {
+            ty::ReEarlyBound(ref data) => {
                 format!("ReEarlyBound({}, {:?}, {}, {})",
-                               id,
-                               space,
-                               index,
-                               token::get_name(name))
+                        data.param_id,
+                        data.space,
+                        data.index,
+                        token::get_name(data.name))
             }
 
             ty::ReLateBound(binder_id, ref bound_region) => {
@@ -1504,8 +1508,7 @@ impl<'tcx> UserString<'tcx> for ty::ProjectionPredicate<'tcx> {
 
 impl<'tcx> Repr<'tcx> for ty::ProjectionTy<'tcx> {
     fn repr(&self, tcx: &ctxt<'tcx>) -> String {
-        format!("<{} as {}>::{}",
-                self.trait_ref.substs.self_ty().repr(tcx),
+        format!("{}::{}",
                 self.trait_ref.repr(tcx),
                 self.item_name.repr(tcx))
     }
