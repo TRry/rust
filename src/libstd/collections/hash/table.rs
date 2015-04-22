@@ -7,8 +7,6 @@
 // <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
-//
-// ignore-lexer-test FIXME #15883
 
 use self::BucketState::*;
 
@@ -19,7 +17,7 @@ use iter::{Iterator, ExactSizeIterator};
 use marker::{Copy, Send, Sync, Sized, self};
 use mem::{min_align_of, size_of};
 use mem;
-use num::wrapping::{OverflowingOps, WrappingOps};
+use num::wrapping::OverflowingOps;
 use ops::{Deref, DerefMut, Drop};
 use option::Option;
 use option::Option::{Some, None};
