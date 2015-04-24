@@ -979,6 +979,7 @@ fn check_expected_errors(expected_errors: Vec<errors::ExpectedError> ,
     // is the ending point, and * represents ANSI color codes.
     for line in proc_res.stderr.lines() {
         let mut was_expected = false;
+        let mut prev = 0;
         for (i, ee) in expected_errors.iter().enumerate() {
             if !found_flags[i] {
                 debug!("prefix={} ee.kind={} ee.msg={} line={}",
@@ -986,6 +987,17 @@ fn check_expected_errors(expected_errors: Vec<errors::ExpectedError> ,
                        ee.kind,
                        ee.msg,
                        line);
+                // Suggestions have no line number in their output, so take on the line number of
+                // the previous expected error
+                if ee.kind == "suggestion" {
+                    assert!(expected_errors[prev].kind == "help",
+                            "SUGGESTIONs must be preceded by a HELP");
+                    if line.contains(&ee.msg) {
+                        found_flags[i] = true;
+                        was_expected = true;
+                        break;
+                    }
+                }
                 if (prefix_matches(line, &prefixes[i]) || continuation(line)) &&
                     line.contains(&ee.kind) &&
                     line.contains(&ee.msg) {
@@ -994,6 +1006,7 @@ fn check_expected_errors(expected_errors: Vec<errors::ExpectedError> ,
                     break;
                 }
             }
+            prev = i;
         }
 
         // ignore this msg which gets printed at the end
@@ -1452,7 +1465,7 @@ fn make_out_name(config: &Config, testfile: &Path, extension: &str) -> PathBuf {
 fn aux_output_dir_name(config: &Config, testfile: &Path) -> PathBuf {
     let f = output_base_name(config, testfile);
     let mut fname = f.file_name().unwrap().to_os_string();
-    fname.push("libaux");
+    fname.push(&format!(".{}.libaux", config.mode));
     f.with_file_name(&fname)
 }
 

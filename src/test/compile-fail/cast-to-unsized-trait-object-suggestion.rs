@@ -8,12 +8,13 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// aux-build:inline-default-methods.rs
-// ignore-cross-compile
-
-extern crate inline_default_methods;
-
-// @has inline_default_methods/trait.Foo.html
-// @has - '//*[@class="rust trait"]' 'fn bar(&self);'
-// @has - '//*[@class="rust trait"]' 'fn foo(&mut self) { ... }'
-pub use inline_default_methods::Foo;
+fn main() {
+    &1 as Copy;
+    //~^ ERROR cast to unsized type
+    //~| HELP try casting to a reference instead:
+    //~| SUGGESTION &1 as &Copy;
+    Box::new(1) as Copy;
+    //~^ ERROR cast to unsized type
+    //~| HELP try casting to a `Box` instead:
+    //~| SUGGESTION Box::new(1) as Box<Copy>;
+}
