@@ -8,14 +8,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// Test that patterns including the box syntax are gated by `box_patterns` feature gate.
-
 fn main() {
-    let x = Box::new(1);
-
-    match x {
-        box 1 => (),
-        //~^ box pattern syntax is experimental
-        _     => ()
-    };
+    "".chars().fold(|_, _| (), ());
+    //~^ ERROR cannot determine a type for this expression: unconstrained type
 }
