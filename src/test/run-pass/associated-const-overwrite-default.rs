@@ -1,4 +1,4 @@
-// Copyright 2012-2015 The Rust Project Developers. See the COPYRIGHT
+// Copyright 2015 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
 //
@@ -8,9 +8,16 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-//! OS-specific functionality
+#![feature(associated_consts)]
 
-#![stable(feature = "os", since = "1.0.0")]
+trait Foo {
+    const ID: i32 = 2;
+}
 
-#[cfg(unix)] pub use sys::ext as unix;
-#[cfg(windows)] pub use sys::ext as windows;
+impl Foo for i32 {
+    const ID: i32 = 1;
+}
+
+fn main() {
+    assert_eq!(1, <i32 as Foo>::ID);
+}
