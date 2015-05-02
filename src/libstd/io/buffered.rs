@@ -13,6 +13,7 @@
 use prelude::v1::*;
 use io::prelude::*;
 
+use marker::Reflect;
 use cmp;
 use error;
 use fmt;
@@ -118,7 +119,7 @@ impl<R> fmt::Debug for BufReader<R> where R: fmt::Debug {
     }
 }
 
-#[unstable(feature = "buf_seek", reason = "recently added")]
+#[stable(feature = "rust1", since = "1.0.0")]
 impl<R: Seek> Seek for BufReader<R> {
     /// Seek to an offset, in bytes, in the underlying reader.
     ///
@@ -282,8 +283,8 @@ impl<W: Write> fmt::Debug for BufWriter<W> where W: fmt::Debug {
     }
 }
 
-#[unstable(feature = "buf_seek", reason = "recently added")]
-impl<W: Write+Seek> Seek for BufWriter<W> {
+#[stable(feature = "rust1", since = "1.0.0")]
+impl<W: Write + Seek> Seek for BufWriter<W> {
     /// Seek to the offset, in bytes, in the underlying writer.
     ///
     /// Seeking always writes out the internal buffer before seeking.
@@ -322,7 +323,7 @@ impl<W> From<IntoInnerError<W>> for Error {
 }
 
 #[stable(feature = "rust1", since = "1.0.0")]
-impl<W: Send + fmt::Debug> error::Error for IntoInnerError<W> {
+impl<W: Reflect + Send + fmt::Debug> error::Error for IntoInnerError<W> {
     fn description(&self) -> &str {
         error::Error::description(self.error())
     }

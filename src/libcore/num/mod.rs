@@ -113,12 +113,14 @@ macro_rules! int_impl {
      $mul_with_overflow:path) => {
         /// Returns the smallest value that can be represented by this integer type.
         #[stable(feature = "rust1", since = "1.0.0")]
+        #[inline]
         pub fn min_value() -> $T {
             (-1 as $T) << ($BITS - 1)
         }
 
         /// Returns the largest value that can be represented by this integer type.
         #[stable(feature = "rust1", since = "1.0.0")]
+        #[inline]
         pub fn max_value() -> $T {
             let min = $T::min_value(); !min
         }
@@ -1522,7 +1524,11 @@ impl fmt::Display for ParseIntError {
 
 /// An error which can be returned when parsing a float.
 #[derive(Debug, Clone, PartialEq)]
-pub struct ParseFloatError { pub kind: FloatErrorKind }
+#[stable(feature = "rust1", since = "1.0.0")]
+pub struct ParseFloatError {
+    #[doc(hidden)]
+    pub __kind: FloatErrorKind
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum FloatErrorKind {
@@ -1531,9 +1537,9 @@ pub enum FloatErrorKind {
 }
 
 impl ParseFloatError {
-    #[unstable(feature = "core", reason = "available through Error trait")]
-    pub fn description(&self) -> &str {
-        match self.kind {
+    #[doc(hidden)]
+    pub fn __description(&self) -> &str {
+        match self.__kind {
             FloatErrorKind::Empty => "cannot parse float from empty string",
             FloatErrorKind::Invalid => "invalid float literal",
         }
@@ -1543,6 +1549,6 @@ impl ParseFloatError {
 #[stable(feature = "rust1", since = "1.0.0")]
 impl fmt::Display for ParseFloatError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        self.description().fmt(f)
+        self.__description().fmt(f)
     }
 }
