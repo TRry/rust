@@ -83,7 +83,9 @@ pub use core::str::pattern;
 Section: Creating a string
 */
 
-impl<S: AsRef<str>> SliceConcatExt<str, String> for [S] {
+impl<S: AsRef<str>> SliceConcatExt<str> for [S] {
+    type Output = String;
+
     fn concat(&self) -> String {
         if self.is_empty() {
             return String::new();
@@ -713,7 +715,7 @@ impl str {
     /// is skipped if empty.
     ///
     /// This method can be used for string data that is _terminated_,
-    /// rather than _seperated_ by a pattern.
+    /// rather than _separated_ by a pattern.
     ///
     /// # Iterator behavior
     ///
@@ -760,7 +762,7 @@ impl str {
     /// skipped if empty.
     ///
     /// This method can be used for string data that is _terminated_,
-    /// rather than _seperated_ by a pattern.
+    /// rather than _separated_ by a pattern.
     ///
     /// # Iterator behavior
     ///

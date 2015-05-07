@@ -152,12 +152,14 @@ macro_rules! try {
 /// thread::spawn(move|| { long_running_task(); tx1.send(()).unwrap(); });
 /// thread::spawn(move|| { tx2.send(calculate_the_answer()).unwrap(); });
 ///
-/// select! (
+/// select! {
 ///     _ = rx1.recv() => println!("the long running task finished first"),
 ///     answer = rx2.recv() => {
 ///         println!("the answer was: {}", answer.unwrap());
 ///     }
-/// )
+/// }
+/// # drop(rx1.recv());
+/// # drop(rx2.recv());
 /// ```
 ///
 /// For more information about select, see the `std::sync::mpsc::Select` structure.
@@ -434,7 +436,7 @@ pub mod builtin {
 
     /// Parse the current given file as an expression.
     ///
-    /// This is generally a bad idea, because it's going to behave unhygenically.
+    /// This is generally a bad idea, because it's going to behave unhygienically.
     ///
     /// # Examples
     ///
