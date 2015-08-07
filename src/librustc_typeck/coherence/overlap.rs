@@ -21,7 +21,6 @@ use syntax::ast_util;
 use syntax::visit;
 use syntax::codemap::Span;
 use util::nodemap::DefIdMap;
-use util::ppaux::{Repr, UserString};
 
 pub fn check(tcx: &ty::ctxt) {
     let mut overlap = OverlapChecker { tcx: tcx, default_impls: DefIdMap() };
@@ -48,14 +47,9 @@ impl<'cx, 'tcx> OverlapChecker<'cx, 'tcx> {
         // check_for_overlapping_impls_of_trait() check, since that
         // check can populate this table further with impls from other
         // crates.
-        let trait_defs : Vec<&ty::TraitDef> = {
-            let d = self.tcx.trait_defs.borrow();
-            d.values().map(|&v|v).collect()
-        };
+        let trait_defs: Vec<_> = self.tcx.trait_defs.borrow().values().cloned().collect();
 
         for trait_def in trait_defs {
-            // FIXME -- it seems like this method actually pushes
-            // duplicate impls onto the list
             ty::populate_implementations_for_trait_if_necessary(
                 self.tcx,
                 trait_def.trait_ref.def_id);
@@ -66,8 +60,8 @@ impl<'cx, 'tcx> OverlapChecker<'cx, 'tcx> {
     fn check_for_overlapping_impls_of_trait(&self,
                                             trait_def: &'tcx ty::TraitDef<'tcx>)
     {
-        debug!("check_for_overlapping_impls_of_trait(trait_def={})",
-               trait_def.repr(self.tcx));
+        debug!("check_for_overlapping_impls_of_trait(trait_def={:?})",
+               trait_def);
 
         // We should already know all impls of this trait, so these
         // borrows are safe.
@@ -136,10 +130,10 @@ impl<'cx, 'tcx> OverlapChecker<'cx, 'tcx> {
         if let Some((impl1_def_id, impl2_def_id)) = self.order_impls(
             impl1_def_id, impl2_def_id)
         {
-            debug!("check_if_impls_overlap({}, {}, {})",
-                   trait_def_id.repr(self.tcx),
-                   impl1_def_id.repr(self.tcx),
-                   impl2_def_id.repr(self.tcx));
+            debug!("check_if_impls_overlap({:?}, {:?}, {:?})",
+                   trait_def_id,
+                   impl1_def_id,
+                   impl2_def_id);
 
             let infcx = infer::new_infer_ctxt(self.tcx);
             if traits::overlapping_impls(&infcx, impl1_def_id, impl2_def_id) {
@@ -203,7 +197,7 @@ impl<'cx, 'tcx,'v> visit::Visitor<'v> for OverlapChecker<'cx, 'tcx> {
                 let trait_ref = ty::impl_trait_ref(self.tcx, impl_def_id).unwrap();
                 let trait_def_id = trait_ref.def_id;
                 match trait_ref.self_ty().sty {
-                    ty::ty_trait(ref data) => {
+                    ty::TyTrait(ref data) => {
                         // This is something like impl Trait1 for Trait2. Illegal
                         // if Trait1 is a supertrait of Trait2 or Trait2 is not object safe.
 
@@ -222,7 +216,7 @@ impl<'cx, 'tcx,'v> visit::Visitor<'v> for OverlapChecker<'cx, 'tcx> {
                                 span_err!(self.tcx.sess, item.span, E0371,
                                           "the object type `{}` automatically \
                                            implements the trait `{}`",
-                                          trait_ref.self_ty().user_string(self.tcx),
+                                          trait_ref.self_ty(),
                                           ty::item_path_str(self.tcx, trait_def_id));
                             }
                         }

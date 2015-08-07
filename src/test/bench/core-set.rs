@@ -10,7 +10,8 @@
 
 // ignore-pretty very bad with line comments
 
-#![feature(unboxed_closures, rand, std_misc, collections)]
+#![feature(unboxed_closures, rand, std_misc, collections, duration, duration_span)]
+#![feature(bitset)]
 
 extern crate collections;
 extern crate rand;
@@ -167,13 +168,13 @@ fn write_results(label: &str, results: &Results) {
 
 fn empty_results() -> Results {
     Results {
-        sequential_ints: Duration::seconds(0),
-        random_ints: Duration::seconds(0),
-        delete_ints: Duration::seconds(0),
+        sequential_ints: Duration::new(0, 0),
+        random_ints: Duration::new(0, 0),
+        delete_ints: Duration::new(0, 0),
 
-        sequential_strings: Duration::seconds(0),
-        random_strings: Duration::seconds(0),
-        delete_strings: Duration::seconds(0),
+        sequential_strings: Duration::new(0, 0),
+        random_strings: Duration::new(0, 0),
+        delete_strings: Duration::new(0, 0),
     }
 }
 

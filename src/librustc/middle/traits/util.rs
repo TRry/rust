@@ -8,7 +8,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use middle::subst::{Substs, VecPerParamSpace};
+use middle::subst::Substs;
 use middle::infer::InferCtxt;
 use middle::ty::{self, Ty, AsPredicate, ToPolyTraitRef};
 use std::fmt;
@@ -16,7 +16,6 @@ use syntax::ast;
 use syntax::codemap::Span;
 use util::common::ErrorReported;
 use util::nodemap::FnvHashSet;
-use util::ppaux::Repr;
 
 use super::{Obligation, ObligationCause, PredicateObligation,
             VtableImpl, VtableParam, VtableImplData, VtableDefaultImplData};
@@ -125,8 +124,8 @@ impl<'cx, 'tcx> Elaborator<'cx, 'tcx> {
                               .map(|p| p.subst_supertrait(self.tcx, &data.to_poly_trait_ref()))
                               .collect();
 
-                debug!("super_predicates: data={} predicates={}",
-                       data.repr(self.tcx), predicates.repr(self.tcx));
+                debug!("super_predicates: data={:?} predicates={:?}",
+                       data, predicates);
 
                 // Only keep those bounds that we haven't already
                 // seen.  This is necessary to prevent infinite
@@ -135,7 +134,7 @@ impl<'cx, 'tcx> Elaborator<'cx, 'tcx> {
                 // Sized { }`.
                 predicates.retain(|r| self.visited.insert(r));
 
-                self.stack.extend(predicates.into_iter());
+                self.stack.extend(predicates);
             }
             ty::Predicate::Equate(..) => {
                 // Currently, we do not "elaborate" predicates like
@@ -302,33 +301,20 @@ pub fn fresh_type_vars_for_impl<'a, 'tcx>(infcx: &InferCtxt<'a, 'tcx>,
     infcx.fresh_substs_for_generics(span, &impl_generics)
 }
 
-impl<'tcx, N> fmt::Debug for VtableImplData<'tcx, N> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "VtableImpl({:?})", self.impl_def_id)
-    }
-}
-
-impl<'tcx> fmt::Debug for super::VtableObjectData<'tcx> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "VtableObject(...)")
-    }
-}
-
 /// See `super::obligations_for_generics`
-pub fn predicates_for_generics<'tcx>(tcx: &ty::ctxt<'tcx>,
-                                     cause: ObligationCause<'tcx>,
+pub fn predicates_for_generics<'tcx>(cause: ObligationCause<'tcx>,
                                      recursion_depth: usize,
                                      generic_bounds: &ty::InstantiatedPredicates<'tcx>)
-                                     -> VecPerParamSpace<PredicateObligation<'tcx>>
+                                     -> Vec<PredicateObligation<'tcx>>
 {
-    debug!("predicates_for_generics(generic_bounds={})",
-           generic_bounds.repr(tcx));
+    debug!("predicates_for_generics(generic_bounds={:?})",
+           generic_bounds);
 
-    generic_bounds.predicates.map(|predicate| {
+    generic_bounds.predicates.iter().map(|predicate| {
         Obligation { cause: cause.clone(),
                      recursion_depth: recursion_depth,
                      predicate: predicate.clone() }
-    })
+    }).collect()
 }
 
 pub fn trait_ref_for_builtin_bound<'tcx>(
@@ -356,13 +342,13 @@ pub fn predicate_for_trait_ref<'tcx>(
     cause: ObligationCause<'tcx>,
     trait_ref: ty::TraitRef<'tcx>,
     recursion_depth: usize)
-    -> Result<PredicateObligation<'tcx>, ErrorReported>
+    -> PredicateObligation<'tcx>
 {
-    Ok(Obligation {
+    Obligation {
         cause: cause,
         recursion_depth: recursion_depth,
         predicate: trait_ref.as_predicate(),
-    })
+    }
 }
 
 pub fn predicate_for_trait_def<'tcx>(
@@ -370,12 +356,13 @@ pub fn predicate_for_trait_def<'tcx>(
     cause: ObligationCause<'tcx>,
     trait_def_id: ast::DefId,
     recursion_depth: usize,
-    param_ty: Ty<'tcx>)
-    -> Result<PredicateObligation<'tcx>, ErrorReported>
+    param_ty: Ty<'tcx>,
+    ty_params: Vec<Ty<'tcx>>)
+    -> PredicateObligation<'tcx>
 {
     let trait_ref = ty::TraitRef {
         def_id: trait_def_id,
-        substs: tcx.mk_substs(Substs::empty().with_self_ty(param_ty))
+        substs: tcx.mk_substs(Substs::new_trait(ty_params, vec![], param_ty))
     };
     predicate_for_trait_ref(cause, trait_ref, recursion_depth)
 }
@@ -389,7 +376,7 @@ pub fn predicate_for_builtin_bound<'tcx>(
     -> Result<PredicateObligation<'tcx>, ErrorReported>
 {
     let trait_ref = try!(trait_ref_for_builtin_bound(tcx, builtin_bound, param_ty));
-    predicate_for_trait_ref(cause, trait_ref, recursion_depth)
+    Ok(predicate_for_trait_ref(cause, trait_ref, recursion_depth))
 }
 
 /// Cast a trait reference into a reference to one of its super
@@ -430,7 +417,7 @@ pub fn get_vtable_index_of_object_method<'tcx>(tcx: &ty::ctxt<'tcx>,
         }
 
         let trait_items = ty::trait_items(tcx, bound_ref.def_id());
-        for trait_item in &**trait_items {
+        for trait_item in trait_items.iter() {
             match *trait_item {
                 ty::MethodTraitItem(_) => method_count += 1,
                 _ => {}
@@ -479,107 +466,84 @@ pub fn closure_trait_ref_and_return_type<'tcx>(
     ty::Binder((trait_ref, sig.0.output.unwrap_or(ty::mk_nil(tcx))))
 }
 
-impl<'tcx,O:Repr<'tcx>> Repr<'tcx> for super::Obligation<'tcx, O> {
-    fn repr(&self, tcx: &ty::ctxt<'tcx>) -> String {
-        format!("Obligation(predicate={},depth={})",
-                self.predicate.repr(tcx),
-                self.recursion_depth)
+impl<'tcx,O:fmt::Debug> fmt::Debug for super::Obligation<'tcx, O> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Obligation(predicate={:?},depth={})",
+               self.predicate,
+               self.recursion_depth)
     }
 }
 
-impl<'tcx, N:Repr<'tcx>> Repr<'tcx> for super::Vtable<'tcx, N> {
-    fn repr(&self, tcx: &ty::ctxt<'tcx>) -> String {
+impl<'tcx, N:fmt::Debug> fmt::Debug for super::Vtable<'tcx, N> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
             super::VtableImpl(ref v) =>
-                v.repr(tcx),
+                write!(f, "{:?}", v),
 
             super::VtableDefaultImpl(ref t) =>
-                t.repr(tcx),
+                write!(f, "{:?}", t),
 
-            super::VtableClosure(ref d, ref s) =>
-                format!("VtableClosure({},{})",
-                        d.repr(tcx),
-                        s.repr(tcx)),
+            super::VtableClosure(ref d) =>
+                write!(f, "{:?}", d),
 
             super::VtableFnPointer(ref d) =>
-                format!("VtableFnPointer({})",
-                        d.repr(tcx)),
+                write!(f, "VtableFnPointer({:?})", d),
 
             super::VtableObject(ref d) =>
-                format!("VtableObject({})",
-                        d.repr(tcx)),
+                write!(f, "VtableObject({:?})", d),
 
             super::VtableParam(ref n) =>
-                format!("VtableParam({})",
-                        n.repr(tcx)),
+                write!(f, "VtableParam({:?})", n),
 
             super::VtableBuiltin(ref d) =>
-                d.repr(tcx)
+                write!(f, "{:?}", d)
         }
     }
 }
 
-impl<'tcx, N:Repr<'tcx>> Repr<'tcx> for super::VtableImplData<'tcx, N> {
-    fn repr(&self, tcx: &ty::ctxt<'tcx>) -> String {
-        format!("VtableImpl(impl_def_id={}, substs={}, nested={})",
-                self.impl_def_id.repr(tcx),
-                self.substs.repr(tcx),
-                self.nested.repr(tcx))
+impl<'tcx, N:fmt::Debug> fmt::Debug for super::VtableImplData<'tcx, N> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "VtableImpl(impl_def_id={:?}, substs={:?}, nested={:?})",
+               self.impl_def_id,
+               self.substs,
+               self.nested)
     }
 }
 
-impl<'tcx, N:Repr<'tcx>> Repr<'tcx> for super::VtableBuiltinData<N> {
-    fn repr(&self, tcx: &ty::ctxt<'tcx>) -> String {
-        format!("VtableBuiltin(nested={})",
-                self.nested.repr(tcx))
+impl<'tcx, N:fmt::Debug> fmt::Debug for super::VtableClosureData<'tcx, N> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "VtableClosure(closure_def_id={:?}, substs={:?}, nested={:?})",
+               self.closure_def_id,
+               self.substs,
+               self.nested)
     }
 }
 
-impl<'tcx, N:Repr<'tcx>> Repr<'tcx> for super::VtableDefaultImplData<N> {
-    fn repr(&self, tcx: &ty::ctxt<'tcx>) -> String {
-        format!("VtableDefaultImplData(trait_def_id={}, nested={})",
-                self.trait_def_id.repr(tcx),
-                self.nested.repr(tcx))
+impl<'tcx, N:fmt::Debug> fmt::Debug for super::VtableBuiltinData<N> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "VtableBuiltin(nested={:?})", self.nested)
     }
 }
 
-impl<'tcx> Repr<'tcx> for super::VtableObjectData<'tcx> {
-    fn repr(&self, tcx: &ty::ctxt<'tcx>) -> String {
-        format!("VtableObject(object_ty={})",
-                self.object_ty.repr(tcx))
+impl<'tcx, N:fmt::Debug> fmt::Debug for super::VtableDefaultImplData<N> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "VtableDefaultImplData(trait_def_id={:?}, nested={:?})",
+               self.trait_def_id,
+               self.nested)
     }
 }
 
-impl<'tcx> Repr<'tcx> for super::SelectionError<'tcx> {
-    fn repr(&self, tcx: &ty::ctxt<'tcx>) -> String {
-        match *self {
-            super::Unimplemented =>
-                format!("Unimplemented"),
-
-            super::OutputTypeParameterMismatch(ref a, ref b, ref c) =>
-                format!("OutputTypeParameterMismatch({},{},{})",
-                        a.repr(tcx),
-                        b.repr(tcx),
-                        c.repr(tcx)),
-        }
+impl<'tcx> fmt::Debug for super::VtableObjectData<'tcx> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "VtableObject(object_ty={:?})", self.object_ty)
     }
 }
 
-impl<'tcx> Repr<'tcx> for super::FulfillmentError<'tcx> {
-    fn repr(&self, tcx: &ty::ctxt<'tcx>) -> String {
-        format!("FulfillmentError({},{})",
-                self.obligation.repr(tcx),
-                self.code.repr(tcx))
-    }
-}
-
-impl<'tcx> Repr<'tcx> for super::FulfillmentErrorCode<'tcx> {
-    fn repr(&self, tcx: &ty::ctxt<'tcx>) -> String {
-        match *self {
-            super::CodeSelectionError(ref o) => o.repr(tcx),
-            super::CodeProjectionError(ref o) => o.repr(tcx),
-            super::CodeAmbiguity => format!("Ambiguity")
-        }
+impl<'tcx> fmt::Debug for super::FulfillmentError<'tcx> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "FulfillmentError({:?},{:?})",
+               self.obligation,
+               self.code)
     }
 }
 
@@ -593,14 +557,8 @@ impl<'tcx> fmt::Debug for super::FulfillmentErrorCode<'tcx> {
     }
 }
 
-impl<'tcx> Repr<'tcx> for super::MismatchedProjectionTypes<'tcx> {
-    fn repr(&self, tcx: &ty::ctxt<'tcx>) -> String {
-        self.err.repr(tcx)
-    }
-}
-
 impl<'tcx> fmt::Debug for super::MismatchedProjectionTypes<'tcx> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "MismatchedProjectionTypes(..)")
+        write!(f, "MismatchedProjectionTypes({:?})", self.err)
     }
 }

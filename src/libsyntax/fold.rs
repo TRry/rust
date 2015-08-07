@@ -353,7 +353,7 @@ pub fn noop_fold_view_path<T: Folder>(view_path: P<ViewPath>, fld: &mut T) -> P<
 }
 
 pub fn fold_attrs<T: Folder>(attrs: Vec<Attribute>, fld: &mut T) -> Vec<Attribute> {
-    attrs.into_iter().flat_map(|x| fld.fold_attribute(x).into_iter()).collect()
+    attrs.into_iter().flat_map(|x| fld.fold_attribute(x)).collect()
 }
 
 pub fn noop_fold_arm<T: Folder>(Arm {attrs, pats, guard, body}: Arm, fld: &mut T) -> Arm {
@@ -689,6 +689,9 @@ pub fn noop_fold_interpolated<T: Folder>(nt: token::Nonterminal, fld: &mut T)
         token::NtTraitItem(arm) =>
             token::NtTraitItem(fld.fold_trait_item(arm)
                                .expect_one("expected fold to produce exactly one item")),
+        token::NtGenerics(generics) => token::NtGenerics(fld.fold_generics(generics)),
+        token::NtWhereClause(where_clause) =>
+            token::NtWhereClause(fld.fold_where_clause(where_clause)),
     }
 }
 
@@ -914,10 +917,11 @@ pub fn noop_fold_item_underscore<T: Folder>(i: Item_, folder: &mut T) -> Item_ {
         ItemConst(t, e) => {
             ItemConst(folder.fold_ty(t), folder.fold_expr(e))
         }
-        ItemFn(decl, unsafety, abi, generics, body) => {
+        ItemFn(decl, unsafety, constness, abi, generics, body) => {
             ItemFn(
                 folder.fold_fn_decl(decl),
                 unsafety,
+                constness,
                 abi,
                 folder.fold_generics(generics),
                 folder.fold_block(body)
@@ -1121,6 +1125,7 @@ pub fn noop_fold_method_sig<T: Folder>(sig: MethodSig, folder: &mut T) -> Method
         abi: sig.abi,
         explicit_self: folder.fold_explicit_self(sig.explicit_self),
         unsafety: sig.unsafety,
+        constness: sig.constness,
         decl: folder.fold_fn_decl(sig.decl)
     }
 }

@@ -16,10 +16,6 @@ use mem;
 
 pub struct Mutex { inner: UnsafeCell<ffi::SRWLOCK> }
 
-pub const MUTEX_INIT: Mutex = Mutex {
-    inner: UnsafeCell { value: ffi::SRWLOCK_INIT }
-};
-
 unsafe impl Send for Mutex {}
 unsafe impl Sync for Mutex {}
 
@@ -41,6 +37,9 @@ pub unsafe fn raw(m: &Mutex) -> ffi::PSRWLOCK {
 //    is there there are no guarantees of fairness.
 
 impl Mutex {
+    pub const fn new() -> Mutex {
+        Mutex { inner: UnsafeCell::new(ffi::SRWLOCK_INIT) }
+    }
     #[inline]
     pub unsafe fn lock(&self) {
         ffi::AcquireSRWLockExclusive(self.inner.get())
@@ -59,16 +58,18 @@ impl Mutex {
     }
 }
 
-pub struct ReentrantMutex { inner: Box<UnsafeCell<ffi::CRITICAL_SECTION>> }
+pub struct ReentrantMutex { inner: UnsafeCell<ffi::CRITICAL_SECTION> }
 
 unsafe impl Send for ReentrantMutex {}
 unsafe impl Sync for ReentrantMutex {}
 
 impl ReentrantMutex {
-    pub unsafe fn new() -> ReentrantMutex {
-        let mutex = ReentrantMutex { inner: box mem::uninitialized() };
-        ffi::InitializeCriticalSection(mutex.inner.get());
-        mutex
+    pub unsafe fn uninitialized() -> ReentrantMutex {
+        mem::uninitialized()
+    }
+
+    pub unsafe fn init(&mut self) {
+        ffi::InitializeCriticalSection(self.inner.get());
     }
 
     pub unsafe fn lock(&self) {

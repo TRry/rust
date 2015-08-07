@@ -122,6 +122,12 @@ pub struct SpanHandler {
 }
 
 impl SpanHandler {
+    pub fn new(handler: Handler, cm: codemap::CodeMap) -> SpanHandler {
+        SpanHandler {
+            handler: handler,
+            cm: cm,
+        }
+    }
     pub fn span_fatal(&self, sp: Span, msg: &str) -> FatalError {
         self.handler.emit(Some((&self.cm, sp)), msg, Fatal);
         return FatalError;
@@ -187,6 +193,19 @@ pub struct Handler {
 }
 
 impl Handler {
+    pub fn new(color_config: ColorConfig,
+               registry: Option<diagnostics::registry::Registry>,
+               can_emit_warnings: bool) -> Handler {
+        let emitter = Box::new(EmitterWriter::stderr(color_config, registry));
+        Handler::with_emitter(can_emit_warnings, emitter)
+    }
+    pub fn with_emitter(can_emit_warnings: bool, e: Box<Emitter + Send>) -> Handler {
+        Handler {
+            err_count: Cell::new(0),
+            emit: RefCell::new(e),
+            can_emit_warnings: can_emit_warnings
+        }
+    }
     pub fn fatal(&self, msg: &str) -> ! {
         self.emit.borrow_mut().emit(None, msg, None, Fatal);
         panic!(FatalError);
@@ -251,27 +270,6 @@ impl Handler {
                        sp: RenderSpan, msg: &str, lvl: Level) {
         if lvl == Warning && !self.can_emit_warnings { return }
         self.emit.borrow_mut().custom_emit(cm, sp, msg, lvl);
-    }
-}
-
-pub fn mk_span_handler(handler: Handler, cm: codemap::CodeMap) -> SpanHandler {
-    SpanHandler {
-        handler: handler,
-        cm: cm,
-    }
-}
-
-pub fn default_handler(color_config: ColorConfig,
-                       registry: Option<diagnostics::registry::Registry>,
-                       can_emit_warnings: bool) -> Handler {
-    mk_handler(can_emit_warnings, Box::new(EmitterWriter::stderr(color_config, registry)))
-}
-
-pub fn mk_handler(can_emit_warnings: bool, e: Box<Emitter + Send>) -> Handler {
-    Handler {
-        err_count: Cell::new(0),
-        emit: RefCell::new(e),
-        can_emit_warnings: can_emit_warnings
     }
 }
 
@@ -506,7 +504,7 @@ fn emit(dst: &mut EmitterWriter, cm: &codemap::CodeMap, rsp: RenderSpan,
             match dst.registry.as_ref().and_then(|registry| registry.find_description(code)) {
                 Some(_) => {
                     try!(print_diagnostic(dst, &ss[..], Help,
-                                          &format!("pass `--explain {}` to see a detailed \
+                                          &format!("run `rustc --explain {}` to see a detailed \
                                                    explanation", code), None));
                 }
                 None => ()
@@ -522,7 +520,7 @@ fn highlight_suggestion(err: &mut EmitterWriter,
                         suggestion: &str)
                         -> io::Result<()>
 {
-    let lines = cm.span_to_lines(sp);
+    let lines = cm.span_to_lines(sp).unwrap();
     assert!(!lines.lines.is_empty());
 
     // To build up the result, we want to take the snippet from the first
@@ -567,9 +565,17 @@ fn highlight_lines(err: &mut EmitterWriter,
                    cm: &codemap::CodeMap,
                    sp: Span,
                    lvl: Level,
-                   lines: codemap::FileLines)
+                   lines: codemap::FileLinesResult)
                    -> io::Result<()>
 {
+    let lines = match lines {
+        Ok(lines) => lines,
+        Err(_) => {
+            try!(write!(&mut err.dst, "(internal compiler error: unprintable span)\n"));
+            return Ok(());
+        }
+    };
+
     let fm = &*lines.file;
 
     let line_strings: Option<Vec<&str>> =
@@ -589,7 +595,7 @@ fn highlight_lines(err: &mut EmitterWriter,
     let display_line_strings = &line_strings[..display_lines];
 
     // Print the offending lines
-    for (line_info, line) in display_line_infos.iter().zip(display_line_strings.iter()) {
+    for (line_info, line) in display_line_infos.iter().zip(display_line_strings) {
         try!(write!(&mut err.dst, "{}:{} {}\n",
                     fm.name,
                     line_info.line_index + 1,
@@ -690,8 +696,16 @@ fn end_highlight_lines(w: &mut EmitterWriter,
                           cm: &codemap::CodeMap,
                           sp: Span,
                           lvl: Level,
-                          lines: codemap::FileLines)
+                          lines: codemap::FileLinesResult)
                           -> io::Result<()> {
+    let lines = match lines {
+        Ok(lines) => lines,
+        Err(_) => {
+            try!(write!(&mut w.dst, "(internal compiler error: unprintable span)\n"));
+            return Ok(());
+        }
+    };
+
     let fm = &*lines.file;
 
     let lines = &lines.lines[..];
@@ -754,12 +768,15 @@ fn print_macro_backtrace(w: &mut EmitterWriter,
                                                |span| cm.span_to_string(span));
                 let (pre, post) = match ei.callee.format {
                     codemap::MacroAttribute => ("#[", "]"),
-                    codemap::MacroBang => ("", "!")
+                    codemap::MacroBang => ("", "!"),
+                    codemap::CompilerExpansion => ("", ""),
                 };
                 try!(print_diagnostic(w, &ss, Note,
-                                      &format!("in expansion of {}{}{}", pre,
-                                              ei.callee.name,
-                                              post), None));
+                                      &format!("in expansion of {}{}{}",
+                                               pre,
+                                               ei.callee.name,
+                                               post),
+                                      None));
                 let ss = cm.span_to_string(ei.call_site);
                 try!(print_diagnostic(w, &ss, Note, "expansion site", None));
                 Ok(Some(ei.call_site))

@@ -216,8 +216,8 @@ pub use self::local::{LocalKey, LocalKeyState};
                       consider stabilizing its interface")]
 pub use self::scoped_tls::ScopedKey;
 
-#[doc(hidden)] pub use self::local::__impl as __local;
-#[doc(hidden)] pub use self::scoped_tls::__impl as __scoped;
+#[doc(hidden)] pub use self::local::__KeyInner as __LocalKeyInner;
+#[doc(hidden)] pub use self::scoped_tls::__KeyInner as __ScopedKeyInner;
 
 ////////////////////////////////////////////////////////////////////////////////
 // Builder
@@ -297,6 +297,9 @@ impl Builder {
     /// the OS level.
     #[unstable(feature = "scoped",
                reason = "memory unsafe if destructor is avoided, see #24292")]
+    #[deprecated(since = "1.2.0",
+                 reason = "this unsafe API is unlikely to ever be stabilized \
+                           in this form")]
     pub fn scoped<'a, T, F>(self, f: F) -> io::Result<JoinGuard<'a, T>> where
         T: Send + 'a, F: FnOnce() -> T, F: Send + 'a
     {
@@ -398,6 +401,10 @@ pub fn spawn<F, T>(f: F) -> JoinHandle<T> where
 /// to recover from such errors.
 #[unstable(feature = "scoped",
            reason = "memory unsafe if destructor is avoided, see #24292")]
+#[deprecated(since = "1.2.0",
+             reason = "this unsafe API is unlikely to ever be stabilized \
+                       in this form")]
+#[allow(deprecated)]
 pub fn scoped<'a, T, F>(f: F) -> JoinGuard<'a, T> where
     T: Send + 'a, F: FnOnce() -> T, F: Send + 'a
 {
@@ -482,7 +489,23 @@ pub fn catch_panic<F, R>(f: F) -> Result<R>
 /// spurious wakeup.
 #[stable(feature = "rust1", since = "1.0.0")]
 pub fn sleep_ms(ms: u32) {
-    imp::Thread::sleep(Duration::milliseconds(ms as i64))
+    sleep(Duration::from_millis(ms as u64))
+}
+
+/// Puts the current thread to sleep for the specified amount of time.
+///
+/// The thread may sleep longer than the duration specified due to scheduling
+/// specifics or platform-dependent functionality.
+///
+/// # Platform behavior
+///
+/// On Unix platforms this function will not return early due to a
+/// signal being received or a spurious wakeup. Platforms which do not support
+/// nanosecond precision for sleeping will have `dur` rounded up to the nearest
+/// granularity of time they can sleep for.
+#[unstable(feature = "thread_sleep", reason = "waiting on Duration")]
+pub fn sleep(dur: Duration) {
+    imp::Thread::sleep(dur)
 }
 
 /// Blocks unless or until the current thread's token is made available (may wake spuriously).
@@ -508,18 +531,38 @@ pub fn park() {
 /// the specified duration has been reached (may wake spuriously).
 ///
 /// The semantics of this function are equivalent to `park()` except that the
-/// thread will be blocked for roughly no longer than *duration*. This method
+/// thread will be blocked for roughly no longer than *ms*. This method
 /// should not be used for precise timing due to anomalies such as
 /// preemption or platform differences that may not cause the maximum
-/// amount of time waited to be precisely *duration* long.
+/// amount of time waited to be precisely *ms* long.
 ///
 /// See the module doc for more detail.
 #[stable(feature = "rust1", since = "1.0.0")]
 pub fn park_timeout_ms(ms: u32) {
+    park_timeout(Duration::from_millis(ms as u64))
+}
+
+/// Blocks unless or until the current thread's token is made available or
+/// the specified duration has been reached (may wake spuriously).
+///
+/// The semantics of this function are equivalent to `park()` except that the
+/// thread will be blocked for roughly no longer than *dur*. This method
+/// should not be used for precise timing due to anomalies such as
+/// preemption or platform differences that may not cause the maximum
+/// amount of time waited to be precisely *dur* long.
+///
+/// See the module doc for more detail.
+///
+/// # Platform behavior
+///
+/// Platforms which do not support nanosecond precision for sleeping will have
+/// `dur` rounded up to the nearest granularity of time they can sleep for.
+#[unstable(feature = "park_timeout", reason = "waiting on Duration")]
+pub fn park_timeout(dur: Duration) {
     let thread = current();
     let mut guard = thread.inner.lock.lock().unwrap();
     if !*guard {
-        let (g, _) = thread.inner.cvar.wait_timeout_ms(guard, ms).unwrap();
+        let (g, _) = thread.inner.cvar.wait_timeout(guard, dur).unwrap();
         guard = g;
     }
     *guard = false;
@@ -873,8 +916,8 @@ mod tests {
 
     #[test]
     fn test_child_doesnt_ref_parent() {
-        // If the child refcounts the parent task, this will stack overflow when
-        // climbing the task tree to dereference each ancestor. (See #1789)
+        // If the child refcounts the parent thread, this will stack overflow when
+        // climbing the thread tree to dereference each ancestor. (See #1789)
         // (well, it would if the constant were 8000+ - I lowered it to be more
         // valgrind-friendly. try this at home, instead..!)
         const GENERATIONS: u32 = 16;
@@ -983,6 +1026,6 @@ mod tests {
         thread::sleep_ms(2);
     }
 
-    // NOTE: the corresponding test for stderr is in run-pass/task-stderr, due
+    // NOTE: the corresponding test for stderr is in run-pass/thread-stderr, due
     // to the test harness apparently interfering with stderr configuration.
 }

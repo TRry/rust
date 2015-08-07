@@ -77,7 +77,7 @@
 //!
 //! The `cs_...` functions ("combine substructure) are designed to
 //! make life easier by providing some pre-made recipes for common
-//! tasks; mostly calling the function being derived on all the
+//! threads; mostly calling the function being derived on all the
 //! arguments and then combining them back together in some way (or
 //! letting the user chose that). They are not meant to be the only
 //! way to handle the structures that this code creates.
@@ -197,7 +197,7 @@ use ast::{EnumDef, Expr, Ident, Generics, StructDef};
 use ast_util;
 use attr;
 use attr::AttrMetaMethods;
-use ext::base::ExtCtxt;
+use ext::base::{ExtCtxt, Annotatable};
 use ext::build::AstBuilder;
 use codemap::{self, DUMMY_SP};
 use codemap::Span;
@@ -252,6 +252,9 @@ pub struct MethodDef<'a> {
     pub ret_ty: Ty<'a>,
 
     pub attributes: Vec<ast::Attribute>,
+
+    // Is it an `unsafe fn`?
+    pub is_unsafe: bool,
 
     pub combine_substructure: RefCell<CombineSubstructureFunc<'a>>,
 }
@@ -380,41 +383,49 @@ impl<'a> TraitDef<'a> {
     pub fn expand(&self,
                   cx: &mut ExtCtxt,
                   mitem: &ast::MetaItem,
-                  item: &'a ast::Item,
-                  push: &mut FnMut(P<ast::Item>))
+                  item: &'a Annotatable,
+                  push: &mut FnMut(Annotatable))
     {
-        let newitem = match item.node {
-            ast::ItemStruct(ref struct_def, ref generics) => {
-                self.expand_struct_def(cx,
-                                       &**struct_def,
-                                       item.ident,
-                                       generics)
-            }
-            ast::ItemEnum(ref enum_def, ref generics) => {
-                self.expand_enum_def(cx,
-                                     enum_def,
-                                     &item.attrs[..],
-                                     item.ident,
-                                     generics)
+        match *item {
+            Annotatable::Item(ref item) => {
+                let newitem = match item.node {
+                    ast::ItemStruct(ref struct_def, ref generics) => {
+                        self.expand_struct_def(cx,
+                                               &struct_def,
+                                               item.ident,
+                                               generics)
+                    }
+                    ast::ItemEnum(ref enum_def, ref generics) => {
+                        self.expand_enum_def(cx,
+                                             enum_def,
+                                             &item.attrs,
+                                             item.ident,
+                                             generics)
+                    }
+                    _ => {
+                        cx.span_err(mitem.span,
+                                    "`derive` may only be applied to structs and enums");
+                        return;
+                    }
+                };
+                // Keep the lint attributes of the previous item to control how the
+                // generated implementations are linted
+                let mut attrs = newitem.attrs.clone();
+                attrs.extend(item.attrs.iter().filter(|a| {
+                    match &a.name()[..] {
+                        "allow" | "warn" | "deny" | "forbid" => true,
+                        _ => false,
+                    }
+                }).cloned());
+                push(Annotatable::Item(P(ast::Item {
+                    attrs: attrs,
+                    ..(*newitem).clone()
+                })))
             }
             _ => {
                 cx.span_err(mitem.span, "`derive` may only be applied to structs and enums");
-                return;
             }
-        };
-        // Keep the lint attributes of the previous item to control how the
-        // generated implementations are linted
-        let mut attrs = newitem.attrs.clone();
-        attrs.extend(item.attrs.iter().filter(|a| {
-            match &a.name()[..] {
-                "allow" | "warn" | "deny" | "forbid" => true,
-                _ => false,
-            }
-        }).cloned());
-        push(P(ast::Item {
-            attrs: attrs,
-            ..(*newitem).clone()
-        }))
+        }
     }
 
     /// Given that we are deriving a trait `DerivedTrait` for a type like:
@@ -494,7 +505,7 @@ impl<'a> TraitDef<'a> {
             bounds.push(cx.typarambound(trait_path.clone()));
 
             // also add in any bounds from the declaration
-            for declared_bound in &*ty_param.bounds {
+            for declared_bound in ty_param.bounds.iter() {
                 bounds.push((*declared_bound).clone());
             }
 
@@ -538,10 +549,10 @@ impl<'a> TraitDef<'a> {
                 .map(|ty_param| ty_param.ident.name)
                 .collect();
 
-            for field_ty in field_tys.into_iter() {
+            for field_ty in field_tys {
                 let tys = find_type_parameters(&*field_ty, &ty_param_names);
 
-                for ty in tys.into_iter() {
+                for ty in tys {
                     let mut bounds: Vec<_> = self.additional_bounds.iter().map(|p| {
                         cx.typarambound(p.to_path(cx, self.span, type_ident, generics))
                     }).collect();
@@ -661,7 +672,7 @@ impl<'a> TraitDef<'a> {
                        generics: &Generics) -> P<ast::Item> {
         let mut field_tys = Vec::new();
 
-        for variant in enum_def.variants.iter() {
+        for variant in &enum_def.variants {
             match variant.node.kind {
                 ast::VariantKind::TupleVariantKind(ref args) => {
                     field_tys.extend(args.iter()
@@ -851,6 +862,12 @@ impl<'a> MethodDef<'a> {
         let fn_decl = cx.fn_decl(args, ret_type);
         let body_block = cx.block_expr(body);
 
+        let unsafety = if self.is_unsafe {
+            ast::Unsafety::Unsafe
+        } else {
+            ast::Unsafety::Normal
+        };
+
         // Create the method.
         P(ast::ImplItem {
             id: ast::DUMMY_NODE_ID,
@@ -862,7 +879,8 @@ impl<'a> MethodDef<'a> {
                 generics: fn_generics,
                 abi: abi,
                 explicit_self: explicit_self,
-                unsafety: ast::Unsafety::Normal,
+                unsafety: unsafety,
+                constness: ast::Constness::NotConst,
                 decl: fn_decl
             }, body_block)
         })
@@ -896,8 +914,8 @@ impl<'a> MethodDef<'a> {
                                  nonself_args: &[P<Expr>])
         -> P<Expr> {
 
-        let mut raw_fields = Vec::new(); // ~[[fields of self],
-                                 // [fields of next Self arg], [etc]]
+        let mut raw_fields = Vec::new(); // Vec<[fields of self],
+                                 // [fields of next Self arg], [etc]>
         let mut patterns = Vec::new();
         for i in 0..self_args.len() {
             let struct_path= cx.path(DUMMY_SP, vec!( type_ident ));
@@ -949,7 +967,7 @@ impl<'a> MethodDef<'a> {
         // make a series of nested matches, to destructure the
         // structs. This is actually right-to-left, but it shouldn't
         // matter.
-        for (arg_expr, pat) in self_args.iter().zip(patterns.iter()) {
+        for (arg_expr, pat) in self_args.iter().zip(patterns) {
             body = cx.expr_match(trait_.span, arg_expr.clone(),
                                      vec!( cx.arm(trait_.span, vec!(pat.clone()), body) ))
         }
@@ -1024,21 +1042,31 @@ impl<'a> MethodDef<'a> {
     /// variants where all of the variants match, and one catch-all for
     /// when one does not match.
 
+    /// As an optimization we generate code which checks whether all variants
+    /// match first which makes llvm see that C-like enums can be compiled into
+    /// a simple equality check (for PartialEq).
+
     /// The catch-all handler is provided access the variant index values
-    /// for each of the self-args, carried in precomputed variables. (Nota
-    /// bene: the variant index values are not necessarily the
-    /// discriminant values.  See issue #15523.)
+    /// for each of the self-args, carried in precomputed variables.
 
     /// ```{.text}
-    /// match (this, that, ...) {
-    ///   (Variant1, Variant1, Variant1) => ... // delegate Matching on Variant1
-    ///   (Variant2, Variant2, Variant2) => ... // delegate Matching on Variant2
-    ///   ...
-    ///   _ => {
-    ///     let __this_vi = match this { Variant1 => 0, Variant2 => 1, ... };
-    ///     let __that_vi = match that { Variant1 => 0, Variant2 => 1, ... };
+    /// let __self0_vi = unsafe {
+    ///     std::intrinsics::discriminant_value(&self) } as i32;
+    /// let __self1_vi = unsafe {
+    ///     std::intrinsics::discriminant_value(&__arg1) } as i32;
+    /// let __self2_vi = unsafe {
+    ///     std::intrinsics::discriminant_value(&__arg2) } as i32;
+    ///
+    /// if __self0_vi == __self1_vi && __self0_vi == __self2_vi && ... {
+    ///     match (...) {
+    ///         (Variant1, Variant1, ...) => Body1
+    ///         (Variant2, Variant2, ...) => Body2,
+    ///         ...
+    ///         _ => ::core::intrinsics::unreachable()
+    ///     }
+    /// }
+    /// else {
     ///     ... // catch-all remainder can inspect above variant index values.
-    ///   }
     /// }
     /// ```
     fn build_enum_match_tuple<'b>(
@@ -1169,7 +1197,6 @@ impl<'a> MethodDef<'a> {
 
                 cx.arm(sp, vec![single_pat], arm_expr)
             }).collect();
-
         // We will usually need the catch-all after matching the
         // tuples `(VariantK, VariantK, ...)` for each VariantK of the
         // enum.  But:
@@ -1205,10 +1232,15 @@ impl<'a> MethodDef<'a> {
             // ```
             let mut index_let_stmts: Vec<P<ast::Stmt>> = Vec::new();
 
+            //We also build an expression which checks whether all discriminants are equal
+            // discriminant_test = __self0_vi == __self1_vi && __self0_vi == __self2_vi && ...
+            let mut discriminant_test = cx.expr_bool(sp, true);
+
             let target_type_name =
                 find_repr_type_name(&cx.parse_sess.span_diagnostic, type_attrs);
 
-            for (&ident, self_arg) in vi_idents.iter().zip(self_args.iter()) {
+            let mut first_ident = None;
+            for (&ident, self_arg) in vi_idents.iter().zip(&self_args) {
                 let path = vec![cx.ident_of_std("core"),
                                 cx.ident_of("intrinsics"),
                                 cx.ident_of("discriminant_value")];
@@ -1225,32 +1257,64 @@ impl<'a> MethodDef<'a> {
                 let variant_disr = cx.expr_cast(sp, variant_value, target_ty);
                 let let_stmt = cx.stmt_let(sp, false, ident, variant_disr);
                 index_let_stmts.push(let_stmt);
+
+                match first_ident {
+                    Some(first) => {
+                        let first_expr = cx.expr_ident(sp, first);
+                        let id = cx.expr_ident(sp, ident);
+                        let test = cx.expr_binary(sp, ast::BiEq, first_expr, id);
+                        discriminant_test = cx.expr_binary(sp, ast::BiAnd, discriminant_test, test)
+                    }
+                    None => {
+                        first_ident = Some(ident);
+                    }
+                }
             }
 
             let arm_expr = self.call_substructure_method(
                 cx, trait_, type_ident, &self_args[..], nonself_args,
                 &catch_all_substructure);
 
-            // Builds the expression:
-            // {
-            //   let __self0_vi = ...;
-            //   let __self1_vi = ...;
-            //   ...
-            //   <delegated expression referring to __self0_vi, et al.>
-            // }
-            let arm_expr = cx.expr_block(
-                cx.block_all(sp, index_let_stmts, Some(arm_expr)));
+            //Since we know that all the arguments will match if we reach the match expression we
+            //add the unreachable intrinsics as the result of the catch all which should help llvm
+            //in optimizing it
+            let path = vec![cx.ident_of_std("core"),
+                            cx.ident_of("intrinsics"),
+                            cx.ident_of("unreachable")];
+            let call = cx.expr_call_global(
+                sp, path, vec![]);
+            let unreachable = cx.expr_block(P(ast::Block {
+                stmts: vec![],
+                expr: Some(call),
+                id: ast::DUMMY_NODE_ID,
+                rules: ast::UnsafeBlock(ast::CompilerGenerated),
+                span: sp }));
+            match_arms.push(cx.arm(sp, vec![cx.pat_wild(sp)], unreachable));
 
-            // Builds arm:
-            // _ => { let __self0_vi = ...;
-            //        let __self1_vi = ...;
-            //        ...
-            //        <delegated expression as above> }
-            let catch_all_match_arm =
-                cx.arm(sp, vec![cx.pat_wild(sp)], arm_expr);
+            // Final wrinkle: the self_args are expressions that deref
+            // down to desired l-values, but we cannot actually deref
+            // them when they are fed as r-values into a tuple
+            // expression; here add a layer of borrowing, turning
+            // `(*self, *__arg_0, ...)` into `(&*self, &*__arg_0, ...)`.
+            let borrowed_self_args = self_args.move_map(|self_arg| cx.expr_addr_of(sp, self_arg));
+            let match_arg = cx.expr(sp, ast::ExprTup(borrowed_self_args));
 
-            match_arms.push(catch_all_match_arm);
-
+            //Lastly we create an expression which branches on all discriminants being equal
+            //  if discriminant_test {
+            //      match (...) {
+            //          (Variant1, Variant1, ...) => Body1
+            //          (Variant2, Variant2, ...) => Body2,
+            //          ...
+            //          _ => ::core::intrinsics::unreachable()
+            //      }
+            //  }
+            //  else {
+            //      <delegated expression referring to __self0_vi, et al.>
+            //  }
+            let all_match = cx.expr_match(sp, match_arg, match_arms);
+            let arm_expr = cx.expr_if(sp, discriminant_test, all_match, Some(arm_expr));
+            cx.expr_block(
+                cx.block_all(sp, index_let_stmts, Some(arm_expr)))
         } else if variants.is_empty() {
             // As an additional wrinkle, For a zero-variant enum A,
             // currently the compiler
@@ -1301,17 +1365,19 @@ impl<'a> MethodDef<'a> {
             // derive Debug on such a type could here generate code
             // that needs the feature gate enabled.)
 
-            return cx.expr_unreachable(sp);
+            cx.expr_unreachable(sp)
         }
+        else {
 
-        // Final wrinkle: the self_args are expressions that deref
-        // down to desired l-values, but we cannot actually deref
-        // them when they are fed as r-values into a tuple
-        // expression; here add a layer of borrowing, turning
-        // `(*self, *__arg_0, ...)` into `(&*self, &*__arg_0, ...)`.
-        let borrowed_self_args = self_args.move_map(|self_arg| cx.expr_addr_of(sp, self_arg));
-        let match_arg = cx.expr(sp, ast::ExprTup(borrowed_self_args));
-        cx.expr_match(sp, match_arg, match_arms)
+            // Final wrinkle: the self_args are expressions that deref
+            // down to desired l-values, but we cannot actually deref
+            // them when they are fed as r-values into a tuple
+            // expression; here add a layer of borrowing, turning
+            // `(*self, *__arg_0, ...)` into `(&*self, &*__arg_0, ...)`.
+            let borrowed_self_args = self_args.move_map(|self_arg| cx.expr_addr_of(sp, self_arg));
+            let match_arg = cx.expr(sp, ast::ExprTup(borrowed_self_args));
+            cx.expr_match(sp, match_arg, match_arms)
+        }
     }
 
     fn expand_static_enum_method_body(&self,
@@ -1447,7 +1513,7 @@ impl<'a> TraitDef<'a> {
         // struct_type is definitely not Unknown, since struct_def.fields
         // must be nonempty to reach here
         let pattern = if struct_type == Record {
-            let field_pats = subpats.into_iter().zip(ident_expr.iter())
+            let field_pats = subpats.into_iter().zip(&ident_expr)
                                     .map(|(pat, &(_, id, _, _))| {
                 // id is guaranteed to be Some
                 codemap::Spanned {

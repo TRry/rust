@@ -5,7 +5,7 @@ Rust’s most unique and compelling features, with which Rust developers should
 become quite acquainted. Ownership is how Rust achieves its largest goal,
 memory safety. There are a few distinct concepts, each with its own chapter:
 
-* [ownership][ownership], ownership, the key concept
+* [ownership][ownership], the key concept
 * [borrowing][borrowing], and their associated feature ‘references’
 * lifetimes, which you’re reading now
 
@@ -41,7 +41,7 @@ With that in mind, let’s learn about lifetimes.
 # Lifetimes
 
 Lending out a reference to a resource that someone else owns can be
-complicated, however. For example, imagine this set of operations:
+complicated. For example, imagine this set of operations:
 
 - I acquire a handle to some kind of resource.
 - I lend you a reference to the resource.
@@ -116,7 +116,7 @@ fn main() {
 }
 ```
 
-[struct]: structs.html
+[structs]: structs.html
 
 As you can see, `struct`s can also have lifetimes. In a similar way to functions,
 
@@ -136,6 +136,27 @@ x: &'a i32,
 
 uses it. So why do we need a lifetime here? We need to ensure that any reference
 to a `Foo` cannot outlive the reference to an `i32` it contains.
+
+If you have multiple references, you can use the same lifetime multiple times:
+
+```rust
+fn x_or_y<'a>(x: &'a str, y: &'a str) -> &'a str {
+#    x
+# }
+```
+
+This says that `x` and `y` both are alive for the same scope, and that the
+return value is also alive for that scope. If you wanted `x` and `y` to have
+different lifetimes, you can use multiple lifetime parameters:
+
+```rust
+fn x_or_y<'a, 'b>(x: &'a str, y: &'b str) -> &'a str {
+#    x
+# }
+```
+
+In this example, `x` and `y` have different valid scopes, but the return value
+has the same lifetime as `x`.
 
 ## Thinking in scopes
 
@@ -219,7 +240,7 @@ to it.
 ## Lifetime Elision
 
 Rust supports powerful local type inference in function bodies, but it’s
-forbidden in item signatures to allow reasoning about the types just based in
+forbidden in item signatures to allow reasoning about the types based on
 the item signature alone. However, for ergonomic reasons a very restricted
 secondary inference algorithm called “lifetime elision” applies in function
 signatures. It infers only based on the signature components themselves and not
@@ -284,7 +305,7 @@ fn substr<'a>(s: &'a str, until: u32) -> &'a str; // expanded
 fn get_str() -> &str; // ILLEGAL, no inputs
 
 fn frob(s: &str, t: &str) -> &str; // ILLEGAL, two inputs
-fn frob<'a, 'b>(s: &'a str, t: &'b str) -> &str; // Expanded: Output lifetime is unclear
+fn frob<'a, 'b>(s: &'a str, t: &'b str) -> &str; // Expanded: Output lifetime is ambiguous
 
 fn get_mut(&mut self) -> &mut T; // elided
 fn get_mut<'a>(&'a mut self) -> &'a mut T; // expanded

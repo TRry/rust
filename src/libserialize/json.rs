@@ -145,7 +145,7 @@
 //!         val: num.to_json(),
 //!     }).unwrap();
 //!     println!("data: {}", data);
-//!     // data: {"uid":1,"dsc":"test","val":"0.0001+12.539j"};
+//!     // data: {"uid":1,"dsc":"test","val":"0.0001+12.539i"};
 //! }
 //! ```
 //!
@@ -457,7 +457,7 @@ fn spaces(wr: &mut fmt::Write, mut n: usize) -> EncodeResult {
 
 fn fmt_number_or_null(v: f64) -> string::String {
     match v.classify() {
-        Fp::Nan | Fp::Infinite => string::String::from_str("null"),
+        Fp::Nan | Fp::Infinite => string::String::from("null"),
         _ if v.fract() != 0f64 => v.to_string(),
         _ => v.to_string() + ".0",
     }
@@ -3011,9 +3011,9 @@ mod tests {
         let v: i64 = super::decode("9223372036854775807").unwrap();
         assert_eq!(v, i64::MAX);
 
-        let res: DecodeResult<i64> = super::decode("765.25252");
+        let res: DecodeResult<i64> = super::decode("765.25");
         assert_eq!(res, Err(ExpectedError("Integer".to_string(),
-                                          "765.25252".to_string())));
+                                          "765.25".to_string())));
     }
 
     #[test]

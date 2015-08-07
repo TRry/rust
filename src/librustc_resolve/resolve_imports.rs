@@ -12,6 +12,7 @@ use self::ImportDirectiveSubclass::*;
 
 use DefModifiers;
 use Module;
+use ModuleKind;
 use Namespace::{self, TypeNS, ValueNS};
 use NameBindings;
 use NamespaceResult::{BoundResult, UnboundResult, UnknownResult};
@@ -234,7 +235,7 @@ impl<'a, 'b:'a, 'tcx:'b> ImportResolver<'a, 'b, 'tcx> {
         self.resolver.current_module = orig_module;
 
         build_reduced_graph::populate_module_if_necessary(self.resolver, &module_);
-        for (_, child_node) in &*module_.children.borrow() {
+        for (_, child_node) in module_.children.borrow().iter() {
             match child_node.get_module_if_available() {
                 None => {
                     // Nothing to do.
@@ -245,7 +246,7 @@ impl<'a, 'b:'a, 'tcx:'b> ImportResolver<'a, 'b, 'tcx> {
             }
         }
 
-        for (_, child_module) in &*module_.anonymous_children.borrow() {
+        for (_, child_module) in module_.anonymous_children.borrow().iter() {
             self.resolve_imports_for_module_subtree(child_module.clone());
         }
     }
@@ -618,7 +619,7 @@ impl<'a, 'b:'a, 'tcx:'b> ImportResolver<'a, 'b, 'tcx> {
                                namespace_name,
                                name_bindings.def_for_namespace(namespace));
                         self.check_for_conflicting_import(
-                            &import_resolution.target_for_namespace(namespace),
+                            &import_resolution,
                             directive.span,
                             target,
                             namespace);
@@ -732,7 +733,7 @@ impl<'a, 'b:'a, 'tcx:'b> ImportResolver<'a, 'b, 'tcx> {
 
         // Add all resolved imports from the containing module.
         let import_resolutions = target_module.import_resolutions.borrow();
-        for (ident, target_import_resolution) in &*import_resolutions {
+        for (ident, target_import_resolution) in import_resolutions.iter() {
             debug!("(resolving glob import) writing module resolution \
                     {} into `{}`",
                    token::get_name(*ident),
@@ -755,7 +756,7 @@ impl<'a, 'b:'a, 'tcx:'b> ImportResolver<'a, 'b, 'tcx> {
                             // Continue.
                         }
                         Some(ref value_target) => {
-                            self.check_for_conflicting_import(&dest_import_resolution.value_target,
+                            self.check_for_conflicting_import(&dest_import_resolution,
                                                               import_directive.span,
                                                               *ident,
                                                               ValueNS);
@@ -767,7 +768,7 @@ impl<'a, 'b:'a, 'tcx:'b> ImportResolver<'a, 'b, 'tcx> {
                             // Continue.
                         }
                         Some(ref type_target) => {
-                            self.check_for_conflicting_import(&dest_import_resolution.type_target,
+                            self.check_for_conflicting_import(&dest_import_resolution,
                                                               import_directive.span,
                                                               *ident,
                                                               TypeNS);
@@ -793,7 +794,7 @@ impl<'a, 'b:'a, 'tcx:'b> ImportResolver<'a, 'b, 'tcx> {
         // Add all children from the containing module.
         build_reduced_graph::populate_module_if_necessary(self.resolver, &target_module);
 
-        for (&name, name_bindings) in &*target_module.children.borrow() {
+        for (&name, name_bindings) in target_module.children.borrow().iter() {
             self.merge_import_resolution(module_,
                                          target_module.clone(),
                                          import_directive,
@@ -803,7 +804,7 @@ impl<'a, 'b:'a, 'tcx:'b> ImportResolver<'a, 'b, 'tcx> {
         }
 
         // Add external module children from the containing module.
-        for (&name, module) in &*target_module.external_module_children.borrow() {
+        for (&name, module) in target_module.external_module_children.borrow().iter() {
             let name_bindings =
                 Rc::new(Resolver::create_name_bindings_from_module(module.clone()));
             self.merge_import_resolution(module_,
@@ -887,24 +888,43 @@ impl<'a, 'b:'a, 'tcx:'b> ImportResolver<'a, 'b, 'tcx> {
 
     /// Checks that imported names and items don't have the same name.
     fn check_for_conflicting_import(&mut self,
-                                    target: &Option<Target>,
+                                    import_resolution: &ImportResolution,
                                     import_span: Span,
                                     name: Name,
                                     namespace: Namespace) {
+        let target = import_resolution.target_for_namespace(namespace);
         debug!("check_for_conflicting_import: {}; target exists: {}",
                &token::get_name(name),
                target.is_some());
 
-        match *target {
+        match target {
             Some(ref target) if target.shadowable != Shadowable::Always => {
-                let msg = format!("a {} named `{}` has already been imported \
-                                   in this module",
-                                  match namespace {
-                                    TypeNS => "type",
-                                    ValueNS => "value",
-                                  },
+                let ns_word = match namespace {
+                    TypeNS => {
+                        if let Some(ref ty_def) = *target.bindings.type_def.borrow() {
+                            match ty_def.module_def {
+                                Some(ref module)
+                                    if module.kind.get() == ModuleKind::NormalModuleKind =>
+                                        "module",
+                                Some(ref module)
+                                    if module.kind.get() == ModuleKind::TraitModuleKind =>
+                                        "trait",
+                                _ => "type",
+                            }
+                        } else { "type" }
+                    },
+                    ValueNS => "value",
+                };
+                span_err!(self.resolver.session, import_span, E0252,
+                          "a {} named `{}` has already been imported \
+                           in this module", ns_word,
                                   &token::get_name(name));
-                span_err!(self.resolver.session, import_span, E0252, "{}", &msg[..]);
+                let use_id = import_resolution.id(namespace);
+                let item = self.resolver.ast_map.expect_item(use_id);
+                // item is syntax::ast::Item;
+                span_note!(self.resolver.session, item.span,
+                            "previous import of `{}` here",
+                            token::get_name(name));
             }
             Some(_) | None => {}
         }
@@ -973,10 +993,14 @@ impl<'a, 'b:'a, 'tcx:'b> ImportResolver<'a, 'b, 'tcx> {
         match import_resolution.type_target {
             Some(ref target) if target.shadowable != Shadowable::Always => {
                 if let Some(ref ty) = *name_bindings.type_def.borrow() {
-                    let (what, note) = if ty.module_def.is_some() {
-                        ("existing submodule", "note conflicting module here")
-                    } else {
-                        ("type in this module", "note conflicting type here")
+                    let (what, note) = match ty.module_def {
+                        Some(ref module)
+                            if module.kind.get() == ModuleKind::NormalModuleKind =>
+                                ("existing submodule", "note conflicting module here"),
+                        Some(ref module)
+                            if module.kind.get() == ModuleKind::TraitModuleKind =>
+                                ("trait in this module", "note conflicting trait here"),
+                        _    => ("type in this module", "note conflicting type here"),
                     };
                     span_err!(self.resolver.session, import_span, E0256,
                               "import `{}` conflicts with {}",

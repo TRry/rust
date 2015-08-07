@@ -35,7 +35,7 @@ let y = &mut x;
 
 `y` is an immutable binding to a mutable reference, which means that you can’t
 bind `y` to something else (`y = &mut z`), but you can mutate the thing that’s
-bound to `y`. (`*y = 5`) A subtle distinction.
+bound to `y` (`*y = 5`). A subtle distinction.
 
 Of course, if you need both:
 
@@ -78,18 +78,18 @@ When we call `clone()`, the `Arc<T>` needs to update the reference count. Yet
 we’ve not used any `mut`s here, `x` is an immutable binding, and we didn’t take
 `&mut 5` or anything. So what gives?
 
-To this, we have to go back to the core of Rust’s guiding philosophy, memory
-safety, and the mechanism by which Rust guarantees it, the
+To understand this, we have to go back to the core of Rust’s guiding
+philosophy, memory safety, and the mechanism by which Rust guarantees it, the
 [ownership][ownership] system, and more specifically, [borrowing][borrowing]:
 
 > You may have one or the other of these two kinds of borrows, but not both at
 > the same time:
 > 
-> * 0 to N references (`&T`) to a resource.
+> * one or more references (`&T`) to a resource.
 > * exactly one mutable reference (`&mut T`)
 
 [ownership]: ownership.html
-[borrowing]: borrowing.html#The-Rules
+[borrowing]: references-and-borrowing.html#borrowing
 
 So, that’s the real definition of ‘immutability’: is this safe to have two
 pointers to? In `Arc<T>`’s case, yes: the mutation is entirely contained inside
@@ -159,9 +159,9 @@ b.x = 10; // error: cannot assign to immutable field `b.x`
 
 [struct]: structs.html
 
-However, by using `Cell<T>`, you can emulate field-level mutability:
+However, by using [`Cell<T>`][cell], you can emulate field-level mutability:
 
-```
+```rust
 use std::cell::Cell;
 
 struct Point {
@@ -169,11 +169,13 @@ struct Point {
     y: Cell<i32>,
 }
 
-let mut point = Point { x: 5, y: Cell::new(6) };
+let point = Point { x: 5, y: Cell::new(6) };
 
 point.y.set(7);
 
 println!("y: {:?}", point.y);
 ```
+
+[cell]: ../std/cell/struct.Cell.html
 
 This will print `y: Cell { value: 7 }`. We’ve successfully updated `y`.

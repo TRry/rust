@@ -28,8 +28,7 @@ pub mod rt {
     use ast;
     use codemap::Spanned;
     use ext::base::ExtCtxt;
-    use parse::token;
-    use parse;
+    use parse::{self, token, classify};
     use ptr::P;
     use std::rc::Rc;
 
@@ -50,7 +49,7 @@ pub mod rt {
 
     impl<T: ToTokens> ToTokens for Vec<T> {
         fn to_tokens(&self, cx: &ExtCtxt) -> Vec<TokenTree> {
-            self.iter().flat_map(|t| t.to_tokens(cx).into_iter()).collect()
+            self.iter().flat_map(|t| t.to_tokens(cx)).collect()
         }
     }
 
@@ -94,6 +93,18 @@ pub mod rt {
         }
     }
 
+    impl ToTokens for ast::Generics {
+        fn to_tokens(&self, _cx: &ExtCtxt) -> Vec<TokenTree> {
+            vec![ast::TtToken(DUMMY_SP, token::Interpolated(token::NtGenerics(self.clone())))]
+        }
+    }
+
+    impl ToTokens for ast::WhereClause {
+        fn to_tokens(&self, _cx: &ExtCtxt) -> Vec<TokenTree> {
+            vec![ast::TtToken(DUMMY_SP, token::Interpolated(token::NtWhereClause(self.clone())))]
+        }
+    }
+
     impl ToTokens for P<ast::Item> {
         fn to_tokens(&self, _cx: &ExtCtxt) -> Vec<TokenTree> {
             vec![ast::TtToken(self.span, token::Interpolated(token::NtItem(self.clone())))]
@@ -114,7 +125,16 @@ pub mod rt {
 
     impl ToTokens for P<ast::Stmt> {
         fn to_tokens(&self, _cx: &ExtCtxt) -> Vec<TokenTree> {
-            vec![ast::TtToken(self.span, token::Interpolated(token::NtStmt(self.clone())))]
+            let mut tts = vec![
+                ast::TtToken(self.span, token::Interpolated(token::NtStmt(self.clone())))
+            ];
+
+            // Some statements require a trailing semicolon.
+            if classify::stmt_ends_with_semi(&self.node) {
+                tts.push(ast::TtToken(self.span, token::Semi));
+            }
+
+            tts
         }
     }
 
@@ -367,7 +387,7 @@ pub fn expand_quote_matcher(cx: &mut ExtCtxt,
                             -> Box<base::MacResult+'static> {
     let (cx_expr, tts) = parse_arguments_to_quote(cx, tts);
     let mut vector = mk_stmts_let(cx, sp);
-    vector.extend(statements_mk_tts(cx, &tts[..], true).into_iter());
+    vector.extend(statements_mk_tts(cx, &tts[..], true));
     let block = cx.expr_block(
         cx.block_all(sp,
                      vector,
@@ -573,7 +593,7 @@ fn expr_mk_token(cx: &ExtCtxt, sp: Span, tok: &token::Token) -> P<ast::Expr> {
 fn statements_mk_tt(cx: &ExtCtxt, tt: &ast::TokenTree, matcher: bool) -> Vec<P<ast::Stmt>> {
     match *tt {
         ast::TtToken(sp, SubstNt(ident, _)) => {
-            // tt.extend($ident.to_tokens(ext_cx).into_iter())
+            // tt.extend($ident.to_tokens(ext_cx))
 
             let e_to_toks =
                 cx.expr_method_call(sp,
@@ -613,8 +633,8 @@ fn statements_mk_tt(cx: &ExtCtxt, tt: &ast::TokenTree, matcher: bool) -> Vec<P<a
         ast::TtDelimited(_, ref delimed) => {
             statements_mk_tt(cx, &delimed.open_tt(), matcher).into_iter()
                 .chain(delimed.tts.iter()
-                                  .flat_map(|tt| statements_mk_tt(cx, tt, matcher).into_iter()))
-                .chain(statements_mk_tt(cx, &delimed.close_tt(), matcher).into_iter())
+                                  .flat_map(|tt| statements_mk_tt(cx, tt, matcher)))
+                .chain(statements_mk_tt(cx, &delimed.close_tt(), matcher))
                 .collect()
         },
         ast::TtSequence(sp, ref seq) => {
@@ -626,7 +646,7 @@ fn statements_mk_tt(cx: &ExtCtxt, tt: &ast::TokenTree, matcher: bool) -> Vec<P<a
 
             let stmt_let_tt = cx.stmt_let(sp, true, id_ext("tt"), cx.expr_vec_ng(sp));
             let mut tts_stmts = vec![stmt_let_tt];
-            tts_stmts.extend(statements_mk_tts(cx, &seq.tts[..], matcher).into_iter());
+            tts_stmts.extend(statements_mk_tts(cx, &seq.tts[..], matcher));
             let e_tts = cx.expr_block(cx.block(sp, tts_stmts,
                                                    Some(cx.expr_ident(sp, id_ext("tt")))));
             let e_separator = match seq.separator {
@@ -728,7 +748,7 @@ fn mk_stmts_let(cx: &ExtCtxt, sp: Span) -> Vec<P<ast::Stmt>> {
 fn statements_mk_tts(cx: &ExtCtxt, tts: &[ast::TokenTree], matcher: bool) -> Vec<P<ast::Stmt>> {
     let mut ss = Vec::new();
     for tt in tts {
-        ss.extend(statements_mk_tt(cx, tt, matcher).into_iter());
+        ss.extend(statements_mk_tt(cx, tt, matcher));
     }
     ss
 }
@@ -738,7 +758,7 @@ fn expand_tts(cx: &ExtCtxt, sp: Span, tts: &[ast::TokenTree])
     let (cx_expr, tts) = parse_arguments_to_quote(cx, tts);
 
     let mut vector = mk_stmts_let(cx, sp);
-    vector.extend(statements_mk_tts(cx, &tts[..], false).into_iter());
+    vector.extend(statements_mk_tts(cx, &tts[..], false));
     let block = cx.expr_block(
         cx.block_all(sp,
                      vector,
@@ -760,7 +780,7 @@ fn expand_wrapper(cx: &ExtCtxt,
         // make item: `use ...;`
         let path = path.iter().map(|s| s.to_string()).collect();
         cx.stmt_item(sp, cx.item_use_glob(sp, ast::Inherited, ids_ext(path)))
-    }).chain(Some(stmt_let_ext_cx).into_iter()).collect();
+    }).chain(Some(stmt_let_ext_cx)).collect();
 
     cx.expr_block(cx.block_all(sp, stmts, Some(expr)))
 }

@@ -22,13 +22,10 @@ pub struct Condvar { inner: UnsafeCell<ffi::CONDITION_VARIABLE> }
 unsafe impl Send for Condvar {}
 unsafe impl Sync for Condvar {}
 
-pub const CONDVAR_INIT: Condvar = Condvar {
-    inner: UnsafeCell { value: ffi::CONDITION_VARIABLE_INIT }
-};
-
 impl Condvar {
-    #[inline]
-    pub unsafe fn new() -> Condvar { CONDVAR_INIT }
+    pub const fn new() -> Condvar {
+        Condvar { inner: UnsafeCell::new(ffi::CONDITION_VARIABLE_INIT) }
+    }
 
     #[inline]
     pub unsafe fn wait(&self, mutex: &Mutex) {
@@ -42,7 +39,7 @@ impl Condvar {
     pub unsafe fn wait_timeout(&self, mutex: &Mutex, dur: Duration) -> bool {
         let r = ffi::SleepConditionVariableSRW(self.inner.get(),
                                                mutex::raw(mutex),
-                                               dur.num_milliseconds() as DWORD,
+                                               super::dur2timeout(dur),
                                                0);
         if r == 0 {
             const ERROR_TIMEOUT: DWORD = 0x5B4;

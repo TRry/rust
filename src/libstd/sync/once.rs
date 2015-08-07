@@ -16,8 +16,8 @@
 use prelude::v1::*;
 
 use isize;
-use sync::atomic::{AtomicIsize, Ordering, ATOMIC_ISIZE_INIT};
-use sync::{StaticMutex, MUTEX_INIT};
+use sync::atomic::{AtomicIsize, Ordering};
+use sync::StaticMutex;
 
 /// A synchronization primitive which can be used to run a one-time global
 /// initialization. Useful for one-time initialization for FFI or related
@@ -44,24 +44,30 @@ pub struct Once {
 
 /// Initialization value for static `Once` values.
 #[stable(feature = "rust1", since = "1.0.0")]
-pub const ONCE_INIT: Once = Once {
-    mutex: MUTEX_INIT,
-    cnt: ATOMIC_ISIZE_INIT,
-    lock_cnt: ATOMIC_ISIZE_INIT,
-};
+pub const ONCE_INIT: Once = Once::new();
 
 impl Once {
+    /// Creates a new `Once` value.
+    #[stable(feature = "once_new", since = "1.2.0")]
+    pub const fn new() -> Once {
+        Once {
+            mutex: StaticMutex::new(),
+            cnt: AtomicIsize::new(0),
+            lock_cnt: AtomicIsize::new(0),
+        }
+    }
+
     /// Performs an initialization routine once and only once. The given closure
     /// will be executed if this is the first time `call_once` has been called,
     /// and otherwise the routine will *not* be invoked.
     ///
-    /// This method will block the calling task if another initialization
+    /// This method will block the calling thread if another initialization
     /// routine is currently running.
     ///
     /// When this function returns, it is guaranteed that some initialization
     /// has run and completed (it may not be the closure specified). It is also
     /// guaranteed that any memory writes performed by the executed closure can
-    /// be reliably observed by other tasks at this point (there is a
+    /// be reliably observed by other threads at this point (there is a
     /// happens-before relation between the closure and code executing after the
     /// return).
     #[stable(feature = "rust1", since = "1.0.0")]
@@ -129,12 +135,12 @@ mod tests {
     use prelude::v1::*;
 
     use thread;
-    use super::{ONCE_INIT, Once};
+    use super::Once;
     use sync::mpsc::channel;
 
     #[test]
     fn smoke_once() {
-        static O: Once = ONCE_INIT;
+        static O: Once = Once::new();
         let mut a = 0;
         O.call_once(|| a += 1);
         assert_eq!(a, 1);
@@ -144,7 +150,7 @@ mod tests {
 
     #[test]
     fn stampede_once() {
-        static O: Once = ONCE_INIT;
+        static O: Once = Once::new();
         static mut run: bool = false;
 
         let (tx, rx) = channel();

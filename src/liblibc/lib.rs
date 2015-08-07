@@ -12,12 +12,13 @@
 #![cfg_attr(stage0, feature(custom_attribute))]
 #![crate_name = "libc"]
 #![crate_type = "rlib"]
-#![cfg_attr(not(feature = "cargo-build"), unstable(feature = "libc"))]
+#![cfg_attr(not(feature = "cargo-build"), unstable(feature = "libc",
+                                                   reason = "use `libc` from crates.io"))]
 #![cfg_attr(not(feature = "cargo-build"), feature(staged_api, core, no_std))]
 #![cfg_attr(not(feature = "cargo-build"), staged_api)]
 #![cfg_attr(not(feature = "cargo-build"), no_std)]
 #![doc(html_logo_url = "http://www.rust-lang.org/logos/rust-logo-128x128-blk-v2.png",
-       html_favicon_url = "http://www.rust-lang.org/favicon.ico",
+       html_favicon_url = "https://doc.rust-lang.org/favicon.ico",
        html_root_url = "http://doc.rust-lang.org/nightly/",
        html_playground_url = "http://play.rust-lang.org/")]
 #![cfg_attr(test, feature(test))]
@@ -145,8 +146,17 @@ pub use funcs::bsd43::*;
 #[link(name = "m")]
 extern {}
 
-#[cfg(all(target_env = "musl", not(test)))]
+// When compiling rust with musl, statically include libc.a in liblibc.rlib.
+// A cargo build of the libc crate will therefore automatically pick up the
+// libc.a symbols because liblibc is transitively linked to by the stdlib.
+#[cfg(all(target_env = "musl", not(feature = "cargo-build"), not(test)))]
 #[link(name = "c", kind = "static")]
+extern {}
+
+#[cfg(all(windows, target_env = "msvc"))]
+#[link(name = "kernel32")]
+#[link(name = "shell32")]
+#[link(name = "msvcrt")]
 extern {}
 
 // libnacl provides functions that require a trip through the IRT to work.
@@ -3624,6 +3634,30 @@ pub mod consts {
             pub const IPV6_DROP_MEMBERSHIP: c_int = 21;
 
             pub const TCP_NODELAY: c_int = 1;
+            pub const TCP_MAXSEG: c_int = 2;
+            pub const TCP_CORK: c_int = 3;
+            pub const TCP_KEEPIDLE: c_int = 4;
+            pub const TCP_KEEPINTVL: c_int = 5;
+            pub const TCP_KEEPCNT: c_int = 6;
+            pub const TCP_SYNCNT: c_int = 7;
+            pub const TCP_LINGER2: c_int = 8;
+            pub const TCP_DEFER_ACCEPT: c_int = 9;
+            pub const TCP_WINDOW_CLAMP: c_int = 10;
+            pub const TCP_INFO: c_int = 11;
+            pub const TCP_QUICKACK: c_int = 12;
+            pub const TCP_CONGESTION: c_int = 13;
+            pub const TCP_MD5SIG: c_int = 14;
+            pub const TCP_COOKIE_TRANSACTIONS: c_int = 15;
+            pub const TCP_THIN_LINEAR_TIMEOUTS: c_int = 16;
+            pub const TCP_THIN_DUPACK: c_int = 17;
+            pub const TCP_USER_TIMEOUT: c_int = 18;
+            pub const TCP_REPAIR: c_int = 19;
+            pub const TCP_REPAIR_QUEUE: c_int = 20;
+            pub const TCP_QUEUE_SEQ: c_int = 21;
+            pub const TCP_REPAIR_OPTIONS: c_int = 22;
+            pub const TCP_FASTOPEN: c_int = 23;
+            pub const TCP_TIMESTAMP: c_int = 24;
+
             pub const SOL_SOCKET: c_int = 65535;
 
             pub const SO_DEBUG: c_int = 0x0001;
@@ -5459,17 +5493,17 @@ pub mod funcs {
                 pub fn dup2(src: c_int, dst: c_int) -> c_int;
                 #[link_name = "_execv"]
                 pub fn execv(prog: *const c_char,
-                             argv: *mut *const c_char) -> intptr_t;
+                             argv: *const *const c_char) -> intptr_t;
                 #[link_name = "_execve"]
-                pub fn execve(prog: *const c_char, argv: *mut *const c_char,
-                              envp: *mut *const c_char)
+                pub fn execve(prog: *const c_char, argv: *const *const c_char,
+                              envp: *const *const c_char)
                               -> c_int;
                 #[link_name = "_execvp"]
                 pub fn execvp(c: *const c_char,
-                              argv: *mut *const c_char) -> c_int;
+                              argv: *const *const c_char) -> c_int;
                 #[link_name = "_execvpe"]
-                pub fn execvpe(c: *const c_char, argv: *mut *const c_char,
-                               envp: *mut *const c_char) -> c_int;
+                pub fn execvpe(c: *const c_char, argv: *const *const c_char,
+                               envp: *const *const c_char) -> c_int;
                 #[link_name = "_getcwd"]
                 pub fn getcwd(buf: *mut c_char, size: size_t) -> *mut c_char;
                 #[link_name = "_getpid"]
@@ -5653,12 +5687,12 @@ pub mod funcs {
                 pub fn dup(fd: c_int) -> c_int;
                 pub fn dup2(src: c_int, dst: c_int) -> c_int;
                 pub fn execv(prog: *const c_char,
-                             argv: *mut *const c_char) -> c_int;
-                pub fn execve(prog: *const c_char, argv: *mut *const c_char,
-                              envp: *mut *const c_char)
+                             argv: *const *const c_char) -> c_int;
+                pub fn execve(prog: *const c_char, argv: *const *const c_char,
+                              envp: *const *const c_char)
                               -> c_int;
                 pub fn execvp(c: *const c_char,
-                              argv: *mut *const c_char) -> c_int;
+                              argv: *const *const c_char) -> c_int;
                 pub fn fork() -> pid_t;
                 pub fn fpathconf(filedes: c_int, name: c_int) -> c_long;
                 pub fn getcwd(buf: *mut c_char, size: size_t) -> *mut c_char;
@@ -5668,7 +5702,9 @@ pub mod funcs {
                 pub fn getgroups(ngroups_max: c_int, groups: *mut gid_t)
                                  -> c_int;
                 pub fn getlogin() -> *mut c_char;
-                pub fn getopt(argc: c_int, argv: *mut *const c_char,
+                // GNU getopt(3) modifies its arguments despite the
+                // char * const [] prototype; see the manpage.
+                pub fn getopt(argc: c_int, argv: *mut *mut c_char,
                               optstr: *const c_char) -> c_int;
                 pub fn getpgrp() -> pid_t;
                 pub fn getpid() -> pid_t;
@@ -5697,6 +5733,9 @@ pub mod funcs {
                 pub fn tcgetpgrp(fd: c_int) -> pid_t;
                 pub fn ttyname(fd: c_int) -> *mut c_char;
                 pub fn unlink(c: *const c_char) -> c_int;
+                pub fn wait(status: *const c_int) -> pid_t;
+                pub fn waitpid(pid: pid_t, status: *const c_int, options: c_int)
+                               -> pid_t;
                 pub fn write(fd: c_int, buf: *const c_void, count: size_t)
                              -> ssize_t;
                 pub fn pread(fd: c_int, buf: *mut c_void, count: size_t,
@@ -5715,19 +5754,19 @@ pub mod funcs {
                 pub fn dup(fd: c_int) -> c_int;
                 pub fn dup2(src: c_int, dst: c_int) -> c_int;
                 pub fn execv(prog: *const c_char,
-                             argv: *mut *const c_char) -> c_int;
-                pub fn execve(prog: *const c_char, argv: *mut *const c_char,
-                              envp: *mut *const c_char)
+                             argv: *const *const c_char) -> c_int;
+                pub fn execve(prog: *const c_char, argv: *const *const c_char,
+                              envp: *const *const c_char)
                               -> c_int;
                 pub fn execvp(c: *const c_char,
-                              argv: *mut *const c_char) -> c_int;
+                              argv: *const *const c_char) -> c_int;
                 pub fn fork() -> pid_t;
                 pub fn getcwd(buf: *mut c_char, size: size_t) -> *mut c_char;
                 pub fn getegid() -> gid_t;
                 pub fn geteuid() -> uid_t;
                 pub fn getgid() -> gid_t;
                 pub fn getlogin() -> *mut c_char;
-                pub fn getopt(argc: c_int, argv: *mut *const c_char,
+                pub fn getopt(argc: c_int, argv: *const *const c_char,
                               optstr: *const c_char) -> c_int;
                 pub fn getuid() -> uid_t;
                 pub fn getsid(pid: pid_t) -> pid_t;
@@ -5748,6 +5787,9 @@ pub mod funcs {
                 pub fn sysconf(name: c_int) -> c_long;
                 pub fn ttyname(fd: c_int) -> *mut c_char;
                 pub fn unlink(c: *const c_char) -> c_int;
+                pub fn wait(status: *const c_int) -> pid_t;
+                pub fn waitpid(pid: pid_t, status: *const c_int, options: c_int)
+                               -> pid_t;
                 pub fn write(fd: c_int, buf: *const c_void, count: size_t)
                              -> ssize_t;
                 pub fn pread(fd: c_int, buf: *mut c_void, count: size_t,
@@ -6006,7 +6048,6 @@ pub mod funcs {
         use types::common::c95::{c_void};
         use types::os::common::bsd44::{socklen_t, sockaddr, SOCKET};
         use types::os::arch::c95::c_int;
-        use types::os::arch::posix88::ssize_t;
 
         extern "system" {
             pub fn socket(domain: c_int, ty: c_int, protocol: c_int) -> SOCKET;
@@ -6031,7 +6072,7 @@ pub mod funcs {
                         flags: c_int) -> c_int;
             pub fn recvfrom(socket: SOCKET, buf: *mut c_void, len: c_int,
                             flags: c_int, addr: *mut sockaddr,
-                            addrlen: *mut c_int) -> ssize_t;
+                            addrlen: *mut c_int) -> c_int;
             pub fn sendto(socket: SOCKET, buf: *const c_void, len: c_int,
                           flags: c_int, addr: *const sockaddr,
                           addrlen: c_int) -> c_int;
@@ -6272,8 +6313,8 @@ pub mod funcs {
                                 lpOverlapped: LPOVERLAPPED) -> BOOL;
                 pub fn WriteFile(hFile: HANDLE,
                                  lpBuffer: LPVOID,
-                                 nNumberOfBytesToRead: DWORD,
-                                 lpNumberOfBytesRead: LPDWORD,
+                                 nNumberOfBytesToWrite: DWORD,
+                                 lpNumberOfBytesWritten: LPDWORD,
                                  lpOverlapped: LPOVERLAPPED) -> BOOL;
                 pub fn SetFilePointerEx(hFile: HANDLE,
                                         liDistanceToMove: LARGE_INTEGER,

@@ -34,6 +34,11 @@ env:
 git:
   submodules: false
 
+# Real testing happens on http://buildbot.rust-lang.org/
+#
+# See https://github.com/rust-lang/rust-buildbot
+#     CONTRIBUTING.md#pull-requests
+
 notifications:
     webhooks:
         - http://rust-bios.herokuapp.com

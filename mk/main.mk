@@ -13,14 +13,16 @@
 ######################################################################
 
 # The version number
-CFG_RELEASE_NUM=1.1.0
+CFG_RELEASE_NUM=1.2.0
 
 # An optional number to put after the label, e.g. '.2' -> '-beta.2'
 # NB Make sure it starts with a dot to conform to semver pre-release
 # versions (section 9)
-CFG_PRERELEASE_VERSION=.1
+CFG_PRERELEASE_VERSION=.6
 
-CFG_FILENAME_EXTRA=4e7c5e5c
+# Append a version-dependent hash to each library, so we can install different
+# versions in the same place
+CFG_FILENAME_EXTRA=$(shell printf '%s' $(CFG_RELEASE) | $(CFG_HASH_COMMAND))
 
 ifeq ($(CFG_RELEASE_CHANNEL),stable)
 # This is the normal semver version string, e.g. "0.12.0", "0.12.0-nightly"
@@ -30,7 +32,7 @@ CFG_PACKAGE_VERS=$(CFG_RELEASE_NUM)
 CFG_DISABLE_UNSTABLE_FEATURES=1
 endif
 ifeq ($(CFG_RELEASE_CHANNEL),beta)
-CFG_RELEASE=$(CFG_RELEASE_NUM)-beta
+CFG_RELEASE=$(CFG_RELEASE_NUM)-beta$(CFG_PRERELEASE_VERSION)
 # When building beta distributables just reuse the same "beta" name
 # so when we upload we'll always override the previous beta. This
 # doesn't actually impact the version reported by rustc - it's just
@@ -72,9 +74,6 @@ ifneq ($(wildcard $(subst $(SPACE),\$(SPACE),$(CFG_GIT_DIR))),)
 endif
 endif
 
-CFG_BUILD_DATE = $(shell date +%F)
-CFG_VERSION += (built $(CFG_BUILD_DATE))
-
 # Windows exe's need numeric versions - don't use anything but
 # numbers and dots here
 CFG_VERSION_WIN = $(CFG_RELEASE_NUM)
@@ -84,10 +83,6 @@ CFG_INFO := $(info cfg: version $(CFG_VERSION))
 ######################################################################
 # More configuration
 ######################################################################
-
-# We track all of the object files we might build so that we can find
-# and include all of the .d files in one fell swoop.
-ALL_OBJ_FILES :=
 
 MKFILE_DEPS := config.stamp $(call rwildcard,$(CFG_SRC_DIR)mk/,*)
 MKFILES_FOR_TARBALL:=$(MKFILE_DEPS)
@@ -132,9 +127,7 @@ CFG_JEMALLOC_FLAGS += $(JEMALLOC_FLAGS)
 
 ifdef CFG_ENABLE_DEBUG_ASSERTIONS
   $(info cfg: enabling debug assertions (CFG_ENABLE_DEBUG_ASSERTIONS))
-  CFG_RUSTC_FLAGS += --cfg debug -C debug-assertions=on
-else
-  CFG_RUSTC_FLAGS += --cfg ndebug
+  CFG_RUSTC_FLAGS += -C debug-assertions=on
 endif
 
 ifdef CFG_ENABLE_DEBUGINFO
@@ -195,6 +188,7 @@ ifndef CFG_DISABLE_VALGRIND_RPASS
   $(info cfg: valgrind-rpass command set to $(CFG_VALGRIND))
   CFG_VALGRIND_RPASS :=$(CFG_VALGRIND)
 else
+  $(info cfg: disabling valgrind run-pass tests)
   CFG_VALGRIND_RPASS :=
 endif
 
@@ -295,6 +289,7 @@ endif
 # Any rules that depend on LLVM should depend on LLVM_CONFIG
 LLVM_CONFIG_$(1):=$$(CFG_LLVM_INST_DIR_$(1))/bin/llvm-config$$(X_$(1))
 LLVM_MC_$(1):=$$(CFG_LLVM_INST_DIR_$(1))/bin/llvm-mc$$(X_$(1))
+LLVM_AR_$(1):=$$(CFG_LLVM_INST_DIR_$(1))/bin/llvm-ar$$(X_$(1))
 LLVM_VERSION_$(1)=$$(shell "$$(LLVM_CONFIG_$(1))" --version)
 LLVM_BINDIR_$(1)=$$(shell "$$(LLVM_CONFIG_$(1))" --bindir)
 LLVM_INCDIR_$(1)=$$(shell "$$(LLVM_CONFIG_$(1))" --includedir)
@@ -302,9 +297,13 @@ LLVM_LIBDIR_$(1)=$$(shell "$$(LLVM_CONFIG_$(1))" --libdir)
 LLVM_LIBDIR_RUSTFLAGS_$(1)=-L "$$(LLVM_LIBDIR_$(1))"
 LLVM_LIBS_$(1)=$$(shell "$$(LLVM_CONFIG_$(1))" --libs $$(LLVM_COMPONENTS))
 LLVM_LDFLAGS_$(1)=$$(shell "$$(LLVM_CONFIG_$(1))" --ldflags)
+ifeq ($$(findstring freebsd,$(1)),freebsd)
 # On FreeBSD, it may search wrong headers (that are for pre-installed LLVM),
 # so we replace -I with -iquote to ensure that it searches bundled LLVM first.
 LLVM_CXXFLAGS_$(1)=$$(subst -I, -iquote , $$(shell "$$(LLVM_CONFIG_$(1))" --cxxflags))
+else
+LLVM_CXXFLAGS_$(1)=$$(shell "$$(LLVM_CONFIG_$(1))" --cxxflags)
+endif
 LLVM_HOST_TRIPLE_$(1)=$$(shell "$$(LLVM_CONFIG_$(1))" --host-target)
 
 LLVM_AS_$(1)=$$(CFG_LLVM_INST_DIR_$(1))/bin/llvm-as$$(X_$(1))
@@ -323,6 +322,7 @@ $(foreach host,$(CFG_HOST), \
 # exported
 
 export CFG_SRC_DIR
+export CFG_SRC_DIR_RELATIVE
 export CFG_BUILD_DIR
 ifdef CFG_VER_DATE
 export CFG_VER_DATE
@@ -330,7 +330,6 @@ endif
 ifdef CFG_VER_HASH
 export CFG_VER_HASH
 endif
-export CFG_BUILD_DATE
 export CFG_VERSION
 export CFG_VERSION_WIN
 export CFG_RELEASE
@@ -399,8 +398,6 @@ endif
 # Prerequisites for using the stageN compiler to build target artifacts
 TSREQ$(1)_T_$(2)_H_$(3) = \
 	$$(HSREQ$(1)_H_$(3)) \
-	$$(foreach obj,$$(INSTALLED_OBJECTS),\
-		$$(TLIB$(1)_T_$(2)_H_$(3))/$$(obj)) \
 	$$(foreach obj,$$(INSTALLED_OBJECTS_$(2)),\
 		$$(TLIB$(1)_T_$(2)_H_$(3))/$$(obj))
 

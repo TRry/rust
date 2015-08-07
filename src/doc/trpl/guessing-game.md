@@ -27,7 +27,7 @@ Check out the generated `Cargo.toml`:
 [package]
 
 name = "guessing_game"
-version = "0.0.1"
+version = "0.1.0"
 authors = ["Your Name <you@example.com>"]
 ```
 
@@ -38,7 +38,7 @@ Finally, Cargo generated a ‘Hello, world!’ for us. Check out `src/main.rs`:
 
 ```rust
 fn main() {
-    println!("Hello, world!")
+    println!("Hello, world!");
 }
 ```
 
@@ -46,7 +46,7 @@ Let’s try compiling what Cargo gave us:
 
 ```{bash}
 $ cargo build
-   Compiling guessing_game v0.0.1 (file:///home/you/projects/guessing_game)
+   Compiling guessing_game v0.1.0 (file:///home/you/projects/guessing_game)
 ```
 
 Excellent! Open up your `src/main.rs` again. We’ll be writing all of
@@ -58,7 +58,7 @@ Try it out:
 
 ```bash
 $ cargo run
-   Compiling guessing_game v0.0.1 (file:///home/you/projects/guessing_game)
+   Compiling guessing_game v0.1.0 (file:///home/you/projects/guessing_game)
      Running `target/debug/guessing_game`
 Hello, world!
 ```
@@ -131,7 +131,9 @@ prints a [string][strings] to the screen.
     let mut guess = String::new();
 ```
 
-Now we’re getting interesting! There’s a lot going on in this little line. The first thing to notice is that this is a [let statement][let], which is used to create ‘variable bindings’. They take this form:
+Now we’re getting interesting! There’s a lot going on in this little line.
+The first thing to notice is that this is a [let statement][let], which is
+used to create ‘variable bindings’. They take this form:
 
 ```rust,ignore
 let foo = bar;
@@ -146,10 +148,10 @@ a few tricks up their sleeves.
 For example, they’re [immutable][immutable] by default. That’s why our example
 uses `mut`: it makes a binding mutable, rather than immutable. `let` doesn’t
 take a name on the left hand side, it actually accepts a
-‘[pattern][patterns]’. We’ll use patterns more later. It’s easy enough
+‘[pattern][patterns]’. We’ll use patterns later. It’s easy enough
 to use for now:
 
-```
+```rust
 let foo = 5; // immutable.
 let mut bar = 5; // mutable
 ```
@@ -171,7 +173,7 @@ bound to: `String::new()`.
 
 [string]: ../std/string/struct.String.html
 
-The `::new()` syntax is uses `::` because this is an ‘associated function’ of
+The `::new()` syntax uses `::` because this is an ‘associated function’ of
 a particular type. That is to say, it’s associated with `String` itself,
 rather than a particular instance of a `String`. Some languages call this a
 ‘static method’.
@@ -211,12 +213,12 @@ The next part will use this handle to get input from the user:
 ```
 
 Here, we call the [`read_line()`][read_line] method on our handle.
-[Method][method]s are like associated functions, but are only available on a
+[Methods][method] are like associated functions, but are only available on a
 particular instance of a type, rather than the type itself. We’re also passing
 one argument to `read_line()`: `&mut guess`.
 
 [read_line]: ../std/io/struct.Stdin.html#method.read_line
-[method]: methods.html
+[method]: method-syntax.html
 
 Remember how we bound `guess` above? We said it was mutable. However,
 `read_line` doesn’t take a `String` as an argument: it takes a `&mut String`.
@@ -271,7 +273,7 @@ information’. Why throw it away? Well, for a basic program, we just want to
 print a generic error, as basically any issue means we can’t continue. The
 [`ok()` method][ok] returns a value which has another method defined on it:
 `expect()`. The [`expect()` method][expect] takes a value it’s called on, and
-if it isn’t a successful one, [`panic!`][panic]s with a message you passed you
+if it isn’t a successful one, [`panic!`][panic]s with a message you
 passed it. A `panic!` like this will cause our program to crash, displaying
 the message.
 
@@ -358,11 +360,10 @@ rand="0.3.0"
 The `[dependencies]` section of `Cargo.toml` is like the `[package]` section:
 everything that follows it is part of it, until the next section starts.
 Cargo uses the dependencies section to know what dependencies on external
-crates you have, and what versions you require. In this case, we’ve used `*`,
-which means that we’ll use the latest version of `rand`. Cargo understands
-[Semantic Versioning][semver], which is a standard for writing version
-numbers. If we wanted a specific version or range of versions, we could be
-more specific here. [Cargo’s documentation][cargodoc] contains more details.
+crates you have, and what versions you require. In this case, we’ve used version `0.3.0`.
+Cargo understands [Semantic Versioning][semver], which is a standard for writing version
+numbers. If we wanted to use the latest version we could use `*` or we could use a range
+of versions. [Cargo’s documentation][cargodoc] contains more details.
 
 [semver]: http://semver.org
 [cargodoc]: http://doc.crates.io/crates-io.html
@@ -410,7 +411,7 @@ $ cargo build
    Compiling guessing_game v0.1.0 (file:///home/you/projects/guessing_game)
 ```
 
-So, we told Cargo we wanted any version of `rand`, and so it fetched the latest
+So, we told Cargo we wanted any `0.3.x` version of `rand`, and so it fetched the latest
 version at the time this was written, `v0.3.8`. But what happens when next
 week, version `v0.3.9` comes out, with an important bugfix? While getting
 bugfixes is important, what if `0.3.9` contains a regression that breaks our
@@ -636,7 +637,7 @@ When we wrote `let guess = String::new()`, Rust was able to infer that `guess`
 should be a `String`, and so it doesn’t make us write out the type. And with
 our `secret_number`, there are a number of types which can have a value
 between one and a hundred: `i32`, a thirty-two-bit number, or `u32`, an
-unsigned thirty-two-bit number, or `i64`, a sixty-four-bit number. Or others.
+unsigned thirty-two-bit number, or `i64`, a sixty-four-bit number or others.
 So far, that hasn’t mattered, and so Rust defaults to an `i32`. However, here,
 Rust doesn’t know how to compare the `guess` and the `secret_number`. They
 need to be the same type. Ultimately, we want to convert the `String` we
@@ -712,7 +713,7 @@ variety of numbers, we need to give Rust a hint as to the exact type of number
 we want. Hence, `let guess: u32`. The colon (`:`) after `guess` tells Rust
 we’re going to annotate its type. `u32` is an unsigned, thirty-two bit
 integer. Rust has [a number of built-in number types][number], but we’ve
-chosen `u32`. It’s a good default choice for a small positive numer.
+chosen `u32`. It’s a good default choice for a small positive number.
 
 [parse]: ../std/primitive.str.html#method.parse
 [number]: primitive-types.html#numeric-types
@@ -726,7 +727,7 @@ Let’s try our program out!
 
 ```bash
 $ cargo run
-   Compiling guessing_game v0.0.1 (file:///home/you/projects/guessing_game)
+   Compiling guessing_game v0.1.0 (file:///home/you/projects/guessing_game)
      Running `target/guessing_game`
 Guess the number!
 The secret number is: 58
@@ -791,7 +792,7 @@ and quit. Observe:
 
 ```bash
 $ cargo run
-   Compiling guessing_game v0.0.1 (file:///home/you/projects/guessing_game)
+   Compiling guessing_game v0.1.0 (file:///home/you/projects/guessing_game)
      Running `target/guessing_game`
 Guess the number!
 The secret number is: 59
@@ -921,14 +922,14 @@ failure. Each contains more information: the successful parsed integer, or an
 error type. In this case, we `match` on `Ok(num)`, which sets the inner value
 of the `Ok` to the name `num`, and then we just return it on the right-hand
 side. In the `Err` case, we don’t care what kind of error it is, so we just
-use `_` intead of a name. This ignores the error, and `continue` causes us
+use `_` instead of a name. This ignores the error, and `continue` causes us
 to go to the next iteration of the `loop`.
 
 Now we should be good! Let’s try:
 
 ```bash
 $ cargo run
-   Compiling guessing_game v0.0.1 (file:///home/you/projects/guessing_game)
+   Compiling guessing_game v0.1.0 (file:///home/you/projects/guessing_game)
      Running `target/guessing_game`
 Guess the number!
 The secret number is: 61

@@ -22,15 +22,95 @@ use ptr;
 #[stable(feature = "rust1", since = "1.0.0")]
 pub use intrinsics::transmute;
 
-/// Moves a thing into the void.
+/// Leaks a value into the void, consuming ownership and never running its
+/// destructor.
 ///
-/// The forget function will take ownership of the provided value but neglect
-/// to run any required cleanup or memory management operations on it.
+/// This function will take ownership of its argument, but is distinct from the
+/// `mem::drop` function in that it **does not run the destructor**, leaking the
+/// value and any resources that it owns.
 ///
-/// This function is the unsafe version of the `drop` function because it does
-/// not run any destructors.
+/// # Safety
+///
+/// This function is not marked as `unsafe` as Rust does not guarantee that the
+/// `Drop` implementation for a value will always run. Note, however, that
+/// leaking resources such as memory or I/O objects is likely not desired, so
+/// this function is only recommended for specialized use cases.
+///
+/// The safety of this function implies that when writing `unsafe` code
+/// yourself care must be taken when leveraging a destructor that is required to
+/// run to preserve memory safety. There are known situations where the
+/// destructor may not run (such as if ownership of the object with the
+/// destructor is returned) which must be taken into account.
+///
+/// # Other forms of Leakage
+///
+/// It's important to point out that this function is not the only method by
+/// which a value can be leaked in safe Rust code. Other known sources of
+/// leakage are:
+///
+/// * `Rc` and `Arc` cycles
+/// * `mpsc::{Sender, Receiver}` cycles (they use `Arc` internally)
+/// * Panicking destructors are likely to leak local resources
+///
+/// # When To Use
+///
+/// There's only a few reasons to use this function. They mainly come
+/// up in unsafe code or FFI code.
+///
+/// * You have an uninitialized value, perhaps for performance reasons, and
+///   need to prevent the destructor from running on it.
+/// * You have two copies of a value (like `std::mem::swap`), but need the
+///   destructor to only run once to prevent a double free.
+/// * Transferring resources across FFI boundries.
+///
+/// # Example
+///
+/// Leak some heap memory by never deallocating it.
+///
+/// ```rust
+/// use std::mem;
+///
+/// let heap_memory = Box::new(3);
+/// mem::forget(heap_memory);
+/// ```
+///
+/// Leak an I/O object, never closing the file.
+///
+/// ```rust,no_run
+/// use std::mem;
+/// use std::fs::File;
+///
+/// let file = File::open("foo.txt").unwrap();
+/// mem::forget(file);
+/// ```
+///
+/// The swap function uses forget to good effect.
+///
+/// ```rust
+/// use std::mem;
+/// use std::ptr;
+///
+/// fn swap<T>(x: &mut T, y: &mut T) {
+///     unsafe {
+///         // Give ourselves some scratch space to work with
+///         let mut t: T = mem::uninitialized();
+///
+///         // Perform the swap, `&mut` pointers never alias
+///         ptr::copy_nonoverlapping(&*x, &mut t, 1);
+///         ptr::copy_nonoverlapping(&*y, x, 1);
+///         ptr::copy_nonoverlapping(&t, y, 1);
+///
+///         // y and t now point to the same thing, but we need to completely
+///         // forget `t` because we do not want to run the destructor for `T`
+///         // on its value, which is still owned somewhere outside this function.
+///         mem::forget(t);
+///     }
+/// }
+/// ```
 #[stable(feature = "rust1", since = "1.0.0")]
-pub use intrinsics::forget;
+pub fn forget<T>(t: T) {
+    unsafe { intrinsics::forget(t) }
+}
 
 /// Returns the size of a type in bytes.
 ///
@@ -47,7 +127,7 @@ pub fn size_of<T>() -> usize {
     unsafe { intrinsics::size_of::<T>() }
 }
 
-/// Returns the size of the type that `_val` points to in bytes.
+/// Returns the size of the type that `val` points to in bytes.
 ///
 /// # Examples
 ///
@@ -58,8 +138,8 @@ pub fn size_of<T>() -> usize {
 /// ```
 #[inline]
 #[stable(feature = "rust1", since = "1.0.0")]
-pub fn size_of_val<T>(_val: &T) -> usize {
-    size_of::<T>()
+pub fn size_of_val<T: ?Sized>(val: &T) -> usize {
+    unsafe { intrinsics::size_of_val(val) }
 }
 
 /// Returns the ABI-required minimum alignment of a type
@@ -75,11 +155,12 @@ pub fn size_of_val<T>(_val: &T) -> usize {
 /// ```
 #[inline]
 #[stable(feature = "rust1", since = "1.0.0")]
+#[deprecated(reason = "use `align_of` instead", since = "1.2.0")]
 pub fn min_align_of<T>() -> usize {
     unsafe { intrinsics::min_align_of::<T>() }
 }
 
-/// Returns the ABI-required minimum alignment of the type of the value that `_val` points to
+/// Returns the ABI-required minimum alignment of the type of the value that `val` points to
 ///
 /// # Examples
 ///
@@ -90,14 +171,14 @@ pub fn min_align_of<T>() -> usize {
 /// ```
 #[inline]
 #[stable(feature = "rust1", since = "1.0.0")]
-pub fn min_align_of_val<T>(_val: &T) -> usize {
-    min_align_of::<T>()
+#[deprecated(reason = "use `align_of_val` instead", since = "1.2.0")]
+pub fn min_align_of_val<T: ?Sized>(val: &T) -> usize {
+    unsafe { intrinsics::min_align_of_val(val) }
 }
 
 /// Returns the alignment in memory for a type.
 ///
-/// This function will return the alignment, in bytes, of a type in memory. If the alignment
-/// returned is adhered to, then the type is guaranteed to function properly.
+/// This is the alignment used for struct fields. It may be smaller than the preferred alignment.
 ///
 /// # Examples
 ///
@@ -109,17 +190,10 @@ pub fn min_align_of_val<T>(_val: &T) -> usize {
 #[inline]
 #[stable(feature = "rust1", since = "1.0.0")]
 pub fn align_of<T>() -> usize {
-    // We use the preferred alignment as the default alignment for a type. This
-    // appears to be what clang migrated towards as well:
-    //
-    // http://lists.cs.uiuc.edu/pipermail/cfe-commits/Week-of-Mon-20110725/044411.html
-    unsafe { intrinsics::pref_align_of::<T>() }
+    unsafe { intrinsics::min_align_of::<T>() }
 }
 
-/// Returns the alignment of the type of the value that `_val` points to.
-///
-/// This is similar to `align_of`, but function will properly handle types such as trait objects
-/// (in the future), returning the alignment for an arbitrary value at runtime.
+/// Returns the ABI-required minimum alignment of the type of the value that `val` points to
 ///
 /// # Examples
 ///
@@ -130,8 +204,8 @@ pub fn align_of<T>() -> usize {
 /// ```
 #[inline]
 #[stable(feature = "rust1", since = "1.0.0")]
-pub fn align_of_val<T>(_val: &T) -> usize {
-    align_of::<T>()
+pub fn align_of_val<T: ?Sized>(val: &T) -> usize {
+    unsafe { intrinsics::min_align_of_val(val) }
 }
 
 /// Creates a value initialized to zero.
@@ -228,8 +302,9 @@ pub fn swap<T>(x: &mut T, y: &mut T) {
         ptr::copy_nonoverlapping(&*y, x, 1);
         ptr::copy_nonoverlapping(&t, y, 1);
 
-        // y and t now point to the same thing, but we need to completely forget `t`
-        // because it's no longer relevant.
+        // y and t now point to the same thing, but we need to completely
+        // forget `t` because we do not want to run the destructor for `T`
+        // on its value, which is still owned somewhere outside this function.
         forget(t);
     }
 }
@@ -378,9 +453,13 @@ pub unsafe fn transmute_copy<T, U>(src: &T) -> U {
 
 /// Transforms lifetime of the second pointer to match the first.
 #[inline]
-#[unstable(feature = "core",
+#[unstable(feature = "copy_lifetime",
            reason = "this function may be removed in the future due to its \
                      questionable utility")]
+#[deprecated(since = "1.2.0",
+             reason = "unclear that this function buys more safety and \
+                       lifetimes are generally not handled as such in unsafe \
+                       code today")]
 pub unsafe fn copy_lifetime<'a, S: ?Sized, T: ?Sized + 'a>(_ptr: &'a S,
                                                         ptr: &T) -> &'a T {
     transmute(ptr)
@@ -388,9 +467,13 @@ pub unsafe fn copy_lifetime<'a, S: ?Sized, T: ?Sized + 'a>(_ptr: &'a S,
 
 /// Transforms lifetime of the second mutable pointer to match the first.
 #[inline]
-#[unstable(feature = "core",
+#[unstable(feature = "copy_lifetime",
            reason = "this function may be removed in the future due to its \
                      questionable utility")]
+#[deprecated(since = "1.2.0",
+             reason = "unclear that this function buys more safety and \
+                       lifetimes are generally not handled as such in unsafe \
+                       code today")]
 pub unsafe fn copy_mut_lifetime<'a, S: ?Sized, T: ?Sized + 'a>(_ptr: &'a S,
                                                                ptr: &mut T)
                                                               -> &'a mut T

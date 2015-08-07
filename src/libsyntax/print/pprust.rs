@@ -287,19 +287,21 @@ pub fn token_to_string(tok: &Token) -> String {
         token::SpecialVarNt(var)    => format!("${}", var.as_str()),
 
         token::Interpolated(ref nt) => match *nt {
-            token::NtExpr(ref e)   => expr_to_string(&**e),
-            token::NtMeta(ref e)   => meta_item_to_string(&**e),
-            token::NtTy(ref e)     => ty_to_string(&**e),
-            token::NtPath(ref e)   => path_to_string(&**e),
-            token::NtItem(..)      => "an interpolated item".to_string(),
-            token::NtBlock(..)     => "an interpolated block".to_string(),
-            token::NtStmt(..)      => "an interpolated statement".to_string(),
-            token::NtPat(..)       => "an interpolated pattern".to_string(),
-            token::NtIdent(..)     => "an interpolated identifier".to_string(),
-            token::NtTT(..)        => "an interpolated tt".to_string(),
-            token::NtArm(..)       => "an interpolated arm".to_string(),
-            token::NtImplItem(..)  => "an interpolated impl item".to_string(),
-            token::NtTraitItem(..) => "an interpolated trait item".to_string(),
+            token::NtExpr(ref e)        => expr_to_string(&**e),
+            token::NtMeta(ref e)        => meta_item_to_string(&**e),
+            token::NtTy(ref e)          => ty_to_string(&**e),
+            token::NtPath(ref e)        => path_to_string(&**e),
+            token::NtItem(ref e)        => item_to_string(&**e),
+            token::NtBlock(ref e)       => block_to_string(&**e),
+            token::NtStmt(ref e)        => stmt_to_string(&**e),
+            token::NtPat(ref e)         => pat_to_string(&**e),
+            token::NtIdent(ref e, _)    => ident_to_string(&**e),
+            token::NtTT(ref e)          => tt_to_string(&**e),
+            token::NtArm(ref e)         => arm_to_string(&*e),
+            token::NtImplItem(ref e)    => impl_item_to_string(&**e),
+            token::NtTraitItem(ref e)   => trait_item_to_string(&**e),
+            token::NtGenerics(ref e)    => generics_to_string(&*e),
+            token::NtWhereClause(ref e) => where_clause_to_string(&*e),
         }
     }
 }
@@ -376,12 +378,16 @@ pub fn ident_to_string(id: &ast::Ident) -> String {
     to_string(|s| s.print_ident(*id))
 }
 
-pub fn fun_to_string(decl: &ast::FnDecl, unsafety: ast::Unsafety, name: ast::Ident,
-                  opt_explicit_self: Option<&ast::ExplicitSelf_>,
-                  generics: &ast::Generics) -> String {
+pub fn fun_to_string(decl: &ast::FnDecl,
+                     unsafety: ast::Unsafety,
+                     constness: ast::Constness,
+                     name: ast::Ident,
+                     opt_explicit_self: Option<&ast::ExplicitSelf_>,
+                     generics: &ast::Generics)
+                     -> String {
     to_string(|s| {
         try!(s.head(""));
-        try!(s.print_fn(decl, unsafety, abi::Rust, Some(name),
+        try!(s.print_fn(decl, unsafety, constness, abi::Rust, Some(name),
                         generics, opt_explicit_self, ast::Inherited));
         try!(s.end()); // Close the head box
         s.end() // Close the outer box
@@ -738,7 +744,8 @@ impl<'a> State<'a> {
         match item.node {
             ast::ForeignItemFn(ref decl, ref generics) => {
                 try!(self.head(""));
-                try!(self.print_fn(&**decl, ast::Unsafety::Normal,
+                try!(self.print_fn(decl, ast::Unsafety::Normal,
+                                   ast::Constness::NotConst,
                                    abi::Rust, Some(item.ident),
                                    generics, None, item.vis));
                 try!(self.end()); // end head-ibox
@@ -798,7 +805,6 @@ impl<'a> State<'a> {
         }
         word(&mut self.s, ";")
     }
-
 
     /// Pretty-print an item
     pub fn print_item(&mut self, item: &ast::Item) -> io::Result<()> {
@@ -865,11 +871,12 @@ impl<'a> State<'a> {
                 try!(word(&mut self.s, ";"));
                 try!(self.end()); // end the outer cbox
             }
-            ast::ItemFn(ref decl, unsafety, abi, ref typarams, ref body) => {
+            ast::ItemFn(ref decl, unsafety, constness, abi, ref typarams, ref body) => {
                 try!(self.head(""));
                 try!(self.print_fn(
                     decl,
                     unsafety,
+                    constness,
                     abi,
                     Some(item.ident),
                     typarams,
@@ -1240,6 +1247,7 @@ impl<'a> State<'a> {
                             -> io::Result<()> {
         self.print_fn(&m.decl,
                       m.unsafety,
+                      m.constness,
                       m.abi,
                       Some(ident),
                       &m.generics,
@@ -2102,7 +2110,7 @@ impl<'a> State<'a> {
                         comma = true;
                 }
 
-                for binding in &*data.bindings {
+                for binding in data.bindings.iter() {
                     if comma {
                         try!(self.word_space(","))
                     }
@@ -2334,12 +2342,13 @@ impl<'a> State<'a> {
     pub fn print_fn(&mut self,
                     decl: &ast::FnDecl,
                     unsafety: ast::Unsafety,
+                    constness: ast::Constness,
                     abi: abi::Abi,
                     name: Option<ast::Ident>,
                     generics: &ast::Generics,
                     opt_explicit_self: Option<&ast::ExplicitSelf_>,
                     vis: ast::Visibility) -> io::Result<()> {
-        try!(self.print_fn_header_info(unsafety, abi, vis));
+        try!(self.print_fn_header_info(unsafety, constness, abi, vis));
 
         if let Some(name) = name {
             try!(self.nbsp());
@@ -2725,8 +2734,13 @@ impl<'a> State<'a> {
                 predicates: Vec::new(),
             },
         };
-        try!(self.print_fn(decl, unsafety, abi, name,
-                           &generics, opt_explicit_self,
+        try!(self.print_fn(decl,
+                           unsafety,
+                           ast::Constness::NotConst,
+                           abi,
+                           name,
+                           &generics,
+                           opt_explicit_self,
                            ast::Inherited));
         self.end()
     }
@@ -2831,7 +2845,7 @@ impl<'a> State<'a> {
             }
             ast::LitBinary(ref v) => {
                 let mut escaped: String = String::new();
-                for &ch in &**v {
+                for &ch in v.iter() {
                     escaped.extend(ascii::escape_default(ch)
                                          .map(|c| c as char));
                 }
@@ -2975,10 +2989,16 @@ impl<'a> State<'a> {
 
     pub fn print_fn_header_info(&mut self,
                                 unsafety: ast::Unsafety,
+                                constness: ast::Constness,
                                 abi: abi::Abi,
                                 vis: ast::Visibility) -> io::Result<()> {
         try!(word(&mut self.s, &visibility_qualified(vis, "")));
         try!(self.print_unsafety(unsafety));
+
+        match constness {
+            ast::Constness::NotConst => {}
+            ast::Constness::Const => try!(self.word_nbsp("const"))
+        }
 
         if abi != abi::Rust {
             try!(self.word_nbsp("extern"));
@@ -3017,8 +3037,10 @@ mod tests {
             variadic: false
         };
         let generics = ast_util::empty_generics();
-        assert_eq!(fun_to_string(&decl, ast::Unsafety::Normal, abba_ident,
-                               None, &generics),
+        assert_eq!(fun_to_string(&decl, ast::Unsafety::Normal,
+                                 ast::Constness::NotConst,
+                                 abba_ident,
+                                 None, &generics),
                    "fn abba()");
     }
 

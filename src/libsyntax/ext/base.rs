@@ -13,7 +13,7 @@ pub use self::SyntaxExtension::*;
 use ast;
 use ast::Name;
 use codemap;
-use codemap::{CodeMap, Span, ExpnId, ExpnInfo, NO_EXPANSION};
+use codemap::{CodeMap, Span, ExpnId, ExpnInfo, NO_EXPANSION, CompilerExpansion};
 use ext;
 use ext::expand;
 use ext::tt::macro_rules;
@@ -30,6 +30,8 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use std::default::Default;
 
+#[unstable(feature = "rustc_private")]
+#[deprecated(since = "1.0.0", reason = "replaced by MultiItemDecorator")]
 pub trait ItemDecorator {
     fn expand(&self,
               ecx: &mut ExtCtxt,
@@ -39,6 +41,9 @@ pub trait ItemDecorator {
               push: &mut FnMut(P<ast::Item>));
 }
 
+#[allow(deprecated)]
+#[unstable(feature = "rustc_private")]
+#[deprecated(since = "1.0.0", reason = "replaced by MultiItemDecorator")]
 impl<F> ItemDecorator for F
     where F : Fn(&mut ExtCtxt, Span, &ast::MetaItem, &ast::Item, &mut FnMut(P<ast::Item>))
 {
@@ -52,6 +57,8 @@ impl<F> ItemDecorator for F
     }
 }
 
+#[unstable(feature = "rustc_private")]
+#[deprecated(since = "1.0.0", reason = "replaced by MultiItemModifier")]
 pub trait ItemModifier {
     fn expand(&self,
               ecx: &mut ExtCtxt,
@@ -61,9 +68,13 @@ pub trait ItemModifier {
               -> P<ast::Item>;
 }
 
+#[allow(deprecated)]
+#[unstable(feature = "rustc_private")]
+#[deprecated(since = "1.0.0", reason = "replaced by MultiItemModifier")]
 impl<F> ItemModifier for F
     where F : Fn(&mut ExtCtxt, Span, &ast::MetaItem, P<ast::Item>) -> P<ast::Item>
 {
+
     fn expand(&self,
               ecx: &mut ExtCtxt,
               span: Span,
@@ -112,6 +123,16 @@ impl Annotatable {
         }
     }
 
+    pub fn map_item_or<F, G>(self, mut f: F, mut or: G) -> Annotatable
+        where F: FnMut(P<ast::Item>) -> P<ast::Item>,
+              G: FnMut(Annotatable) -> Annotatable
+    {
+        match self {
+            Annotatable::Item(i) => Annotatable::Item(f(i)),
+            _ => or(self)
+        }
+    }
+
     pub fn expect_trait_item(self) -> P<ast::TraitItem> {
         match self {
             Annotatable::TraitItem(i) => i,
@@ -124,6 +145,29 @@ impl Annotatable {
             Annotatable::ImplItem(i) => i,
             _ => panic!("expected Item")
         }
+    }
+}
+
+// A more flexible ItemDecorator.
+pub trait MultiItemDecorator {
+    fn expand(&self,
+              ecx: &mut ExtCtxt,
+              sp: Span,
+              meta_item: &ast::MetaItem,
+              item: &Annotatable,
+              push: &mut FnMut(Annotatable));
+}
+
+impl<F> MultiItemDecorator for F
+    where F : Fn(&mut ExtCtxt, Span, &ast::MetaItem, &Annotatable, &mut FnMut(Annotatable))
+{
+    fn expand(&self,
+              ecx: &mut ExtCtxt,
+              sp: Span,
+              meta_item: &ast::MetaItem,
+              item: &Annotatable,
+              push: &mut FnMut(Annotatable)) {
+        (*self)(ecx, sp, meta_item, item, push)
     }
 }
 
@@ -397,12 +441,22 @@ impl MacResult for DummyResult {
 pub enum SyntaxExtension {
     /// A syntax extension that is attached to an item and creates new items
     /// based upon it.
-    ///
-    /// `#[derive(...)]` is an `ItemDecorator`.
+    #[unstable(feature = "rustc_private")]
+    #[deprecated(since = "1.0.0", reason = "replaced by MultiDecorator")]
+    #[allow(deprecated)]
     Decorator(Box<ItemDecorator + 'static>),
+
+    /// A syntax extension that is attached to an item and creates new items
+    /// based upon it.
+    ///
+    /// `#[derive(...)]` is a `MultiItemDecorator`.
+    MultiDecorator(Box<MultiItemDecorator + 'static>),
 
     /// A syntax extension that is attached to an item and modifies it
     /// in-place.
+    #[unstable(feature = "rustc_private")]
+    #[deprecated(since = "1.0.0", reason = "replaced by MultiModifier")]
+    #[allow(deprecated)]
     Modifier(Box<ItemModifier + 'static>),
 
     /// A syntax extension that is attached to an item and modifies it
@@ -594,7 +648,7 @@ impl<'a> ExtCtxt<'a> {
         parse::tts_to_parser(self.parse_sess, tts.to_vec(), self.cfg())
     }
 
-    pub fn codemap(&self) -> &'a CodeMap { &self.parse_sess.span_diagnostic.cm }
+    pub fn codemap(&self) -> &'a CodeMap { self.parse_sess.codemap() }
     pub fn parse_sess(&self) -> &'a parse::ParseSess { self.parse_sess }
     pub fn cfg(&self) -> ast::CrateConfig { self.cfg.clone() }
     pub fn call_site(&self) -> Span {
@@ -604,6 +658,8 @@ impl<'a> ExtCtxt<'a> {
         })
     }
     pub fn backtrace(&self) -> ExpnId { self.backtrace }
+
+    /// Original span that caused the current exapnsion to happen.
     pub fn original_span(&self) -> Span {
         let mut expn_id = self.backtrace;
         let mut call_site = None;
@@ -618,26 +674,31 @@ impl<'a> ExtCtxt<'a> {
         }
         call_site.expect("missing expansion backtrace")
     }
-    pub fn original_span_in_file(&self) -> Span {
+
+    /// Returns span for the macro which originally caused the current expansion to happen.
+    ///
+    /// Stops backtracing at include! boundary.
+    pub fn expansion_cause(&self) -> Span {
         let mut expn_id = self.backtrace;
-        let mut call_site = None;
+        let mut last_macro = None;
         loop {
-            let expn_info = self.codemap().with_expn_info(expn_id, |ei| {
-                ei.map(|ei| (ei.call_site, ei.callee.name == "include"))
-            });
-            match expn_info {
-                None => break,
-                Some((cs, is_include)) => {
-                    if is_include {
-                        // Don't recurse into file using "include!".
-                        break;
+            if self.codemap().with_expn_info(expn_id, |info| {
+                info.map_or(None, |i| {
+                    if i.callee.name == "include" {
+                        // Stop going up the backtrace once include! is encountered
+                        return None;
                     }
-                    call_site = Some(cs);
-                    expn_id = cs.expn_id;
-                }
+                    expn_id = i.call_site.expn_id;
+                    if i.callee.format != CompilerExpansion {
+                        last_macro = Some(i.call_site)
+                    }
+                    return Some(());
+                })
+            }).is_none() {
+                break
             }
         }
-        call_site.expect("missing expansion backtrace")
+        last_macro.expect("missing expansion backtrace")
     }
 
     pub fn mod_push(&mut self, i: ast::Ident) { self.mod_path.push(i); }

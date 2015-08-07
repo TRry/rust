@@ -96,11 +96,11 @@ mod imp {
                   target_arch = "aarch64",
                   target_arch = "powerpc")))]
     fn is_getrandom_available() -> bool {
-        use sync::atomic::{AtomicBool, ATOMIC_BOOL_INIT, Ordering};
-        use sync::{Once, ONCE_INIT};
+        use sync::atomic::{AtomicBool, Ordering};
+        use sync::Once;
 
-        static CHECKER: Once = ONCE_INIT;
-        static AVAILABLE: AtomicBool = ATOMIC_BOOL_INIT;
+        static CHECKER: Once = Once::new();
+        static AVAILABLE: AtomicBool = AtomicBool::new(false);
 
         CHECKER.call_once(|| {
             let mut buf: [u8; 0] = [];
@@ -279,6 +279,7 @@ mod imp {
     const CRYPT_VERIFYCONTEXT: DWORD = 0xF0000000;
 
     #[allow(non_snake_case)]
+    #[link(name = "advapi32")]
     extern "system" {
         fn CryptAcquireContextA(phProv: *mut HCRYPTPROV,
                                 pszContainer: LPCSTR,
@@ -374,7 +375,7 @@ mod tests {
             txs.push(tx);
 
             thread::spawn(move|| {
-                // wait until all the tasks are ready to go.
+                // wait until all the threads are ready to go.
                 rx.recv().unwrap();
 
                 // deschedule to attempt to interleave things as much
@@ -394,7 +395,7 @@ mod tests {
             });
         }
 
-        // start all the tasks
+        // start all the threads
         for tx in &txs {
             tx.send(()).unwrap();
         }

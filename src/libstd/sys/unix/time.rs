@@ -10,12 +10,15 @@
 
 pub use self::inner::SteadyTime;
 
+const NSEC_PER_SEC: u64 = 1_000_000_000;
+
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 mod inner {
     use libc;
     use time::Duration;
     use ops::Sub;
-    use sync::{Once, ONCE_INIT};
+    use sync::Once;
+    use super::NSEC_PER_SEC;
 
     pub struct SteadyTime {
         t: u64
@@ -32,11 +35,6 @@ mod inner {
                 t: unsafe { mach_absolute_time() },
             }
         }
-
-        pub fn ns(&self) -> u64 {
-            let info = info();
-            self.t * info.numer as u64 / info.denom as u64
-        }
     }
 
     fn info() -> &'static libc::mach_timebase_info {
@@ -44,7 +42,7 @@ mod inner {
             numer: 0,
             denom: 0,
         };
-        static ONCE: Once = ONCE_INIT;
+        static ONCE: Once = Once::new();
 
         unsafe {
             ONCE.call_once(|| {
@@ -59,8 +57,9 @@ mod inner {
 
         fn sub(self, other: &SteadyTime) -> Duration {
             let info = info();
-            let diff = self.t as i64 - other.t as i64;
-            Duration::nanoseconds(diff * info.numer as i64 / info.denom as i64)
+            let diff = self.t as u64 - other.t as u64;
+            let nanos = diff * info.numer as u64 / info.denom as u64;
+            Duration::new(nanos / NSEC_PER_SEC, (nanos % NSEC_PER_SEC) as u32)
         }
     }
 }
@@ -70,8 +69,7 @@ mod inner {
     use libc;
     use time::Duration;
     use ops::Sub;
-
-    const NSEC_PER_SEC: i64 = 1_000_000_000;
+    use super::NSEC_PER_SEC;
 
     pub struct SteadyTime {
         t: libc::timespec,
@@ -104,10 +102,6 @@ mod inner {
             }
             t
         }
-
-        pub fn ns(&self) -> u64 {
-            self.t.tv_sec as u64 * NSEC_PER_SEC as u64 + self.t.tv_nsec as u64
-        }
     }
 
     impl<'a> Sub for &'a SteadyTime {
@@ -115,12 +109,12 @@ mod inner {
 
         fn sub(self, other: &SteadyTime) -> Duration {
             if self.t.tv_nsec >= other.t.tv_nsec {
-                Duration::seconds(self.t.tv_sec as i64 - other.t.tv_sec as i64) +
-                    Duration::nanoseconds(self.t.tv_nsec as i64 - other.t.tv_nsec as i64)
+                Duration::new(self.t.tv_sec as u64 - other.t.tv_sec as u64,
+                              self.t.tv_nsec as u32 - other.t.tv_nsec as u32)
             } else {
-                Duration::seconds(self.t.tv_sec as i64 - 1 - other.t.tv_sec as i64) +
-                    Duration::nanoseconds(self.t.tv_nsec as i64 + NSEC_PER_SEC -
-                                          other.t.tv_nsec as i64)
+                Duration::new(self.t.tv_sec as u64 - 1 - other.t.tv_sec as u64,
+                              self.t.tv_nsec as u32 + (NSEC_PER_SEC as u32) -
+                                          other.t.tv_nsec as u32)
             }
         }
     }

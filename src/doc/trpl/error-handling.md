@@ -49,7 +49,7 @@ We use `assert!` to declare that something is true. If it's not true, something
 is very wrong. Wrong enough that we can't continue with things in the current
 state. Another example is using the `unreachable!()` macro:
 
-```{rust,ignore}
+```rust,ignore
 enum Event {
     NewRelease,
 }
@@ -181,12 +181,14 @@ match version {
 This function makes use of an enum, `ParseError`, to enumerate the various
 errors that can occur.
 
+The [`Debug`](../std/fmt/trait.Debug.html) trait is what lets us print the enum value using the `{:?}` format operation.
+
 # Non-recoverable errors with `panic!`
 
 In the case of an error that is unexpected and not recoverable, the `panic!`
 macro will induce a panic. This will crash the current thread, and give an error:
 
-```{rust,ignore}
+```rust,ignore
 panic!("boom");
 ```
 
@@ -204,28 +206,28 @@ Because these kinds of situations are relatively rare, use panics sparingly.
 
 In certain circumstances, even though a function may fail, we may want to treat
 it as a panic instead. For example, `io::stdin().read_line(&mut buffer)` returns
-an `Result<usize>`, when there is an error reading the line. This allows us to
+a `Result<usize>`, when there is an error reading the line. This allows us to
 handle and possibly recover from error.
 
 If we don't want to handle this error, and would rather just abort the program,
 we can use the `unwrap()` method:
 
-```{rust,ignore}
+```rust,ignore
 io::stdin().read_line(&mut buffer).unwrap();
 ```
 
-`unwrap()` will `panic!` if the `Option` is `None`. This basically says "Give
+`unwrap()` will `panic!` if the `Result` is `Err`. This basically says "Give
 me the value, and if something goes wrong, just crash." This is less reliable
 than matching the error and attempting to recover, but is also significantly
 shorter. Sometimes, just crashing is appropriate.
 
 There's another way of doing this that's a bit nicer than `unwrap()`:
 
-```{rust,ignore}
+```rust,ignore
 let mut buffer = String::new();
-let input = io::stdin().read_line(&mut buffer)
-                       .ok()
-                       .expect("Failed to read line");
+let num_bytes_read = io::stdin().read_line(&mut buffer)
+                                .ok()
+                                .expect("Failed to read line");
 ```
 
 `ok()` converts the `Result` into an `Option`, and `expect()` does the same
@@ -282,7 +284,7 @@ struct Info {
 }
 
 fn write_info(info: &Info) -> io::Result<()> {
-    let mut file = try!(File::create("my_best_friends.txt"));
+    let mut file = File::create("my_best_friends.txt").unwrap();
 
     try!(writeln!(&mut file, "name: {}", info.name));
     try!(writeln!(&mut file, "age: {}", info.age));

@@ -15,11 +15,11 @@
 use prelude::v1::*;
 
 use io::{self, Error, ErrorKind};
-use sys_common::net2 as net_imp;
+use sys_common::net as net_imp;
 
 pub use self::ip::{IpAddr, Ipv4Addr, Ipv6Addr, Ipv6MulticastScope};
 pub use self::addr::{SocketAddr, SocketAddrV4, SocketAddrV6, ToSocketAddrs};
-pub use self::tcp::{TcpStream, TcpListener};
+pub use self::tcp::{TcpStream, TcpListener, Incoming};
 pub use self::udp::UdpSocket;
 pub use self::parser::AddrParseError;
 
@@ -30,8 +30,7 @@ mod udp;
 mod parser;
 #[cfg(test)] mod test;
 
-/// Possible values which can be passed to the `shutdown` method of `TcpStream`
-/// and `UdpSocket`.
+/// Possible values which can be passed to the `shutdown` method of `TcpStream`.
 #[derive(Copy, Clone, PartialEq, Debug)]
 #[stable(feature = "rust1", since = "1.0.0")]
 pub enum Shutdown {
