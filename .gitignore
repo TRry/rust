@@ -19,6 +19,7 @@
 *.exe
 *.fn
 *.html
+*.kdev4
 *.ky
 *.ll
 *.llvm
@@ -88,10 +89,6 @@ lexer.ml
 src/.DS_Store
 src/etc/dl
 src/librustc_llvm/llvmdeps.rs
-*.pot
-GTAGS
-GPATH
-GRTAGS
 tmp.*.rs
 version.md
 version.ml
